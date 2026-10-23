@@ -70,5 +70,6 @@ BT4 content belongs to its respective authors. Game data must be supplied
 by the player. Retained licenses are [AGPL](LICENSE), [MIT](LICENSE-MIT)
 and the third-party notices shipped with the runtime and voice libraries.
 
-Presentation artwork: option 3 selected by the maintainer. The game icon is
+Presentation artwork: `Gemini_Generated_Image_46di9146di9146di.jpg`, selected
+by the maintainer from Drive. The game icon is
 the supplied `icon_game.ico`; artwork and icon retain their respective rights.
