@@ -1,16 +1,62 @@
 [Español](README.md) · **English**
 
 <div align="center">
-   <img src="docs/presentation/cover.jpg" width="960" alt="Dragon Ball Z Budokai Tenkaichi 4 Tag Team presentation">
   <h1>DBZ BT4 Tag Team Recomp</h1>
-  <p>Native Windows mod based on Tenkaichi3Decomp.</p>
-  <p><strong>Work in progress.</strong></p>
-   <img src="docs/presentation/icon.png" width="144" alt="BT4 Tag Team icon">
+  <p><strong>The Tenkaichi universe. Your team. One arena.</strong></p>
+  <img src="docs/presentation/bt4-intro.gif" width="800" alt="Animated BT4 Tag Team presentation featuring Goku, Vegeta, Jiren, Hit, Broly and Frieza">
+  <p>Simultaneous team battles · Online rooms · Proximity voice</p>
+  <p><strong>Windows · BT4 B14 Rev2 profile · R16-rc1 preview</strong></p>
+  <p><a href="#what-changes-from-the-original-bt3">Explore the mod</a> · <a href="#install-or-update">Installation</a> · <a href="docs/review/R16-rc1.md">Status and testing</a></p>
 </div>
 
-Simultaneous team battles, room-code lobbies, proximity voice and an adjustable
-Tag Team HUD. This repository contains the source and review documentation.
-The original game, ISO, extracted assets and player saves are not included.
+## The arena fills up. The battle changes.
+
+**BT4 Tag Team Recomp** brings Budokai Tenkaichi into a shared battle: multiple
+fighters, two teams, and the action unfolding at the same time. It combines the
+content of the **BT4 B14 Rev2** profile with a native Windows adaptation based on
+**Tenkaichi3Decomp**, adding its own Tag Team mode.
+
+While you look for an opening, your allies are fighting too. Switching targets,
+watching your teammates and coordinating become part of the fight. The spectacle
+of Tenkaichi opens up to simultaneous battles of **up to 5 versus 5**, with seats
+for human players and CPU fighters.
+
+| Build your team | Share the battle | Make it yours |
+| --- | --- | --- |
+| Up to ten fighters in one arena, divided into two teams. | Room-code lobbies and proximity voice to coordinate during a match. | An adjustable Tag Team HUD and the PC port's video, audio and control settings. |
+
+<p align="center">
+  <img src="docs/presentation/tag-team-battle.jpg" width="960" alt="5 versus 5 Tag Team battle showing ally panels, enemy targets and radar">
+  <br><em>A shared battlefield: allies on the left, opponents on the right, and radar to keep track of the action.</em>
+</p>
+
+## What changes from the original BT3
+
+This comparison refers to **Budokai Tenkaichi 3 on PlayStation 2**. BT4 content,
+PC port features and the Tag Team additions come together in this project.
+
+| Aspect | Original BT3 (PS2) | BT4 Tag Team Recomp |
+| --- | --- | --- |
+| Team battles | One active fighter per side, switching between team members. | Multiple fighters active at once, up to 5 on each team. |
+| Characters and content | The original game's roster and resources. | BT4 B14 Rev2 profile content, with resource-loading adaptations for the port. |
+| Online play | No equivalent to this project's online room system. | Room-code lobbies and team selection to organize Tag Team matches. |
+| Communication | No integrated proximity voice. | Integrated voice with attenuation based on the distance between fighters. |
+| Battle information | Interface focused on the two active fighters. | Adjustable HUD with ally information, targets and radar for multiple combatants. |
+| PC experience | Original release designed for a console. | Native Windows execution with resolution, display, audio and control settings. |
+
+Native PC execution and its settings come from **Tenkaichi3Decomp**. The BT4
+profile adaptation and Tag Team mode build on that work; port and content credits
+are retained below.
+
+<p align="center">
+  <img src="docs/presentation/pc-settings.jpg" width="960" alt="BT4 title screen running on Windows with the port's video settings panel open">
+  <br><em>BT4's presentation with PC settings to adapt the display to your system.</em>
+</p>
+
+The screenshots show one configuration, not a performance guarantee for every
+system. Support for up to ten fighters does not mean every combination of players,
+characters and connections has been verified; see the preview's recorded tests
+and limitations.
 
 ## Project status
 
@@ -60,3 +106,5 @@ by the player. Retained licenses are [AGPL](LICENSE), [MIT](LICENSE-MIT)
 and the third-party notices shipped with the runtime and voice libraries.
 
 Artwork and icon retain their respective rights.
+
+Screenshots and animation: [media sources and credits](docs/presentation/CREDITS.md).

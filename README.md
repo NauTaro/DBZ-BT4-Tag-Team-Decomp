@@ -1,17 +1,63 @@
 **Español** · [English](README.en.md)
 
 <div align="center">
-  <img src="docs/presentation/cover.jpg" width="960" alt="Presentación de Dragon Ball Z Budokai Tenkaichi 4 Tag Team">
   <h1>DBZ BT4 Tag Team Recomp</h1>
-  <p>Mod nativo para Windows basado en Tenkaichi3Decomp.</p>
-  <p><strong>En desarrollo · Vista previa R16-rc1</strong></p>
-  <img src="docs/presentation/icon.png" width="144" alt="Icono de BT4 Tag Team">
+  <p><strong>El universo Tenkaichi. Tu equipo. Una sola arena.</strong></p>
+  <img src="docs/presentation/bt4-intro.gif" width="800" alt="Presentación animada de BT4 Tag Team con Goku, Vegeta, Jiren, Hit, Broly y Freezer">
+  <p>Combates simultáneos por equipos · Salas online · Voz por proximidad</p>
+  <p><strong>Windows · Perfil BT4 B14 Rev2 · Vista previa R16-rc1</strong></p>
+  <p><a href="#qué-cambia-frente-a-bt3-original">Descubre el mod</a> · <a href="#instalación-y-actualización">Instalación</a> · <a href="docs/review/R16-rc1.md">Estado y pruebas</a></p>
 </div>
 
-Combates simultáneos por equipos, salas con código, voz por proximidad y un HUD
-Tag Team ajustable. Este repositorio contiene el código fuente y la documentación.
-El juego original, la ISO, los datos extraídos y las partidas de los jugadores
-deben permanecer fuera del repositorio.
+## La arena se llena. La batalla cambia.
+
+**BT4 Tag Team Recomp** lleva la intensidad de Budokai Tenkaichi a una batalla
+compartida: varios luchadores, dos equipos y toda la acción ocurriendo a la vez.
+El proyecto une el contenido del perfil **BT4 B14 Rev2** con una adaptación
+nativa para Windows basada en **Tenkaichi3Decomp**, y añade su propio modo Tag Team.
+
+Mientras buscas una apertura, tus aliados también están peleando. Cambiar de
+objetivo, seguir el estado del equipo y coordinarse pasa a formar parte del combate.
+La propuesta conserva el espectáculo de Tenkaichi y lo abre a enfrentamientos
+simultáneos de **hasta 5 contra 5**, con plazas para jugadores y CPU.
+
+| Forma tu equipo | Comparte la batalla | Encuentra tu estilo |
+| --- | --- | --- |
+| Hasta diez luchadores en la arena, repartidos en dos equipos. | Salas con código y voz por proximidad para coordinarte durante la partida. | HUD Tag Team ajustable y opciones de imagen, audio y controles del port de PC. |
+
+<p align="center">
+  <img src="docs/presentation/tag-team-battle.jpg" width="960" alt="Combate Tag Team 5 contra 5 con panel de aliados, objetivos enemigos y radar">
+  <br><em>Un campo de batalla compartido: aliados a la izquierda, rivales a la derecha y radar para seguir la acción.</em>
+</p>
+
+## Qué cambia frente a BT3 original
+
+La referencia de esta comparación es **Budokai Tenkaichi 3 de PlayStation 2**.
+El contenido BT4, las funciones del port y las incorporaciones Tag Team se
+combinan aquí en una experiencia propia.
+
+| Aspecto | BT3 original (PS2) | BT4 Tag Team Recomp |
+| --- | --- | --- |
+| Combates por equipos | Un luchador activo por bando, con relevos entre miembros. | Varios luchadores activos al mismo tiempo, hasta 5 por equipo. |
+| Personajes y contenido | Plantel y recursos del juego original. | Contenido del perfil BT4 B14 Rev2, con adaptaciones de carga de recursos para el port. |
+| Juego en red | Sin el sistema de salas online de este proyecto. | Salas con código y selección de equipos para organizar partidas Tag Team. |
+| Comunicación | Sin voz por proximidad integrada. | Voz integrada cuya atenuación depende de la distancia entre luchadores. |
+| Lectura del combate | Interfaz centrada en los dos luchadores activos. | HUD ajustable con información de aliados, objetivos y radar para varios combatientes. |
+| Experiencia en PC | Versión original diseñada para consola. | Ejecución nativa en Windows y ajustes de resolución, pantalla, audio y controles. |
+
+La base de ejecución en PC y sus opciones proceden del trabajo de
+**Tenkaichi3Decomp**. La adaptación al perfil BT4 y el modo Tag Team amplían esa
+base; los créditos del port y del contenido se conservan más abajo.
+
+<p align="center">
+  <img src="docs/presentation/pc-settings.jpg" width="960" alt="Pantalla de inicio BT4 en Windows con el panel de ajustes de vídeo del port abierto">
+  <br><em>El espectáculo de BT4 con un panel de ajustes de PC para adaptar la presentación a tu equipo.</em>
+</p>
+
+Las capturas muestran una configuración concreta, no una garantía de rendimiento
+para todos los equipos. La capacidad de hasta diez luchadores tampoco implica
+que todas las combinaciones de jugadores, personajes y conexiones estén verificadas;
+consulta las pruebas y límites de la vista previa.
 
 ## Estado del proyecto
 
@@ -88,3 +134,5 @@ Decompilación y port original: colaboradores de Tenkaichi3Decomp. El contenido
 BT4, las ilustraciones y el icono conservan los derechos de sus respectivos autores.
 Se mantienen las licencias [AGPL](LICENSE), [MIT](LICENSE-MIT) y los avisos de
 terceros incluidos con las bibliotecas del runtime y de voz.
+
+Capturas y animación: [origen y créditos de los medios](docs/presentation/CREDITS.md).
