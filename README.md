@@ -10,25 +10,6 @@ Simultaneous team battles, room-code lobbies, proximity voice and an adjustable
 Tag Team HUD. This repository contains the source and review documentation.
 The original game, ISO, extracted assets and player saves are not included.
 
-## Preview status
-
-R16-rc1 is a test revision. The reported multicolored effect in Hit's rush
-was not reproduced in the reviewed captures and remains open. This release
-does not certify that defect as fixed. Performance across all hardware and
-independent household networks has not been certified.
-
-## Validation
-
-Native checks covered 18 transformation steps, camera geometry and policy,
-the local result menu, two clients joining an Internet room by code and
-rematching, and regular 1v1 direct/lobby sessions. Voice transport and proximity
-were checked with synthetic audio; physical-device and toggle checks are
-described in [the review notes](docs/review/R16-rc1.md).
-
-These checks cover selected scenarios, not every fighter, move, map or device.
-Both players must use the same revision. Duel protocol: `0x4254340E`.
-Tag Team protocol: `0x54540007`, with an R16-rc1 build marker.
-
 ## Install or update
 
 The complete Windows launcher ZIP supports both a first installation from the
