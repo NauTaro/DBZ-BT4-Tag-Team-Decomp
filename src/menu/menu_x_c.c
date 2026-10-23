@@ -1,10 +1,19 @@
 #include "common.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 #include "menu/menu_x.h"
 #include "menu/menu_y.h"
 #include "sys/pad.h"
 #include "sys/save.h"
 
+extern s32 Bt4_BgmNormalize(s32 count,s32 *ids,s32 random);
+
 Option *gOption = NULL; /* 0x3BC364 */
+#ifdef PORT
+#include "tag_team_hud_editor.inc"
+#endif
 
 /*
  * Menu overlay DBZP.BIN, 0x39FBB8..0x3A65E8: the Option object, the options screen of mode 62. (Written as two
@@ -130,6 +139,14 @@ s32 Option_Init(s32 section) {
         gOption->bgmCount--;
         gOption->bgmCount -= 4;
         BgmList_ApplyUnlocks(&gOption->bgmCount, gOption->bgmIds);
+        gOption->bgmCount=Bt4_BgmNormalize(gOption->bgmCount,gOption->bgmIds,0);
+#ifdef PORT
+        if(getenv("BT3_BGM_DEBUG")!=NULL) {
+            s32 b;fprintf(stderr,"bgm album: count %d, ids:",gOption->bgmCount);
+            for(b=0;b<gOption->bgmCount;++b)fprintf(stderr," %x",gOption->bgmIds[b]);
+            fprintf(stderr,"\n");
+        }
+#endif
         Flash_Create(&gOption->flash[0], MPACK_AT(gOption->res, 8), gOption->tex);
         Flash_Play(&gOption->flash[0], 1);
         /* original bug: `name` is never written, so this looks up whatever the stack holds (the result is unused) */
@@ -173,6 +190,7 @@ s32 Option_Init(s32 section) {
 /* The screen's frame loop; input is skipped while a memory card flow runs. Returns 0. */
 s32 Option_Run(s32 section) {
     Option_Init(section);
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_EDITOR_TEST") && !getenv("BT4_TAG_LONG_VIDEO"))TagHudEditor_Open();
     ColorFade_StartIn(0, 0, 0, 20);
     while (gOption->mcBusy || Option_Input()) {
         Gfx_BeginFrame();
@@ -210,6 +228,8 @@ s32 Option_Run(s32 section) {
 s32 Option_Input(void) {
     s32 ret = 1;
     s32 i;
+    TagHudScreen_TestInput();
+    if(sHudEditorOn){TagHudEditor_Input();return 1;}
 
     if (!(gOption->flash[0].flags & MFLASH_PAD)) {
         return 1;
@@ -340,46 +360,24 @@ s32 Option_Input(void) {
         }
         break;
     case OPT_ITEM_SCREEN:
-        if (gPad[0].gameRepeat & PADG_UP) {
-            if (gOption->cursor == OPT_ITEM_SCR_RESET) {
-                OPT_PLATE(OPT_CLIP_BOTTOM, "fl_off_start");
-            } else {
-                OPT_PLATE(OPT_CLIP_ROW_SCREEN, "fl_off_start");
-            }
-            gOption->cursor--;
-            if (gOption->cursor < OPT_ITEM_TYPE) {
-                gOption->cursor = OPT_ITEM_SCR_RESET;
-            }
-            if (gOption->cursor == OPT_ITEM_SCR_RESET) {
-                OPT_PLATE(OPT_CLIP_BOTTOM, "fl_on_start");
-            } else {
-                OPT_PLATE(OPT_CLIP_ROW_SCREEN, "fl_on_start");
-            }
-            gOption->voiceLine = gOption->cursor;
-            Snd_PlaySe(1, 0);
-            OPT_VOICE(gOption->voiceLine);
-        } else if (gPad[0].gameRepeat & PADG_DOWN) {
-            if (gOption->cursor == OPT_ITEM_SCR_RESET) {
-                OPT_PLATE(OPT_CLIP_BOTTOM, "fl_off_start");
-            } else {
-                OPT_PLATE(OPT_CLIP_ROW_SCREEN, "fl_off_start");
-            }
-            gOption->cursor++;
-            if (gOption->cursor > OPT_ITEM_SCR_RESET) {
-                gOption->cursor = OPT_ITEM_TYPE;
-            }
-            if (gOption->cursor == OPT_ITEM_SCR_RESET) {
-                OPT_PLATE(OPT_CLIP_BOTTOM, "fl_on_start");
-            } else {
-                OPT_PLATE(OPT_CLIP_ROW_SCREEN, "fl_on_start");
-            }
-            Snd_PlaySe(1, 0);
-            gOption->voiceLine = gOption->cursor;
-            OPT_VOICE(gOption->voiceLine);
+        if (gPad[0].gameRepeat & (PADG_UP|PADG_DOWN)) {
+            static const s32 order[5]={OPT_ITEM_TYPE,OPT_ITEM_SCR2,OPT_ITEM_ADJUST,OPT_ITEM_TAG_HUD,OPT_ITEM_SCR_RESET};
+            s32 pos=0;
+            OPT_PLATE(gOption->cursor==OPT_ITEM_SCR_RESET?OPT_CLIP_BOTTOM:OPT_CLIP_ROW_SCREEN,"fl_off_start");
+            for(i=0;i<5;++i)if(order[i]==gOption->cursor)pos=i;
+            pos=(pos+((gPad[0].gameRepeat&PADG_UP)?4:1))%5;
+            gOption->cursor=order[pos];
+            OPT_PLATE(gOption->cursor==OPT_ITEM_SCR_RESET?OPT_CLIP_BOTTOM:OPT_CLIP_ROW_SCREEN,"fl_on_start");
+            Snd_PlaySe(1,0);
+            if(gOption->cursor!=OPT_ITEM_TAG_HUD){
+                gOption->voiceLine=gOption->cursor;OPT_VOICE(gOption->voiceLine);
+            }else Voice_FadeOutStep(0);
         } else if (gPad[0].gamePressed & PADG_CROSS) {
             s32 cur = gOption->cursor;
 
-            if (cur == OPT_ITEM_TYPE) {
+            if (cur == OPT_ITEM_TAG_HUD) {
+                TagHudEditor_Open();Snd_PlaySe(1,1);
+            } else if (cur == OPT_ITEM_TYPE) {
                 OPT_PLATE(OPT_CLIP_ROW_SCREEN, "fl_ok");
                 gOption->state = gOption->cursor;
                 gOption->type = gSaveData->unk1694;
@@ -720,7 +718,7 @@ s32 Option_Input(void) {
         } else if (gPad[0].gamePressed & PADG_CROSS) {
             OPT_PLATE(OPT_CLIP_BGM, "fl_ok");
             if (gOption->bgmIds[gOption->bgmCursor] != 0x19) {
-                Bgm_Play(gOption->bgmIds[gOption->bgmCursor] + 0x10B16);
+                Bgm_Play(gOption->bgmIds[gOption->bgmCursor] + 0x816);
                 Snd_PlaySe(1, 1);
             } else {
                 Snd_PlaySe(1, 7);
@@ -731,7 +729,7 @@ s32 Option_Input(void) {
             gOption->cursor = OPT_ITEM_BGM;
             Flash_GotoLabel(&gOption->flash[0], "fl_bgm_cansel", 1);
             OPT_PLATE(OPT_CLIP_ROW_SOUND, "fl_on_start");
-            Bgm_Play(0x10B18);
+            Bgm_Play(0x83E);
             Snd_PlaySe(1, 2);
             OPT_VOICE(17);
         }
@@ -1350,6 +1348,7 @@ void Option_Draw(void) {
         IconWin_SetIcon(0);
     }
 
+    TagHudScreen_Restore(flash);
     switch (gOption->page) {
         case 0:
             rows4 = 4;
@@ -1448,9 +1447,8 @@ void Option_Draw(void) {
                 sprintf(name, "mc_menu_plate_%d", i + 1);
                 Option_SetMenuText(flash, &ref, name, uv);
             }
-            sprintf(name, "mc_menu_plate_%d", 4);
-            Flash_FindLabel(flash, NULL, name, &ref);
-            Flash_ClipSetFlags(flash, &ref, 2, 0);
+            TagHudScreen_Prepare(flash);
+
             for (i = 0; i < 4; i++) {
                 uv.x0 = 0;
                 uv.x1 = 0x200;
@@ -1949,7 +1947,9 @@ void Option_Draw(void) {
         Flash_Draw(&gOption->flash[i]);
     }
     IconWin_Draw();
-    MsgWin_Draw(0, 0, gOption->voiceLine);
+    if(gOption->page==1 && gOption->cursor==OPT_ITEM_TAG_HUD && gOption->state==OPT_ITEM_SCREEN)
+        TagHudScreen_Description();
+    else MsgWin_Draw(0, 0, gOption->voiceLine);
     ColorFade_Draw();
     if (gOption->mcBusy) {
         gOption->mcBusy = McFlow_Update();
@@ -1959,6 +1959,8 @@ void Option_Draw(void) {
     } else {
         Dialog_Draw(1);
     }
+    if(sHudEditorOn)TagHudEditor_Draw();
+
 }
 
 /* Sends one of the screen's plates to a label of its timeline. */
@@ -1972,7 +1974,7 @@ void Option_PlateGoto(s32 unused, s32 clip, char *label) {
             sprintf(name, "mc_menu_plate_%d", gOption->cursor);
             break;
         case OPT_CLIP_ROW_SCREEN:
-            sprintf(name, "mc_menu_plate_%d", gOption->cursor - 6);
+            sprintf(name, "mc_menu_plate_%d", gOption->cursor==OPT_ITEM_TAG_HUD?4:gOption->cursor-6);
             break;
         case OPT_CLIP_ROW_SOUND:
             sprintf(name, "mc_menu_plate_%d", gOption->cursor - 11);

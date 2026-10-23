@@ -413,8 +413,8 @@ void BtlChar_StopVoiceOnFlag(BtlCharGetChr *chr) {
             return;
         }
     }
-    if (BtlChar_TestFlag(chr, 0x129) && !Voice_IsStopped(chr->player)) {
-        Voice_Stop(chr->player);
+    if (BtlChar_TestFlag(chr, 0x129) && !Voice_IsStopped(chr->player & 1)) {
+        Voice_Stop(chr->player & 1);
     }
 }
 

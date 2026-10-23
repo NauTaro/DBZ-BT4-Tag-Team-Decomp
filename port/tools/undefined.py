@@ -123,7 +123,7 @@ def compile_ee(cmd, src, o):
     return subprocess.run(cmd + ["-fpreprocessed", str(i), "-o", str(o)], cwd=ROOT, capture_output=True, text=True)
 
 def cc(f):
-    o = OBJ / (str(f.relative_to(ROOT / "src")).replace("/", "_")[:-2] + ".o")
+    o = OBJ / (f.relative_to(ROOT / "src").as_posix().replace("/", "_")[:-2] + ".o")
     src, done, missing = portsrc.prepare(f)
     r = compile_ee(CC + [f"-I{f.parent}"], src, o)
     if missing:
@@ -256,6 +256,10 @@ def main():
         else:
             objs.append(str(o))
     for f in [ROOT / "src/port/vu0_a.c", ROOT / "src/port/vu0_b.c"] + sorted((ROOT / "port/src").glob("*.c")):
+        # TAG TEAM's native room core is embedded in gs/tag_team_net.c, outside the game's ptr32 ABI.
+        if f.name in ("tag_team.c", "tag_team_wire.c"):
+            (OBJ / ("pc_" + f.stem + ".o")).unlink(missing_ok=True)
+            continue
         o = OBJ / ("pc_" + f.stem + ".o")
         names = ["-include", "vu0_names.h", "-DREF_VU0_EXTERN_ARITH"] if f.parent.name == "port" and f.parent.parent.name == "src" else []
         soft = [] if f.name in ("plat_libm.c", "plat_fastvec.c") else ["-msoft-float", "-mno-sse", "-mno-mmx", "-DSF_FAST_CALLS", "-include", "math.h", "-include", "stdlib.h", "-include", "port_libm.h"]

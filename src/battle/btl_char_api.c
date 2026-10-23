@@ -647,6 +647,8 @@ s32 BtlCharApi_IsCamShown(s32 objId) {
     if (chr == NULL) {
         return 0;
     }
+    {extern s32 TagBattle_Active(void),TagBattle_CameraActor(s32),TagBattle_ViewActor(void);
+     if(TagBattle_Active())return chr->side==TagBattle_CameraActor(TagBattle_ViewActor());}
     if (BtlCharApi_IsInClashA(objId)) {
         return 0;
     }

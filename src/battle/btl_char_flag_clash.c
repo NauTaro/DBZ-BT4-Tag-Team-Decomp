@@ -1,5 +1,8 @@
+extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/btl_char_flag.h"
+#include <stdio.h>
 
 /*
  * Clash sequences between the two fighters: 0x1D8750..0x1D9A20.
@@ -49,6 +52,42 @@ extern void BtlColl_StartThrow(BtlFlagChr *chr, BtlFlagChr *target, s32 cls, s32
 extern void BtlMember_Damage(BtlFlagChr *chr, s32 damage, s32 flags);    /* applies damage */
 
 extern BtlFlagRoster *gBtlChars;
+extern s32 TagBattle_Count(void),TagBattle_Target(s32 actor);
+static s32 sTagBlowTicks[10][10];
+void TagClash_Reset(void) {
+    s32 i,j;
+    for(i=0;i<10;++i)for(j=0;j<10;++j)sTagBlowTicks[i][j]=0;
+}
+/* Punch clashes keep their own timer and result for each participating pair.
+   The original manager only observes actors 0 and 1, so later roster seats
+   otherwise remain in action FA indefinitely. */
+static void TagClash_UpdateBlows(void) {
+    s32 i,j,count=TagBattle_Count();
+    for(i=0;i<count;++i)for(j=i+1;j<count;++j){
+        BtlFlagChr *a=BtlChar_Get(i),*b=BtlChar_Get(j);
+        s32 *timer=&sTagBlowTicks[i][j];
+        if(TagBattle_Team(i)==TagBattle_Team(j) || BtlAct_GetCurrent(a)!=0xFA || BtlAct_GetCurrent(b)!=0xFA ||
+           TagBattle_Target(i)!=j || TagBattle_Target(j)!=i){*timer=0;continue;}
+        if(*timer==0)ChrCam_RequestCut(a,1,6);
+        if(*timer==1)BtlChar_PlayVoice(a,0x18);
+        if(*timer==16)BtlChar_PlayVoice(b,0x18);
+        if(++*timer==78){
+            BtlFlagChr *winner=a,*loser=b;
+            if(a->clashCountB<b->clashCountB ||
+               (a->clashCountB==b->clashCountB && BtlChar_FrameMod(2)==0)){winner=b;loser=a;}
+            BtlChar_SetFlag(winner,0xBF);BtlChar_SetFlag(loser,0xC0);
+            BtlChar_PlayVoice(winner,0x19);BtlChar_RaiseFirstClash(winner);
+            ChrCam_EndCut(a);ChrCam_EndCut(b);
+        }
+    }
+    for(i=0;i<count;++i){
+        BtlFlagChr *chr=BtlChar_Get(i);
+        j=TagBattle_Target(i);
+        if(BtlAct_GetCurrent(chr)==0xFA &&
+           (j<0 || j>=count || BtlAct_GetCurrent(BtlChar_Get(j))!=0xFA || TagBattle_Target(j)!=i))
+            BtlChar_SetFlag(chr,0xBF);
+    }
+}
 extern Vec4 D_002EC2A0; /* zero vector */
 
 typedef struct BtlClashProgress {
@@ -277,7 +316,7 @@ s32 BtlClash_UpdateA(s32 state) {
             }
         }
         c->timer++;
-        if (c->timer >= 0x6A) {
+        if (c->timer >= 0xA4) {
             c->timer = 0;
             state++;
         }
@@ -471,7 +510,7 @@ s32 BtlClash_UpdateC(s32 state) {
         if (Battle_GetMode() == 1) {
             c->level = gProgress->unk3C;
         } else {
-            c->level = 1;
+            c->level = 2;
         }
         state++;
         break;
@@ -480,13 +519,19 @@ s32 BtlClash_UpdateC(s32 state) {
             BtlClash_SetPathCut(c->path);
         }
         if (BtlChar_TestFlag(chr0, 0xC4) && BtlChar_TestFlag(chr1, 0xC4)) {
-            if (chr0->unkE58 >= 0) {
-                BtlAct_CountAndMarkOpponent(chr0);
-            } else {
-                BtlAct_CountAndMarkOpponent(chr1);
-            }
+            /* BT4 0x26BCC0: actual and injected inputs can score independently. */
+            if (!*(s32 *)((u8 *)chr0 + 0x1278)) {
+                if (chr0->unkE58 >= 0) BtlAct_CountAndMarkOpponent(chr0);
+                else if (*(s32 *)((u8 *)chr1 + 0x1278) || chr1->unkE58 >= 0)
+                    BtlAct_CountAndMarkOpponent(chr1);
+            } else if (chr1->unkE58 >= 0) BtlAct_CountAndMarkOpponent(chr1);
             c->count++;
-            if (c->count >= 7 && chr0->clashCountB != chr1->clashCountB) {
+            if (c->count >= 7) {
+                if (chr1->clashCountB == chr0->clashCountB) {
+                    BtlChar_SetFlag(chr0, 0xC7);
+                    BtlChar_SetFlag(chr1, 0xC7);
+                    state++;
+                } else {
                 if (chr1->clashCountB < chr0->clashCountB) {
                     winner = chr0;
                     loser = chr1;
@@ -497,6 +542,7 @@ s32 BtlClash_UpdateC(s32 state) {
                 BtlChar_SetFlag(winner, 0xC7);
                 state++;
                 BtlChar_SetFlag(loser, 0xC8);
+                }
             } else {
                 c->hold--;
                 if (c->hold <= 0) {
@@ -549,6 +595,13 @@ s32 BtlClash_UpdateC(s32 state) {
 void BtlClash_Update(void) {
     s32 *state = &gBtlChars->clashState;
 
+    if(TagBattle_Active()) {
+        TagClash_UpdateBlows();
+        /* FA pairs are handled above, including seats 0 and 1. */
+        if(*state>=6 && *state<=8)*state=0;
+        if(BtlClash_BothInActionFA())return;
+    }
+
     if (*state == 0) {
         if (BtlClash_BothInClashA()) {
             *state = 1;
@@ -564,8 +617,10 @@ void BtlClash_Update(void) {
     case 0:
         BtlClash_HoldClashA(0);
         BtlClash_HoldClashA(1);
-        BtlClash_EndActionFA(0);
-        BtlClash_EndActionFA(1);
+        if(!TagBattle_Active()){
+            BtlClash_EndActionFA(0);
+            BtlClash_EndActionFA(1);
+        }
         break;
     case 1:
     case 2:
@@ -590,4 +645,31 @@ void BtlClash_Update(void) {
         *state = BtlClash_UpdateC(*state);
         break;
     }
+}
+
+/* Hidden native regression: two concurrent clashes, one with a nonadjacent
+   target, using the real ten-fighter roster and the production result flags. */
+s32 TagClash_RunRegression(void) {
+    s32 i,ok=1;
+    if(TagBattle_Count()!=10)return 1;
+    TagClash_Reset();gBtlChars->clashState=0;
+    for(i=0;i<10;++i){
+        BtlFlagChr *chr=BtlChar_Get(i);
+        *(s32 *)((u8 *)chr+0x948)=0xB;
+        BtlChar_ClearFlag(chr,0xBF);BtlChar_ClearFlag(chr,0xC0);
+        chr->clashCountB=0;
+    }
+    {extern void TagBattle_CycleTarget(s32 actor);
+    TagBattle_CycleTarget(0);TagBattle_CycleTarget(0);
+    TagBattle_CycleTarget(5);TagBattle_CycleTarget(5);TagBattle_CycleTarget(5);}
+    for(i=0;i<10;++i)if(i==0||i==5||i==6||i==7)*(s32 *)((u8 *)BtlChar_Get(i)+0x948)=0xFA;
+    BtlChar_Get(0)->clashCountB=30;BtlChar_Get(7)->clashCountB=40;
+    ok &= TagBattle_Target(0)==5 && TagBattle_Target(5)==0;
+    for(i=0;i<80;++i)BtlClash_Update();
+    ok &= BtlChar_TestFlag(BtlChar_Get(0),0xBF) && !BtlChar_TestFlag(BtlChar_Get(0),0xC0);
+    ok &= BtlChar_TestFlag(BtlChar_Get(5),0xC0) && !BtlChar_TestFlag(BtlChar_Get(5),0xBF);
+    ok &= BtlChar_TestFlag(BtlChar_Get(6),0xC0) && BtlChar_TestFlag(BtlChar_Get(7),0xBF);
+    for(i=1;i<5;++i)ok &= !BtlChar_TestFlag(BtlChar_Get(i),0xBF) && !BtlChar_TestFlag(BtlChar_Get(i),0xC0);
+    printf("tag clash regression: independent pairs 0/5 and 6/7, winners and bystanders %s\n",ok?"PASS":"FAIL");
+    return !ok;
 }

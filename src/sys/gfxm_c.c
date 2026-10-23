@@ -651,7 +651,11 @@ void FlashSlot_Draw(FlashSlot *slot, FlashProp *parent, Flash *flash) {
         if (clip->preDraw != NULL) {
             clip->preDraw(clip->preArg);
         }
-        FlashTl_Draw(&clip->tl, &prop);
+        /* A replacement caption keeps the timeline transform and callback, but
+           does not draw the placeholder artwork beneath the new caption. */
+        if (!(clip->flags & 0x10)) {
+            FlashTl_Draw(&clip->tl, &prop);
+        }
         if (clip->drawOver != NULL) {
             clip->drawOver(clip->overArg, &prop);
         }
@@ -1204,6 +1208,9 @@ void Flash_ClipSetCallbackC(Flash *flash, FlashRef *ref, void *fn, void *arg) {
    0x400 keeps running while its parent is stopped. */
 s32 Flash_ClipSetFlags(Flash *flash, FlashRef *ref, s32 props, u8 on) {
     if (ref->index >= 0) {
+        if (props & 0x800) {
+            FlashClipList_SetFlags(flash->clips, ref, 0x10, on);
+        }
         if (props & 1) {
             if (on) {
                 FlashClipList_Play(flash->clips, ref);

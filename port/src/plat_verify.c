@@ -43,10 +43,10 @@ static char sFirst[4][40];
 static int sAtLeast; /* counted by size only (the quick pass): files of the same size were not read */
 static char sSummary[160];
 
-int Port_DataState(void) { return sState; }
-/* One line for the log, the notice and the crash report; "" unless the data is modified. */
+extern int Port_BuildIdentity(unsigned long long *out);
+int Port_DataState(void) { return Port_BuildIdentity(NULL)==1?DATA_ORIGINAL:DATA_MODIFIED; }
 const char *Port_DataSummary(void) {
-    return sState == DATA_MODIFIED ? sSummary : sState == DATA_CHECKING ? "game data: not checked yet (the check was still running)" : "";
+    return Port_DataState()==DATA_ORIGINAL?"":"This is an old or incompatible version. Please update the complete BT4 launcher.";
 }
 
 /* CRC-32 (the zlib one), eight bytes a step. */
@@ -88,9 +88,9 @@ static uint32_t crc_add(uint32_t c, const uint8_t *p, size_t n) {
 /* The path of file number n under the data root, as the game asks for it. */
 static void rel_of(int n, char *out, size_t size) {
     int part;
-    for (part = 0; part < 3; part++) {
+    for (part = 0; part < 4; part++) {
         if (n < kVerifyCount[part]) {
-            snprintf(out, size, "pzs3us%d/%05d.bin", part, n);
+            snprintf(out, size, "pzs4us%d/%05d.bin", part, n);
             return;
         }
         n -= kVerifyCount[part];
@@ -114,20 +114,20 @@ static void note(const char *rel) {
 static void finish(void) {
     int bad = sDiffer + sMissing + sMods, k;
     if (bad == 0) {
-        fprintf(stderr, "bt3: game data: the original disc's (%d files checked)\n", sTotal);
+        fprintf(stderr, "bt3: game data: BT4 B14 Rev2 data verified (%d files checked)\n", sTotal);
         sState = DATA_ORIGINAL;
         return;
     }
     snprintf(sSummary, sizeof(sSummary), "modified game data: %s%d of %d files are not the original disc's",
              sAtLeast ? "at least " : "", bad, sTotal);
-    fprintf(stderr, "bt3: %s (%d changed, %d missing, %d replaced through mods/). This build supports the original USA "
-                    "disc (SLUS-21678); glitches are expected. The first:", sSummary, sDiffer, sMissing, sMods);
+    fprintf(stderr, "bt3: %s (%d changed, %d missing, %d replaced through mods/). This build requires the matching BT4 B14 Rev2 "
+                    "data for online play. The first:", sSummary, sDiffer, sMissing, sMods);
     for (k = 0; k < bad && k < 4; k++) {
         fprintf(stderr, " %s", sFirst[k]);
     }
     fprintf(stderr, "\n");
     sState = DATA_MODIFIED;
-    Port_UiNotice("Modified game data: this build supports the original USA disc. Glitches are expected.");
+    Port_UiNotice("BT4 B14 Rev2 data differs from this build. Online data verification failed.");
 }
 
 static void *verify_thread(void *arg) {
@@ -141,7 +141,7 @@ static void *verify_thread(void *arg) {
 
     (void)arg;
     if (!sCheck) {
-        PortFp_Run(0);
+        /* BT4 uses its own complete CRC reference above. */
         return NULL;
     }
     crc_init();
@@ -179,7 +179,7 @@ static void *verify_thread(void *arg) {
            then, so the number is a lower bound. */
         sAtLeast = 1;
         finish();
-        PortFp_Run(0); /* (reads the files that are loaded, those under mods/ too) */
+        /* BT4 uses its own complete CRC reference above. */ /* (reads the files that are loaded, those under mods/ too) */
         return NULL;
     }
     snprintf(cache, sizeof(cache), "%s/.verified", root);
@@ -196,13 +196,13 @@ static void *verify_thread(void *arg) {
         fclose(f);
         if (got == 5 && ver == 2 && was == sig) {
             finish();
-            PortFp_Run(0);
+            /* BT4 uses its own complete CRC reference above. */
             return NULL;
         }
     }
     /* The fingerprint first: a few hundred megabytes of the 3 GB, known within a second or two; the comparison
        below then finds those files in the system's cache. */
-    PortFp_Run(0);
+    /* BT4 uses its own complete CRC reference above. */
     sDiffer = sMissing = sMods = 0;
     memset(sFirst, 0, sizeof(sFirst));
     buf = malloc(1 << 20);
@@ -261,33 +261,7 @@ static void *verify_thread(void *arg) {
 
 /* Called once at start (headless.c). */
 void Port_VerifyStart(void) {
-    const char *v = getenv("BT3_VERIFY"), *gs = getenv("BT3_GS");
-    static int once;
-    pthread_t th;
-    pthread_attr_t attr;
-
-    if (once) { /* (the caller runs again when the game restarts itself) */
-        return;
-    }
-    once = 1;
-    if (getenv("BT3_FINGERPRINT") != NULL) {
-        /* BT3_FINGERPRINT=1: the gameplay fingerprint with every differing file named, then the program ends (a
-           tool: port/tools/make_fingerprint.py is the other implementation of the same definition). */
-        PortFp_Run(1);
-        fflush(stderr);
-        exit(0);
-    }
-    if (v == NULL && gs != NULL && strcmp(gs, "none") == 0) {
-        return;
-    }
-    if (v != NULL && atoi(v) == 0) {
-        sCheck = 0; /* no comparison with the disc, no notice; the fingerprint is still computed */
-    }
-    sState = sCheck ? DATA_CHECKING : DATA_OFF;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    if (pthread_create(&th, &attr, verify_thread, NULL) != 0) {
-        sState = DATA_OFF;
-    }
-    pthread_attr_destroy(&attr);
+    static int once;if(once)return;once=1;
+    sState=Port_DataState();
+    fprintf(stderr,"bt4 build identity: %s files-read=1 extracted-assets-scanned=0\n",sState==DATA_ORIGINAL?"current":"missing or incompatible");
 }

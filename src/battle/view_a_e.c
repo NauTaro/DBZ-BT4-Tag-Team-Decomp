@@ -539,7 +539,7 @@ void Num_DrawEx(Flash *flash, NumStyle *style, char *a, char *b, s32 value) {
 s32 ChrGrid_IsSelectable(ChrGridCell *cells, s32 index) {
     s32 ok = 1;
 
-    if (cells[index].id >= CHRGRID_ID_LOCKED) {
+    if ((cells[index].id >= CHRGRID_ID_LOCKED && cells[index].id < 0xA5)) {
         ok = cells[index].id == CHRGRID_ID_CUSTOM;
     }
     return ok;
@@ -561,7 +561,7 @@ s32 ChrGrid_MoveRight(ChrGridCell *cells, s32 *col, s32 row) {
             break;
         }
         id = cells[row * CHRGRID_COLS + *col].id;
-        if (id < CHRGRID_ID_LOCKED) {
+        if ((id < CHRGRID_ID_LOCKED || (id >= 0xA5 && id < 250))) {
             break;
         }
         if (id == CHRGRID_ID_CUSTOM) {
@@ -588,7 +588,7 @@ s32 ChrGrid_MoveLeft(ChrGridCell *cells, s32 *col, s32 row) {
             break;
         }
         id = cells[row * CHRGRID_COLS + *col].id;
-        if (id < CHRGRID_ID_LOCKED) {
+        if ((id < CHRGRID_ID_LOCKED || (id >= 0xA5 && id < 250))) {
             break;
         }
         if (id == CHRGRID_ID_CUSTOM) {
@@ -609,7 +609,7 @@ void ChrGrid_MoveDown(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
             *row = 0;
         }
         id = cells[*row * CHRGRID_COLS + *col].id;
-        if (id < CHRGRID_ID_LOCKED) {
+        if ((id < CHRGRID_ID_LOCKED || (id >= 0xA5 && id < 250))) {
             return;
         }
         if (id == CHRGRID_ID_CUSTOM) {
@@ -628,7 +628,7 @@ void ChrGrid_MoveUp(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
             *row = rows - 1;
         }
         id = cells[*row * CHRGRID_COLS + *col].id;
-        if (id < CHRGRID_ID_LOCKED) {
+        if ((id < CHRGRID_ID_LOCKED || (id >= 0xA5 && id < 250))) {
             return;
         }
         if (id == CHRGRID_ID_CUSTOM) {
@@ -649,7 +649,7 @@ void ChrGrid_NextForm(s32 *forms, s32 *index) {
         if (start == *index) {
             break;
         }
-    } while (forms[*index] >= CHRGRID_ID_RANDOM);
+    } while ((forms[*index] >= CHRGRID_ID_RANDOM && forms[*index] < 0xA5));
 }
 
 /* Steps to the previous form of a cell that is a character, wrapping in the seven slots. */
@@ -664,13 +664,13 @@ void ChrGrid_PrevForm(s32 *forms, s32 *index) {
         if (start == *index) {
             break;
         }
-    } while (forms[*index] >= CHRGRID_ID_RANDOM);
+    } while ((forms[*index] >= CHRGRID_ID_RANDOM && forms[*index] < 0xA5));
 }
 
 /* Puts the cursor on a character if it is on a marker cell: right in the row first, then down.
  * Declared with a result that it never sets: the call of ChrGrid_MoveDown is not a tail call. */
 s32 ChrGrid_FixCursor(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
-    if (cells[*row * CHRGRID_COLS + *col].id >= CHRGRID_ID_RANDOM) {
+    if ((cells[*row * CHRGRID_COLS + *col].id >= CHRGRID_ID_RANDOM && cells[*row * CHRGRID_COLS + *col].id < 0xA5)) {
         if (ChrGrid_MoveRight(cells, col, *row) == 0) {
             ChrGrid_MoveDown(cells, col, row, rows);
         }
@@ -679,7 +679,7 @@ s32 ChrGrid_FixCursor(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
 
 /* Non-zero if the stage cell is an unlocked stage. */
 s32 StgGrid_IsSelectable(s32 *ids, s32 index) {
-    return ids[index] < STGGRID_ID_LOCKED;
+    return (ids[index] < 0x24 || (ids[index] >= 0x27 && ids[index] < 0x63));
 }
 
 /* Moves the stage cursor right to the next unlocked stage; it stops in column 6 (the column past the grid). */
@@ -691,7 +691,7 @@ void StgGrid_MoveRight(s32 *ids, s32 *col, s32 row) {
         } else if (*col == STGGRID_COLS) {
             break;
         }
-    } while (ids[row * STGGRID_COLS + *col] >= STGGRID_ID_LOCKED);
+    } while ((ids[row * STGGRID_COLS + *col] == 0x24 || ids[row * STGGRID_COLS + *col] == 0x25 || ids[row * STGGRID_COLS + *col] == 0x26));
 }
 
 /* Moves the stage cursor left to the next unlocked stage; from column 0 it goes to column 6. */
@@ -702,7 +702,7 @@ void StgGrid_MoveLeft(s32 *ids, s32 *col, s32 row) {
             *col = STGGRID_COLS;
             return;
         }
-        if (ids[row * STGGRID_COLS + *col] < STGGRID_ID_LOCKED) {
+        if ((ids[row * STGGRID_COLS + *col] < 0x24 || (ids[row * STGGRID_COLS + *col] >= 0x27 && ids[row * STGGRID_COLS + *col] < 0x63))) {
             return;
         }
     }
@@ -722,7 +722,7 @@ s32 StgGrid_MoveRightWrap(s32 *ids, s32 *col, s32 row) {
             ok = 0;
             break;
         }
-    } while (ids[row * STGGRID_COLS + *col] >= STGGRID_ID_LOCKED);
+    } while ((ids[row * STGGRID_COLS + *col] == 0x24 || ids[row * STGGRID_COLS + *col] == 0x25 || ids[row * STGGRID_COLS + *col] == 0x26));
     return ok;
 }
 
@@ -734,7 +734,7 @@ void StgGrid_MoveDown(s32 *ids, s32 *col, s32 *row, s32 rows) {
         if (*row > rows - 1) {
             *row = 0;
         }
-        if (ids[*row * STGGRID_COLS + *col] < STGGRID_ID_LOCKED) {
+        if ((ids[*row * STGGRID_COLS + *col] < 0x24 || (ids[*row * STGGRID_COLS + *col] >= 0x27 && ids[*row * STGGRID_COLS + *col] < 0x63))) {
             break;
         }
         if (StgGrid_MoveRightWrap(ids, col, *row) != 0) {
@@ -751,7 +751,7 @@ void StgGrid_MoveUp(s32 *ids, s32 *col, s32 *row, s32 rows) {
         if (*row < 0) {
             *row = rows - 1;
         }
-        if (ids[*row * STGGRID_COLS + *col] < STGGRID_ID_LOCKED) {
+        if ((ids[*row * STGGRID_COLS + *col] < 0x24 || (ids[*row * STGGRID_COLS + *col] >= 0x27 && ids[*row * STGGRID_COLS + *col] < 0x63))) {
             break;
         }
         if (StgGrid_MoveRightWrap(ids, col, *row) != 0) {
@@ -760,7 +760,7 @@ void StgGrid_MoveUp(s32 *ids, s32 *col, s32 *row, s32 rows) {
     }
 }
 
-#define CHARA_UNLOCKED(id) ((s32)((SAVE_CHARA_WORD(gSaveData, id) >> ((id) % 64)) & 1))
+#define CHARA_UNLOCKED(id) (((id) >= 0xA5 && (id) < 250) || (s32)((SAVE_CHARA_WORD(gSaveData, id) >> ((id) % 64)) & 1))
 
 /* Build flags of ChrGrid_Build. */
 #define CHRGRID_ALL 1        /* no unlock test (never set here) */
@@ -781,7 +781,7 @@ void ChrGrid_Build(s32 *outCount, ChrGridCell *out, s32 *inCount, ChrGridCell *i
     s32 j;
     s32 pad;
 
-    if (gProgress->mode >= 0x26 && gProgress->mode < 0x2A) {
+    if (gProgress->mode >= 0x27 && gProgress->mode < 0x2A) {
         if (gProgress->mode == 0x28) {
             if (gProgress->unk624 == 2) {
                 flags |= CHRGRID_NO_RANDOM;
@@ -904,6 +904,7 @@ void StgGrid_ApplyUnlocks(s32 *count, s32 *ids) {
     for (i = 0; i < *count; i++) {
         s32 id = ids[i];
 
+        if (id >= 0x27 && id < 0x63) continue; /* BT4 custom stages are already unlocked. */
         switch (id) {
         case 0x23:
             if (flags & 2) {
@@ -951,11 +952,31 @@ void BgmList_ApplyUnlocks(s32 *count, s32 *ids) {
                 *ids = BGMLIST_ID_LOCKED;
             }
         } else if (!(flags & 1)) {
-            if (!(gSaveData->bgmBits & (1 << *ids))) {
+            if (0) { /* BT4 disables the old 32-bit BT3 music unlock mask. */
                 *ids = BGMLIST_ID_LOCKED;
             }
         }
     }
+}
+
+/* Keep each native BT4 track once, preserving its disc order. Padding in the
+ * packed table repeats track zero. There is one random entry, last, in versus;
+ * the album contains only real tracks. This never renumbers a song's file id. */
+s32 Bt4_BgmNormalize(s32 count, s32 *ids, s32 random) {
+    s32 i,j,n=0;
+    for(i=0;i<count;++i) {
+        s32 id=ids[i];
+        if(id<0 || id>0xE2 || id==0x18 || id==0x19) continue;
+        for(j=0;j<n && ids[j]!=id;++j) {}
+        if(j==n) ids[n++]=id;
+    }
+    if(random) ids[n++]=0x18;
+    return n;
+}
+s32 Bt4_BgmRandom(s32 count,s32 *ids) {
+    s32 n=count;
+    if(n>0 && ids[n-1]==0x18)--n;
+    return n>0 ? ids[Rand_Range(n)] : 0;
 }
 
 /*

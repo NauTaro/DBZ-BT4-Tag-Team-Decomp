@@ -41,6 +41,7 @@ extern volatile int gUiSongIdx, gUiSongReady, gUiSongLit;
 
 CharSel *gCharSel = NULL;
 
+extern void Bt4Costume_AttachCaption(MFlash *flash, MFlashRef *ref, s32 number, s32 total, const u16 *name, void *storage);
 extern void TextBox_Init(MTextBox *box, void *text, u32 preset);
 extern void TextBox_SetUnk80(MTextBox *box, s32 value);
 extern void TextBox_AttachLine(MFlash *flash, MFlashRef *ref, s32 x, s32 y, s32 line, MTextBox *box);
@@ -63,6 +64,8 @@ extern void ChrGrid_Build(s32 *outCount, MChrCell *out, s32 *inCount, MChrCell *
                           MChrCell *custom);
 extern void StgGrid_ApplyUnlocks(s32 *count, s32 *ids);
 extern void BgmList_ApplyUnlocks(s32 *count, s32 *ids);
+extern s32 Bt4_BgmNormalize(s32 count,s32 *ids,s32 random);
+extern s32 Bt4_BgmRandom(s32 count,s32 *ids);
 extern s32 ChrTbl_WrapCostume(s32 chara, s32 *costume);
 
 extern void *memcpy(void *, const void *, u32);
@@ -103,7 +106,7 @@ void CharSel_SetStageChips(void) {
             } else if (id == STGGRID_ID_EMPTY) {
                 icon = 38;
             } else if (id >= 0x24) {
-                icon = 1 + (id - 0x24) % 36;
+                icon = id + 1;
             } else {
                 icon = id + 1;
             }
@@ -382,8 +385,8 @@ void CharSel_Init(s32 section) {
     s32 stageRows;
     void *data;
 
-    gCharSel = Heap_Alloc(0x3A4C, 0x20, 0, 2);
-    memset(gCharSel, 0, 0x3A4C);
+    gCharSel = Heap_Alloc(sizeof(CharSel), 0x20, 0, 2);
+    memset(gCharSel, 0, sizeof(CharSel));
     if (gProgress->mode == 0x2D) {
         gCharSel->pack = (u32 *)MPACK_AT(gMenuArc6, section);
         gCharSel->res = Sprite_Unpack(gCharSel->pack, NULL, NULL);
@@ -526,11 +529,11 @@ void CharSel_Init(s32 section) {
     gCharSel->nameText = MPACK_AT(gCharSel->res, 43);
     gCharSel->formText = MPACK_AT(gCharSel->res, 44);
     gCharSel->chipPack = (u32 *)MPACK_AT(gCharSel->res, 45);
-    for (i = 0; i < MCHR_CELL_MAX; i++) {
+    for (i = 0; i < 250; i++) {
         CS_RES(gCharSel->chipPack, i + 1);
     }
     gCharSel->stagePack = (u32 *)MPACK_AT(gCharSel->res, 46);
-    for (i = 0; i < 38; i++) {
+    for (i = 0; i < 99; i++) {
         CS_RES(gCharSel->stagePack, i + 1);
     }
 
@@ -596,7 +599,7 @@ void CharSel_Init(s32 section) {
         fprintf(stderr, "\n");
     }
 #endif
-    gCharSel->stageRows = 6;
+    gCharSel->stageRows = 11;
 #ifdef PORT
     if (sPortStagesAdded) { /* (with nothing added the grid is the game's own, 6 rows) */
         gCharSel->stageRows = (gCharSel->stageCount + STGGRID_COLS - 1) / STGGRID_COLS;
@@ -616,7 +619,7 @@ void CharSel_Init(s32 section) {
     }
 #endif
     gCharSel->bgmCount -= 4;
-    gCharSel->bgmIds[gCharSel->bgmCount - 1] = CHARSEL_BGM_RANDOM;
+    gCharSel->bgmCount = Bt4_BgmNormalize(gCharSel->bgmCount,gCharSel->bgmIds,1);
 #ifdef PORT
     {
         /* PC build: append the tracks added from outside the disc (BT3_SONG manifest), keeping the game's
@@ -630,10 +633,10 @@ void CharSel_Init(s32 section) {
         added = Port_NetSession() ? 0 : gPortSongCount;
         sPortSongsAdded = 0;
         if (added > 0) {
-            static s32 sBgmIds[72];
+            static s32 sBgmIds[PORT_SONG_FIRST_OFFSET + PORT_SONG_MAX + 1];
             s32 n = gCharSel->bgmCount, k, last = gCharSel->bgmIds[n - 1];
-            if (n > 30) {
-                n = 30;
+            if (n > PORT_SONG_FIRST_OFFSET) {
+                n = PORT_SONG_FIRST_OFFSET;
             }
             if (added > PORT_SONG_MAX) {
                 added = PORT_SONG_MAX;
@@ -660,6 +663,9 @@ void CharSel_Init(s32 section) {
             fprintf(stderr, " %02x", (int)(u32)gCharSel->bgmIds[dbg]);
         }
         fprintf(stderr, "\n");
+        fprintf(stderr,"bgm filemap:");
+        for(dbg=0;dbg<gCharSel->bgmCount;++dbg)fprintf(stderr," %x",CHARSEL_BGM_FILE(gCharSel->bgmIds[dbg]));
+        fprintf(stderr,"\n");
     }
 #endif
 
@@ -693,7 +699,7 @@ void CharSel_Init(s32 section) {
     *(CharSelPick *)gCharSel->side[1] = CSPROG->side[1].pick;
     gCharSel->players = CSPROG->players;
     stageCols = 6;
-    stageRows = 6;
+    stageRows = 11;
     gCharSel->stage->col = CSPROG->stage % stageCols;
     gCharSel->stage->row = CSPROG->stage / stageRows;
     for (i = 0; i < gCharSel->bgmCount; i++) {
@@ -743,7 +749,7 @@ void CharSel_Init(s32 section) {
     gCharSel->stageBuf = 1;
 
     if (gCharSel->bgmIds[gCharSel->stage->bgmPlaying] == CHARSEL_BGM_RANDOM) {
-        Bgm_Play(CHARSEL_BGM_RANDOM_FIRST + Rand_Range(9));
+        Bgm_Play(CHARSEL_BGM_FILE(Bt4_BgmRandom(gCharSel->bgmCount,gCharSel->bgmIds)));
     } else {
         Bgm_Play(CHARSEL_BGM_FILE(gCharSel->bgmIds[gCharSel->stage->bgmPlaying]));
     }
@@ -752,6 +758,9 @@ void CharSel_Init(s32 section) {
         TextBox_SetUnk80(&gCharSel->nameBox[i], 1);
         TextBox_Init(&gCharSel->formBox[i], gCharSel->formText, i + 3);
         TextBox_SetUnk80(&gCharSel->formBox[i], 1);
+        gCharSel->costumeText = MPACK_AT(gCharSel->res, 57);
+        TextBox_Init(&gCharSel->costumeBox[i], (u8 *)gCharSel->costumeText + ((u32 *)gCharSel->costumeText)[1], 7);
+        TextBox_SetUnk80(&gCharSel->costumeBox[i], 1);
     }
 }
 
@@ -893,9 +902,9 @@ void CharSel_Draw(void) {
         extern FontStyle gFontStyle;
         s32 nameId = gCharSel->stage->stage;
 
-        if (nameId >= 0x24) {
+        if (nameId >= 0x63) {
             s32 nx = 0, ny = 0; /* (an empty clip reference leaves them untouched) */
-            s32 idx = nameId - 0x24;
+            s32 idx = nameId - 0x63;
             Flash_ClipSetFlags(f, &ref, 2, 0); /* FLASH_PROP_VISIBLE: hide the atlas name */
             sPortStageNameHidden = 1;
             Flash_ClipGetPos(f, &ref, &nx, &ny);
@@ -1093,29 +1102,21 @@ void CharSel_Draw(void) {
                                    gCharSel->cells[i][gCharSel->side[i]->col + gCharSel->side[i]->row * 7].id != MCHR_RANDOM);
             }
         }
-        for (j = 0; j < 4; j++) {
-            uv.x0 = (j % 2) * 0x40;
-            uv.y0 = (j / 2) * 0x20;
-            uv.x1 = uv.x0 + 0x40;
-            uv.y1 = uv.y0 + 0x20;
+        /* BT4's helper 0x269778 draws per-character costume names from section 57.
+           The old BT3 four-digit atlas is not the BT4 costume label. */
+        for (j = 0; j < 8; j++) {
             sprintf(name, "mc_color_plate_%d", j + 1);
             Flash_FindLabel(f, NULL, name, &ref);
-            if (j < gCharSel->colorCount[i]) {
-                Flash_ClipSetFlags(f, &ref, 2, 1);
-                switch (gCharSel->colorCount[i]) {
-                case 2:
-                    Flash_ClipSetOffset(f, &ref, 0x2D, 0);
-                    break;
-                case 3:
-                    Flash_ClipSetOffset(f, &ref, 0x16, 0);
-                    break;
-                }
-                Flash_FindLabel(f, name, "mc_color_text_off", &ref);
-                Flash_ClipSetUv(f, &ref, &uv);
-                Flash_FindLabel(f, name, "mc_color_text_on", &ref);
-                Flash_ClipSetUv(f, &ref, &uv);
-            } else {
-                Flash_ClipSetFlags(f, &ref, 2, 0);
+            Flash_ClipSetFlags(f, &ref, 2, 0);
+        }
+        if (gCharSel->side[i]->chara >= 0) {
+            *(void **)((u8 *)&gCharSel->costumeBox[i] + 4) =
+                (u8 *)gCharSel->costumeText + ((u32 *)gCharSel->costumeText)[1 + gCharSel->side[i]->chara];
+            Flash_FindLabel(f, NULL, "mc_color_name_text", &ref);
+            {
+                u32 *row = *(u32 **)((u8 *)&gCharSel->costumeBox[i] + 4);
+                const u16 *label = (const u16 *)((u8 *)row + (row[1 + gCharSel->side[i]->colorPlate] & ~3u));
+                Bt4Costume_AttachCaption(f, &ref, gCharSel->side[i]->colorPlate + 1, gCharSel->colorCount[i], label, &gCharSel->costumeBox[i]);
             }
         }
     }
@@ -1871,7 +1872,7 @@ extern s32 CpuLevel_FromSetting(u32 setting);
 /* The song a chosen "random" stands for: one of the nine battle songs. PC build, with songs added from outside
    the disc: any entry of the music list before "random", the disc's and the added ones alike. */
 #ifdef PORT
-#define CHARSEL_RANDOM_BGM() (sPortSongsAdded ? gCharSel->bgmIds[Rand_Range(gCharSel->bgmCount - 1)] : Rand_Range(9) + 8)
+#define CHARSEL_RANDOM_BGM() Bt4_BgmRandom(gCharSel->bgmCount,gCharSel->bgmIds)
 #else
 #define CHARSEL_RANDOM_BGM() (Rand_Range(9) + 8)
 #endif
@@ -1943,13 +1944,13 @@ s32 CharSel_Run(s32 section) {
         if (gCharSel->stage->stage == CHARSEL_STAGE_RANDOM && sPortStagesAdded) {
             do {
                 gCharSel->stage->stage = gCharSel->stageIds[Rand_Range(gCharSel->stageCount)];
-            } while (gCharSel->stage->stage == CHARSEL_STAGE_RANDOM || gCharSel->stage->stage >= STGGRID_ID_LOCKED);
+            } while (gCharSel->stage->stage == CHARSEL_STAGE_RANDOM || !((gCharSel->stage->stage < CHARSEL_STAGE_RANDOM) || (gCharSel->stage->stage >= 0x27 && gCharSel->stage->stage < 0x63)));
         }
 #endif
         if (gCharSel->stage->stage == CHARSEL_STAGE_RANDOM) {
             do {
                 gCharSel->stage->stage = gCharSel->stageIds[Rand_Range(gCharSel->stageCount - 1)];
-            } while (gCharSel->stage->stage >= CHARSEL_STAGE_RANDOM);
+            } while (!((gCharSel->stage->stage < CHARSEL_STAGE_RANDOM) || (gCharSel->stage->stage >= 0x27 && gCharSel->stage->stage < 0x63)));
         }
         if (gProgress->mode == 0x2D) {
             mode = 6;

@@ -4,8 +4,8 @@
 // window (setup.cpp) shows both the same way.
 //
 //   disc image   ISO 9660: the volume descriptor at sector 16, directory records from the root
-//   checks       SHA-1 of BIN/DBZP.BIN and of SLUS_216.78 laid out as a flat image from 0x100000 (the values of
-//                config/DBZP.yaml and config/SLUS_216.78.yaml)
+//   checks       SHA-1 of BIN/DBZP.BIN and of SLUS_219.78 laid out as a flat image from 0x100000 (the values of
+//                config/DBZP.yaml and config/SLUS_219.78.yaml)
 //   game data    gamedata/disc/<loose files>, and every DATA/*.AFS archive split into gamedata/<name>/00000.bin ...
 //                (the layout of port/tools/extract_disc.py)
 //   European     optional, a second image (SLES-54945): the 60 entries of its DATA/PZS3EU1.AFS the game makes Spanish,
@@ -20,13 +20,15 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <algorithm>
+#include "../src/plat_verify_tab.h"
 #include <SDL3/SDL.h>
 #include "native.h"
 
 namespace {
 
-const char *kRomSha1 = "caee6c2269bba89fc51eea9e7beac3adbec9dc52";
-const char *kDbzpSha1 = "4f910969e05d9b25c83af7642b60da9949a4348b";
+const char *kRomSha1 = "2ae9c636de479c01d2b4e9906c25b7ca807e80d9";
+const char *kDbzpSha1 = "de91913f40bd675d70ee748aa16a42a96dff5919";
 const Uint32 kRomBase = 0x100000, kRomEnd = 0x2FF180;
 #ifdef _WIN32
 const char *kGame = "Tenkaichi3Decomp.exe";
@@ -234,9 +236,9 @@ void step(const char *title) {
 void step_disc(Iso &iso, const std::string &path) {
     step("Disc image");
     iso.open(path);
-    const IsoFile *slus = iso.find("SLUS_216.78"), *dbzp = iso.find("BIN/DBZP.BIN");
+    const IsoFile *slus = iso.find("SLUS_219.78"), *dbzp = iso.find("BIN/DBZP.BIN");
     if (slus == NULL || dbzp == NULL) {
-        throw Stop{"This is not a disc image of the USA release of Budokai Tenkaichi 3 (no SLUS_216.78 on it).\n"
+        throw Stop{"Esta ISO no corresponde al perfil de Team BT4 B14 Rev2 (falta SLUS_219.78).\n"
                    "Other regions and the Wii version have different programs and are not supported."};
     }
     say("@note checking");
@@ -261,86 +263,106 @@ void step_disc(Iso &iso, const std::string &path) {
     a.add(rom.data(), rom.size());
     b.add(menu.data(), menu.size());
     if (a.hex() != kRomSha1 || b.hex() != kDbzpSha1) {
-        throw Stop{"The game's programs on this disc do not have the expected checksums.\n"
-                   "The port needs the unmodified USA release (SLUS-21678); a patched or damaged image will not work."};
+        throw Stop{"Los programas de esta ISO no coinciden con Team BT4 B14 Rev2.\n"
+                   "Este launcher incluye el motor nativo para B14 Rev2. Usa la ISO de esa version."};
     }
-    say("@ok the USA release, checksums match");
+    say("@ok Team BT4 B14 Rev2: programas verificados");
+}
+
+
+Uint32 file_crc(const std::string &path, Uint64 size, std::vector<Uint8> &buf) {
+    SDL_IOStream *f = SDL_IOFromFile(path.c_str(), "rb");
+    if (!f) return ~0u;
+    if (SDL_GetIOSize(f) != (Sint64)size) { SDL_CloseIO(f); return ~0u; }
+    Uint32 crc = 0;
+    while (size) {
+        size_t n = size < buf.size() ? (size_t)size : buf.size();
+        if (SDL_ReadIO(f, buf.data(), n) != n) { SDL_CloseIO(f); return ~0u; }
+        crc = SDL_crc32(crc, buf.data(), n); size -= n; check_cancel();
+    }
+    SDL_CloseIO(f); return crc;
+}
+
+void checked_out(Iso &iso, Uint64 off, Uint64 size, const std::string &path,
+                 unsigned expectedSize, unsigned expectedCrc, std::vector<Uint8> &buf) {
+    if (size != expectedSize) throw Stop{"Tamano incompatible en " + path};
+    if (file_crc(path, size, buf) == expectedCrc) return;
+    std::string temp = path + ".part";
+    SDL_IOStream *f = SDL_IOFromFile(temp.c_str(), "wb");
+    if (!f) throw Stop{"No se puede escribir en " + temp};
+    Uint32 crc = 0;
+    try {
+        while (size) {
+            size_t n = size < buf.size() ? (size_t)size : buf.size();
+            iso.read(off, buf.data(), n);
+            crc = SDL_crc32(crc, buf.data(), n);
+            if (SDL_WriteIO(f, buf.data(), n) != n) throw Stop{"No se pudo guardar " + temp};
+            off += n; size -= n; check_cancel();
+        }
+    } catch (...) { SDL_CloseIO(f); throw; }
+    if (!SDL_CloseIO(f)) throw Stop{"No se pudo cerrar " + temp};
+    if (crc != expectedCrc) throw Stop{"Los datos de la ISO no coinciden con BT4 B14 Rev2: " + path};
+    if (!SDL_RenamePath(temp.c_str(), path.c_str())) throw Stop{"No se pudo finalizar " + path};
 }
 
 void step_data(Iso &iso, const std::string &root) {
-    std::string data = root + "gamedata/", marker = data + ".installed";
-    SDL_PathInfo info;
     step("Game data");
-    if (SDL_GetPathInfo(marker.c_str(), &info)) {
-        say("@skip already unpacked");
-        return;
-    }
-    std::vector<const IsoFile *> take;
-    Uint64 total = 0, done = 0;
-    for (auto &f : iso.files) {
-        std::string u = upper(f.path);
-        if (u == "SLUS_216.78" || u.rfind("BIN/", 0) == 0 || u.rfind("DATA/", 0) == 0) {
-            take.push_back(&f);
-            total += f.size;
-        }
-    }
-    std::vector<Uint8> buf(1 << 20);
-    int files = 0, lastPercent = -1;
-    auto progress = [&](Uint64 n) {
-        done += n;
-        int percent = total ? (int)(done * 100 / total) : 0;
-        if (percent != lastPercent) {
-            char line[64];
-            snprintf(line, sizeof(line), "@note %d%%, %d files", percent, files);
-            say(line);
-            lastPercent = percent;
+    const IsoFile *index = iso.find("BIN/DBZ4.BIN");
+    if (!index || index->size > 16*1024*1024) throw Stop{"Falta el indice DBZ4.BIN de BT4."};
+    std::vector<Uint8> db((size_t)index->size), buf(1024*1024);
+    iso.read(index->offset, db.data(), db.size());
+    Sha1 hash; hash.add(db.data(), db.size());
+    if (hash.hex() != "989ee93cbd31508717bc245793c1e89c50109e0f") throw Stop{"DBZ4.BIN no coincide con BT4 B14 Rev2."};
+    std::string data = root + "gamedata/";
+    SDL_CreateDirectory(data.c_str());
+    int entry = 0, percent = -1, files = 0;
+    const int countAll = sizeof(kVerify)/sizeof(kVerify[0]);
+    auto progress = [&]() {
+        files++;
+        int now = files*100/countAll;
+        if (now != percent) {
+            char line[128]; snprintf(line,sizeof(line),"@note %d%% - %d / %d archivos verificados",now,files,countAll);
+            say(line); percent = now;
         }
         check_cancel();
     };
-    for (const IsoFile *f : take) {
-        std::string u = upper(f->path);
-        bool afs = u.rfind("DATA/", 0) == 0 && u.size() > 4 && u.compare(u.size() - 4, 4, ".AFS") == 0;
-        if (!afs) {
-            std::string out = data + "disc/" + u; // upper case, as the game asks for them
-            SDL_CreateDirectory(out.substr(0, out.rfind('/')).c_str());
-            copy_out(iso, f->offset, f->size, out, buf);
-            files++;
-            progress(f->size);
-            continue;
-        }
-        // an AFS archive: "AFS\0", the number of entries, then (offset, size) of each; one loose file per entry
-        std::string stem = lower(u.substr(5, u.size() - 9)), dir = data + stem + "/";
-        Uint8 head[8];
-        Uint32 count;
+    for (int part=0; part<4; part++) {
+        char upperName[64], lowerName[32];
+        snprintf(upperName,sizeof(upperName),"DATA/PZS4US%d.AFS",part);
+        snprintf(lowerName,sizeof(lowerName),"pzs4us%d.afs",part);
+        const IsoFile *afs=iso.find(upperName);
+        if (!afs) throw Stop{"Falta " + std::string(upperName)};
+        auto found=std::search(db.begin(),db.end(),lowerName,lowerName+strlen(lowerName)+1);
+        if (found==db.end() || found-db.begin()<16) throw Stop{"Indice BT4 incompleto."};
+        size_t at=(size_t)(found-db.begin())-16;
+        Uint32 header[4]; memcpy(header,db.data()+at,16);
+        Uint32 count=header[2];
+        if (header[0]!=0 || count!=(Uint32)kVerifyCount[part] || header[3]!=count || header[1]!=0x11A+count*2 || at+header[1]>db.size())
+            throw Stop{"Tabla de sectores BT4 incompatible."};
+        std::string dir=data+"pzs4us"+std::to_string(part)+"/";
         SDL_CreateDirectory(dir.c_str());
-        iso.read(f->offset, head, 8);
-        memcpy(&count, head + 4, 4);
-        if (memcmp(head, "AFS\0", 4) != 0 || (Uint64)count * 8 + 8 > f->size) {
-            throw Stop{"An archive on the disc (" + f->path + ") is damaged."};
-        }
-        std::vector<Uint32> table((size_t)count * 2);
-        iso.read(f->offset + 8, table.data(), table.size() * 4);
-        Uint64 inArchive = 0;
-        for (Uint32 i = 0; i < count; i++) {
-            char name[32];
-            snprintf(name, sizeof(name), "%05u.bin", i);
-            if ((Uint64)table[i * 2] + table[i * 2 + 1] > f->size) {
-                throw Stop{"An archive on the disc (" + f->path + ") is damaged."};
+        Uint64 offset=0;
+        for (Uint32 i=0;i<count;i++,entry++) {
+            Uint16 sectors; memcpy(&sectors,db.data()+at+0x11A+i*2,2);
+            Uint64 bytes=(Uint64)sectors*2048;
+            if (offset+bytes>afs->size) {
+                if (i!=count-1 || offset>=afs->size || offset+bytes-afs->size>=2048) throw Stop{"Contenedor BT4 truncado."};
+                bytes=afs->size-offset;
             }
-            copy_out(iso, f->offset + table[i * 2], table[i * 2 + 1], dir + name, buf);
-            files++;
-            inArchive += table[i * 2 + 1];
-            progress(table[i * 2 + 1]);
+            char name[32]; snprintf(name,sizeof(name),"%05u.bin",i);
+            checked_out(iso,afs->offset+offset,bytes,dir+name,kVerify[entry][0],kVerify[entry][1],buf);
+            offset+=(Uint64)sectors*2048; progress();
         }
-        progress(f->size > inArchive ? f->size - inArchive : 0); // the archive's table and padding
     }
-    SDL_IOStream *m = SDL_IOFromFile(marker.c_str(), "wb");
-    if (m != NULL) {
-        SDL_CloseIO(m);
+    for (const char *loose:kVerifyLoose) {
+        const IsoFile *f=iso.find(loose+5);
+        if (!f) throw Stop{"Falta " + std::string(loose+5)};
+        std::string path=data+loose;
+        SDL_CreateDirectory(path.substr(0,path.rfind('/')).c_str());
+        checked_out(iso,f->offset,f->size,path,kVerify[entry][0],kVerify[entry][1],buf);
+        entry++; progress();
     }
-    char line[64];
-    snprintf(line, sizeof(line), "@ok %d files in gamedata/", files);
-    say(line);
+    say("@ok 116685 archivos de BT4 extraidos y verificados por CRC-32");
 }
 
 void step_test(const std::string &root) {
@@ -482,6 +504,10 @@ void work(std::string root, std::string path, std::string eu) {
         }
         if (!path.empty()) {
             step_test(root);
+            const char *profile = "BT4 B14 Rev2; SLUS_219.78; native profile 6\n";
+            SDL_IOStream *marker = SDL_IOFromFile((root + "gamedata/.installed-bt4-b14rev2").c_str(), "wb");
+            if (!marker || SDL_WriteIO(marker, profile, strlen(profile)) != strlen(profile)) throw Stop{"No se pudo guardar el estado de instalacion."};
+            if (!SDL_CloseIO(marker)) throw Stop{"No se pudo guardar el estado de instalacion."};
         }
         say("@done " + root + kGame);
     } catch (const Stop &s) {
@@ -529,17 +555,7 @@ void Native_Join() {
 
 bool Native_Installed(const std::string &root) {
     SDL_PathInfo info;
-    return SDL_GetPathInfo((root + "gamedata/.installed").c_str(), &info);
+    return SDL_GetPathInfo((root + "gamedata/.installed-bt4-b14rev2").c_str(), &info) && SDL_GetPathInfo((root + "gamedata/disc/SLUS_219.78").c_str(), &info);
 }
 
-bool Native_EuInstalled(const std::string &root) {
-    SDL_PathInfo info;
-    for (Uint32 e : eu_entries()) {
-        char name[48];
-        snprintf(name, sizeof(name), "gamedata/pzs3eu1/%05u.bin", e);
-        if (!SDL_GetPathInfo((root + name).c_str(), &info)) {
-            return false;
-        }
-    }
-    return true;
-}
+bool Native_EuInstalled(const std::string &root) { return true; }

@@ -70,7 +70,7 @@ void EntrySel_SetMemberTex(void) {
     }
 }
 
-/* One step of the background loader of the large picture (file 0x2F9 + character). */
+/* One step of the background loader of the large picture (file 0x71C + character). */
 void EntrySel_UpdateImage(void) {
     MTexRes *res;
 
@@ -86,7 +86,7 @@ void EntrySel_UpdateImage(void) {
         break;
     case ESEL_LOAD_REQUEST:
         File_CancelRequests();
-        File_Request(gEntrySel->sel->image + 0x2F9, gEntrySel->imageFile, 0x16800);
+        File_Request(gEntrySel->sel->image + 0x71C, gEntrySel->imageFile, 0x16800);
         gEntrySel->loadState = ESEL_LOAD_READ;
         break;
     case ESEL_LOAD_READ:
@@ -330,7 +330,7 @@ void EntrySel_Init(s32 section) {
     for (i = 0; i < 2; i++) {
         gEntrySel->blink[i] = Rand_Range(0x20);
     }
-    File_LoadSync(gEntrySel->sel->image + 0x2F9, gEntrySel->imageFile, 0x16800);
+    File_LoadSync(gEntrySel->sel->image + 0x71C, gEntrySel->imageFile, 0x16800);
     Sprite_Unpack(gEntrySel->imageFile, gEntrySel->imageRes, NULL);
     res = gEntrySel->imageRes;
     Res_RelocateOffsets(&res, res, res);
@@ -1088,7 +1088,7 @@ s32 Tour_Main(void) {
                     gMenuArc4 = File_LoadSync(gProgress->baseFile + 2, NULL, 0);
                 }
             }
-            Bgm_Play(0x10B19);
+            Bgm_Play(0x83B);
             if (TourMenu_Run(1)) {
                 Adx_StopAll();
                 gProgress->mode = 34;
@@ -1105,7 +1105,7 @@ s32 Tour_Main(void) {
                     gMenuArc4 = File_LoadSync(gProgress->baseFile + 2, NULL, 0);
                 }
             }
-            Bgm_Play(0x10B1B);
+            Bgm_Play(0x81B);
             if (EntrySel_Run(2)) {
                 Adx_StopAll();
                 gProgress->mode = 35;

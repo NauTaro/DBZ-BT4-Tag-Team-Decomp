@@ -181,6 +181,15 @@ extern int PortSongs_IsFile(const char *path); /* plat_songs.c: whether the file
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 static uint32_t be16(const uint8_t *p) { return (uint32_t)p[0] << 8 | p[1]; }
 
+/* Internal recording fixture: only this game's SDL mixer, never desktop audio. */
+static void SDLCALL bt4_record_audio(void *unused,const SDL_AudioSpec *spec,float *buffer,int bytes){
+    static FILE *file;static int opened;extern unsigned gPortVBlanks;
+    if(!opened){opened=1;file=fopen(getenv("BT4_TAG_AUDIO_FILE"),"wb");
+        fprintf(stderr,"tag audio capture: first-ms=%llu blank=%u rate=%d channels=%d format=f32\n",(unsigned long long)SDL_GetTicks(),gPortVBlanks,spec->freq,spec->channels);}
+    if(file){fwrite(buffer,1,bytes,file);fflush(file);}
+    (void)unused;
+}
+SDL_AudioDeviceID Port_AudioPeekDevice(void){return sDevice;}
 static int device(void) {
     /* not before the renderer has decided whether there is a window (its first frame) */
     if (!sTried && (GsGpu_Enabled() || getenv("BT3_SOUND") != NULL || gGsFrame > 2)) {
@@ -192,6 +201,7 @@ static int device(void) {
                 fprintf(stderr, "bt3: no sound device: %s\n", SDL_GetError());
             }
             else {
+                if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_AUDIO_FILE"))SDL_SetAudioPostmixCallback(sDevice,bt4_record_audio,NULL);
                 SDL_ResumeAudioDevice(sDevice);
                 fprintf(stderr, "bt3: sound: %s\n", SDL_GetCurrentAudioDriver());
             }
@@ -284,14 +294,20 @@ static int decode(Player *p, int16_t *out, int frames) {
    over (16 bits, stereo, the file's rate), to look at without listening. */
 static void put_pcm(Player *p, SDL_AudioStream *stream, const int16_t *data, int bytes) {
     static FILE *dump;
+    static FILE *voiceDump;
     static int tried;
     if (!tried) {
         tried = 1;
         dump = getenv("BT3_SND_DUMP") != NULL ? fopen(getenv("BT3_SND_DUMP"), "wb") : NULL;
+        voiceDump = getenv("BT4_VOICE_DUMP") != NULL ? fopen(getenv("BT4_VOICE_DUMP"), "wb") : NULL;
     }
     if (dump != NULL && p == &sPlayers[0]) {
         fwrite(data, 1, (size_t)bytes, dump);
         fflush(dump);
+    }
+    if (voiceDump != NULL && p == &sPlayers[4]) {
+        fwrite(data, 1, (size_t)bytes, voiceDump);
+        fflush(voiceDump);
     }
     SDL_PutAudioStreamData(stream, data, bytes);
 }
@@ -611,6 +627,33 @@ static void start(Player *p, const char *path) {
     if (!SDL_BindAudioStream(sDevice, p->stream)) {
         fprintf(stderr, "bt3: sound stream: %s\n", SDL_GetError());
     }
+}
+
+/* Native regression probe: decode the active game's stream through this decoder.
+   Called only by the explicit story audit; no physical audio device is needed. */
+int Port_AdxStoryProbe(int channel, int partition, int file) {
+    Player *p;
+    int peak=0, frames=0, n, i, savedHist[2][2];
+    uint32_t savedPos;
+    int16_t pcm[1024];
+    char expected[512];
+    if(channel<0 || channel>=MAX_PLAYERS)return -1;
+    p=&sPlayers[channel];
+    if(!Port_FilePath(partition,file,NULL,expected,sizeof(expected)) ||
+       strcmp(expected,p->path) || !p->stream || !p->file)return -1;
+    SDL_LockAudioStream(p->stream);
+    savedPos=p->pos;memcpy(savedHist,p->hist,sizeof(savedHist));
+    p->pos=0;memset(p->hist,0,sizeof(p->hist));
+    while(frames<(int)p->rate*5 && (n=decode(p,pcm,16))>0){
+        frames+=n;
+        for(i=0;i<n*2;i++){int v=abs((int)pcm[i]);if(v>peak)peak=v;}
+    }
+    p->pos=savedPos;memcpy(p->hist,savedHist,sizeof(savedHist));
+    fprintf(stderr,"story-audio ch=%d part=%d file=%d samples=%d peak=%d gain=%.4f paused=%d\n",
+            channel,partition,file,frames,peak,player_gain(p),p->paused);
+    if(player_gain(p)<=0 || p->paused)peak=-2;
+    SDL_UnlockAudioStream(p->stream);
+    return peak;
 }
 
 /* ------------------------------------------------------------------------------- the library's functions */

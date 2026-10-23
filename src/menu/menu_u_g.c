@@ -56,7 +56,7 @@ void EvoZ_Init(s32 section) {
         gEvoZ->list.top[i] = gEvoZ->list.cur[i];
         gEvoZ->list.bottom[i] = gEvoZ->list.cur[i] + gEvoZ->list.rows - 1;
     }
-    File_LoadSync(gEvoZ->side->chara + 0x2F9, gEvoZ->faceFile, 0x16800);
+    File_LoadSync(gEvoZ->side->chara + 0x71C, gEvoZ->faceFile, 0x16800);
     Sprite_Unpack(gEvoZ->faceFile, gEvoZ->faceRes, 0);
     res = gEvoZ->faceRes;
     Res_RelocateOffsets(&res, res, res);

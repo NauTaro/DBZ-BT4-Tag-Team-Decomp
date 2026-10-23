@@ -1,0 +1,19 @@
+{
+  "tag": "v0.1.38.1",
+  "commit": "11059a6d3e814cf36e6ca1f6307839f61c56f1cc",
+  "repository": "https://github.com/z3xox/Tenkaichi3Decomp",
+  "source_zip_sha256": "a63bb0270f3f0aa669373128d9040f6168b3ef413e71b91a6cfe12f92f87420b",
+  "assets": [
+    {
+      "name": "Tenkaichi3Decomp-linux-x64.zip",
+      "url": "https://github.com/z3xox/Tenkaichi3Decomp/releases/download/v0.1.38.1/Tenkaichi3Decomp-linux-x64.zip",
+      "size": 9523504
+    },
+    {
+      "name": "Tenkaichi3Decomp-windows-x64.zip",
+      "url": "https://github.com/z3xox/Tenkaichi3Decomp/releases/download/v0.1.38.1/Tenkaichi3Decomp-windows-x64.zip",
+      "size": 9567036,
+      "sha256": "b447622bff01363e7fb4b272ca09768face35f280d4c48ea7fb495bc49d882d0"
+    }
+  ]
+}

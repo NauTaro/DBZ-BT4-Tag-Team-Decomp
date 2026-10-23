@@ -248,14 +248,14 @@ void Movie_Close(void) {
 
 /* Plays the opening movie from start to end (or until it is skipped). */
 void Movie_PlayOpening(void) {
-    Movie_Open("zs3usop.pss", "zs3usop.adx");
+    Movie_Open("zs4usop.pss", "zs4usop.adx");
     Movie_Run();
     Movie_Close();
 }
 
 /* Plays the ending movie. */
 void Movie_PlayEnding(void) {
-    Movie_Open("zs3used.pss", "zs3used.adx");
+    Movie_Open("zs4used.pss", "zs4used.adx");
     Movie_Run();
     Movie_Close();
 }

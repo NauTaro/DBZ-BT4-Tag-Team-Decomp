@@ -19,6 +19,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#undef near
+#undef far
+#endif
 #include <SDL3/SDL.h>   /* the one window both back ends share */
 #include "gs_internal.h"
 #include "gs_draw.h"
@@ -73,6 +80,8 @@ void Gs_HoldFrame(void) {
     gsVuIdxCount = vuIdx;
     gsVuUniCount = vuUni;
 }
+extern uint32_t *Bt4MenuHD_Upscale(const uint32_t *, int, int, int);
+static int sMenuHD = 4;
 static int sSmooth2d = 1; /* the setting "2D filtering" (smooth_2d; BT3_2D_SMOOTH=0/1 wins): 1 smooth */
 static int sWholeFrame; /* the draw being set up shows a frame the game read back (the cross-fade) */
 
@@ -147,10 +156,11 @@ static uint64_t gpu_now(void) {
 /* GS memory -> an RGBA texture, cached by TEX0 / TEXA and the content of the pages it occupies. */
 typedef struct Tex {
     uint64_t tex0, texa;
+    uint64_t hdKey; /* decoded RGBA identity; GS uploads can move identical artwork between pages */
     uint32_t gen;
     GsTex tex;
     unsigned last; /* frame last used */
-    int replaced;  /* 1: texture pack, 2: vector menu labels, 3: packed shared glyphs */
+    int replaced;  /* 1: texture pack, 2: vector menu labels, 3: packed shared glyphs, 4: enlarged menu artwork */
     int battleText; /* the source texture has Battle font artwork, even with Original selected */
     uint32_t ow, oh, rw, rh; /* then: the original's size and the replacement's */
     uint32_t amax;           /* and the largest alpha byte of the original */
@@ -160,6 +170,11 @@ typedef struct Tex {
 static Tex sTex[MAX_TEX];
 static uint16_t sTexBucket[TEX_BUCKETS]; /* index + 1 of a cache entry, 0 = empty (open addressing) */
 static Tex *sLast; /* the entry the previous lookup returned */
+#define HD_ALIAS_COUNT 2048
+/* Identical menu artwork is repeatedly uploaded at different GS addresses.
+   Remember those addresses without decoding and rerasterizing the same image.
+   Handle + content checks invalidate an alias when its cache slot is recycled. */
+static struct { uint64_t tex0,texa,hdKey; GsTex handle; uint32_t gen,index; } sHdAlias[HD_ALIAS_COUNT];
 
 /* The 256-colour tables as textures, by hash of the palette entries they use (64 slots). */
 static struct { uint32_t hash, last; GsTex tex; } sCluts[MAX_CLUTS];
@@ -286,7 +301,13 @@ static GsTex tbo_text_texture(uint32_t id) {
         return sTboText[slot].tex != 0 ? sTboText[slot].tex : gsWhite;
     }
     px = TboText_Pixels(id, &version, &w, &h);
-    tex = px != NULL ? tbo_upload(px, w, h) : 0;
+    /* Aligned fill/outline sheets can now be filtered at their display size,
+       rather than sampling the full-size font once per output pixel. */
+    if (px != NULL && getenv("BT4_TEXT_MIPS") != NULL && atoi(getenv("BT4_TEXT_MIPS"))==0) {
+        tex=sBackend->texCreate(w,h,GS_TEXFMT_RGBA8,1);
+        if(tex) sBackend->texUpload(tex,0,w,h,GS_TEXFMT_RGBA8,px,w*h*4);
+        else free(px);
+    } else tex = px != NULL ? tbo_upload(px, w, h) : 0;
     if (tex == 0) {
         return sTboText[slot].tex != 0 ? sTboText[slot].tex : gsWhite;
     }
@@ -382,6 +403,33 @@ static GsTex tbo_texture(uint32_t id) {
     return tex;
 }
 
+/* Retire only older HD art when its cache exceeds 192 MiB. Keep this frame's draw references alive. */
+static void menu_hd_trim(uint64_t incoming) {
+    uint64_t bytes = incoming;
+    uint32_t i, n = 0;
+    int changed = 0;
+    for (i = 0; i < (uint32_t)gsTexCount; ++i) {
+        if (sTex[i].replaced == 4) { bytes += (uint64_t)sTex[i].rw * sTex[i].rh * 4; }
+    }
+    if (bytes <= 192ull * 1024 * 1024) { return; }
+    for (i = 0; i < (uint32_t)gsTexCount; ++i) {
+        if (bytes > 192ull * 1024 * 1024 && sTex[i].replaced == 4 && sTex[i].last < gGsFrame) {
+            bytes -= (uint64_t)sTex[i].rw * sTex[i].rh * 4;
+            sBackend->texDestroy(sTex[i].tex);
+            changed = 1;
+        } else { sTex[n++] = sTex[i]; }
+    }
+    if (!changed) { return; }
+    gsTexCount = n;
+    sLast = NULL;
+    memset(sTexBucket, 0, sizeof(sTexBucket));
+    for (i = 0; i < (uint32_t)gsTexCount; ++i) {
+        uint32_t h = tex_bucket(sTex[i].tex0, sTex[i].texa, sTex[i].gen);
+        while (sTexBucket[h] != 0) { h = (h + 1) & (TEX_BUCKETS - 1); }
+        sTexBucket[h] = (uint16_t)(i + 1);
+    }
+}
+
 /* A pack's levels into a new texture (the back end takes a copy of each). */
 static GsTex pack_texture(const TexPackImage *pack) {
     GsTex tex = sBackend->texCreate(pack->w, pack->h, pack->format & 3, pack->levels);
@@ -433,7 +481,7 @@ static void pack_arrived(Tex *c) {
 
 /* GS memory -> an RGBA texture for the current TEX0 (alpha as stored: 0x80 is opaque). The back end makes
    the texture and takes the decoded pixels (freed after it has uploaded them). */
-static GsTex texture_get(int ctx) {
+static GsTex texture_get(int ctx, int menuHd) {
     uint64_t t0 = gGs.tex0[ctx] & 0x1FFFFFFFFFFFFFFFull, texa = gGs.texa;
     uint32_t tbp = t0 & 0x3FFF, tbw = (t0 >> 14) & 0x3F, psm = (t0 >> 20) & 0x3F, tw = 1u << ((t0 >> 26) & 15), th = 1u << ((t0 >> 30) & 15);
     uint32_t cbp = (t0 >> 37) & 0x3FFF, cpsm = (t0 >> 51) & 15;
@@ -442,11 +490,13 @@ static GsTex texture_get(int ctx) {
     uint64_t tex_t0;
     TexPackImage pack;
     uint32_t packMaxAlpha = 255, rw = tw, rh = th;
-    int replaced = 0, menuText = 0, sharedText = 0, battleText = 0, packWait = -1;
+    int replaced = 0, menuText = 0, sharedText = 0, battleText = 0, hdArt = 0, packWait = -1;
+    uint64_t hdKey = 0;
 
     if (tw > 1024) { tw = 1024; }
     if (th > 1024) { th = 1024; }
     rw = tw; rh = th;
+    menuHd = menuHd && sMenuHD >= 2 && tw >= 16 && th >= 16;
     pages = ((tbw ? tbw : 1) * 64 * th * (bits == 24 ? 32 : bits) / 8 + 8191) / 8192;
     /* `gen` identifies the CONTENT: a hash over the pages the texture and its palette occupy */
     for (i = 0; i <= pages; i++) {
@@ -458,9 +508,18 @@ static GsTex texture_get(int ctx) {
     /* Font replacements follow their settings and resolution. A new label catalog also refreshes cached Battle
        texture identities when the artwork is still on "Original". */
     gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale(SCALE));
+    if (menuHd) { gen ^= 0xB7404D00u + (uint32_t)sMenuHD; }
     gen ^= bits <= 8 ? MenuLabels_ArtKey() : 0; /* the chosen language's menu art ready: decoded again */
     if (sTexPackOn && TexPack_Count() != 0) {
         gen ^= 0x5BD1E995u; /* with the pack and without it are different textures: switching it takes effect at once */
+    }
+    if (menuHd) {
+        uint32_t h=tex_bucket(t0,texa,gen)&(HD_ALIAS_COUNT-1),n=sHdAlias[h].index;
+        if(n<(uint32_t)gsTexCount && sHdAlias[h].handle && sHdAlias[h].tex0==t0 &&
+           sHdAlias[h].texa==texa && sHdAlias[h].gen==gen && sTex[n].replaced==4 &&
+           sTex[n].tex==sHdAlias[h].handle && sTex[n].hdKey==sHdAlias[h].hdKey) {
+            sTex[n].last=gGsFrame;sLast=&sTex[n];return sTex[n].tex;
+        }
     }
     if (sLast != NULL && sLast->tex0 == t0 && sLast->texa == texa && sLast->gen == gen) {
         if (sLast->pack >= 0 && sLast->last != gGsFrame) {
@@ -576,6 +635,36 @@ static GsTex texture_get(int ctx) {
                     (double)(gpu_now() - font_t0) / 1e6);
         }
     }
+    if (menuHd && !replaced && !menuText && px != NULL) {
+        uint32_t n;
+        hdKey = (14695981039346656037ull ^ tw ^ ((uint64_t)th << 16) ^ ((uint64_t)sMenuHD << 32));
+        for (n = 0; n < tw * th; ++n) { hdKey = (hdKey ^ px[n]) * 1099511628211ull; }
+        for (n = 0; n < (uint32_t)gsTexCount; ++n) {
+            Tex *cached = &sTex[n];
+            if (cached->replaced == 4 && cached->hdKey == hdKey && cached->ow == tw && cached->oh == th) {
+                uint32_t h=tex_bucket(t0,texa,gen)&(HD_ALIAS_COUNT-1);
+                free(px);
+                cached->last = gGsFrame;
+                sHdAlias[h].tex0=t0;sHdAlias[h].texa=texa;sHdAlias[h].gen=gen;
+                sHdAlias[h].index=n;sHdAlias[h].handle=cached->tex;sHdAlias[h].hdKey=hdKey;
+                sLast = cached;
+                gGpuTexNs += gpu_now() - tex_t0;
+                return cached->tex;
+            }
+        }
+        uint32_t *hd = Bt4MenuHD_Upscale(px, (int)tw, (int)th, sMenuHD);
+        if (hd != NULL) {
+            free(px);
+            px = hd;
+            rw = tw * (uint32_t)sMenuHD;
+            rh = th * (uint32_t)sMenuHD;
+            hdArt = 1;
+            if (getenv("BT4_HD_LOG") != NULL) {
+                fprintf(stderr, "bt4: menu HD %ux%u -> %ux%u, %.2f ms\n", tw, th, rw, rh, (double)(gpu_now() - tex_t0) / 1e6);
+            }
+        }
+    }
+    if (hdArt) { menu_hd_trim((uint64_t)rw * rh * 4); }
     gGpuTexNs += gpu_now() - tex_t0;
     t = &sTex[gsTexCount];
     t->tex = replaced ? pack_texture(&pack) : sBackend->texCreate(rw, rh, GS_TEXFMT_RGBA8, 1);
@@ -609,10 +698,11 @@ static GsTex texture_get(int ctx) {
     gGpuNewTexPixels += rw * rh;
     sLast = t;
     t->tex0 = t0;
+    t->hdKey = hdArt ? hdKey : 0;
     t->texa = texa;
     t->gen = gen;
     t->last = gGsFrame;
-    t->replaced = replaced ? 1 : sharedText ? 3 : menuText ? 2 : 0;
+    t->replaced = replaced ? 1 : sharedText ? 3 : menuText ? 2 : hdArt ? 4 : 0;
     t->battleText = battleText;
     t->ow = tw;
     t->oh = th;
@@ -790,21 +880,21 @@ int GsDraw_TargetGet(uint32_t fbp, int create) {
     if (!create) {
         return -1;
     }
-    slot = gsTargetCount;
-    if (gsTargetCount == MAX_TARGETS) {
+    slot = -1;
+    {
         /* Every buffer address the game has ever drawn to holds three large textures. The menus and each stage
            use their own set, so one that has not been touched for two seconds gives its slot to the new one. */
-        slot = -1;
         for (i = 0; i < gsTargetCount; i++) {
             if (gsTargets[i].last + 120 < gGsFrame && (slot < 0 || gsTargets[i].last < gsTargets[slot].last)) {
                 slot = i;
             }
         }
-        if (slot < 0) {
-            return -1;
-        }
-        sBackend->targetDrop(slot);
     }
+    /* Reuse an expired attachment before allocating another full-resolution
+       colour/alpha/depth set. Menu history must not grow the GPU working set. */
+    if (slot >= 0) sBackend->targetDrop(slot);
+    else if (gsTargetCount < MAX_TARGETS) slot = gsTargetCount;
+    else return -1;
     sBackend->targetEnsure(slot);
     gsTargets[slot].fbp = fbp;
     gsTargets[slot].cleared = 0;
@@ -1034,7 +1124,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 sBlockSample = 0;
             }
         } else {
-            d->tex = texture_get(ctx);
+            d->tex = texture_get(ctx, gPortMenuMode && !vu);
         }
     }
     d->sampler = (int)((gGs.tex1[ctx] >> 5) & 1) | ((cl & 3) ? 2 : 0) | (((cl >> 2) & 3) ? 4 : 0);
@@ -1115,6 +1205,7 @@ static uint32_t sWallSeq; /* patches handed over so far */
 static uint64_t sWallTex0; /* TEX0 of the wall's texture: the triangles drawn with it are the wall's */
 static float sWallUs = 1.0f, sWallVs = 1.0f;
 extern int gsInterp;
+extern int Port_TagBattleRenderActive(void);
 
 /* From the game (src/battle/eft_g.c, EftBound_DrawMesh / EftBound_DrawMeshCulled), each time it draws a wall mesh:
    the 24 points before anything is cut off, the quads, the view's matrix. */
@@ -1123,7 +1214,7 @@ void Port_WallMesh(const void *key, int second, int culled, const float *screen,
     WallMesh *m;
     int i;
 
-    if (GS_NO_PICTURE || gsInterp <= 0 || quadCount <= 0 || quadCount > 15) {
+    if (GS_NO_PICTURE || gsInterp <= 0 || Port_TagBattleRenderActive() || quadCount <= 0 || quadCount > 15) {
         return;
     }
     if (getenv("BT3_INTERP_WALLLOG") != NULL && atoi(getenv("BT3_INTERP_WALLLOG")) > 2) {
@@ -1285,6 +1376,8 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     }
     if (tbo) {
         d.sampler |= 1 | 8; /* filtered, with its smaller copies, sampled per output pixel (not per GS pixel) */
+        if((gGs.tex1[ctx]&1)&&((t0>>37)&0x3FFF)<TBO_TEXT_BASE)d.sampler&=~8;
+        if (((t0 >> 37) & 0x3FFF) >= TBO_TEXT_BASE && getenv("BT4_TEXT_MIPS") != NULL && atoi(getenv("BT4_TEXT_MIPS"))==0) d.sampler &= ~8;
     }
     if ((type == 6 || fst) && !d.tex_is_target && !tbo) {
         /* 2D art: sprites, and triangles with whole-texel coordinates (the logo, HUD pieces drawn as quads):
@@ -1450,7 +1543,10 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     /* (Not the cross-fade's picture: it is the whole frame as it was shown, wide view and all, drawn back over the
        whole frame in strips. Each strip is narrower than the screen, so the rule below took it for a piece of 2D
        art and the old shot was drawn at three quarters of the width over the new one: seen by the user.) */
-    if (Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
+    /* BT4's original HUD uses the full 512-unit page, including its masks.
+       Narrowing the side panels left a large gap beside the timer. */
+    int bt4OriginalHud = sHudLayout == 0 && (gsAnchor == 1 || gsAnchor == 2 || gsAnchor == 5 || gsAnchor == 6);
+    if (!bt4OriginalHud && gsAnchor != 9 && Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
                           (battleText && Port_PageAspectMilli() > 1340)) &&
         !sWholeFrame && !d.tex_is_target && !tbo && (type == 6 || fst || battleText || gsAnchor == 8) &&
         gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
@@ -1766,6 +1862,23 @@ void GsGpu_FbUpload(int second) {
     }
 }
 
+/* Test telemetry is read-only and opt-in. It records the exact scene matrices
+ * and world positions used by the native HUD, not positions inferred from a screenshot. */
+static float sTagTraceView[16],sTagTraceProjection[16],sTagTraceNear;
+void Port_TagHudView(const float *v,const float *p,const float *nearZ) {
+    if(!getenv("BT4_RENDER_TEST") || !getenv("BT4_TAG_HUD_LOG"))return;
+    memcpy(sTagTraceView,v,sizeof(sTagTraceView));memcpy(sTagTraceProjection,p,sizeof(sTagTraceProjection));sTagTraceNear=*nearZ;
+}
+static void tag_trace_array(const char *key,const float *a,int n) {
+    int i;fprintf(stderr,",\"%s\":[",key);for(i=0;i<n;++i)fprintf(stderr,"%s%.8g",i?",":"",a[i]);fprintf(stderr,"]");
+}
+void Port_TagHudTrace(int actor,int front,int kind,const float *basis,const float *own,const float *pos,const float *head,const float *scr,const float *marker,const float *radar) {
+    if(!getenv("BT4_RENDER_TEST") || !getenv("BT4_TAG_HUD_LOG") || gGsFrame%20)return;
+    fprintf(stderr,"taghud {\"frame\":%u,\"actor\":%d,\"front\":%d,\"kind\":%d,\"near\":%.8g",gGsFrame,actor,front,kind,sTagTraceNear);
+    tag_trace_array("view",sTagTraceView,16);tag_trace_array("projection",sTagTraceProjection,16);
+    tag_trace_array("basis",basis,4);tag_trace_array("own",own,3);tag_trace_array("pos",pos,3);tag_trace_array("head",head,3);
+    tag_trace_array("screen",scr,3);tag_trace_array("marker",marker,2);tag_trace_array("radar",radar,5);fprintf(stderr,"}\n");
+}
 void GsGpu_Native(int effect) {
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
@@ -1775,6 +1888,13 @@ void GsGpu_Native(int effect) {
 
     /* 1 = outline. 2 (the see-through tint) is drawn by the generic table pass now (depth_clut), from the game's
        own table. */
+    if (effect == 0x19) {
+        /* Native TAG portrait quads have already been positioned and scaled by
+         * the UI page. Applying the battle's 4:3 correction a second time
+         * separates the portrait from its frame on widescreen displays. */
+        gsAnchor = 9;
+        return;
+    }
     if (effect >= 0x15 && effect <= 0x18) {
         /* 5/6: extended life bar; 7: loading page; 8: an announcement and all its effect layers. */
         gsAnchor = effect - 0x10;
@@ -1867,6 +1987,10 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, h);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
+    if (getenv("BT4_RENDER_TEST") != NULL) {
+        sFullscreen=0;
+        SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIDDEN_BOOLEAN, true);
+    }
     if (opengl) {
         SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
     }
@@ -1878,6 +2002,17 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     }
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, sFullscreen);
     sWindow = SDL_CreateWindowWithProperties(props);
+#ifdef _WIN32
+    if(sWindow){
+        HWND hwnd=(HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(sWindow),SDL_PROP_WINDOW_WIN32_HWND_POINTER,NULL);
+        HINSTANCE module=GetModuleHandleW(NULL);
+        HICON large=(HICON)LoadImageW(module,MAKEINTRESOURCEW(1),IMAGE_ICON,GetSystemMetrics(SM_CXICON),GetSystemMetrics(SM_CYICON),LR_SHARED);
+        HICON small=(HICON)LoadImageW(module,MAKEINTRESOURCEW(1),IMAGE_ICON,GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),LR_SHARED);
+        if(hwnd&&large)SendMessageW(hwnd,WM_SETICON,ICON_BIG,(LPARAM)large);
+        if(hwnd&&small)SendMessageW(hwnd,WM_SETICON,ICON_SMALL,(LPARAM)small);
+        if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"bt4 game icon: resource=1 large=%d small=%d window=%d\n",large!=NULL,small!=NULL,hwnd!=NULL);
+    }
+#endif
     SDL_DestroyProperties(props);
     SDL_free(displays);
     if (sWindow != NULL && !sFullscreen) {
@@ -1900,7 +2035,7 @@ void GsDraw_WindowShape(void) {
 }
 
 void GsDraw_FullscreenSet(int on) {
-    if (sWindow == NULL) {
+    if (getenv("BT4_RENDER_TEST") != NULL || sWindow == NULL) {
         return;
     }
     sFullscreen = on;
@@ -2058,6 +2193,8 @@ int GsGpu_Init(void) {
     gsWhite = sb->whiteTex();
     gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 63;
     gsGlowPercent = getenv("BT3_GLOW") != NULL ? atoi(getenv("BT3_GLOW")) : Port_Setting("glow", GLOW_DEFAULT);
+    sMenuHD = Port_Setting("menu_hd", 1) ? Port_Setting("menu_hd_scale", 4) : 0;
+    if (sMenuHD < 2 || sMenuHD > 6) { sMenuHD = 0; }
     /* (one strength for both until 2026-10-21: a saved "glow" is the glare's too until it has its own) */
     gsGlarePercent = getenv("BT3_GLARE") != NULL ? atoi(getenv("BT3_GLARE")) : Port_Setting("glare", gsGlowPercent);
     gsSharpBlur = (getenv("BT3_SHARP_BLUR") != NULL ? atoi(getenv("BT3_SHARP_BLUR")) : Port_Setting("sharp_blur", 1)) != 0;
@@ -2070,7 +2207,7 @@ int GsGpu_Init(void) {
     gPortSePercent = Port_Setting("effects", 100);
 
     sHudLayout = getenv("BT3_HUD") != NULL ? atoi(getenv("BT3_HUD")) : Port_Setting("hud_layout", 0);
-    sHudLayout = sHudLayout < 0 || sHudLayout > 2 ? 0 : sHudLayout;
+    sHudLayout = sHudLayout == 2 ? 2 : 0; /* BT4: original health-bar mask width. */
     gPortVoicePercent = Port_Setting("voices", gPortSePercent); /* (one slider before 0.1.30: what it was set to) */
     gPortStagePercent = Port_Setting("stage_sounds", gPortSePercent);
     TexPack_Init();
@@ -2091,6 +2228,7 @@ int GsGpu_Init(void) {
  * would jump far on screen (a camera cut, a teleport) is not blended, and when most are like that no in-between
  * picture is shown at all. */
 int gsInterp = -1;
+extern int Port_TagBattleRenderActive(void);
 static uint32_t sInterpBlkView[MAX_VU_UNIFORMS], sInterpPrevBlkView[MAX_VU_UNIFORMS]; /* the view each block is drawn in (a number made of its draws' scissor rectangle) */
 static float sInterpPrevRep[MAX_VU_UNIFORMS][3];
 static uint8_t sInterpFollow[MAX_VU_UNIFORMS]; /* the block is scenery that goes with the camera (the far backdrop) */
@@ -4372,6 +4510,7 @@ static void interp_show(int step) {
    the pictures that fall before the blank) and after (those at it).
    all = 1: the game is back with a new tick: what is left is dropped, except the tick's real picture. */
 void GsGpu_InterpPump(int ahead_ms, int all) {
+    if(Port_TagBattleRenderActive()){sInterpNext=0;sInterpPrevCount=sInterpPrevPrimCount=0;return;}
     if (sInterpNext == 0 || sBackend == NULL) {
         return;
     }
@@ -4474,6 +4613,13 @@ static void skip_decide(void) {
 }
 
 void GsGpu_FrameEnd(void) {
+    if(Port_TagBattleRenderActive()){
+        static int reported;
+        sInterpNext=0;sInterpPrevCount=sInterpPrevPrimCount=0;
+        if(!reported&&gsInterp>0&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RENDER_AUDIT")){
+            reported=1;fprintf(stderr,"tag render audit: native-frames=1 interpolation-requested=%d interpolation-history=0\n",gsInterp);
+        }
+    }
     sInGlowChain = 0; /* (a chain is always within one frame) */
     if (gPortResim) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
         return;
@@ -4527,11 +4673,11 @@ void GsGpu_FrameEnd(void) {
             sInterpSteps = (interp_steps() < sInterpCap ? interp_steps() : sInterpCap) * (int)blanks / 2;
             sInterpTickNs = (uint64_t)blanks * Port_BlankNs();
         }
-        if (gsInterp > 0) {
+        if (gsInterp > 0 && !Port_TagBattleRenderActive()) {
             interp_signatures(sInterpSig);
             sInterpPrimCount = interp_prims(sInterpPrims);
         }
-        if (gsInterp > 0 && sInterpSteps > 1 && interp_build(getenv("BT3_INTERP_T") != NULL ? (float)atof(getenv("BT3_INTERP_T")) : 1.0f / (float)sInterpSteps, 1)) {
+        if (gsInterp > 0 && !Port_TagBattleRenderActive() && sInterpSteps > 1 && interp_build(getenv("BT3_INTERP_T") != NULL ? (float)atof(getenv("BT3_INTERP_T")) : 1.0f / (float)sInterpSteps, 1)) {
             uint64_t before;
 
             sInterpSaved.verts = gsVertCount;
@@ -4567,7 +4713,7 @@ void GsGpu_FrameEnd(void) {
             }
         } else {
             uint64_t t1;
-            if (gsInterp > 0) {
+            if (gsInterp > 0 && !Port_TagBattleRenderActive()) {
                 interp_remember();
                 gInterpSkipped++;
             }

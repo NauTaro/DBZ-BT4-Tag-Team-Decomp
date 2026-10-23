@@ -120,7 +120,7 @@ static void MsgWin_PortDrawClip(void *draw, f32 *prop) {
 
 /* As MsgWin_Draw, with `str` (16-bit, 0xFEFF first; NULL: no line). A changed line is another buffer: the screen
    reader tells lines apart by where they are. */
-void MsgWin_PortDrawString(u16 *str) {
+static void MsgWin_PortDrawStringEx(u16 *str,s32 hdText) {
     FlashRef ref;
     Flash *flash;
 
@@ -130,13 +130,17 @@ void MsgWin_PortDrawString(u16 *str) {
     Flash_FindLabel(flash, NULL, "mc_message_text", &ref);
     if (str != NULL) {
         TextBox_AttachString(flash, &ref, 0, 0, str, &gMsgWin->box);
-        Flash_ClipSetCallbackC(flash, &ref, MsgWin_PortDrawClip, &((TextBoxFull *)&gMsgWin->box)->draw);
+        Flash_ClipSetCallbackC(flash, &ref, hdText?NULL:MsgWin_PortDrawClip, hdText?NULL:&((TextBoxFull *)&gMsgWin->box)->draw);
     } else {
         Flash_ClipSetCallbackC(flash, &ref, NULL, NULL);
     }
     Flash_Draw(flash);
     Font_FlushAll();
 }
+void MsgWin_PortDrawString(u16 *str){MsgWin_PortDrawStringEx(str,0);}
+/* Retain the text record read by accessibility while the online page draws
+ * a proportional TrueType caption instead of the legacy glyph sheet. */
+void MsgWin_PortDrawStringHd(u16 *str){MsgWin_PortDrawStringEx(str,1);}
 
 /* How wide a line may be, in the font's pixels: from where the line starts up to `right` (the screen's 512). */
 s32 MsgWin_PortLineRoom(s32 right) {

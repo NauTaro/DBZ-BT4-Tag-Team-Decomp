@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "battle/view_a.h"
 #include "battle/orbit_cam.h"
 #include "sys/common.h"
@@ -84,8 +85,32 @@ ChrView *gChrView = NULL;
 
 #define BTL_OBJ_FLAGS(obj) (*(u32 *)((obj) + 0xA40))
 
+static s32 Bt4_Costumes(s32 chara) {
+    ChrViewInfo *info = ChrView_GetCharaInfo(chara);
+    return info != NULL ? *(u16 *)((u8 *)info + 0x28) : 0;
+}
+s32 Bt4_ModelFile(s32 chara, s32 costume, s32 damaged) {
+    s32 i, file = 0x1612;
+    for (i = 0; i < chara; i++) file += 2 * Bt4_Costumes(i);
+    return file + costume + (damaged ? Bt4_Costumes(chara) : 0);
+}
+
+s32 Bt4_CharaFromModelFile(s32 id) {
+    s32 c, base = 0x1612;
+    for (c = 0; c < 250; c++) {
+        s32 end = base + 2 * Bt4_Costumes(c);
+        if (id >= base && id < end) return c;
+        base = end;
+    }
+    return -1;
+}
 /* File id of a character's model: costume n, or its damaged version. */
 s32 ChrView_GetModelFile(s32 chara, s32 costume, s32 damaged) {
+#ifdef PORT
+    if (gPortVariant != 0) {
+        return Bt4_ModelFile(chara, costume, damaged != 0);
+    }
+#endif
     if (damaged != 0) {
         return chara * 10 + costume + (CHRVIEW_FILE_FIRST + 4);
     }

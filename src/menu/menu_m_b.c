@@ -150,7 +150,7 @@ void UbTeamSel_SetTeamTex(void) {
     }
 }
 
-/* One step of the background loader of the portrait (file 0x2F9 + character). */
+/* One step of the background loader of the portrait (file 0x71C + character). */
 void UbTeamSel_UpdateFaceLoad(void) {
     MTexRes *res;
 

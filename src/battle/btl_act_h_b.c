@@ -1,5 +1,9 @@
 #include "common.h"
+extern s32 TagBattle_IsActorLoading(s32 actor);
+extern void Bt4_SpendTransformKi(void *chr, s32 amount);
+extern s32 Bt4_HasRecoveryVariant(void *chr);
 #include "battle/btl_act_h.h"
+extern void Bt4_ClearThrowRecoveryFlag(void *chr, s32 flag) __asm__("BtlChar_ClearFlag");
 
 /*
  * Fighter action handlers, second file: 0x1FC598..0x203168 (see btl_act_h.c for the overview and for how a
@@ -94,6 +98,7 @@ s32 BtlAct_Throw(BtlActHChr *chr, s32 phase) {
  */
 s32 BtlAct_Thrown(BtlActHChr *chr, s32 phase) {
     if (phase == 0) {
+        Bt4_ClearThrowRecoveryFlag(chr, 0x1D); /* BT4: allow recovery after the throw. */
         BtlAnim_Play(chr, BtlAct_GetCurrent(chr) == 0xBA ? 0x189 : 0x97, chr->react.unk10 != 0 ? 0.0f : 0.3f);
         BtlChar_SetHeldFlag(chr, 0xE);
         BtlActThrow_TurnByRootYaw(chr);
@@ -685,7 +690,7 @@ s32 BtlAct_TransformA(BtlActHChr *chr, s32 phase) {
             BtlActChange_PushBack(chr);
             if (BtlChange_IsLoadedFor(chr->player)) {
                 BtlAnim_Request(chr, 0x179, 0.0f);
-                BtlMember_SubBlast(chr, chr->form.cost);
+                Bt4_SpendTransformKi(chr, chr->form.cost);
                 BtlChange_SetReady(chr->player);
             }
             break;
@@ -769,7 +774,7 @@ s32 BtlAct_TransformB(BtlActHChr *chr, s32 phase) {
             BtlAnim_AdvanceLoop(chr, 0);
             if (BtlChange_IsLoadedFor(chr->player)) {
                 BtlAnim_Request(chr, 0x191, 0.0f);
-                BtlMember_SubBlast(chr, chr->form.cost);
+                /* Removed by BT4 at 0x1FE4CC. */
                 BtlChange_SetReady(chr->player);
             }
             break;
@@ -812,7 +817,7 @@ s32 BtlAct_TransformB(BtlActHChr *chr, s32 phase) {
  */
 s32 BtlAct_TransformC(BtlActHChr *chr, s32 phase) {
     if (phase == 0) {
-        BtlAnim_Play(chr, 0x177, 0.0f);
+        BtlAnim_Play(chr, 0x1A4, 0.0f);
         BtlChar_GetPos(chr)->unk98 = 0.0f;
         BtlChar_GetPos(chr)->unk9C = 0.0f;
         BtlMove_SetHeading(chr, BtlChar_GetPos(chr)->rot.y, 0.0f);
@@ -830,11 +835,11 @@ s32 BtlAct_TransformC(BtlActHChr *chr, s32 phase) {
                                    chr->form.animChara, chr->form.unk1C, chr->form.voiceChara);
         }
         switch (BtlAnim_GetId(chr)) {
-        case 0x177:
+        case 0x1A4:
             if (BtlAnim_Advance(chr, 0)) {
                 if (BtlChange_IsLoadedFor(chr->player)) {
                     BtlAnim_Request(chr, 0x179, 0.0f);
-                    BtlMember_SubBlast(chr, chr->form.cost);
+                    Bt4_SpendTransformKi(chr, chr->form.cost);
                     BtlChange_SetReady(chr->player);
                 }
             }
@@ -945,7 +950,7 @@ s32 BtlAct_TransformD(BtlActHChr *chr, s32 phase) {
             }
             if (BtlAnim_Advance(chr, 0) && BtlChange_IsLoadedFor(chr->player)) {
                 BtlAnim_Request(chr, 0x179, 0.0f);
-                BtlMember_SubBlast(chr, chr->form.cost);
+                Bt4_SpendTransformKi(chr, chr->form.cost);
                 BtlChange_SetReady(chr->player);
             }
             BtlPartner_StepAnim(chr);
@@ -1046,7 +1051,7 @@ s32 BtlAct_TransformE(BtlActHChr *chr, s32 phase) {
             waiting = 1;
             if (BtlChange_IsLoadedFor(chr->player)) {
                 BtlAnim_Request(chr, 0x179, 0.0f);
-                BtlMember_SubBlast(chr, chr->form.cost);
+                Bt4_SpendTransformKi(chr, chr->form.cost);
                 BtlChange_SetReady(chr->player);
             }
             break;
@@ -1914,7 +1919,7 @@ void BtlSkill_Apply(BtlActIChr *chr, s32 slot) {
 
 /* Per-frame countdown of the skill timers (not while time is stopped). */
 void BtlSkill_UpdateTimers(BtlActIChr *chr) {
-    if (BtlChars_IsTimeStopped()) {
+    if (TagBattle_IsActorLoading(chr->player)) {
         return;
     }
     if (--chr->skillTimerE < 0) {

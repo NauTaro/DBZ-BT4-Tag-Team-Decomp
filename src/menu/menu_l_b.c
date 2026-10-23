@@ -55,7 +55,7 @@ void SoloSel_SetRowTex(void) {
     }
 }
 
-/* One step of the background loader of the large picture (file 0x2F9 + character). */
+/* One step of the background loader of the large picture (file 0x71C + character). */
 void SoloSel_UpdateImage(void) {
     MTexRes *res;
 
@@ -71,7 +71,7 @@ void SoloSel_UpdateImage(void) {
         break;
     case SOLOSEL_LOAD_REQUEST:
         File_CancelRequests();
-        File_Request(gSoloSel->sel->image + 0x2F9, gSoloSel->imageFile, 0x16800);
+        File_Request(gSoloSel->sel->image + 0x71C, gSoloSel->imageFile, 0x16800);
         gSoloSel->loadState = SOLOSEL_LOAD_READ;
         break;
     case SOLOSEL_LOAD_READ:
@@ -250,7 +250,7 @@ void SoloSel_Init(s32 section) {
         gSoloSel->blink[i] = Rand_Range(0x20);
     }
     gSoloSel->voiceLine = -1;
-    File_LoadSync(gSoloSel->sel->image + 0x2F9, gSoloSel->imageFile, 0x16800);
+    File_LoadSync(gSoloSel->sel->image + 0x71C, gSoloSel->imageFile, 0x16800);
     Sprite_Unpack(gSoloSel->imageFile, gSoloSel->imageRes, NULL);
     res = gSoloSel->imageRes;
     Res_RelocateOffsets(&res, res, res);

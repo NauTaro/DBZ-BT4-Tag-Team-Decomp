@@ -1301,6 +1301,19 @@ static void vk_frame_end(void) {
     }
     sEndT[2] = gpu_now();
     acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh);
+    /* Hidden visual tests have no swapchain picture. Compose the same UI into
+     * a private GPU target, without showing or focusing an operating-system window. */
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_UI_SHOT_PREFIX")&&!swap){
+        static SDL_GPUTexture *testPresent;
+        int tw,th;SDL_GetWindowSizeInPixels(sWindow,&tw,&th);sw=tw;sh=th;
+        if(!testPresent){SDL_GPUTextureCreateInfo ci;SDL_zero(ci);
+            ci.type=SDL_GPU_TEXTURETYPE_2D;ci.format=SDL_GetGPUSwapchainTextureFormat(sDev,sWindow);
+            ci.usage=SDL_GPU_TEXTUREUSAGE_COLOR_TARGET|SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            ci.width=sw;ci.height=sh;ci.layer_count_or_depth=1;ci.num_levels=1;
+            testPresent=SDL_CreateGPUTexture(sDev,&ci);
+        }
+        swap=testPresent;acquired=swap!=NULL;
+    }
     sEndT[3] = gpu_now();
     if (acquired && swap != NULL && best >= 0 && gsTargets[best].cleared) {
         SDL_GPUBlitInfo bl;
@@ -1338,11 +1351,19 @@ static void vk_frame_end(void) {
                 the settings window without a person or a screen capture (drawn a second time into a texture) */
             static int frame = -1;
             static const char *file;
+            static char tagShotFile[2048];
             if (frame < 0) {
                 frame = 0;
                 if (getenv("BT3_UI_SHOT") != NULL && (file = strchr(getenv("BT3_UI_SHOT"), ':')) != NULL) {
                     frame = atoi(getenv("BT3_UI_SHOT"));
                     file++;
+                }
+            }
+            {extern int gPortTagUiCaptureRequest;
+                const char *prefix=getenv("BT4_TAG_UI_SHOT_PREFIX");
+                if(getenv("BT4_RENDER_TEST")&&prefix&&gPortTagUiCaptureRequest){
+                    SDL_snprintf(tagShotFile,sizeof(tagShotFile),"%s-%02d.ppm",prefix,gPortTagUiCaptureRequest);
+                    file=tagShotFile;frame=1;gPortTagUiCaptureRequest=0;
                 }
             }
             if (frame > 0 && gGsFrame >= (unsigned)frame) {
@@ -1450,8 +1471,29 @@ static void vk_frame_end(void) {
                 every = 0;
             }
         }
+        {extern volatile int gPortTagCaptureRequest;
+            if(gPortTagCaptureRequest&&getenv("BT4_RENDER_TEST")){gPortTagCaptureRequest=0;every=1;}}
+        int video=0;
+        unsigned videoCopies=0;
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_PIPE")){
+            extern unsigned gPortVBlanks;static unsigned nextBlank;
+            if(getenv("BT4_TAG_VIDEO_REALTIME")){
+                static Uint64 origin;static unsigned made;Uint64 ms=SDL_GetTicks();
+                if(!origin){origin=ms;fprintf(stderr,"tag video realtime: first-ms=%llu\n",(unsigned long long)ms);}
+                unsigned due=(unsigned)((ms-origin)*30/1000)+1;
+                video=due>made;if(video){videoCopies=due-made;made=due;}
+                /* Timestamped consumers repeat the last frame on their own.
+                 * Never make the simulation synchronously flush a growing
+                 * backlog after shader compilation or a slow encoder. */
+                if(getenv("BT4_TAG_VIDEO_TIMESTAMPED"))videoCopies=1;
+            }else{
+                if(!nextBlank)nextBlank=gPortVBlanks?gPortVBlanks:1;
+                video=gPortVBlanks>=nextBlank;
+                if(video){videoCopies=(gPortVBlanks-nextBlank)/2+1;nextBlank+=videoCopies*2;}
+            }
+        }
         /* BT3_SHOT_FROM / BT3_SHOT_TO limit the frames */
-        if (every > 0 && gGsFrame % (unsigned)every == 0 && best >= 0 && gsTargets[best].cleared &&
+        if ((video || (every > 0 && gGsFrame % (unsigned)every == 0)) && best >= 0 && gsTargets[best].cleared &&
             (getenv("BT3_SHOT_FROM") == NULL || (int)gGsFrame >= atoi(getenv("BT3_SHOT_FROM"))) &&
             (getenv("BT3_SHOT_TO") == NULL || (int)gGsFrame <= atoi(getenv("BT3_SHOT_TO")))) {
             SDL_GPUTransferBufferCreateInfo ti;
@@ -1462,6 +1504,9 @@ static void vk_frame_end(void) {
             SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(c2);
             SDL_GPUFence *fence;
             Uint32 w = 512 * SCALE, h = 448 * SCALE, x, y;
+            int videoUi=video&&getenv("BT4_TAG_VIDEO_UI")&&swap;
+            int videoBgr=videoUi&&(SDL_GetGPUSwapchainTextureFormat(sDev,sWindow)==SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM||SDL_GetGPUSwapchainTextureFormat(sDev,sWindow)==SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB);
+            if(videoUi){w=sw;h=sh;}
             uint8_t *px;
             char name[64];
             FILE *fp;
@@ -1472,6 +1517,7 @@ static void vk_frame_end(void) {
             tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
             SDL_zero(src);
             src.texture = getenv("BT3_SHOT_AUX") != NULL ? sTgAux[best] : sTgCol[best];
+            if(videoUi)src.texture=swap;
             src.w = w;
             src.h = h;
             src.d = 1;
@@ -1484,7 +1530,31 @@ static void vk_frame_end(void) {
             SDL_ReleaseGPUFence(sDev, fence);
             px = SDL_MapGPUTransferBuffer(sDev, tb, false);
             snprintf(name, sizeof(name), "port/build/shots/gpu_%05u.ppm", gGsFrame);
-            fp = fopen(name, "wb");
+            if(video&&px){
+                static FILE *videoOut;static uint8_t frame[1920*1080*3],previous[1920*1080*3];
+                static unsigned written,firstBlank;unsigned vx,vy,copy;
+                unsigned vw=getenv("BT4_TAG_VIDEO_720")?1280:1920,vh=getenv("BT4_TAG_VIDEO_720")?720:1080,bytes=vw*vh*3;
+                if(!videoOut)videoOut=fopen(getenv("BT4_TAG_VIDEO_PIPE"),"wb");
+                if(videoOut){
+                    if(w==vw&&h==vh){
+                        for(vx=0;vx<vw*vh;++vx){frame[vx*3]=px[vx*4+(videoBgr?2:0)];frame[vx*3+1]=px[vx*4+1];frame[vx*3+2]=px[vx*4+(videoBgr?0:2)];}
+                    }else for(vy=0;vy<vh;++vy)for(vx=0;vx<vw;++vx){unsigned at=(vy*vw+vx)*3,srcAt=((vy*h/vh)*w+vx*w/vw)*4;
+                        frame[at]=px[srcAt+(videoBgr?2:0)];frame[at+1]=px[srcAt+1];frame[at+2]=px[srcAt+(videoBgr?0:2)];}
+                    extern unsigned gPortVBlanks;
+                    if(!written){firstBlank=gPortVBlanks;memcpy(previous,frame,bytes);fprintf(stderr,"tag video clock: first-blank=%u rate=30 normal-speed=1\n",firstBlank);}
+                    /* The renderer can present once across several 60 Hz ticks.
+                     * Keep the last displayed picture for those ticks instead
+                     * of shortening time in the encoded 30 fps recording. */
+                    for(copy=0;copy<videoCopies;++copy){
+                        const uint8_t *pixels=copy+1<videoCopies?previous:frame;
+                        if(fwrite(pixels,1,bytes,videoOut)!=bytes){fclose(videoOut);videoOut=NULL;break;}
+                        ++written;
+                    }
+                    memcpy(previous,frame,bytes);
+                    if(videoOut){fflush(videoOut);if(written%300<videoCopies)fprintf(stderr,"tag video clock: blank=%u frames=%u first=%u\n",gPortVBlanks,written,firstBlank);}
+                }
+            }
+            fp = video?NULL:fopen(name, "wb");
             if (fp != NULL && px != NULL) {
                 fprintf(fp, "P6\n%u %u\n255\n", w, h);
                 for (y = 0; y < h; y++) {

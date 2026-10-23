@@ -1,9 +1,20 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+#include <stdlib.h>
+#include <stdio.h>
 #include "battle/battle.h"
+#include "battle/tag_team_native.h"
 #include "sys/adx.h"
 #include "sys/dma.h"
 #include "sys/job.h"
 #include "sys/pad.h"
+#include "sys/game_pad.h"
+#include "menu/port_screen.h"
+#include "menu/tbo_art.h"
+
+#include "tag_team_hud.inc"
+#include "tag_team_result.inc"
+#include "tag_team_online.inc"
 
 /*
  * Battle scene top level, 0x12B570..0x12BD58. The frame order, the pause/restart/exit protocol and the
@@ -135,6 +146,10 @@ extern void BtlScript_Update(void);
 /* Puts every battle subsystem back to the start of a match (first start and rematch) and fades in over 1 s. */
 s32 Battle_Restart(void) {
     Snd_StopBankAndResume(0x3C);
+    TagBattle_ResetPairs();
+    if(TagBattle_Network())TagOnline_Reset();
+    sTagResultActive=0;
+    if(TagBattle_Active()){extern void BattleReplay_SetActive(s32 active);BattleReplay_SetActive(0);}
     Battle_ResetWork();
     BtlScene_Reset(0);
     StgFx_Reset();
@@ -148,10 +163,11 @@ s32 Battle_Restart(void) {
 
 /* Loads the battle data, creates every battle subsystem, then starts the first match. */
 s32 Battle_Init(void) {
+    {extern void Port_TagBattleRenderSet(s32);Port_TagBattleRenderSet(TagBattle_Active());}
     Battle_Load();
     StgFx_Init();
     StgModel_InitStage();
-    BtlChar_AllocAll(2);
+    BtlChar_AllocAll(TagBattle_Count());
     BtlAiMgr_Init();
     BtlCam_Init();
     StgNav_Init();
@@ -164,6 +180,7 @@ s32 Battle_Init(void) {
 
 /* Stores the result and destroys every battle subsystem. */
 s32 Battle_Term(void) {
+    {extern void Port_TagBattleRenderSet(s32);Port_TagBattleRenderSet(0);}
     BattleResult_Finish();
     Adx_StopAll();
     BtlChar_FreeAll();
@@ -186,23 +203,32 @@ s32 Battle_Term(void) {
 s32 Battle_Update(void) {
     s32 i;
     s32 singleView;
+    extern void Heap_TagCheck(s32 phase);
+    Heap_TagCheck(0);
 
     BtlChars_UpdateInput();
+    Heap_TagCheck(10);
     BtlChars_UpdateMain();
+    Heap_TagCheck(1);
     BtlScene_Update();
+    Heap_TagCheck(2);
     EftDet_Update();
+    Heap_TagCheck(3);
     BtlScene_PostUpdate();
     BtlChars_PostScene();
+    Heap_TagCheck(4);
     BtlScene_CheckStageChange();
     BtlLoad_PollCharaRequest();
     BtlLoad_PollObjectRequest();
     BtlStage_Update();
+    Heap_TagCheck(5);
     BtlCam_SelectView(0);
     BtlCam_UpdateView(0);
     BtlCam_SelectView(1);
     BtlCam_UpdateView(1);
     singleView = BtlCam_UpdateOverride();
     BtlChars_EndFrame();
+    Heap_TagCheck(6);
     BtlObj_UpdateAll();
     if (Battle_IsSplitScreen() && !singleView) {
         for (i = 0; i < 2; i++) {
@@ -223,6 +249,7 @@ s32 Battle_Update(void) {
 s32 Battle_Draw(void) {
     s32 *prof = gBattleProf;
     s32 view = gBtlCamView;
+    { extern void TagBattle_HudCaptureView(void *view); TagBattle_HudCaptureView((void *)view); }
 
     Dbg_ProfMark(prof);
     Gfx_MarkPass(1);
@@ -327,7 +354,7 @@ s32 Battle_DrawSplit(void) {
 /* Runs battle frames until the sequence reports the end; restarts the match when BATTLE_FLAG_RESTART is raised. */
 void Battle_Loop(void) {
     s32 draw;
-    s32 done;
+    s32 done=0;
 
     do {
         if (Battle_GetWork()->flags & BATTLE_FLAG_RESTART) {
@@ -335,13 +362,36 @@ void Battle_Loop(void) {
             Battle_GetWork()->flags &= ~BATTLE_FLAG_RESTART;
         }
         Job_Run();
+        if(TagBattle_Network()){
+            s32 ready,dir;Pad_Update();
+            dir=(gPad[0].gamePressed&(PADG_R1|PADG_RIGHT))?1:(gPad[0].gamePressed&(PADG_L1|PADG_LEFT))?-1:0;
+            TagBattle_UpdateSpectator(dir);ready=TagOnline_Tick();
+            if(ready<0){fprintf(stderr,"tag online disconnected: %s\n",Port_TagError());break;}
+            if(!ready){Snd_Update();TagOnline_WaitDraw();continue;}
+        }
         Gfx_BeginFrame();
         if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) {
             Gsc_Update();
             BtlScript_Update();
         }
         BtlChars_CheckStart();
-        Pad_Update();
+        if(!TagBattle_Network())Pad_Update();
+        if(TagBattle_Active()){
+            static s32 spectatorTestFrames;
+            if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_SPECTATOR_TEST") && TagBattle_Spectating()){
+                ++spectatorTestFrames;
+                if(spectatorTestFrames==60)gPad[0].gamePressed|=PADG_R1;
+                if(spectatorTestFrames==120)gPad[0].gamePressed|=PADG_L1;
+            }else spectatorTestFrames=0;
+            s32 dir=(gPad[0].gamePressed&(PADG_R1|PADG_RIGHT))?1:(gPad[0].gamePressed&(PADG_L1|PADG_LEFT))?-1:0;
+            TagBattle_UpdatePairs();if(!TagBattle_Network())TagBattle_UpdateSpectator(dir);
+        }
+        if(TagBattle_Active()){
+            s32 actor;
+            extern s32 BtlCharApi_GetHp(s32 actor);
+            for(actor=0;actor<TagBattle_Count();++actor)
+                if(BtlCharApi_GetHp(TagBattle_Target(actor))<=0)TagBattle_CycleTarget(actor);
+        }
         Snd_Update();
         Snd_SendFighters();
         BtlGame_PreUpdate();
@@ -350,11 +400,14 @@ void Battle_Loop(void) {
         BtlChars_SampleInput();
         draw = Battle_Update();
         done = BtlGame_Update();
+        if(TagBattle_Network())TagOnline_Trace();
         if (Battle_IsSplitScreen() && draw) {
             Battle_DrawSplit();
         } else {
             Battle_Draw();
         }
+        TagBattle_ResultDraw();
+        TagOnline_MenuDraw();
         Gfx_EndFrame(2);
         Dma_Flush();
     } while (!done);
@@ -362,10 +415,14 @@ void Battle_Loop(void) {
 
 /* Runs one whole battle scene; called by Game_Main after the menu overlay returns. */
 s32 Battle_Main(void) {
+    s32 tagLocal;
     Battle_GetWork()->running = 1;
+    TagOnline_Reset();
     Battle_Init();
     Battle_Loop();
+    tagLocal=TagBattle_Local();
     Battle_Term();
+    if(tagLocal){printf("tag local: finished and unloaded\n");fflush(NULL);}
     Battle_GetWork()->running = 0;
     return 1;
 }

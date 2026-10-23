@@ -36,3 +36,18 @@ port/build_release/
 /stages/
 /songs/
 /textures/
+
+# Mod review outputs and local credentials
+!/tools/
+!/tools/review/
+!/tools/review/**
+publication/
+*.zip
+.env
+.env.*
+.wrangler/
+net_session/
+online_name.txt
+*.dmp
+*.key
+*.pem

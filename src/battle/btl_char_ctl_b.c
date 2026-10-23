@@ -1,3 +1,4 @@
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/btl_char_ctl.h"
 
@@ -183,4 +184,11 @@ void BtlChange_SetDone(s32 player) {
     if (q->cur != NULL && q->cur->player == player) {
         q->state = BTL_CHANGE_DONE;
     }
+}
+
+/* TAG loading blocks only the owner waiting for its streamed model. */
+s32 TagBattle_IsActorLoading(s32 actor) {
+    extern s32 TagBattle_Count(void);
+    BtlChangeQueue *q=&gBtlChars->change;
+    return q->timeStop && (!TagBattle_Active() || (q->cur && q->cur->player==actor));
 }

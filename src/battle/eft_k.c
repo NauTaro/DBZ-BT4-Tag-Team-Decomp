@@ -134,6 +134,7 @@ extern void EftHit_SetShapeSpheres(EftKHitRec *rec, void *a, void *b);
 extern void EftHit_SetShapeBoxes(EftKHitRec *rec, void *a, void *b);
 extern void EftCam_Start(EftKCamArg *arg);
 extern void EftCam_Stop(void);
+extern void EftCam_StopFor(s32);
 extern f32 EftMath_WrapAngle(f32 angle);
 extern void EftAim_GetDir(Vec4 *dir, Vec4 *from, s32 objId);
 extern void EftAim_GetDirKeep(EftKSrc *src, Vec4 *dir, Vec4 *from, s32 objId);
@@ -586,7 +587,7 @@ void EftShotTech_Update(EftKTask *task) {
     if (w->flags & 1) {
         if (w->flags & 0x20) {
             if (!(w->flags & 0x40)) {
-                EftCam_Stop();
+                EftCam_StopFor(src->objId);
                 w->flags |= 0x40;
             }
         }
@@ -835,10 +836,12 @@ void EftTechEvtTask_UpdateNormal(EftKTask *task) {
 
     w->frame++;
     if (ev & 0x200) {
+        if(getenv("BT4_VFX_TRACE"))printf("tag shot: START actor=%d frame=%d\n",src->objId,w->frame);
         e->events |= EFT_TECH_EVT_START;
         w->flags |= 2;
     }
     if (ev & 0x400) {
+        if(getenv("BT4_VFX_TRACE"))printf("tag shot: FIRE actor=%d frame=%d\n",src->objId,w->frame);
         e->events |= EFT_TECH_EVT_FIRE;
         if (src->def->kind != 0) {
             w->flags |= 4;
@@ -847,6 +850,7 @@ void EftTechEvtTask_UpdateNormal(EftKTask *task) {
         }
     }
     if (ev & 0x800) {
+        if(getenv("BT4_VFX_TRACE"))printf("tag shot: END actor=%d frame=%d\n",src->objId,w->frame);
         e->events |= EFT_TECH_EVT_END;
         BtlTask_SetDead(task);
         return;
@@ -1989,6 +1993,7 @@ typedef struct EftSparkTbl {
 
 #define EftCam_Start ((void (*)(EftRushShotMsg *msg))EftCam_Start)
 extern void EftCam_Stop(void);
+extern void EftCam_StopFor(s32);
 extern f32 EftMath_WrapAngle(f32 angle);
 #define EftAim_GetDir ((void (*)(void *dst, void *src, s32 objId))EftAim_GetDir)
 #define EftAim_GetDirKeep ((void (*)(EftTechArg *arg, Vec4 *dir, Vec4 *pos, s32 objId))EftAim_GetDirKeep)
@@ -2405,7 +2410,7 @@ void EftRushShot_Update(EftTask *task) {
         }
         if (w->flags & EFT_RUSHSHOT_SENT) {
             if (!(w->flags & EFT_RUSHSHOT_SENT2)) {
-                EftCam_Stop();
+                EftCam_StopFor(arg->objId);
                 w->flags |= EFT_RUSHSHOT_SENT2;
             }
         }

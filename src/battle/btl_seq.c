@@ -1,9 +1,13 @@
+extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/btl_seq.h"
 #include "battle/battle_setup.h"
 #include "battle/battle_work.h"
 #include "sys/heap.h"
 #include "sys/adx.h"
+extern s32 TagBattle_Count(void);
+extern s32 BtlCharApi_GetHp(s32 actor);
 
 /* ---- Skill-list text of the pause menu, 0x215420-0x216AC0 ----
  * The list is a UTF-16 script. Every line starts with two characters whose second one is a hex digit (a mask
@@ -1247,6 +1251,11 @@ s32 BtlSeq_CheckBattleEnd(void) {
     BattleResult *result = Battle_GetResult();
     s32 timeUp;
 
+    if(TagBattle_Active() && (result->winner&3)){
+        s32 a,alive[2]={0,0};
+        for(a=0;a<TagBattle_Count();++a)if(BtlCharApi_GetHp(a)>0)alive[TagBattle_Team(a)]++;
+        if(alive[0] && alive[1]){result->winner=0;result->reason=0;}
+    }
     if (result->winner & 0x1F) {
         return 1;
     }
@@ -1263,6 +1272,20 @@ s32 BtlSeq_CheckBattleEnd(void) {
         return 0;
     }
     timeUp = BtlSeq_TickClocksExt();
+    if(TagBattle_Active()){
+        s32 actor,alive[2]={0,0};
+        result->health[0]=result->health[1]=0;
+        for(actor=0;actor<TagBattle_Count();++actor){s32 hp=BtlCharApi_GetHp(actor);
+            if(hp>0){alive[TagBattle_Team(actor)]++;result->health[TagBattle_Team(actor)]+=hp;}}
+        if(timeUp){result->reason=BTL_REASON_TIME_UP;
+            result->winner=result->health[0]>result->health[1]?BTL_RESULT_WIN_P1:result->health[1]>result->health[0]?BTL_RESULT_WIN_P2:BTL_RESULT_DRAW;return 1;}
+        if(!alive[0]||!alive[1]){
+            result->reason=BTL_REASON_KO;
+            result->winner=alive[0]?BTL_RESULT_WIN_P1:alive[1]?BTL_RESULT_WIN_P2:BTL_RESULT_DRAW;
+            return 1;
+        }
+        return 0;
+    }
     if (Battle_GetMode() == 1) {
         return 0;
     }
@@ -1329,7 +1352,7 @@ s32 BtlSeqFight_PreUpdate(BtlSeqWaitCtx *ctx) {
 
 /* State 3 update: opens / runs the pause menu, then checks for the end of the battle (-> 4, or 6 without a finish scene). */
 s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
-    if (Battle_GetMode() != 8) {
+    if (Battle_GetMode() != 8 && !TagBattle_Network()) {
         if (ctx->poll != NULL && !(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && ctx->poll()) {
             if (Battle_GetMode() == 7) {
                 BattleResult_Set(BTL_RESULT_ABORT, 0);
@@ -1378,7 +1401,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
             Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE_MENU;
         }
 #endif
-        if (Battle_GetMode() == 7) {
+        if (Battle_GetMode() == 7 || TagBattle_Active()) {
             return 6;
         }
         return BattleResult_IsAborted() ? 6 : 4;
@@ -1449,11 +1472,15 @@ s32 BtlSeq_IsModeZero(void) {
 /* State 6 enter: mode 0 with a finished battle opens the result menu (step 0); otherwise starts the 1.2 s fade out (step 1). */
 s32 BtlSeqEnd_Enter(BtlSeqWaitCtx *ctx) {
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
+    if(TagBattle_Active() && !BattleResult_IsAborted()){
+        extern void TagBattle_ResultBegin(void);
+        TagBattle_ResultBegin();ctx->step=2;return 1;
+    }
     if (BattleResult_IsAborted()) {
         Fade_Start(0, 0, 1.0f);
         Ramp_Start(&ctx->timer, 1.2f, 0.0f, 1.0f);
         ctx->step = 1;
-    } else if (BtlSeq_IsModeZero()) {
+    } else if (BtlSeq_IsModeZero() && !TagBattle_Active()) {
         ctx->step = 0;
         BtlSeq_SetResultPad();
     } else {
@@ -1472,6 +1499,12 @@ s32 BtlSeqEnd_PreUpdate(BtlSeqWaitCtx *ctx) {
 /* State 6 update: step 0 runs the result menu until it aborts the battle, step 1 waits for the fade and returns 99. */
 s32 BtlSeqEnd_Update(BtlSeqWaitCtx *ctx) {
     switch (ctx->step) {
+    case 2:
+        {extern s32 TagBattle_ResultUpdate(void);
+        if(TagBattle_ResultUpdate()){
+            Fade_Start(0,0,1.0f);Ramp_Start(&ctx->timer,1.2f,0.0f,1.0f);ctx->step=1;
+        }}
+        break;
     case 0:
         PauseMenu_Update(BtlPause_GetMenuPad(), 1);
         PauseMenu_Draw();

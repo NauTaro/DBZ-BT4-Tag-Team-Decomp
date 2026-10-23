@@ -1,5 +1,9 @@
+extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 TagBattle_CanInteract(s32,s32),BtlChar_IsFrozen(void *);
 #include "battle/btl_char_hit.h"
+extern s32 TagBattle_Count(void);
 
 /* Fighter hit resolution, 0x1C7B30-0x1CA6D0. The frame flow and the structures are in battle/btl_char_hit.h.
  *
@@ -396,6 +400,8 @@ s32 BtlHit_CheckGrab(HitChr *a, HitChr *b) {
         goto end;
     }
     t = BtlSkill_GetFrames(a, dir);
+    {extern s32 TagBattle_ReservePair(s32,s32);
+    if(!TagBattle_ReservePair(a->player,b->player))return 0;}
     b->react.back = 0;
     b->react.unk48 = t;
     b->react.yaw = BtlChar_GetPos(a)->yaw;
@@ -544,7 +550,12 @@ s32 BtlHit_CheckDodge(HitChr *atk, HitChr *def) {
             done = 1;
             free = 1;
             if (flags & 0x100000) {
-                paid = BtlMember_HasKi(def, 20000) != 0;
+                paid = BtlMember_HasKi(def, 5000) != 0;
+                if (!paid) {
+                    BtlChar_SetFlag(def, 0x76);
+                    if (flags & 0x1000000) BtlChar_SetFlag(def, 0x78);
+                    goto bt4_dodge_effects;
+                }
             }
         }
         if (!done) {
@@ -570,7 +581,7 @@ s32 BtlHit_CheckDodge(HitChr *atk, HitChr *def) {
         if (done) {
             if (paid) {
                 BtlChar_SetFlag(def, 0x7C);
-                BtlMember_SpendKi(def, 20000, 0);
+                BtlMember_SpendKi(def, 10000, 0);
             } else if (strike) {
                 BtlChar_SetFlag(def, 0x77);
             } else {
@@ -609,6 +620,7 @@ s32 BtlHit_CheckDodge(HitChr *atk, HitChr *def) {
                     BtlChar_SetFlag(def, 0x78);
                 }
             }
+bt4_dodge_effects:
             if (free && BtlMember_HasAbility(def, 0x21)) {
                 BtlMember_AddBlast(def, 100000);
             }
@@ -824,6 +836,10 @@ s32 BtlHit_CheckClash(void) {
         HitChr *a = BtlChar_Get(i);
         HitChr *b = BtlChar_Get(BtlOpp_GetPlayer(a));
 
+        /* A frozen dash retains its contact flags. Do not renew its impact
+           stop on every unrelated TAG collision pass. */
+        if(TagBattle_Active() && (BtlChar_IsFrozen(a)||BtlChar_IsFrozen(b)||!TagBattle_CanInteract(a->player,b->player)))continue;
+
         if (BtlChar_TestFlag(a, 3)) {
             s32 same = 0;
             s32 mixed;
@@ -842,7 +858,7 @@ s32 BtlHit_CheckClash(void) {
                 mixed = 1;
             }
             if ((same || mixed) && (BtlMove_IsBlockedByOpponent(a) || BtlMove_IsBlockedByOpponent(b))) {
-                if (same) {
+                if (same && !(BtlChar_TestFlag(a, 6) && BtlChar_TestFlag(b, 6))) {
                     BtlChar_SetFlag(a, 0x61);
                     BtlChar_SetFlag(b, 0x61);
                     a->stopLen = 6;
@@ -888,6 +904,7 @@ s32 BtlHit_CheckRush(void) {
         s32 tech;
         u32 tf;
         s32 flag;
+        if(TagBattle_Active() && (BtlChar_IsFrozen(a)||BtlChar_IsFrozen(b)||!TagBattle_CanInteract(a->player,b->player)))continue;
 
         if (!BtlChar_TestFlag(a, 0x49)) {
             continue;
@@ -1011,10 +1028,13 @@ void BtlHit_CheckProximityAll(void) {
 
     for (i = 0; i < BtlChar_GetCount(); i++) {
         for (j = 0; j < BtlChar_GetCount(); j++) {
-            if (i != j) {
+            if (i != j && (!TagBattle_Active() || (TagBattle_Team(i)!=TagBattle_Team(j)))) {
+                extern s32 TagBattle_CanInteract(s32,s32);
+                if(!TagBattle_CanInteract(i,j))continue;
                 HitChr *a = BtlChar_Get(i);
                 HitChr *b = BtlChar_Get(j);
 
+                if(TagBattle_Active() && (BtlChar_IsFrozen(a)||BtlChar_IsFrozen(b)))continue;
                 BtlHit_CheckNear(a, b);
                 BtlHit_CheckGrab(a, b);
                 BtlHit_CheckTouch(a, b);
@@ -1031,6 +1051,7 @@ void BtlHit_TestHit(HitChr *chr) {
     HitObj *obj = BtlChar_GetObj(chr);
     s32 full;
 
+    if(TagBattle_Active() && (BtlChar_IsFrozen(chr) || !TagBattle_CanInteract(chr->player,BtlOpp_GetPlayer(chr))))return;
     if (BtlChar_TestFlag(chr, 0x60)) {
         return;
     }
@@ -1052,7 +1073,10 @@ void BtlHit_TestHit(HitChr *chr) {
             BtlChar_SetHeldFlag(chr, 0x60);
             if (BtlHit_IsVoid(chr, opp) || BtlHit_CheckDodge(chr, opp) || BtlHit_CheckArmor(chr, opp) ||
                 BtlHit_CheckRepel(chr, opp)) {
-                BtlChar_SetHeldFlag(chr, 0x5C);
+                /* BT4's low-ki vanish exit does not stun the attacking fighter. */
+                if (!BtlChar_TestFlag(opp, 0x76)) {
+                    BtlChar_SetHeldFlag(chr, 0x5C);
+                }
             } else if (BtlHit_CheckGuard(chr, opp, &full)) {
                 if (full) {
                     BtlMember_Damage(opp, BtlAtk_GetGuardDamage(chr), 0xC);
@@ -1250,7 +1274,7 @@ void BtlHit_ApplyHit(HitChr *atk) {
     } else {
         def->react.unk38 = 3;
         if (drain) {
-            BtlMember_SpendKi(def, 2000, 0);
+            if (!BtlChar_TestFlag(def, 0xBE)) BtlMember_SpendKi(def, 2000, 0);
         }
     }
     if (BtlAtk_GetHitFxKind(atk)) {
@@ -1360,7 +1384,7 @@ void BtlHit_ApplyHit(HitChr *atk) {
         case 0x76:
         case 0x77:
         case 0x78:
-            dmg += dmg * BtlUtil_Clamp(atk->unkD88 + def->unkD88 - 1, 0, 5) / 5;
+            dmg += dmg * BtlUtil_Clamp(atk->unkD88 + def->unkD88 - 1, 0, 16) / 2;
             break;
         default:
             if (def->react.back) {

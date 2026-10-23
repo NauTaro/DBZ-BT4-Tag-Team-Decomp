@@ -1,9 +1,12 @@
+#include <stdio.h>
+extern int Port_TagTeams(int,int),Port_TagSlot(int,int,int),Port_TagSlots(void),Port_TagTeam(int),Port_TagTeamIndex(int),Port_TagTeamCount(int),Port_TagTeamSlots(int),Port_TagCanStart(void);
 #include "common.h"
 #include "menu/menu_e.h"
 #include "sys/pad.h"
 #include "sys/save.h"
 
 #ifdef PORT
+#include <stdlib.h>
 /*
  * PC only: "Tenkaichi Budokai Online", the main menu's item 11 (menu_a.c). The port's screen mode (port_screen.c)
  * runs this screen. Its own look for online play, after the mockups of online_design: every picture, piece,
@@ -36,6 +39,8 @@ extern void PortTbo_Paste(void);            /* the clipboard's room code, typed 
 extern void MsgWin_SetText(void *text); /* (the rest: menu/menu_a.h) */
 extern void IconWin_PortHideWords(void);
 extern void MsgWin_PortDrawString(u16 *str); /* (battle/view_a_b.c) the box with a line of ours, in the game's font */
+extern void MsgWin_PortDrawStringHd(u16 *str);
+extern unsigned PortTbo_TextGeneration(void);
 extern s32 MsgWin_PortLineRoom(s32 right);
 extern void MsgWin_PortSameTop(void);
 extern s32 Font_GetWidth(u16 *str); /* (battle/col_c.c) a line's width in the game's font */
@@ -264,6 +269,22 @@ extern int Port_Setting(const char *name, int def);
 extern void Port_SettingSave(const char *name, int value);
 extern void Port_SettingsWrite(void);
 
+/* TAG TEAM has its own transport. It never joins the existing two-peer pool. */
+extern int Port_TagConnect(const char *server),Port_TagNetwork(void),Port_TagChatCount(void);
+extern int Port_TagCopyCode(void),Port_TagJoinCode(const char *code);
+extern int Port_TagMovePlayer(int from,int to);
+extern int Port_TagDataFingerprint(unsigned long long *out);
+extern const char *Port_TagEndpoint(void),*Port_TagChatLine(int i);
+extern void Port_TagInitialTeams(int,int),Port_TagChatSend(const char *);
+extern void Port_TagClose(void), Port_TagPoll(void);
+extern void Port_TagOpen(int size, int time, int delay, const char *name, unsigned long long content);
+extern void Port_TagCPUOptions(int fill, int difficulty);
+extern int Port_TagHumans(void), Port_TagCPU(int seat), Port_TagDifficulty(int seat);
+extern void Port_TagJoin(const char *code, const char *name, unsigned long long content);
+extern void Port_TagCommand(int command, int a, int b);
+extern int Port_TagPhase(void), Port_TagCount(void), Port_TagCapacity(void), Port_TagSeat(void), Port_TagTurn(void), Port_TagHost(void);
+extern int Port_TagDraftPending(void);
+extern const char *Port_TagPlayerName(int seat), *Port_TagCode(void), *Port_TagError(void);
 /* the screens */
 #define TB_HUB 0
 #define TB_CREATE 1
@@ -274,6 +295,8 @@ extern void Port_SettingsWrite(void);
 #define TB_QUICK 6
 #define TB_SPAR 7 /* Train While Waiting: the fighters of the sparring fight */
 #define TB_BLOCK 8 /* "Cannot Go Online": this game's data is not the disc's */
+#define TB_TAG 9
+#define TB_TAG_ROOM 10
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
@@ -282,12 +305,13 @@ extern void Port_SettingsWrite(void);
 #define HUB_RANKED 1
 #define HUB_CREATE 2
 #define HUB_JOIN 3
-#define HUB_FRIENDS 4
-#define HUB_TOURNAMENT 5
-#define HUB_REPLAYS 6
-#define HUB_LEADERBOARD 7
-#define HUB_PROFILE 8
-#define HUB_COUNT 9
+#define HUB_TAG 4
+#define HUB_FRIENDS 5
+#define HUB_TOURNAMENT 6
+#define HUB_REPLAYS 7
+#define HUB_LEADERBOARD 8
+#define HUB_PROFILE 9
+#define HUB_COUNT 10
 
 /* Create Room's rows */
 #define CR_BATTLE 0
@@ -308,6 +332,9 @@ extern void Port_SettingsWrite(void);
 #define CODE_LEN 6
 
 typedef struct TboScreen {
+    s32 tagLeft,tagRight,tagRoomCur;
+    s32 tagCur, tagSize, tagJoin, tagTestSent, tagCPU, tagDifficulty, tagAttacks,tagDelay;
+    s32 tagChatTyping,tagChatLen,tagMoving;char tagChat[160];
     s32 frames;
     s32 mode;
     s32 modeT;
@@ -359,20 +386,24 @@ s32 gPortTboSpar;       /* the battle that runs is Train While Waiting's sparrin
 static char sTbBgCode[CODE_LEN + 1];
 static f32 Tb_Beat(s32 period);
 
-static char *sTbHubName[HUB_COUNT] = {"Quick Match", "Ranked Match", "Create Room", "Join Room", "Friends", "Tournament", "Replays", "Leaderboard", "Profile"};
-static const s32 sTbHubReady[HUB_COUNT] = {1, 0, 1, 1, 0, 0, 0, 0, 1};
+static char *sTbHubName[HUB_COUNT] = {"Quick Match", "Ranked Match", "Create Room", "Join Room", "Tag Team", "Friends", "Tournament", "Replays", "Leaderboard", "Profile"};
+static const s32 sTbHubReady[HUB_COUNT] = {1, 0, 1, 1, 1, 0, 0, 0, 0, 1};
 static char *sTbHubSay[HUB_COUNT] = {
     "Fight whoever is searching right now! No time limit, and you can train while you wait.",
     "Fights that move your rank, season by season. That one is coming soon!",
     "Open a room with your own rules, then give your rival its code. No port forwarding needed!",
     "Got a room code from your rival? Type it in and jump right into their room!",
+    "Simultaneous team battles for up to ten fighters. Arrange the teams and choose from five CPU difficulty levels.",
     "Your rivals, who is online, and invites. That one is coming soon!",
     "The Tenkaichi Budokai itself: brackets of 4 to 16 players. That one is coming soon!",
     "Your last matches, saved to watch again. That one is coming soon!",
     "The strongest in the world, among your friends, and with each fighter. Coming soon!",
     "The name your rivals see.",
 };
-static char *sTbTime[5] = {"60 SECONDS", "90 SECONDS", "180 SECONDS", "240 SECONDS", "NO LIMIT"};
+static char *sTbTime[5] = {"60 seconds", "90 seconds", "180 seconds", "240 seconds", "No limit"};
+static char *sTagDifficulty[5]={"Very easy","Easy","Normal","Hard","Very hard"};
+static char *sTagTime[5]={"60 s","90 s","180 s","240 s","No limit"};
+static char *sTbDifficulty[5] = {"VERY EASY", "EASY", "NORMAL", "HARD", "VERY HARD"};
 static char sTbKeys[KEY_ROWS][KEY_COLS + 1] = {"ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ0", "123456789"};
 
 /* ---------------------------------------------------------------------------------------------- small things */
@@ -405,6 +436,7 @@ static void Tb_SetMode(s32 mode) {
     Port_TextMode(sTb->typing);
     if (sTb->mode != mode) { /* (the page that is up again, as when the rival comes on the search: it does not come in anew) */
         sTb->modeT = 0;
+        if(mode==TB_TAG_ROOM){sTb->note=0;sTb->noteLine[0]=0;}
     }
     sTb->mode = mode;
 }
@@ -418,6 +450,14 @@ static void Tb_SaveChoices(void) {
 }
 
 static void Tb_LoadChoices(void) {
+    sTb->tagSize = Port_Setting("tag_team_size", 2);
+    sTb->tagAttacks=1;
+    sTb->tagCPU = Port_Setting("tag_team_cpu", 1) == 1;
+    sTb->tagDifficulty = Port_Setting("tag_team_difficulty", 2);
+    if (sTb->tagDifficulty < 0 || sTb->tagDifficulty > 4) sTb->tagDifficulty = 2;
+    if (sTb->tagSize < 2 || sTb->tagSize > 5) sTb->tagSize = 2;
+    sTb->tagLeft=Port_Setting("tag_team_left",sTb->tagSize);sTb->tagRight=Port_Setting("tag_team_right",sTb->tagSize);
+    if(sTb->tagLeft<1||sTb->tagRight<1||sTb->tagLeft+sTb->tagRight>10)sTb->tagLeft=sTb->tagRight=2;
     sTb->battle = Port_Setting("tbo_battle", 0);
     sTb->time = Port_Setting("tbo_time", 3);
     sTb->delay = Port_Setting("net_delay2", -1);
@@ -448,50 +488,41 @@ static void Tb_LoadChoices(void) {
 
 static void Tb_DelayText(char *out, s32 delay) {
     if (delay < 0) {
-        sprintf(out, "AUTOMATIC");
+        sprintf(out, "Automatic");
     } else {
-        sprintf(out, "%d FRAME", (int)delay);
+        sprintf(out, "%d frame", (int)delay);
         if (delay != 1) {
-            Ps_Cat(out, "S", 32);
+            Ps_Cat(out, "s", 32);
         }
     }
 }
 
 static void Tb_RollText(char *out, s32 roll) {
     if (!Port_RollCan()) {
-        sprintf(out, "NOT ON THIS PC");
+        sprintf(out, "Unavailable");
     } else if (roll <= 0) {
-        sprintf(out, "OFF");
+        sprintf(out, "Off");
     } else {
-        sprintf(out, "UP TO %d FRAMES", (int)roll);
+        sprintf(out, "Up to %d frames", (int)roll);
     }
 }
 
 /* ---------------------------------------------------------------------------------------------- the rule */
-/* Online matches are only between two unmodded games. Fighter mods are switched off by themselves while a session
+/* Online matches are only between two matching BT4 B14 Rev2 builds. Fighter mods are switched off by themselves while a session
    runs (plat_mods.c); what is checked here is the rest of the data the game computes with, against the original
    disc (the gameplay fingerprint, plat_fprint.c: files added under gamedata/mods count). Returns 1 when a search may
    start; else the note or the "Cannot Go Online" window says why. */
 static s32 Tb_Vanilla(void) {
-    s32 state = Port_DataFingerprint(NULL);
-
-    if (state == 0) {
-        Tb_Note("CHECKING YOUR GAME DATA AGAINST THE DISC... TRY AGAIN IN A MOMENT");
-        return 0;
-    }
-    if (state == 1 && Port_DataFingerprintOriginal() == 1) {
-        return 1;
-    }
-    sTb->blockBack = sTb->mode;
-    Snd_PlaySe(1, 2);
-    Tb_SetMode(TB_BLOCK);
-    return 0;
+    extern s32 Port_DataState(void);
+    if(Port_DataState()==1)return 1;
+    Tb_Note("This is an old or incompatible version. Please update the complete BT4 launcher.");
+    Snd_PlaySe(1,2);return 0;
 }
 
 static void Tb_BlockUpdate(s32 live) {
     Pad *pad = &gPad[0];
 
-    Ps_Prompt(0, "Back");
+    Ps_Prompt(0, sTb->blockBack==TB_TAG||(sTb->blockBack==TB_JOIN&&sTb->tagJoin)?"Back":"Back");
     if (live && (pad->gamePressed & (PADG_CROSS | PADG_CIRCLE | PADG_TRIANGLE))) {
         Snd_PlaySe(1, 2);
         Tb_SetMode(sTb->blockBack);
@@ -721,6 +752,97 @@ static void Tb_QuickUpdate(s32 live) {
     }
 }
 
+/* TAG TEAM room setup and live membership. The battle handoff remains gated
+ * until the multi-actor loader, cameras and collision pass have been validated. */
+static void Tb_TagUpdate(s32 live){
+    Pad *pad=&gPad[0];s32 dir;
+    Ps_Prompt(3,"Change");Ps_Prompt(0,"Confirm");Ps_Prompt(2,"Back");if(!live)return;
+    Ps_Move(&sTb->tagCur,8);dir=Ps_Side();
+    if(dir){
+        if(sTb->tagCur==0)sTb->tagLeft=Ps_Wrap(sTb->tagLeft+dir,1,10-sTb->tagRight);
+        if(sTb->tagCur==1)sTb->tagRight=Ps_Wrap(sTb->tagRight+dir,1,10-sTb->tagLeft);
+        if(sTb->tagCur==2)sTb->time=Ps_Wrap(sTb->time+dir,0,4);
+        if(sTb->tagCur==3)sTb->tagDelay=Ps_Wrap(sTb->tagDelay+dir,0,12);
+        if(sTb->tagCur==4)sTb->tagCPU=!sTb->tagCPU;
+        if(sTb->tagCur==5)sTb->tagDifficulty=Ps_Wrap(sTb->tagDifficulty+dir,0,4);
+        Snd_PlaySe(1,0);
+    }
+    if(pad->gamePressed&PADG_TRIANGLE){Tb_SetMode(TB_HUB);return;}
+    if(!(pad->gamePressed&PADG_CROSS))return;
+    if(sTb->tagCur<6){++sTb->tagCur;return;}
+    if(sTb->tagCur==7){sTb->tagJoin=1;sTb->code[0]=0;sTb->codeLen=sTb->keyCol=sTb->keyRow=0;Tb_SetMode(TB_JOIN);return;}
+    {unsigned long long content=0;s32 offline=getenv("BT4_RENDER_TEST")&&!getenv("BT4_TAG_ONLINE_TEST");
+        if(!offline&&(!Tb_Vanilla()||Port_TagDataFingerprint(&content)!=1))return;
+        Port_TagCPUOptions(sTb->tagCPU,sTb->tagDifficulty);
+        if(!Port_TagConnect(offline?NULL:Port_TagEndpoint())){Tb_Note((char*)Port_TagError());return;}
+        if(!offline)Port_TagInitialTeams(sTb->tagLeft,sTb->tagRight);
+        Port_TagOpen(offline?2:5,sTb->time,sTb->tagDelay,Port_NetNameGet(),content);
+        if(offline){Port_TagTeams(sTb->tagLeft,sTb->tagRight);if(sTb->tagCPU){s32 i;for(i=1;i<Port_TagSlots();++i)Port_TagSlot(i,1,sTb->tagDifficulty);}}
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_TEST_EMPTY")){s32 i=atoi(getenv("BT4_TAG_TEST_EMPTY"));Port_TagSlot(i,0,sTb->tagDifficulty);}
+    Port_SettingSave("tag_team_delay",sTb->tagDelay);Port_SettingSave("tag_team_left",sTb->tagLeft);Port_SettingSave("tag_team_right",sTb->tagRight);
+    Port_SettingSave("tag_team_attacks",sTb->tagAttacks);Port_SettingSave("tag_team_cpu",sTb->tagCPU);
+    Port_SettingSave("tag_team_difficulty",sTb->tagDifficulty);Port_SettingsWrite();sTb->tagRoomCur=0;
+    Tb_SetMode(TB_TAG_ROOM);
+}
+static void Tb_TagRoomUpdate(s32 live){
+    Pad *pad=&gPad[0];s32 dir,local=!strcmp(Port_TagCode(),"LOCAL0");
+    Port_TagPoll();
+    if(Port_TagError()[0]&&(Port_TagSeat()<0||Port_TagPhase()==6)){
+        char why[128];Ps_Copy(why,(char*)Port_TagError(),128);Port_TagClose();
+        Tb_SetMode(sTb->tagJoin?TB_JOIN:TB_TAG);Tb_Note(why);return;
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_MOVE_TEST")&&Port_TagHost()&&Port_TagPhase()==1&&Port_TagHumans()==2){
+        static s32 moved;if(!moved){Port_TagMovePlayer(0,2);moved=1;return;}if(Port_TagSeat()!=2)return;
+    }
+    if(getenv("BT4_TAG_DRAFT_TEST")&&(!getenv("BT4_TAG_ONLINE_TEST")||Port_TagHumans()>=(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_TEST_MIN_HUMANS")?atoi(getenv("BT4_TAG_TEST_MIN_HUMANS")):2))&&!getenv("BT4_TAG_VIDEO_TEST")&&!getenv("BT4_TAG_LOBBY_PREVIEW")&&!getenv("BT4_TAG_LOBBY_TEST")&&!sTb->tagTestSent&&Port_TagHost()&&Port_TagCanStart()){
+        Port_TagCommand(3,0,0);sTb->tagTestSent=1;}
+    Ps_Prompt(0,Port_TagHost()?"Select":"Copy");
+    if(!local)Ps_Prompt(4,"Chat");Ps_Prompt(2,"Back");
+    if(Port_TagHost()&&Port_TagCanStart())Ps_Prompt(1,"Start");
+    if(!live)return;
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_LOBBY_TEST")&&Port_TagPhase()==1){
+        static s32 tick;++tick;
+        if(tick==20)pad->gameRepeat=PADG_DOWN;
+        if(tick==40)pad->gamePressed=PADG_CROSS;
+        if(tick==60)pad->gameRepeat=PADG_RIGHT;
+        if(tick==80)pad->gamePressed=PADG_R1;
+        if(tick==100){fprintf(stderr,"tag lobby fixture: count=%d slot2cpu=%d slot3difficulty=%d selected=%d\n",Port_TagCount(),Port_TagCPU(2),Port_TagDifficulty(3),sTb->tagRoomCur);pad->gamePressed=PADG_SQUARE;}
+    }
+    if(Port_TagPhase()==2&&Port_TagSeat()>=0&&!Port_TagDraftPending()){sTb->train=2;sTb->leaving=1;ColorFade_StartOut(0,0,0,0x14);return;}
+    if(!local&&(pad->gamePressed&PADG_CIRCLE)&&!sTb->tagChatTyping){sTb->tagChatTyping=1;sTb->tagChatLen=0;sTb->tagChat[0]=0;Port_TextMode(1);return;}
+    if(sTb->tagChatTyping){s32 c;Ps_PromptsClear();Ps_Prompt(2,"Close");while((c=Port_TextRead())!=0){
+        if(c==13){Port_TagChatSend(sTb->tagChat);sTb->tagChatTyping=0;Port_TextMode(0);}
+        else if(c==27){sTb->tagChatTyping=0;Port_TextMode(0);}
+        else if(c==8){if(sTb->tagChatLen)sTb->tagChat[--sTb->tagChatLen]=0;}
+        else if(c>=32&&c<127&&sTb->tagChatLen<150){sTb->tagChat[sTb->tagChatLen++]=c;sTb->tagChat[sTb->tagChatLen]=0;}}
+        if(pad->gamePressed&PADG_TRIANGLE){sTb->tagChatTyping=0;Port_TextMode(0);}return;
+    }
+    if(Port_TagHost()){
+        s32 old=sTb->tagRoomCur,team=Port_TagTeam(old),row=Port_TagTeamIndex(old),i,next=old;
+        if(pad->gameRepeat&(PADG_UP|PADG_DOWN)){
+            s32 rows=Port_TagTeamSlots(team),wanted=Ps_Wrap(row+((pad->gameRepeat&PADG_UP)?-1:1),0,rows-1);
+            for(i=0;i<Port_TagSlots();++i)if(Port_TagTeam(i)==team&&Port_TagTeamIndex(i)==wanted)next=i;
+        }
+        if(pad->gameRepeat&(PADG_LEFT|PADG_RIGHT)){
+            s32 rows=Port_TagTeamSlots(1-team),wanted=row<rows?row:rows-1;
+            for(i=0;i<Port_TagSlots();++i)if(Port_TagTeam(i)!=team&&Port_TagTeamIndex(i)==wanted)next=i;
+        }
+        sTb->tagRoomCur=next;if(next!=old)Snd_PlaySe(1,0);
+        if(pad->gamePressed&PADG_CROSS){
+            if(sTb->tagMoving>=0){if(Port_TagMovePlayer(sTb->tagMoving,next))Snd_PlaySe(1,1);sTb->tagMoving=-1;}
+            else if(Port_TagPlayerName(next)[0]&&!Port_TagCPU(next)){sTb->tagMoving=next;Tb_Note("CHOOSE A DESTINATION SLOT. TRIANGLE CANCELS.");}
+            else if(Port_TagSlot(next,!Port_TagCPU(next),sTb->tagDifficulty))Snd_PlaySe(1,1);
+        }
+        dir=(pad->gamePressed&PADG_R1)?1:(pad->gamePressed&PADG_L1)?-1:0;
+        if(dir&&Port_TagCPU(next)){Port_TagSlot(next,1,Ps_Wrap(Port_TagDifficulty(next)+dir,0,4));Snd_PlaySe(1,0);}
+    }else if(pad->gamePressed&PADG_CROSS){if(Port_TagCopyCode())Tb_Note("ROOM CODE COPIED.");}
+    if(!local&&(pad->gamePressed&PADG_SELECT)){if(Port_TagCopyCode())Tb_Note("ROOM CODE COPIED.");}
+    if(Port_TagError()[0])Tb_Note((char*)Port_TagError());
+    if((pad->gamePressed&(PADG_SQUARE|PADG_START))&&Port_TagHost()){
+        if(Port_TagCanStart())Port_TagCommand(3,0,0);else Tb_Note("EACH TEAM NEEDS AT LEAST ONE FIGHTER.");}
+    if(pad->gamePressed&PADG_TRIANGLE){if(sTb->tagMoving>=0){sTb->tagMoving=-1;return;}Port_TagClose();Tb_SetMode(TB_TAG);}
+}
 /* ---------------------------------------------------------------------------------------------- the hub */
 static void Tb_HubUpdate(s32 live) {
     Pad *pad = &gPad[0];
@@ -745,12 +867,17 @@ static void Tb_HubUpdate(s32 live) {
             Tb_SetMode(TB_CREATE);
             break;
         case HUB_JOIN:
+            sTb->tagJoin = 0;
             Snd_PlaySe(1, 1);
             sTb->code[0] = 0;
             sTb->codeLen = 0;
             sTb->keyCol = 0;
             sTb->keyRow = 0;
             Tb_SetMode(TB_JOIN);
+            break;
+        case HUB_TAG:
+            sTb->tagCur = 0; sTb->tagJoin = 0;
+            Snd_PlaySe(1, 1); Tb_SetMode(TB_TAG);
             break;
         case HUB_PROFILE:
             Snd_PlaySe(1, 1);
@@ -833,6 +960,7 @@ typedef struct TbKeyBtn {
 #define TB_KEY_SPACE 4
 #define TB_KEY_PASTE 5
 
+static const TbKeyBtn sTagJoinBtn[3]={{"DELETE",0,2,TB_KEY_DELETE},{"PASTE",3,5,TB_KEY_PASTE},{"JOIN",6,8,TB_KEY_OK}};
 static const TbKeyBtn sTbJoinBtn[3] = {{"DELETE", 0, 2, TB_KEY_DELETE}, {"PASTE", 3, 5, TB_KEY_PASTE}, {"JOIN", 6, 8, TB_KEY_OK}};
 static const TbKeyBtn sTbNameBtn[4] = {{"Aa", 0, 1, TB_KEY_CASE}, {"SPACE", 2, 4, TB_KEY_SPACE}, {"DELETE", 5, 6, TB_KEY_DELETE}, {"DONE", 7, 8, TB_KEY_OK}};
 #define NAME_ROWS 5
@@ -947,10 +1075,14 @@ static void Tb_CodeBack(void) {
 static void Tb_JoinTry(void) {
     if (sTb->codeLen == CODE_LEN) {
         Snd_PlaySe(1, 1);
-        Tb_BeginSearch(0);
+        if (sTb->tagJoin) {
+            if (!Port_TagJoinCode(sTb->code)) { Tb_Note((char *)Port_TagError()); return; }
+            sTb->tagRoomCur=0;sTb->tagMoving=-1;sTb->tagChatTyping=0;
+            Tb_SetMode(TB_TAG_ROOM);
+        } else Tb_BeginSearch(0);
     } else {
         Snd_PlaySe(1, 2);
-        Tb_Note("A ROOM CODE HAS SIX LETTERS AND NUMBERS");
+        Tb_Note(sTb->tagJoin?"ROOM CODES HAVE SIX CHARACTERS.":"A ROOM CODE HAS SIX LETTERS AND NUMBERS");
     }
 }
 
@@ -958,9 +1090,9 @@ static void Tb_JoinUpdate(s32 live) {
     Pad *pad = &gPad[0];
     s32 c;
 
-    Ps_Prompt(0, "Enter");
-    Ps_Prompt(1, "Delete");
-    Ps_Prompt(2, "Back");
+    Ps_Prompt(0, sTb->tagJoin?"Confirm":"Enter");
+    Ps_Prompt(1, sTb->tagJoin?"Delete":"Delete");
+    Ps_Prompt(2, sTb->tagJoin?"Back":"Back");
     if (!live) {
         return;
     }
@@ -970,7 +1102,7 @@ static void Tb_JoinUpdate(s32 live) {
             return;
         } else if (c == 27) { /* Esc: back, as triangle */
             Snd_PlaySe(1, 2);
-            Tb_SetMode(TB_HUB);
+            Tb_SetMode(sTb->tagJoin ? TB_TAG : TB_HUB);
             return;
         } else if (c == 8) {
             Tb_CodeBack();
@@ -1002,7 +1134,7 @@ static void Tb_JoinUpdate(s32 live) {
         Tb_CodeBack();
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
-        Tb_SetMode(TB_HUB);
+        Tb_SetMode(sTb->tagJoin ? TB_TAG : TB_HUB);
     }
 }
 
@@ -1195,7 +1327,7 @@ static void Tb_Radar(f32 cx, f32 cy, f32 r) {
 }
 
 static f32 Tb_HubRowY(s32 i) {
-    return 68.0f + 27.5f * (f32)i; /* the last bar (under the cursor: to +27) ends above the box (y 326) */
+    return 68.0f + 24.5f * (f32)i; /* the last bar (under the cursor: to +27) ends above the box (y 326) */
 }
 
 static f32 Tb_HubRowEnd(s32 i) {
@@ -1275,7 +1407,7 @@ static void Tb_DrawCreateText(void) {
     static char *label[CR_COUNT] = {"Battle", "Time Limit", "Input Delay", "Rollback", "Open Room"};
     s32 i;
 
-    sprintf(value[CR_BATTLE], sTb->battle ? "TEAMS (UP TO 5)" : "ONE ON ONE");
+    sprintf(value[CR_BATTLE], sTb->battle ? "Teams (up to 5)" : "1 vs 1");
     Ps_Copy(value[CR_TIME], sTbTime[sTb->time], 32);
     Tb_DelayText(value[CR_DELAY], sTb->delay);
     Tb_RollText(value[CR_ROLL], sTb->roll);
@@ -1288,11 +1420,54 @@ static void Tb_DrawCreateText(void) {
 
         Ps_Text(36.0f, Ps_TextTop(y + 13.0f, 0.66f), label[i], 0.66f, 120.0f, i == sTb->crCur ? 1 : 0);
         Ps_Align(2);
-        Ps_Text(266.0f, Ps_TextTop(y + 13.0f, 0.54f), value[i], 0.54f, 130.0f, 3);
+        Ps_Text(266.0f, Ps_TextTop(y + 13.0f, 0.58f), value[i], 0.58f, 124.0f, 3);
         Ps_Align(0);
     }
 }
 
+static void Tb_DrawTag(void){
+    s32 i;Tb_Hosts(TBO_HOSTS_ARMS_CROSSED,408,350,250);Ps_Panel(TBO_KIT_WINDOW,14,78,300,321,0x80);
+    for(i=0;i<8;++i){f32 y=84+29.0f*i;Ps_Pill(i==sTb->tagCur?TBO_KIT_SEL:TBO_KIT_BAR,22,y,292,y+23,0x80);}
+}
+static void Tb_DrawTagText(void){
+    char value[48];s32 i;
+    static char *labels[8]={"Team 1","Team 2","Time Limit","Input Delay","Empty Slots","CPU Difficulty","Create Room","Join Room"};
+    Ps_Text(26,65,"SIMULTANEOUS TEAM BATTLES",.47f,274,2);
+    for(i=0;i<8;++i){f32 y=84+29.0f*i;
+        Ps_Text(36,Ps_TextTop(y+11,.56f),labels[i],.56f,126,i==sTb->tagCur?1:0);value[0]=0;
+        if(i==0)sprintf(value,sTb->tagLeft==1?"%d slot":"%d slots",sTb->tagLeft);if(i==1)sprintf(value,sTb->tagRight==1?"%d slot":"%d slots",sTb->tagRight);
+        if(i==2)Ps_Copy(value,sTagTime[sTb->time],48);if(i==3)sprintf(value,"%d frames",sTb->tagDelay);
+        if(i==4)Ps_Copy(value,sTb->tagCPU?"CPU":"Open",48);if(i==5)Ps_Copy(value,sTagDifficulty[sTb->tagDifficulty],48);
+        Ps_Align(2);Ps_Text(278,Ps_TextTop(y+11,.51f),value,.51f,104,3);Ps_Align(0);
+    }
+}
+static void Tb_DrawTagRoom(void){
+    s32 i;
+    if(sTb->tagChatTyping){Ps_Panel(TBO_KIT_WINDOW,28,94,484,322,0x80);Ps_Pill(TBO_KIT_BAR,40,276,472,305,0x80);return;}
+    Ps_Panel(TBO_KIT_WINDOW,14,82,249,321,0x80);Ps_Panel(TBO_KIT_WINDOW,263,82,498,321,0x80);
+    for(i=0;i<Port_TagSlots();++i){f32 x=Port_TagTeam(i)?271:22,y=120+21.0f*Port_TagTeamIndex(i);
+        Ps_Pill(i==sTb->tagRoomCur?TBO_KIT_SEL:TBO_KIT_BAR,x,y,x+218,y+19,0x80);}
+}
+static void Tb_DrawTagRoomText(void){
+    char line[128];s32 i;
+    sprintf(line,"ROOM %s  |  %d/%d FIGHTERS",Port_TagCode()[0]?Port_TagCode():"......",Port_TagCount(),Port_TagSlots());
+    Ps_Align(1);Ps_Text(256,66,line,.56f,460,3);Ps_Align(0);
+    if(sTb->tagChatTyping){
+        Ps_Text(44,107,"ROOM CHAT",.65f,410,3);
+        for(i=0;i<Port_TagChatCount();++i)Ps_Text(44,141+i*20,(char*)Port_TagChatLine(i),.43f,420,0);
+        Ps_Text(48,284,sTb->tagChatLen?sTb->tagChat:"Type a message...",.46f,410,sTb->tagChatLen?0:4);
+        Ps_Text(44,309,"ENTER: SEND   |   ESC: CLOSE",.35f,410,3);return;
+    }
+    Ps_Text(28,90,"TEAM 1",.64f,200,3);Ps_Text(278,90,"TEAM 2",.64f,200,1);
+    for(i=0;i<Port_TagSlots();++i){const char *name=Port_TagPlayerName(i);f32 x=Port_TagTeam(i)?278:28,y=123+21.0f*Port_TagTeamIndex(i);
+        if(Port_TagCPU(i))sprintf(line,"%d  CPU %02d",Port_TagTeamIndex(i)+1,Port_TagTeamIndex(i)+1);
+        else sprintf(line,"%d  %s%s",Port_TagTeamIndex(i)+1,name[0]?name:"Empty",i==Port_TagSeat()?" (YOU)":"");
+        Ps_Text(x,y,line,.48f,122,i==sTb->tagRoomCur?1:name[0]?0:4);
+        if(Port_TagCPU(i)){Ps_Align(2);Ps_Text(x+204,y,sTagDifficulty[Port_TagDifficulty(i)],.36f,78,3);Ps_Align(0);}
+    }
+    if(Port_TagNetwork()){Ps_Align(1);Ps_Text(256,106,"SELECT: COPY CODE",.33f,220,0);Ps_Align(0);}
+    if(Port_TagChatCount())Ps_Text(24,326,(char*)Port_TagChatLine(Port_TagChatCount()-1),.42f,464,0);
+}
 static void Tb_DrawJoin(void) {
     s32 c;
 
@@ -1317,7 +1492,7 @@ static void Tb_DrawJoinText(void) {
         Ps_Text(x, 81.0f, one, 1.0f, 0.0f, c < sTb->codeLen ? 3 : 0); /* (what is typed: a value) */
     }
     Ps_Align(0);
-    Tb_Keypad(24.0f, 138.0f, KEY_ROWS, sTbKeys, sTbJoinBtn, 3);
+    Tb_Keypad(24.0f, 138.0f, KEY_ROWS, sTbKeys, sTb->tagJoin?sTagJoinBtn:sTbJoinBtn, 3);
 }
 
 static void Tb_DrawWait(void) {
@@ -1334,7 +1509,7 @@ static void Tb_DrawWait(void) {
 static void Tb_DrawWaitText(void) {
     static char line[96];
     s32 secs = (sTb->frames - sTb->waitFrom) / 60;
-    const char *code = Port_LobbyCode();
+    const char *code = getenv("BT4_RENDER_TBO") != NULL ? "YUH9JP" : Port_LobbyCode();
 
     if (sTb->host == 2) {
         s32 n = Port_LobbyQueueWaiting(sTb->queue);
@@ -1393,9 +1568,18 @@ static void Tb_DrawBlockText(void) {
     const char *m = t;
     s32 n;
 
+    if(sTb->blockBack==TB_TAG||(sTb->blockBack==TB_JOIN&&sTb->tagJoin)){
+        Ps_Heading(80,108,"Unable to Connect",.9f,250,0x80);
+        Ps_Text(80,150,"Tag Team requires matching BT4 builds",.52f,275,0);
+        Ps_Text(80,172,"and the same B14 Rev2 data on every computer.",.52f,275,0);
+        Ps_Text(80,207,"Game data verification has not passed.",.48f,275,3);
+        Ps_Text(80,232,"Check your game files, then try again.",.48f,275,0);
+        Ps_Align(1);Ps_Text(256,285,"BACK",.56f,90,1);Ps_Align(0);return;
+    }
+
     Ps_Heading(80.0f, 108.0f, "Cannot Go Online", 0.9f, 250.0f, 0x80);
     Ps_Msg(80.0f, 146.0f, "Online matches are only between", 1.0f, 0x80);
-    Ps_Msg(80.0f, 166.0f, "two unmodded games.", 1.0f, 0x80);
+    Ps_Msg(80.0f, 166.0f, "two matching BT4 B14 Rev2 builds.", 1.0f, 0x80);
     while (*m != 0 && strncmp(m, "modified:", 9) != 0) {
         m++;
     }
@@ -1403,9 +1587,9 @@ static void Tb_DrawBlockText(void) {
         Ps_Copy(parts, "Changed: ", 96);
         Ps_Cat(parts, m + 10, 9 + 81);
     } else if (Port_DataFingerprint(NULL) == 1) {
-        sprintf(parts, "Your game data is not the disc's.");
+        sprintf(parts, "Your data differs from BT4 B14 Rev2.");
     } else {
-        sprintf(parts, "Your game data could not be checked.");
+        sprintf(parts, "BT4 data verification has not passed.");
     }
     for (n = 0; parts[n] != 0; n++) {
         if (parts[n] == ',') {
@@ -1413,8 +1597,8 @@ static void Tb_DrawBlockText(void) {
         }
     }
     Ps_Msg(80.0f, 196.0f, parts, 1.0f, 0x80);
-    Ps_Msg(80.0f, 226.0f, "Take out what you added in gamedata/mods.", 1.0f, 0x80);
-    Ps_Msg(80.0f, 246.0f, "(Fighter mods switch off by themselves online.)", 1.0f, 0x70);
+    Ps_Msg(80.0f, 226.0f, "Use this BT4 build on both computers.", 1.0f, 0x80);
+    Ps_Msg(80.0f, 246.0f, "(Original BT3 and other mods use different data.)", 1.0f, 0x70);
     Ps_Align(1);
     Ps_Text(256.0f, 285.0f, "BACK", 0.56f, 0.0f, 1);
     Ps_Align(0);
@@ -1519,31 +1703,48 @@ static char *Tb_Help(void) {
     switch (sTb->mode) {
     case TB_HUB:
         return sTbHubSay[sTb->hubCur];
+    case TB_TAG:{
+        static char *help[8]={
+            "Set the number of slots on Team 1. Both teams can have up to ten fighters in total.",
+            "Set the number of slots on Team 2. The teams can have different numbers of fighters.",
+            "Choose a time limit or play until one team is defeated.",
+            "Set the input delay in frames. Higher values allow more time for network fluctuations.",
+            "Fill empty slots with CPU fighters or leave them open. You can also edit each slot in the room.",
+            "Set the starting CPU difficulty. Each CPU slot can have its own difficulty in the room.",
+            "Create a room and share its code. You can start with empty slots if both teams have a fighter.",
+            "Join your friends with a six-character room code. Everyone must use the same BT4 build."};
+        return help[sTb->tagCur];}
+    case TB_TAG_ROOM:
+        if(sTb->tagChatTyping)return "Type your message with the keyboard. ENTER sends it and ESC closes the chat.";
+        if(!Port_TagHost())return "Share the code to invite friends. The host arranges the teams and starts character selection.";
+        if(sTb->tagMoving>=0)return "Choose a destination slot and confirm to move or swap the player. TRIANGLE cancels.";
+        if(Port_TagCPU(sTb->tagRoomCur))return "X toggles a CPU in this slot. L1/R1 changes its difficulty. SQUARE starts character selection.";
+        return "Select a player with X, then choose a destination slot. Empty slots can hold CPU fighters. SQUARE starts selection.";
     case TB_CREATE:
-        return sTb->crCur == CR_DELAY ? "How late your moves come out. Automatic measures the line when the match starts."
-               : sTb->crCur == CR_ROLL ? "Your moves come out at once and the game corrects itself. More frames cope with a slower line."
-               : "Set the rules of your tournament! Then your rival joins with the room code.";
+        return sTb->crCur == CR_DELAY ? "Choose input delay in frames. Automatic adjusts it when the match starts."
+               : sTb->crCur == CR_ROLL ? "Choose the rollback window. A larger window allows more frames of prediction and correction."
+               : "Choose your battle rules, create the room, and share its code with your opponent.";
     case TB_JOIN:
-        return "Enter your rival's room code, or Paste the one they sent you! Then Join.";
+        return sTb->tagJoin?"Enter the six-character room code or paste it from the clipboard, then confirm to join.":"Enter the six-character room code or paste it from the clipboard, then confirm to join.";
     case TB_WAIT:
         return sTb->found ? "Here we go! The match is starting!" : "Looking for a worthy challenger... Warm up in Training meanwhile!";
     case TB_BLOCK:
-        return "Sorry! Online fights have to be fair, so only the game straight off the disc can play.";
+        return sTb->blockBack==TB_TAG||(sTb->blockBack==TB_JOIN&&sTb->tagJoin)?"Every player needs the same BT4 B14 Rev2 build and verified game data.":"Online fights require the same BT4 B14 Rev2 build and verified data on both computers.";
     case TB_SPAR:
         return "Warm up at the tournament while we search! Pick yourself and a sparring partner.";
     case TB_QUICK:
-        return "Pick a battle and we'll find you a rival! No time limit, and the game runs a little faster.";
+        return "Choose a battle type to search for an opponent. Quick Match has no time limit and uses the listed game speed.";
     case TB_NAME:
-        return "Pick your letters, then Done! Square deletes, Start finishes.";
+        return "Enter your player name, then choose Done. SQUARE deletes a character; START confirms.";
     case TB_PROFILE:
-        return "Show everyone who you are! This is the name your rivals see.";
+        return "Choose the player name shown to opponents and other players in your rooms.";
     }
     return "";
 }
 
 /* Each page's title (by TB_ mode), as its heading shows it and the screen reader says it. */
-static char *sTbTitle[9] = {"Tenkaichi Budokai Online", "Create Room", "Join Room", "Searching", "Profile", "Profile", "Quick Match",
-                            "Train While Waiting", "Tenkaichi Budokai Online"};
+static char *sTbTitle[11] = {"Tenkaichi Budokai Online", "Create Room", "Join Room", "Searching", "Profile", "Profile", "Quick Match",
+                            "Train While Waiting", "Tenkaichi Budokai Online", "Tag Team", "Tag Team Room"};
 
 /* ---- the screen reader (port/src/gs/a11y.c; silent unless the player has it on). The game's own screens are read
    from their state by port/src/a11y_game.c; these pages say what they show themselves: the page's title as it opens,
@@ -1606,6 +1807,10 @@ static void Tb_Speak(void) {
             Ps_Cat(focus, ", soon", 160);
         }
         break;
+    case TB_TAG:
+        Ps_Copy(focus, "Tag Team Settings", 160); break;
+    case TB_TAG_ROOM:
+        sprintf(focus, "Tag Team Room, %d of %d fighters", Port_TagCount(), Port_TagCapacity()); break;
     case TB_CREATE: {
         static char *label[CR_COUNT] = {"Battle", "Time Limit", "Input Delay", "Rollback", "Open Room"};
 
@@ -1627,7 +1832,7 @@ static void Tb_Speak(void) {
         break;
     }
     case TB_JOIN:
-        Tb_KeyFocus(focus, KEY_ROWS, sTbKeys, sTbJoinBtn, 3);
+        Tb_KeyFocus(focus, KEY_ROWS, sTbKeys, sTb->tagJoin?sTagJoinBtn:sTbJoinBtn, 3);
         Ps_Copy(now, sTb->code, 40);
         break;
     case TB_NAME:
@@ -1672,7 +1877,7 @@ static void Tb_Speak(void) {
         }
         break;
     case TB_BLOCK:
-        Ps_Copy(focus, "Cannot go online. Online matches are only between two unmodded games.", 160);
+        Ps_Copy(focus, "Cannot go online. Online matches are only between two matching BT4 B14 Rev2 builds.", 160);
         break;
     default:
         Ps_Copy(focus, "Name: ", 160);
@@ -1698,10 +1903,10 @@ static void Tb_Speak(void) {
         }
         if (now[k] != typed[k]) { /* the code or the name typed so far */
             Ps_Copy(typed, now, 40);
-            Ps_Copy(line, sTb->mode == TB_JOIN ? "Code: " : "Name: ", 256);
+            Ps_Copy(line, sTb->mode == TB_JOIN ? (sTb->tagJoin?"Code: ":"Code: ") : "Name: ", 256);
             if (sTb->mode == TB_JOIN) {
                 Tb_Spell(part, now, 64);
-                Ps_Cat(line, now[0] != 0 ? part : "empty", 256);
+                Ps_Cat(line, now[0] != 0 ? part : (sTb->tagJoin?"empty":"empty"), 256);
             } else {
                 Ps_Cat(line, now[0] != 0 ? now : "empty", 256);
             }
@@ -1773,8 +1978,11 @@ static u16 *Tb_BoxLine(void) {
         if (n > start) {
             out[n++] = ' ';
         }
-        for (k = at; k < end && n < TB_BOX_LINE - 1; k++) {
-            out[n++] = (u8)say[k];
+        for(k=at;k<end && n<TB_BOX_LINE-1;){
+            u32 c=(u8)say[k++];
+            if(c>=0xC2 && c<=0xDF && k<end){c=(c&31)<<6;c|=(u8)say[k++]&63;}
+            else if(c>=0xE0 && c<=0xEF && k+1<end){c=(c&15)<<12;c|=((u8)say[k++]&63)<<6;c|=(u8)say[k++]&63;}
+            out[n++]=(u16)c;
         }
         out[n] = 0;
         if (mark > start && lines < 3 && Font_GetWidth(out + start) > room) { /* the word goes to the next line */
@@ -1789,6 +1997,43 @@ static u16 *Tb_BoxLine(void) {
     }
     out[n] = 0;
     return out;
+}
+
+/* Captions use the same proportional font pipeline as the menu labels. Their
+ * original message record remains attached for screen readers. */
+static s32 Tb_HelpWrap(char *text,char lines[3][128],f32 scale,f32 width){
+    s32 at=0,row=0,used=0;char trial[128];
+    memset(lines,0,3*128);
+    while(text[at]){
+        s32 end=at,k,n=used;
+        while(text[at]==' ')++at;if(!text[at])break;end=at;
+        while(text[end]&&text[end]!=' ')++end;
+        Ps_Copy(trial,lines[row],128);
+        if(n&&n<127)trial[n++]=' ';
+        for(k=at;k<end&&n<127;++k)trial[n++]=text[k];trial[n]=0;
+        if(used&&Ps_MsgWidth(trial,scale)>width){
+            if(++row>=3)return 4;used=0;continue;
+        }
+        Ps_Copy(lines[row],trial,128);used=n;at=end;
+    }
+    return row+1;
+}
+static void Tb_DrawHelpCaption(void){
+    static char previous[TB_BOX_LINE],lines[3][128];
+    static unsigned generation;
+    static s32 count;
+    static f32 scale,lastWidth;
+    char *text=Tb_Help();f32 width=(512.0f-2.0f*Ps_Left())*.72f;
+    unsigned current=PortTbo_TextGeneration();s32 i,same=1;
+    for(i=0;text[i]||previous[i];++i)if(text[i]!=previous[i]){same=0;break;}
+    if(!same||current!=generation||width!=lastWidth||!count){
+        Ps_Copy(previous,text,TB_BOX_LINE);generation=current;lastWidth=width;
+        for(scale=1.08f;scale>.80f;scale-=.04f){count=Tb_HelpWrap(text,lines,scale,width);if(count<=3)break;}
+        if(count>3)count=3;
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TEXT_CAPTURE"))
+            fprintf(stderr,"tag typography caption: lines=%d scale=%.2f width=%.1f\n",count,scale,width);
+    }
+    for(i=0;i<count;++i)Ps_Msg(Ps_Left()+34.0f,344.0f+i*22.0f,lines[i],scale,0x80);
 }
 
 /* What a page draws comes in from the left as it opens, as the hub's bars do (the hub moves its own: Tb_DrawHub);
@@ -1806,6 +2051,10 @@ static void Tb_Draw(void) {
     case TB_HUB:
         Tb_DrawHub();
         break;
+    case TB_TAG:
+        Tb_DrawTag(); break;
+    case TB_TAG_ROOM:
+        Tb_DrawTagRoom(); break;
     case TB_CREATE:
         Tb_DrawCreate();
         break;
@@ -1829,7 +2078,8 @@ static void Tb_Draw(void) {
     }
     Tb_PageIn(0);
     Ps_Panel(TBO_KIT_WINDOW, 300.0f, 10.0f, 504.0f, 44.0f, 0x80); /* the player card: the name alone */
-    MsgWin_PortDrawString(Tb_BoxLine()); /* the game's box with the hosts' line (the buttons under it: Tb_DrawText) */
+    MsgWin_PortDrawStringHd(Tb_BoxLine());
+    Tb_DrawHelpCaption();
     if (sTb->mode == TB_BLOCK) {
         Tb_DrawBlock();
     }
@@ -1839,12 +2089,16 @@ static void Tb_DrawText(void) {
     char **title = sTbTitle;
 
     /* its capitals centred on the crest beside it (y 32); up to the player card */
-    Ps_Heading(Tb_TitleLeft() + 44.0f, Ps_TextTop(32.0f, 1.3f), title[sTb->mode], 1.3f, 248.0f, 0x80);
+    Ps_Heading(Tb_TitleLeft() + 44.0f, Ps_TextTop(32.0f, 1.3f), (sTb->mode==TB_JOIN&&sTb->tagJoin)?"Join Room":title[sTb->mode], 1.3f, 248.0f, 0x80);
     Tb_PageIn(1);
     switch (sTb->mode) {
     case TB_HUB:
         Tb_DrawHubText();
         break;
+    case TB_TAG:
+        Tb_DrawTagText(); break;
+    case TB_TAG_ROOM:
+        Tb_DrawTagRoomText(); break;
     case TB_CREATE:
         Tb_DrawCreateText();
         break;
@@ -1870,6 +2124,11 @@ static void Tb_DrawText(void) {
     /* (no status and no title under it: "ONLINE" was not whether the game is connected, and the title is the
        screen's heading) */
     Ps_Text(322.0f, Ps_TextTop(27.0f, 0.6f), (char *)Port_NetNameGet(), 0.6f, 166.0f, 1);
+    if (sTb->mode == TB_TAG_ROOM) {
+        char occupancy[40];
+        sprintf(occupancy, Port_TagHumans()==1?"%d/%d | %d PLAYER + %d CPU":"%d/%d | %d PLAYERS + %d CPU", Port_TagCount(), Port_TagCapacity(), Port_TagHumans(), Port_TagCount() - Port_TagHumans());
+        Ps_Align(2); Ps_Text(494.0f, 48.0f, occupancy, 0.50f, 190.0f, 3); Ps_Align(0);
+    }
     if (sTb->mode == TB_BLOCK) {
         Tb_DrawBlockText();
     }
@@ -1923,9 +2182,13 @@ s32 PortTbo_Run(void) {
 
     sTb = Heap_Alloc(sizeof(TboScreen), 0x20, 0, 2);
     memset(sTb, 0, sizeof(TboScreen));
+    sTb->tagMoving=-1;
     sTb->hubCur = HUB_CREATE;
     sTb->hubY = Tb_HubRowY(HUB_CREATE);
     Tb_LoadChoices();
+    sTb->tagDelay=Port_Setting("tag_team_delay",6);if(sTb->tagDelay<0||sTb->tagDelay>12)sTb->tagDelay=6;
+    if (getenv("BT4_TAG_PREVIEW") != NULL) { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
+    if (Port_TagCapacity() > 0) Tb_SetMode(TB_TAG_ROOM);
     Port_NetNameGet();
     gPortTboSpar = 0;
     if (Port_LobbyInBackground()) { /* back with a room open (from the main menu after training): its search again */
@@ -1938,6 +2201,41 @@ s32 PortTbo_Run(void) {
     }
     Port_EscQuit(0);
     Tb_WinInit();
+    if (getenv("BT4_RENDER_TBO") != NULL) {
+        const char *which = getenv("BT4_RENDER_TBO");
+        if (which[0] == 't') Tb_SetMode(TB_TAG);
+        else if (which[0] == 'c' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_CREATE);
+        else if (which[0] == 'j' && getenv("BT4_RENDER_TEST")) {sTb->tagJoin=1;Tb_SetMode(TB_JOIN);}
+        else if (which[0] == 'p' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_PROFILE);
+        else if (which[0] == 'n' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_NAME);
+        else if (which[0] == 'q' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_QUICK);
+        else if (which[0] == 'h') { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
+        else { sTb->host = 1; Tb_SetMode(TB_WAIT); }
+    }
+    if (getenv("BT4_TAG_CREATE_TEST") && !getenv("BT4_TAG_VIDEO_TEST")) {
+        sTb->tagCPU=1; sTb->tagCur=6;
+        sTb->tagSize=getenv("BT4_TAG_TEST_SIZE")?atoi(getenv("BT4_TAG_TEST_SIZE")):5;
+        sTb->tagLeft=getenv("BT4_TAG_TEST_LEFT")?atoi(getenv("BT4_TAG_TEST_LEFT")):sTb->tagSize;
+        sTb->tagRight=getenv("BT4_TAG_TEST_RIGHT")?atoi(getenv("BT4_TAG_TEST_RIGHT")):sTb->tagSize;
+        sTb->tagDifficulty=getenv("BT4_TAG_TEST_DIFFICULTY")?atoi(getenv("BT4_TAG_TEST_DIFFICULTY")):2;
+        Tb_SetMode(TB_TAG);
+    }
+    if (getenv("BT4_TAG_DRAFT_TEST") != NULL && !getenv("BT4_TAG_CREATE_TEST") && !getenv("BT4_TAG_VIDEO_TEST") && !getenv("BT4_TAG_JOIN_UI_TEST")) {
+        Port_TagCPUOptions(getenv("BT4_TAG_CPU_TEST") != NULL, getenv("BT4_TAG_TEST_DIFFICULTY")?atoi(getenv("BT4_TAG_TEST_DIFFICULTY")):2);
+        if (Port_TagConnect(getenv("BT4_TAG_SERVER"))) {
+            const char *size = getenv("BT4_TAG_TEST_SIZE");
+            const char *join = getenv("BT4_TAG_DRAFT_JOIN");
+            Port_TagCPUOptions(getenv("BT4_TAG_CPU_TEST") != NULL, getenv("BT4_TAG_TEST_DIFFICULTY")?atoi(getenv("BT4_TAG_TEST_DIFFICULTY")):2);
+            if (join) Port_TagJoin(join, Port_NetNameGet(), 0x123456789ABCDEF0ULL);
+            else Port_TagOpen(size ? atoi(size) : 2, 4, 2, Port_NetNameGet(), 0x123456789ABCDEF0ULL);
+            Tb_SetMode(TB_TAG_ROOM);
+        }
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_TEST")){
+        sTb->hubCur=HUB_TAG;sTb->hubY=Tb_HubRowY(HUB_TAG);sTb->tagLeft=sTb->tagRight=2;sTb->tagCPU=1;sTb->tagDifficulty=3;sTb->tagCur=6;
+        if(getenv("BT4_TAG_LONG_VIDEO")){sTb->tagLeft=getenv("BT4_TAG_TEST_LEFT")?atoi(getenv("BT4_TAG_TEST_LEFT")):5;sTb->tagRight=getenv("BT4_TAG_TEST_RIGHT")?atoi(getenv("BT4_TAG_TEST_RIGHT")):5;sTb->tagAttacks=1;}
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_JOIN_UI_TEST")){sTb->tagJoin=1;sTb->tagCur=7;Tb_SetMode(TB_TAG);}
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         s32 live;
@@ -1951,11 +2249,51 @@ s32 PortTbo_Run(void) {
         Snd_Update();
         ColorFade_Update();
         live = !sTb->leaving && ColorFade_IsInDone();
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TEXT_CAPTURE")&&sTb->frames==90){
+            extern void Port_TagUiCapture(int);Port_TagUiCapture(1);
+            fprintf(stderr,"tag typography preview: page=%d menu-ready=1\n",sTb->mode);
+        }
+        if (getenv("BT4_TAG_CREATE_TEST") && sTb->mode==TB_TAG && live) {
+            gPad[0].gamePressed |= PADG_CROSS;
+        }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CHAT_PREVIEW")&&sTb->mode==TB_TAG_ROOM&&live&&!sTb->tagChatTyping)
+            gPad[0].gamePressed=PADG_CIRCLE;
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_LOBBY_PREVIEW")&&sTb->mode==TB_TAG_ROOM&&live&&Port_TagPhase()==1){
+            static s32 previewTick;
+            if(++previewTick==60){extern void Port_TagCapture(void);Port_TagCapture();
+                fprintf(stderr,"tag text preview: room=1 chat=%d slots=%d\n",sTb->tagChatTyping,Port_TagSlots());}
+        }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_TEST")&&live){
+            static s32 videoMode=-1,videoTick;
+            if(videoMode!=sTb->mode){videoMode=sTb->mode;videoTick=0;fprintf(stderr,"tag video: online menu page=%d\n",videoMode);}
+            ++videoTick;
+            if(sTb->mode==TB_HUB&&videoTick==100)gPad[0].gamePressed=PADG_CROSS;
+            if(sTb->mode==TB_TAG&&videoTick>=60&&videoTick%18==0){
+                if(sTb->tagCur!=6)gPad[0].gameRepeat=PADG_DOWN;
+                else if(videoTick>=216)gPad[0].gamePressed=PADG_CROSS;
+            }
+            if(sTb->mode==TB_TAG_ROOM&&videoTick==140)gPad[0].gamePressed=PADG_SQUARE;
+        }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_JOIN_UI_TEST")&&live){
+            if(sTb->mode==TB_TAG)gPad[0].gamePressed=PADG_CROSS;
+            else if(sTb->mode==TB_JOIN){const char *code=getenv("BT4_TAG_DRAFT_JOIN");s32 j,k;
+                if(sTb->codeLen<6&&getenv("BT4_TAG_JOIN_PASTE_TEST")){
+                    static s32 pasted;
+                    if(!pasted){sTb->keyRow=KEY_ROWS;sTb->keyCol=3;gPad[0].gamePressed=PADG_CROSS;pasted=1;}
+                }else if(sTb->codeLen<6){for(j=0;j<KEY_ROWS;++j)for(k=0;k<KEY_COLS;++k)if(code&&sTbKeys[j][k]==code[sTb->codeLen]){sTb->keyRow=j;sTb->keyCol=k;}
+                    gPad[0].gamePressed=PADG_CROSS;
+                }else{gPad[0].gamePressed=PADG_START;fprintf(stderr,"tag join fixture: original keypad submitted code %s\n",sTb->code);}
+            }
+        }
         Ps_PromptsClear();
-        switch (sTb->mode) {
+        if (getenv("BT4_RENDER_TBO") == NULL) switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);
             break;
+        case TB_TAG:
+            Tb_TagUpdate(live); break;
+        case TB_TAG_ROOM:
+            Tb_TagRoomUpdate(live); break;
         case TB_CREATE:
             Tb_CreateUpdate(live);
             break;
@@ -2005,10 +2343,12 @@ s32 PortTbo_Run(void) {
     Port_EscQuit(1);
     Port_TextMode(0);
     Tb_WinTerm();
+    if (sTb->train != 2) Port_TagClose();
     if (!sTb->train && (sTb->mode == TB_WAIT || sTb->mode == TB_SPAR)) {
         Port_LobbyCancel();
     }
     train = sTb->train;
+    if (train == 2) { Heap_Free(sTb); sTb = NULL; Dma_ResetBuffers(); return 2; }
     if (train) {
         static u8 noItems[0x10]; /* an empty set of Z items */
         s32 me = sTb->spMe;

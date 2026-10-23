@@ -13,6 +13,7 @@
  */
 
 extern s32 PortTbo_Run(void); /* menu/port_tbo.c: 1 = left for "Train While Waiting" (its fight is set up) */
+extern s32 TeamSel_TagRun(s32 section);
 
 s32 gPortScreen;
 
@@ -186,7 +187,7 @@ u32 Ps_Uv(f32 t) {
 }
 
 /* A picture's part (u, v in 0..1) over a box of the SCREEN, tinted (0x80 per channel = as it is). */
-void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, u32 tint, s32 alpha) {
+static void Ps_SpriteScreenFiltered(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, u32 tint, s32 alpha,s32 mips) {
     u64 *p;
 
     if (alpha <= 0 || x1 <= x0 || y1 <= y0) {
@@ -202,7 +203,7 @@ void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32
     p[0] = 0x44;
     p[1] = 0x42; /* ALPHA_1: blended by the source's alpha */
     p += 2;
-    p[0] = 0x60;
+    p[0] = mips?0x60:0x61; /* fixed base LOD for an extremely compressed bar centre */
     p[1] = 0x14; /* TEX1_1: bilinear */
     p += 2;
     p[0] = 0x30000;
@@ -229,6 +230,9 @@ void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32
     p[1] = (u64)((s32)(x1 * 16.0f) + 0x7000) | ((u64)((s32)(y1 * 16.0f) + 0x7200) << 16);
     p += 2;
     Dma_EndDirect(p);
+}
+void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, u32 tint, s32 alpha){
+    Ps_SpriteScreenFiltered(id,x0,y0,x1,y1,u0,v0,u1,v1,tint,alpha,1);
 }
 
 /* The same over a box of the page. */
@@ -267,11 +271,20 @@ void Ps_Pill(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
     f32 cap = c * (y1 - y0) / h * 0.857f;
     f32 cu = c / w;
 
+    if ((id==TBO_KIT_BAR || id==TBO_KIT_SEL) && x1-x0<(y1-y0)*2.5f) {
+        Ps_Sprite(id==TBO_KIT_BAR?TBO_KIT_BAR_COMPACT:TBO_KIT_SEL_COMPACT,
+            x0,y0,x1,y1,0,0,1,1,PS_PLAIN,alpha);
+        return;
+    }
     if (cap * 2.0f > x1 - x0) {
         cap = (x1 - x0) * 0.5f;
     }
     Ps_Sprite(id, x0, y0, x0 + cap, y1, 0.0f, 0.0f, cu, 1.0f, PS_PLAIN, alpha);
-    Ps_Sprite(id, x0 + cap, y0, x1 - cap, y1, cu, 0.0f, 1.0f - cu, 1.0f, PS_PLAIN, alpha);
+    /* The centre samples almost the full 1,280-pixel bar. On short keys its
+     * horizontal minification selected a mip that erased the top/bottom rim,
+     * leaving an opaque vertical stripe. Keep its vertical detail at base LOD. */
+    Ps_SpriteScreenFiltered(id,Ps_X(x0+cap),Ps_Y(y0),Ps_X(x1-cap),Ps_Y(y1),cu,0,1-cu,1,PS_PLAIN,alpha,
+        x1-x0-2*cap>=(y1-y0)*4);
     Ps_Sprite(id, x1 - cap, y0, x1, y1, 1.0f - cu, 0.0f, 1.0f, 1.0f, PS_PLAIN, alpha);
 }
 
@@ -618,10 +631,25 @@ s32 PortScreen_Main(void) {
     }
     switch (screen) {
     case PORT_SCREEN_TBO:
-        Bgm_Play(0x10B16 + 2);
-        result = PortTbo_Run();
+        {extern s32 Port_TagNetwork(void),Port_TagPhase(void),Port_TagResultChoice(void),TagBattle_ConfigureLocal(void);
+        if(Port_TagNetwork()&&Port_TagPhase()==3&&Port_TagResultChoice()==0&&TagBattle_ConfigureLocal()){
+            gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;return 3;
+        }}
+        {extern s32 TagBattle_TakeReturn(void),Port_TagReselect(void);
+        extern void Port_TagClose(void);
+        s32 back=TagBattle_TakeReturn();
+        if(back==2){Port_TagClose();gProgress->mode=4;return 0;}
+        if(back==1 && Port_TagReselect() && TeamSel_TagRun(2)){
+            gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;return 3;
+        }}
+        Bgm_Play(0x816 + 2);
+        do {
+            result = PortTbo_Run();
+            if (result == 2 && TeamSel_TagRun(2)) { result=3; break; }
+        } while (result == 2);
         Adx_StopAll();
-        gProgress->mode = result ? 45 : 4; /* the Ultimate Training's fight, or back to the main menu */
+        if(result==3){gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;}
+        else gProgress->mode = result ? 45 : 4; /* training, or back to the main menu */
         break;
     default:
         gProgress->mode = 4;

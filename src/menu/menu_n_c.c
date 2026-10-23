@@ -687,7 +687,7 @@ void UbRank_ClipGoto(s32 movie, s32 state, char *label) {
     Flash_ClipGotoLabel(flash, &ref, label);
 }
 
-/* Background loader of the two fighters' large pictures (files 0x2F9 + character), one step per frame. */
+/* Background loader of the two fighters' large pictures (files 0x71C + character), one step per frame. */
 void UbRank_UpdateFaceLoad(void) {
     s32 chara[2];
     MTexRes *res;

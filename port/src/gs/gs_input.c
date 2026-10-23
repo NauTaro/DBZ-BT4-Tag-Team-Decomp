@@ -55,6 +55,9 @@ static const struct { const char *name, *label; unsigned bit; int key; int pad; 
 };
 
 static int sKeys[2][PORT_ACTIONS], sPadBtn[2][PORT_PAD_BUTTONS], sPadSlot[2];
+static unsigned sQuickPress[2];
+static SDL_SpinLock sQuickPressLock;
+extern int gPortTboTyping;
 /* Per player: the deadzone of the left and of the right stick (-1 = the game's own, as the pad's bytes always were
    passed; 0..PORT_DEADZONE_MAX = a round one of that many percent, stick_bytes below), and vibration (on, strength
    in percent). */
@@ -141,6 +144,13 @@ int PortInput_Hotkey(const SDL_Event *ev) {
         return 0;
     }
     if (ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat) {
+        if (!gPortOverlayOpen && !gPortChatTyping && !gPortTboTyping && !sKeySwallow) {
+            int p, a;
+            SDL_LockSpinlock(&sQuickPressLock);
+            for (p = 0; p < 2; p++) for (a = 0; a < PORT_PAD_BUTTONS; a++)
+                if (sKeys[p][a] == (int)ev->key.scancode) sQuickPress[p] |= kActions[a].bit;
+            SDL_UnlockSpinlock(&sQuickPressLock);
+        }
         return sOverlayKey > 0 && (int)ev->key.scancode == sOverlayKey;
     }
     if (ev->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
@@ -270,10 +280,14 @@ void PortInput_TboClipboard(void) {
     memcpy(text, sTboCopy, sizeof(text));
     SDL_UnlockSpinlock(&sTboLock);
     if (due) {
-        SDL_SetClipboardText(text);
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CLIPBOARD_OUT")){
+            FILE *f=fopen(getenv("BT4_TAG_CLIPBOARD_OUT"),"ab");
+            if(f){fprintf(f,"%s\n",text);fclose(f);}
+        }else SDL_SetClipboardText(text);
     }
     if (paste) {
-        char *clip = SDL_GetClipboardText();
+        char *clip = getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CLIPBOARD_TEXT")?
+            SDL_strdup(getenv("BT4_TAG_CLIPBOARD_TEXT")):SDL_GetClipboardText();
         tbo_paste_code(clip);
         SDL_free(clip);
     }
@@ -420,6 +434,7 @@ static void pads_refresh(void) {
     static unsigned calls;
     SDL_JoystickID *ids;
     int n = 0, i, k;
+    if(getenv("BT4_RENDER_TEST") != NULL)return;
 
     if (!sInit) {
         SDL_InitSubSystem(SDL_INIT_GAMEPAD);
@@ -872,7 +887,7 @@ void Port_PadVibrate(int socket, int small, int large) {
     int player = socket, why = 0;
     unsigned low, high;
 
-    if (!sInit || gPortResim || socket < 0 || socket > 1) {
+    if (getenv("BT4_RENDER_TEST") != NULL || !sInit || gPortResim || socket < 0 || socket > 1) {
         return;
     }
     if (Port_NetActive()) {
@@ -938,7 +953,7 @@ int Port_PadRead(int socket, unsigned char *data) {
     SDL_Gamepad *g;
     int a;
 
-    if (!GsGpu_Enabled() || socket < 0 || socket > 1) {
+    if (getenv("BT4_RENDER_TEST") != NULL || !GsGpu_Enabled() || socket < 0 || socket > 1) {
         return 0;
     }
     pthread_once(&sLoadOnce, load);
@@ -1009,6 +1024,10 @@ int Port_PadRead(int socket, unsigned char *data) {
     if (socket == 0) {
         btn |= script_buttons();
     }
+    SDL_LockSpinlock(&sQuickPressLock);
+    if (!gPortOverlayOpen && !gPortChatTyping && !sKeySwallow) btn |= sQuickPress[socket];
+    sQuickPress[socket] = 0;
+    SDL_UnlockSpinlock(&sQuickPressLock);
     if (socket == 0 && getenv("BT3_STICK_TEST") != NULL) { /* the numbers, once: what was read, what was passed, what the game has */
         static const char *const dirs[5] = {"-", "up", "down", "left", "right"};
         extern unsigned char gPad[]; /* the game's (include/sys/pad.h): 0x130 left x, y, 0x138 right x, y, 0x148 held */

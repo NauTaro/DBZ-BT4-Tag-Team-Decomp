@@ -18,6 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+int gPortVariant = 1; /* Dedicated BT4 build. */
+
 #define HEAP_BASE 0x003BE000u  /* page that holds the first address */
 #define HEAP_FIRST 0x003BE730u /* what the PS2's malloc returns for the game heap (gHeapStart in a PCSX2 save state) */
 #define HEAP_END 0x02000000u
@@ -346,7 +348,7 @@ int __wrap_main(int argc, char **argv) {
 /* ---- The game's own data, fetched from the user's disc (release builds).
    A program made by port/tools/strip_data.py has the data tables of the game's two programs and the VU1
    microprograms set to zero, and a list next to it (<program>.dat) of where each run of bytes comes from: the
-   user's SLUS_216.78 (as a flat image from 0x100000) or BIN/DBZP.BIN. This copies them in before anything else
+   user's SLUS_219.78 (as a flat image from 0x100000) or BIN/DBZP.BIN. This copies them in before anything else
    runs. A program without that list still has the data linked in (the developer's build) and nothing happens. */
 #define ROM_BASE 0x100000u
 #define ROM_END 0x2FF180u
@@ -408,7 +410,7 @@ static void Port_LoadGameData(void) {
            settings are next to it. If there is no gamedata here but there is next to the program, work there. */
         char dir[1024], probe[1200];
         char *slash;
-        FILE *here = fopen("gamedata/disc/SLUS_216.78", "rb");
+        FILE *here = fopen("gamedata/disc/SLUS_219.78", "rb");
         if (here != NULL) {
             fclose(here);
         } else {
@@ -421,7 +423,7 @@ static void Port_LoadGameData(void) {
 #endif
             if (slash != NULL) {
                 *slash = '\0';
-                snprintf(probe, sizeof(probe), "%s/gamedata/disc/SLUS_216.78", dir);
+                snprintf(probe, sizeof(probe), "%s/gamedata/disc/SLUS_219.78", dir);
                 here = fopen(probe, "rb");
                 if (here != NULL) {
                     fclose(here);
@@ -450,7 +452,7 @@ static void Port_LoadGameData(void) {
     if (listSize < 16 + (size_t)count * 16) {
         data_fail("damaged file", path);
     }
-    snprintf(path, sizeof(path), "%s/disc/SLUS_216.78", root);
+    snprintf(path, sizeof(path), "%s/disc/SLUS_219.78", root);
     elf = read_file(path, &elfSize);
     if (elf == NULL || elfSize < 0x34 || memcmp(elf, "\177ELF", 4) != 0) {
         data_fail("the game's program was not found", path);

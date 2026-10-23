@@ -18,6 +18,7 @@
 #include "menu_translation.h"
 #include "../quit_dialog.h"
 #include "net_chat.h"
+#include "voice.h"
 
 static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
 static bool meter_on(void);
@@ -72,6 +73,7 @@ void Port_ClashSquareSet(int on);
 int Port_ClashSquareX(void);                   // what a press is worth, in quarters of a point (4, 6, 7, 8)
 void Port_ClashSquareXSet(int quarters);
 extern int gsInterp;                           // gs_draw.c: in-between pictures on (1) / off (0); -1 before the first frame
+int Port_TagBattleRenderActive(void);
 void Port_SettingsWrite(void);
 int Port_LobbyStart(int host, const char *address, int port); // gs/net.c
 int Port_LobbyStartCode(int host, const char *code);         // the same with a room code (the matchmaking service)
@@ -1129,6 +1131,7 @@ static int chat_event(const SDL_Event *ev) {
 }
 
 int Ui_Event(const SDL_Event *ev) {
+    PortVoice_Event(ev);
     if (!sReady) {
         return 0;
     }
@@ -1329,12 +1332,16 @@ static void video_tab(PortVideo &v) {
         // on one more picture is drawn between each two. The game itself, its replays and online play are the same.
         static const char *kSmooth[] = { "Off (30, as the console)", "60 pictures a second", "120 pictures a second", "240 pictures a second" };
         int smooth = gsInterp < 0 ? 0 : gsInterp > 3 ? 3 : gsInterp;
+        const bool tagNativeFrames = Port_TagBattleRenderActive() != 0;
         ImGui::SetNextItemWidth(U(416.0f));
+        ImGui::BeginDisabled(tagNativeFrames);
         if (ImGui::Combo("Smooth motion", &smooth, kSmooth, 4)) {
             gsInterp = smooth;
             Port_SettingSave("interp", gsInterp);
             Port_SettingsWrite();
         }
+        ImGui::EndDisabled();
+        if (tagNativeFrames) ImGui::TextDisabled("Tag Team uses native frames for stable fighter rendering.");
         ImGui::SetItemTooltip("Experimental. The game computes a fight 30 times a second. With this, more pictures are\n"
                               "drawn between each two. The fight itself does not change, and neither does online play.\n"
                               "The newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\n"
@@ -1582,8 +1589,9 @@ static void ui_tab(PortVideo &v) {
     }
     ImGui::SetItemTooltip("Replace the shared font used by dialogue, subtitles and ordinary UI text.\n"
                           "Original keeps the game's glyphs. Text placement, colors, shadows and icons are preserved.");
-    static const char *const kHud[] = {"At the screen's edges", "At the edges, long health bars", "In the middle, as in 4:3"};
-    ImGui::Combo("HUD Style", &v.hudLayout, kHud, 3);
+    static const char *const kHud[] = {"BT4 original, en los bordes", "BT4 original, centrado"};
+    int bt4Hud = v.hudLayout == 2 ? 1 : 0;
+    if (ImGui::Combo("HUD Style", &bt4Hud, kHud, 2)) v.hudLayout = bt4Hud ? 2 : 0;
     ImGui::SetItemTooltip("Where a fight's health bars and gauges sit in a picture wider than 4:3.\n"
                           "Long health bars: the bars reach from the edges to the timer.\n"
                           "In the middle: the original 4:3 arrangement, next to the timer.");
@@ -1621,7 +1629,10 @@ static void ui_tab(PortVideo &v) {
 
 extern "C" int gPortMusicFollows; // snd_adx.c: 1 = looping music is sped up or slowed down with the game
 
+#include "voice_ui.inc"
 static void audio_tab(PortVideo &v) {
+    voice_settings_draw();
+    ImGui::SeparatorText("Game Audio");
     ImGui::SliderInt("Music", &v.music, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
     ImGui::SliderInt("Sound effects", &v.effects, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
     ImGui::SetItemTooltip("Hits, blasts, menu sounds. Takes effect with the next sound that starts.");
@@ -1965,32 +1976,7 @@ static void build(void) {
             if (tab("Audio", 2)) { audio_tab(v); ImGui::EndTabItem(); }
             if (tab("UI", 3)) { ui_tab(v); ImGui::EndTabItem(); }
             if (tab("Controls", 4)) {
-                bool cs = Port_ClashSquare() != 0;
-                if (ImGui::Checkbox("Clashes: Square counts as a direction", &cs)) {
-                    Port_ClashSquareSet(cs);
-                }
-                ImGui::SetItemTooltip("In a clash of two beams or two rushes the game counts newly pressed directions:\n"
-                                      "turning the stick, or tapping the d-pad. With this on, each press of Square\n"
-                                      "counts as one of them while the clash lasts, as a tap of the d-pad does.\n"
-                                      "It only changes your own pad, so it can be used in online play.");
-                if (cs) {
-                    static const int kQuarters[] = {4, 6, 7, 8, 9};
-                    static const char *const kWorth[] = {"1", "1.5", "1.75", "2", "2.25"};
-                    int at = 4;
-                    for (int i = 0; i < 5; i++) {
-                        if (kQuarters[i] == Port_ClashSquareX()) {
-                            at = i;
-                        }
-                    }
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(U(80.0f));
-                    if (ImGui::Combo("per press", &at, kWorth, 5)) {
-                        Port_ClashSquareXSet(kQuarters[at]);
-                    }
-                    ImGui::SetItemTooltip("What one press of Square is worth. The d-pad has four buttons to tap in turn and the\n"
-                                          "stick four directions a turn; Square is one button. 1 is a single d-pad tap.\n"
-                                          "Never more than one a frame, which is the most the game counts from any pad.");
-                }
+                ImGui::TextWrapped("BT4 clashes use repeated button presses. Follow the on-screen prompt.");
                 ImGui::Separator();
                 controls_tab();
                 ImGui::EndTabItem();
@@ -2068,6 +2054,8 @@ extern "C" void Port_UiBanner(const char *text, int ms) {
     }
     sBannerUntil = ms > 0 ? SDL_GetTicks() + (Uint64)ms : 0;
 }
+
+#include "tag_team_menu_ui.inc"
 
 // The save icon (quick saving, src/sys/mcflow_a.c): a small memory card in the bottom right corner of the picture
 // while the game saves, at least a second, then it fades. Set from the game's thread: 1 saving, 0 saved, -1 the
@@ -2488,12 +2476,16 @@ static bool frame_build(void) {
     if (sBanner[0] != '\0' && sBannerUntil != 0 && SDL_GetTicks() >= sBannerUntil) {
         sBanner[0] = '\0';
     }
-    bool banner = sReady && sBanner[0] != '\0';
+    bool tagMenu = sReady && sTagMenuOpen;
+    PortVoiceOptions voiceOptions;PortVoice_Options(&voiceOptions);
+    PortVoiceState voiceState;PortVoice_State(&voiceState);
+    bool voice = sReady && voiceOptions.indicators && (voiceState.sessionMode!=0||(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_ICON_TEST")));
+    bool banner = sReady && sBanner[0] != '\0' && !tagMenu;
     Uint64 now = SDL_GetTicks();
     bool saving = save_icon_on(now) && sReady && gUiPresentW > 0 && gUiPresentH > 0;
     meter_count();
     sBuilt = false;
-    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving)) {
+    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !tagMenu && !voice)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -2581,6 +2573,7 @@ static bool frame_build(void) {
             dl->AddText(font, size, ImVec2(x, y), IM_COL32(255, 255, 255, 255), text);
         }
     }
+    if (tagMenu)tag_menu_draw();
     if (banner) { // the start of an online match (Port_UiBanner): in the middle, large, outlined
         ImGuiIO &io = ImGui::GetIO();
         ImDrawList *dl = ImGui::GetForegroundDrawList();
@@ -2686,6 +2679,7 @@ static bool frame_build(void) {
                          ImVec2(1.0f, (float)(gUiSongIdx + 1) / (float)sSongCount));
         }
     }
+    voice_indicator_draw();
     ImGui::Render();
     return true;
 }

@@ -1,4 +1,6 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 Bt4_HasRecoveryVariant(void *chr);
 #include "battle/btl_act_f.h"
 
 /*
@@ -187,10 +189,16 @@ void BtlSuper_SetClassFlag(BtlSuperChr *chr, s32 cls, s32 force) {
 
 /* Requests hit-stop for this frame: level 2 (flag 0x125) with the full flag set, or level 1 (flag 0x126). */
 void BtlSuper_RequestHitStop(BtlSuperChr *chr, s32 light) {
+    extern s32 TagBattle_Preparing(s32);
+    if(TagBattle_Active()){
+        BtlChar_SetFlag(chr,0x128);
+        if(!light&&TagBattle_Preparing(chr->player))BtlChar_SetFlag(chr,0x125);
+        return;
+    }
     if (light) {
         BtlChar_SetFlag(chr, 0x44);
         BtlChar_SetFlag(chr, 0x45);
-        BtlChar_SetFlag(chr, 0x126);
+        /* Removed by BT4 at SLUS 0x1F55D4. */
     } else {
         BtlChar_SetFlag(chr, 0x42);
         BtlChar_SetFlag(chr, 0x43);
@@ -3027,7 +3035,7 @@ void BtlAct_ClashStruggleHandler(ActGChr *chr, s32 phase) {
         BtlChar_SetFlag(chr, 0x128);
         BtlChar_SetFxBit(chr, 0x10);
         ChrCam_AddShake(chr, 5.0f, 0.1f);
-        BtlChar_SetFlag(chr, 0xE6);
+        BtlChar_SetFlag(chr, 0xE8);
         BtlChar_Vibrate(chr, 1.0f, 0.1f);
         BtlChar_SetFlag(chr, 0xD2);
         BtlAct_PushAngle(chr, BtlUtil_WrapAngle(BtlChar_GetPos(chr)->rot.y + 3.14159265f), 1.0f, 5.0f);
@@ -3037,8 +3045,8 @@ void BtlAct_ClashStruggleHandler(ActGChr *chr, s32 phase) {
         BtlChar_SetFlag(chr, 0x45);
         BtlChar_SetFlag(chr, 0x46);
         BtlChar_SetFlag(chr, 0x134);
-        if (chr->actionFrame >= 0x10 && BtlInput_TestAction(chr, 0x33, 1)) {
-            chr->clashPower++;
+        if (chr->actionFrame >= 0x10 && BtlInput_TestAction(chr, 0x50, 1)) {
+            chr->clashPower += 3;
 #ifdef PORT /* PC build: BT3_CLASH_LOG=1 says what a clash counts (testing the Square option) */
             Port_ClashLog(chr->player, "beam clash", 1, chr->clashPower, chr->actionFrame);
 #endif
@@ -3079,7 +3087,7 @@ void BtlAct_ClashLostHandler(ActGChr *chr, s32 phase) {
     if (phase == 0) {
         BtlAnim_Play(chr, 0x172, 0.0f);
         ChrCam_RequestCut(chr, 1, chr->player + 0x21);
-        if (BtlMember_GetActiveGauge(chr)->variant == 0) {
+        if (!Bt4_HasRecoveryVariant(chr)) {
             chr->work[0] |= 1;
             BtlAct_SetFormCurrent(chr);
         }

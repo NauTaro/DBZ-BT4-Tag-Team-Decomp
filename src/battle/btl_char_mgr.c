@@ -1,4 +1,7 @@
+extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/battle.h"
 #include "battle/battle_setup.h"
 #include "battle/btl_char_mgr.h"
@@ -343,6 +346,9 @@ void BtlChar_Reset(BtlMgrChr *chr) {
         mem->cpuLevel = BattleSide_GetMember(side, i)->cpuLevel;
         mem->aiType = BattleSide_GetMember(side, i)->aiType;
         m = BattleSide_GetMember(side, i);
+        /* BT4 restores the base body and eye sheets on battle reset (0x3BF04C). */
+        *(void **)((u8 *)obj + 0x48) = *(void **)((u8 *)obj + 0x1C);
+        *(void **)((u8 *)obj + 0x4C) = *(void **)((u8 *)obj + 0x28);
         BtlMember_LoadParams(chr, i, 1, m->health, BattleSide_GetMemberVariant(side, i));
     }
     chr->unk99C = 0;
@@ -350,8 +356,8 @@ void BtlChar_Reset(BtlMgrChr *chr) {
         chr->unk99C = 100000;
     }
     res = BattleResult_GetPtr();
-    res->unk1C[chr->side] = 0;
-    res->unk24[chr->side] = 0;
+    res->unk1C[TagBattle_Team(chr->side)] = 0;
+    res->unk24[TagBattle_Team(chr->side)] = 0;
     if (BtlMember_GetActiveGauge(chr)->unk20 != 0) {
         BtlChar_GetObj(chr)->flags |= 0x40000000;
     }
@@ -562,13 +568,33 @@ void BtlChar_ResetObjWork(BtlMgrChr *chr) {
     BtlObj_InitChains(BtlChar_GetObj(chr));
 }
 
+/* Shared simulation choice, independent of the local camera. Simultaneous
+ * default cinematics are serialized by priority and actor index. Throws are
+ * outside this action range and never request a full-roster cinematic stop. */
+#include "battle/tag_team_native.h"
+#include "tag_team_cut_audit.inc"
+static s32 sTagDefaultCutOwner=-1;
+s32 TagBattle_DefaultCutOwner(void){return sTagDefaultCutOwner;}
+static s32 TagBattle_CutScore(s32 i){return TagBattle_Preparing(i)?2:-1;}
+static s32 TagBattle_FindDefaultCutOwner(void){
+    extern s32 TagBattle_Presentation(void),ChrCam_IsCutActive(void *);
+    s32 i,owner=-1,priority=-1;
+    if(!TagBattle_Active())return -1;
+    if(sTagDefaultCutOwner>=0 && sTagDefaultCutOwner<BtlChar_GetCount() && TagBattle_CutScore(sTagDefaultCutOwner)>=0)return sTagDefaultCutOwner;
+    for(i=0;i<BtlChar_GetCount();++i){
+        s32 score=TagBattle_CutScore(i);
+        if(score>priority){priority=score;owner=i;}
+    }
+    return owner;
+}
 /* Decides which fighters are frozen (hit-stop) and counts the freeze timers down. */
 void BtlChars_UpdateFreeze(void) {
-    s32 level[2];
+    s32 level[10]; /* Per actor, including every TAG TEAM fighter. */
     s32 i;
-    s32 max;
+    s32 max,cutOwner=sTagDefaultCutOwner=TagBattle_FindDefaultCutOwner();
     u8 *bytes;
     BtlMgrChr *chr;
+    TagCutAudit_Begin(cutOwner);
 
     max = 0;
     bytes = (u8 *)level;
@@ -580,11 +606,23 @@ void BtlChars_UpdateFreeze(void) {
         } else if (BtlChar_TestFlag(chr, 0x126)) {
             level[i] = 1;
         }
+        if(cutOwner>=0 && i!=cutOwner)level[i]=0;
         if (max < level[i]) {
             max = level[i];
         }
     }
-    if (max > 0) {
+    if (max > 0 && TagBattle_Active() && cutOwner<0) {
+        /* Preserve finite impact stop, but never let a cinematic owner freeze
+           the entire roster or a second owner executing its own action. */
+        extern s32 TagBattle_Target(s32 actor);
+        for(i=0;i<BtlChar_GetCount();++i)if(level[i]){
+            s32 target=TagBattle_Target(i);
+            if(target>=0 && target<BtlChar_GetCount() && !level[target]){
+                BtlMgrChr *other=BtlChar_Get(target);
+                other->freezeNext=1;other->freezeDelay=0;
+            }
+        }
+    } else if (max > 0) {
         for (i = 0; i < BtlChar_GetCount(); i++) {
             chr = BtlChar_Get(i);
             chr->freezeNext = 1;
@@ -609,6 +647,13 @@ void BtlChars_UpdateFreeze(void) {
     }
     for (i = 0; i < BtlChar_GetCount(); i++) {
         chr = BtlChar_Get(i);
+        if(cutOwner>=0 && i!=cutOwner){
+            extern s32 TagBattle_Target(s32 actor);
+            /* Existing private pairs continue; everyone else holds their pose
+             * during this shared preparation. */
+            if(TagBattle_PairAttacker(i)<0){chr->freezeNext=1;chr->freezeDelay=0;}
+        }
+        if(cutOwner>=0&&TagBattle_PairAttacker(i)>=0){chr->freezeNext=0;chr->freezeDelay=0;chr->freeze=0;}
         if (chr->freeze > 0) {
             s32 v = chr->freeze - 1;
 
@@ -640,7 +685,7 @@ void BtlChars_UpdateObjFlag2(void) {
             break;
         }
     }
-    if (found < 0) {
+    if (found < 0 || TagBattle_Active()) {
         for (i = 0; i < BtlChar_GetCount(); i++) {
             chr = BtlChar_Get(i);
             if (BtlChar_TestFlag(chr, 0x30) || BtlChar_TestFlag(chr, 0xB)) {
@@ -685,7 +730,7 @@ void BtlChars_UpdateCollision(void) {
             break;
         }
     }
-    if (nobodyFrozen) {
+    if (nobodyFrozen || TagBattle_Active()) {
         BtlBodyHit_Update();
         BtlColl_Update();
     } else {
@@ -912,7 +957,7 @@ void BtlChar_RaiseEvents(BtlMgrChr *chr) {
     }
     if (BtlChar_TestFlag(chr, 3)) {
         BattleResult *res = BattleResult_GetPtr();
-        s32 opp = BtlOpp_GetPlayer(chr);
+        s32 opp = TagBattle_Team(BtlOpp_GetPlayer(chr));
 
         if (res->unk1C[opp] < chr->unkD40) {
             res->unk1C[opp] = chr->unkD40;
@@ -920,7 +965,7 @@ void BtlChar_RaiseEvents(BtlMgrChr *chr) {
         if (res->unk24[opp] < chr->unkD44) {
             res->unk24[opp] = chr->unkD44;
         }
-        res->health[chr->side] = BtlMember_GetTeamHealthRatio(chr) * 100.0f;
+        res->health[TagBattle_Team(chr->side)] = BtlMember_GetTeamHealthRatio(chr) * 100.0f;
         if (BtlMember_GetActiveGauge(chr)->health == 1) {
             if (BtlMember_CountAlive(BtlChar_Get(BtlOpp_GetPlayer(chr))) <= 0) {
                 BtlEvent_Raise(chr->side, 0x54);
@@ -1068,7 +1113,7 @@ void BtlChar_UpdateSeqFlags(BtlMgrChr *chr) {
         break;
     }
     BtlChar_UpdateLockOn(chr);
-    if (BtlChars_IsTimeStopped()) {
+    if (TagBattle_IsActorLoading(chr->side)) {
         BtlChar_SetHeldFlag(chr, 0x135);
     } else {
         BtlChar_ClearFlag(chr, 0x135);
@@ -1156,7 +1201,7 @@ void BtlChar_UpdateStage8(BtlMgrChr *chr) {
     if (gBtlChars->flags & BTL_CHARS_STARTED) {
         started = 1;
     }
-    if (BtlChars_IsTimeStopped()) {
+    if (TagBattle_IsActorLoading(chr->side)) {
         started = 0;
     }
     StgCol_UpdateFighter(obj, flag, BtlCharApi_IsChanging(chr->objId) ? 0 : started);
@@ -1179,17 +1224,26 @@ void BtlChar_UpdateStage9(BtlMgrChr *chr) {
 /* Phase 4 body 6: the fighter's own camera, then the object's final placement. */
 void BtlChar_UpdateCamera(BtlMgrChr *chr) {
     BtlMgrObj *obj = BtlChar_GetObj(chr);
+    extern void Heap_TagCheck(s32 phase);
 
     if (!BtlChar_IsFrozen(chr)) {
         ChrCam_StartCut(chr);
+        Heap_TagCheck(200+chr->index);
         ChrCam_UpdateDemo(chr);
+        Heap_TagCheck(210+chr->index);
         ChrCam_UpdateInput(chr);
+        Heap_TagCheck(220+chr->index);
         BtlObj_SetMoveVec(obj, BtlChar_GetPos(chr)->unk30);
         BtlObj_UpdateChains(obj);
+        Heap_TagCheck(230+chr->index);
         BtlChar_UpdateHead(chr);
+        Heap_TagCheck(240+chr->index);
         BtlObjPose_CalcMatrices(obj);
+        Heap_TagCheck(250+chr->index);
         BtlFx_UpdateAll(chr);
+        Heap_TagCheck(260+chr->index);
         BtlObjHit_BuildVolumes(obj);
+        Heap_TagCheck(270+chr->index);
     }
 }
 
@@ -1212,16 +1266,16 @@ void BtlChar_PostScene(BtlMgrChr *chr) {
     BtlChar_ObjToPose(chr);
     ChrCam_Update(chr);
     BtlFx_UpdatePostScene(chr);
-    if (BtlMember_GetActiveGauge(chr)->health < 10000) {
-        BtlMember_GetActiveGauge(chr)->lowHealth = 1;
+    if (BtlMember_GetActiveGauge(chr)->health < 20000) {
+        BtlMember_GetActiveGauge(chr)->lowHealth |= 1;
         if (!(BtlParam_GetUnk0(chr) & 0x80) && chr->unkE14 <= 0 && chr->unkE18 <= 0 && !BtlChar_TestFlag(chr, 6)) {
-            BtlMember_GetActiveGauge(chr)->lowHealthIdle = 1;
+            BtlMember_GetActiveGauge(chr)->lowHealthIdle = BtlMember_GetActiveGauge(chr)->lowHealth;
         } else {
             BtlMember_GetActiveGauge(chr)->lowHealthIdle = 0;
         }
     } else {
         BtlMember_GetActiveGauge(chr)->lowHealthIdle = 0;
-        BtlMember_GetActiveGauge(chr)->lowHealth = 0;
+        BtlMember_GetActiveGauge(chr)->lowHealth &= 2;
     }
     opp = BtlChar_Get(BtlOpp_GetPlayer(chr));
     if (BtlChar_TestFlag(chr, 0x97)) {
@@ -1230,7 +1284,7 @@ void BtlChar_PostScene(BtlMgrChr *chr) {
         } else {
             Vec4_SetZero(opp->unkF30);
         }
-    } else {
+    } else if(BtlChar_GetCount()<=2) {
         Vec4_SetZero(opp->unkF30);
     }
 }
@@ -1313,6 +1367,7 @@ void BtlChar_ResetAll(void) {
     s32 i;
     BtlMgrChr *chr;
     s32 pad;
+    sTagDefaultCutOwner=-1;
 
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlPartner_Release(BtlChar_Get(i));
@@ -1399,7 +1454,7 @@ void BtlChars_UpdateInput(void) {
         BtlChars_ClearObjFlag2();
         return;
     }
-    if ((gBtlChars->flags & BTL_CHARS_STARTED) && !BtlChars_IsTimeStopped()) {
+    if ((gBtlChars->flags & BTL_CHARS_STARTED) && (!BtlChars_IsTimeStopped() || TagBattle_Active())) {
         gBtlChars->frame++;
         gBtlChars->frame &= 0x3FFFFFFF;
         gBtlChars->unk1C = BtlUtil_Max(gBtlChars->unk1C - 1, 0);
@@ -1420,6 +1475,7 @@ void BtlChars_UpdateInput(void) {
 /* Phase 4: the simulation proper, as seven passes over the roster. */
 void BtlChars_UpdateMain(void) {
     s32 i;
+    extern void Heap_TagCheck(s32 phase);
 
     if (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE) {
         return;
@@ -1429,26 +1485,32 @@ void BtlChars_UpdateMain(void) {
     }
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlChar_UpdateMotion(BtlChar_Get(i));
+        Heap_TagCheck(100+i);
     }
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlChar_UpdateStage6(BtlChar_Get(i));
+        Heap_TagCheck(110+i);
     }
     BtlChars_UpdateHold();
     BtlChars_Snapshot(1);
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlChar_UpdateStage7(BtlChar_Get(i));
+        Heap_TagCheck(120+i);
     }
     BtlChars_Snapshot(2);
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlChar_UpdateStage8(BtlChar_Get(i));
+        Heap_TagCheck(130+i);
     }
     BtlChars_Snapshot(3);
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlChar_UpdateStage9(BtlChar_Get(i));
+        Heap_TagCheck(140+i);
     }
     BtlChars_Snapshot(4);
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlChar_UpdateCamera(BtlChar_Get(i));
+        Heap_TagCheck(150+i);
     }
     BtlReplay_UpdateViewer();
     BtlFx_UpdateRoster();
@@ -1456,6 +1518,7 @@ void BtlChars_UpdateMain(void) {
     BtlChars_UpdateCollision();
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlChar_UpdateStage10(BtlChar_Get(i));
+        Heap_TagCheck(160+i);
     }
     BtlClash_Update();
 }
@@ -1470,6 +1533,7 @@ void BtlChars_PostScene(void) {
     if (Battle_GetWork()->flags & BATTLE_FLAG_LOADING) {
         return;
     }
+    if(TagBattle_Active())for(i=0;i<BtlChar_GetCount();++i)Vec4_SetZero(BtlChar_Get(i)->unkF30);
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlChar_PostScene(BtlChar_Get(i));
     }
@@ -1495,4 +1559,8 @@ void BtlChars_EndFrame(void) {
         BtlChar_EndFrame(BtlChar_Get(i));
     }
     BtlChars_Snapshot(5);
+    TagCutAudit_End();
 }
+#ifdef PORT
+#include "tag_team_combat_audit.inc"
+#endif

@@ -1685,7 +1685,7 @@ void EftShot_PlayFireSound(s32 objId, EftShotSlot *slot) {
 /* Shot layer init callback (scene layer 1): one EftShotChar per character from pool 3, a child list with one
    task of class 0x2C3928 and one task per character (0 and 1). */
 void EftShotMgr_Init(EftTask *task) {
-    s32 arg[2];
+    s32 actor;
     s32 size;
     EftShotChar *c;
 
@@ -1698,12 +1698,12 @@ void EftShotMgr_Init(EftTask *task) {
     memset(gEftShot->chr, 0, size);
     gEftShot->list = BtlTask_CreateChildList(task, gEftShot->count + 1, 0);
     BtlTaskList_AddTail(gEftShot->list, gEftTechEvtClass, NULL);
-    arg[0] = 0;
-    arg[1] = 1;
-    c = gEftShot->chr;
-    c->task = BtlTaskList_AddTail(gEftShot->list, gEftShotCharClass, &arg[0]);
-    c = gEftShot->chr + 1;
-    c->task = BtlTaskList_AddTail(gEftShot->list, gEftShotCharClass, &arg[1]);
+    /* Every active actor needs its slot definitions and projectile groups.
+     * Otherwise extra TAG actors wait for A7/A8 until the action timeout. */
+    for (actor = 0; actor < gEftShot->count; ++actor) {
+        c = &gEftShot->chr[actor];
+        c->task = BtlTaskList_AddTail(gEftShot->list, gEftShotCharClass, &actor);
+    }
 }
 
 /* Shot layer term callback: frees the blocks and empties pools 3, 4 and 5. */
@@ -1766,6 +1766,7 @@ void EftShot_SetCharPool(s32 chr) {
     } else {
         pool = 5;
     }
+    if(chr>=2)pool=9+(chr-2)*2;
     BtlPool_SetCurrent(pool);
 }
 
@@ -1778,6 +1779,7 @@ void EftShot_ResetCharPool(s32 chr) {
     } else {
         pool = 5;
     }
+    if(chr>=2)pool=9+(chr-2)*2;
     BtlPool_Reset(pool);
 }
 

@@ -31,13 +31,13 @@ struct Missing { std::string name, why, pkg; };
 
 // The steps of the two ways to install: from a source checkout (install.py does the work and needs build tools) and
 // in a release folder (Tenkaichi3Decomp and Tenkaichi3Decomp.dat next to this program: native.cpp unpacks the disc itself).
-static const char *kSourceSteps[] = {"Requirements", "Disc image", "Game data", "Executable data", "Build", "Self-test"};
-static const char *kReleaseSteps[] = {"Disc image", "Game data", "Self-test"};
+static const char *kSourceSteps[] = {"Requirements", "Imagen ISO", "Datos del juego", "Executable data", "Build", "Prueba del juego"};
+static const char *kReleaseSteps[] = {"Imagen ISO", "Datos del juego", "Prueba del juego"};
 static const struct { const char *title, *help; } kHelp[] = {
     {"European languages", "Spanish, German, French and Italian from the European disc"},
-    {"Requirements", "Compilers and tools on this computer"}, {"Disc image", "Your disc image is read and checked"},
-    {"Game data", "Models, sounds and text are unpacked"}, {"Executable data", "The data tables of the game's programs"},
-    {"Build", "The port is compiled (a few minutes)"}, {"Self-test", "The game's demo fight, without a window"}};
+    {"Requirements", "Compilers and tools on this computer"}, {"Imagen ISO", "Comprobación de la ISO y su versión"},
+    {"Datos del juego", "Extracción y verificación de modelos, sonidos y textos"}, {"Executable data", "The data tables of the game's programs"},
+    {"Build", "The port is compiled (a few minutes)"}, {"Prueba del juego", "Pelea de prueba sin abrir una ventana"}};
 static bool sRelease;
 
 static const char *step_help(const std::string &title) {
@@ -62,7 +62,7 @@ static char sIso[1024];
 // always set up from the USA one; from this one only the languages' archive entries are taken (native.cpp step_eu,
 // install.py --eu-iso).
 static char sIsoEu[1024];
-static bool sEuOnly;    // only the languages are added (the game was set up before: the "Ready to play" page)
+static bool sEuOnly;    // only the languages are added (the game was set up before: the "Listo para jugar" page)
 static int sDialogFor;  // which field the file dialog fills: 0 the USA image, 1 the European one
 static std::string sRoot, sError, sLauncher, sLine;
 static std::vector<StepRow> sRows;
@@ -259,6 +259,30 @@ static void event(const std::string &line) {
     }
 }
 
+static void play_game() {
+        const char *args[2] = {sLauncher.c_str(), NULL};
+        SDL_PropertiesID props = SDL_CreateProperties();
+        SDL_Environment *env = SDL_CreateEnvironment(true);
+        SDL_SetEnvironmentVariable(env, "BT3_GS", "gpu", true); // the window and the GPU renderer
+        for (const char *key : {"BT3_DEMO", "BT3_REPLAY", "BT3_DATA", "BT3_SETTINGS", "BT3_SAVES", "BT3_PAD_PLAY", "BT3_PAD_REC", "BT3_NET_SESSION", "BT3_NET_HOST", "BT3_NET_JOIN", "BT3_LOBBY", "BT3_NET_SCRIPT", "BT4_TEST_MODE", "BT4_TEST_TECH", "BT4_RENDER_TEST"}) {
+            SDL_UnsetEnvironmentVariable(env, key);
+        }
+        SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, (void *)args);
+        SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ENVIRONMENT_POINTER, env);
+        SDL_SetStringProperty(props, SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING, sRoot.c_str());
+        SDL_SetBooleanProperty(props, SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN, true);
+        SDL_Process *game = SDL_CreateProcessWithProperties(props);
+        SDL_DestroyProperties(props);
+        SDL_DestroyEnvironment(env);
+        if (game != NULL) {
+            SDL_DestroyProcess(game);
+            sQuit = true;
+        } else {
+            sError = std::string("No se pudo abrir BT4: ") + SDL_GetError();
+            sPage = PAGE_FAILED;
+        }
+}
+
 static void pump_install() {
     char buf[4096];
     SDL_IOStream *out;
@@ -281,9 +305,10 @@ static void pump_install() {
             }
             if (!sLauncher.empty()) {
                 sPage = PAGE_DONE;
+                play_game();
             } else {
                 if (sError.empty()) {
-                    sError = "The setup stopped unexpectedly.";
+                    sError = "La instalación se detuvo. Revisa el registro para ver el motivo.";
                 }
                 sPage = PAGE_FAILED;
             }
@@ -387,7 +412,7 @@ static bool eu_field() {
         SDL_ShowOpenFileDialog(dialog_done, (void *)1, sWindow, filters, 2, NULL, false);
     }
     if (sIsoEu[0] != '\0' && !file_exists(sIsoEu)) {
-        ImGui::TextColored(kRed, "That file does not exist.");
+        ImGui::TextColored(kRed, "El archivo no existe.");
         return false;
     }
     ImGui::PushStyleColor(ImGuiCol_Text, kDim);
@@ -400,32 +425,32 @@ static void page_pick() {
     static const SDL_DialogFileFilter filters[] = {{"PS2 disc image", "iso;bin;img"}, {"All files", "*"}};
     bool ok = file_exists(sIso);
 
-    heading(GAME, "This sets the game up on your computer from your own PlayStation 2 disc.");
-    ImGui::TextWrapped("Choose your disc image of Dragon Ball Z: Budokai Tenkaichi 3, USA release (SLUS-21678), as an .iso file. "
-                       "The game's data is taken from it and stays on this computer. %s",
-                       sRelease ? "Nothing is downloaded." : "Nothing is downloaded except one small tool.");
+    heading("TENKAICHI3RECOMP DBZ BT4", "TENKAICHI3RECOMP DBZ BT4 - instalacion nativa desde tu ISO.");
+    ImGui::TextWrapped("Elige la ISO de Team BT4 B14 Rev2 (SLUS_219.78). "
+                       "Los datos se extraen de tu ISO en esta carpeta. %s",
+                       sRelease ? "No necesita descargas, Python ni compiladores." : "Nothing is downloaded except one small tool.");
     ImGui::Dummy(ImVec2(0.0f, 10.0f));
-    ImGui::TextUnformatted("Disc image");
+    ImGui::TextUnformatted("Imagen ISO");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 130.0f);
-    ImGui::InputTextWithHint("##iso", "drop the file on this window, or browse", sIso, sizeof(sIso));
+    ImGui::InputTextWithHint("##iso", "Arrastra tu ISO aquí o pulsa Elegir ISO", sIso, sizeof(sIso));
     ImGui::SameLine();
-    if (ImGui::Button("Browse...", ImVec2(120.0f, 0.0f))) {
+    if (ImGui::Button("Elegir ISO...", ImVec2(120.0f, 0.0f))) {
         SDL_ShowOpenFileDialog(dialog_done, NULL, sWindow, filters, 2, NULL, false);
     }
     if (sIso[0] != '\0' && !ok) {
-        ImGui::TextColored(kRed, "That file does not exist.");
+        ImGui::TextColored(kRed, "El archivo no existe.");
     } else if (sRoot.empty()) {
         ImGui::TextColored(kRed, "Neither the game (" GAME ", " GAME ".dat) nor install.py was found next to this program.");
     } else {
-        ImGui::TextColored(kDim, sRelease ? "Needs about 4 GB of free space and takes a minute or two." : "Needs about 4 GB of free space and takes 5 to 10 minutes.");
+        ImGui::TextColored(kDim, sRelease ? "Necesita al menos 6 GB libres. Comprueba cada archivo antes de iniciar el juego." : "Needs about 4 GB of free space and takes 5 to 10 minutes.");
     }
-    bool euOk = eu_field();
+    bool euOk = true; // BT4 has its own Spanish data.
     bottom_row(2);
-    if (big_button("Close", false)) {
+    if (big_button("Cerrar", false)) {
         sQuit = true;
     }
     ImGui::SameLine();
-    if (big_button("Install", true, ok && euOk && !sRoot.empty())) {
+    if (big_button("Instalar BT4", true, ok && euOk && !sRoot.empty())) {
         sEuOnly = false;
         start_install();
     }
@@ -484,7 +509,7 @@ static void step_list() {
 
 static void page_run() {
     int done = 0;
-    heading("Setting up", "You can leave this running. Finished steps are kept if it is interrupted.");
+    heading("Instalando BT4", "Puedes dejarlo trabajando. Si se interrumpe, conserva los archivos ya verificados.");
     step_list();
     for (auto &r : sRows) {
         done += r.state == OK || r.state == SKIPPED;
@@ -492,28 +517,28 @@ static void page_run() {
     ImGui::Dummy(ImVec2(0.0f, 4.0f));
     ImGui::ProgressBar((float)done / (float)(sRows.empty() ? 1 : sRows.size()), ImVec2(-FLT_MIN, 8.0f), "");
     bottom_row(1);
-    if (big_button("Cancel", false)) {
+    if (big_button("Cancelar", false)) {
         if (sProc != NULL) {
             SDL_KillProcess(sProc, false);
         }
         Native_Cancel();
-        sError = "Cancelled. Finished steps are kept; Install continues from where it stopped.";
+        sError = "Instalación cancelada. Al reintentar, se reutilizan los archivos verificados.";
     }
 }
 
 static void page_done() {
     char sub[128];
     if (sRunEnd > sRunStart) {
-        snprintf(sub, sizeof(sub), "The game is installed and its demo fight ran correctly.  (%d min %d s)", (int)((sRunEnd - sRunStart) / 60000),
+        snprintf(sub, sizeof(sub), "BT4 está instalado y completó su pelea de prueba. (%d min %d s)", (int)((sRunEnd - sRunStart) / 60000),
                  (int)((sRunEnd - sRunStart) / 1000 % 60));
     } else {
-        snprintf(sub, sizeof(sub), "The game is installed.");
+        snprintf(sub, sizeof(sub), "BT4 está instalado.");
     }
-    heading("Ready to play", sub);
+    heading("Listo para jugar", sub);
     step_list();
     ImGui::Dummy(ImVec2(0.0f, 4.0f));
-    ImGui::TextColored(kDim, "In the game, F1 opens the settings: resolution, widescreen, controls and sound.");
-    if (sRelease && !Native_EuInstalled(sRoot)) { // the languages can be added at any time
+    ImGui::TextColored(kDim, "F1 abre la configuración de imagen, controles y sonido dentro del juego.");
+    if (false) { // the languages can be added at any time
         static const SDL_DialogFileFilter filters[] = {{"PS2 disc image", "iso;bin;img"}, {"All files", "*"}};
         ImGui::Dummy(ImVec2(0.0f, 4.0f));
         ImGui::TextWrapped("Spanish, German, French and Italian: add a disc image of the European release (SLES-54945).");
@@ -522,33 +547,17 @@ static void page_done() {
         }
     }
     bottom_row(2);
-    if (big_button("Close", false)) {
+    if (big_button("Cerrar", false)) {
         sQuit = true;
     }
     ImGui::SameLine();
-    if (big_button("Play", true)) {
-        const char *args[2] = {sLauncher.c_str(), NULL};
-        SDL_PropertiesID props = SDL_CreateProperties();
-        SDL_Environment *env = SDL_CreateEnvironment(true);
-        SDL_SetEnvironmentVariable(env, "BT3_GS", "gpu", true); // the window and the GPU renderer
-        SDL_UnsetEnvironmentVariable(env, "BT3_DEMO");
-        SDL_UnsetEnvironmentVariable(env, "BT3_REPLAY");
-        SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, (void *)args);
-        SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ENVIRONMENT_POINTER, env);
-        SDL_SetStringProperty(props, SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING, sRoot.c_str());
-        SDL_SetBooleanProperty(props, SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN, true);
-        SDL_Process *game = SDL_CreateProcessWithProperties(props);
-        SDL_DestroyProperties(props);
-        SDL_DestroyEnvironment(env);
-        if (game != NULL) {
-            SDL_DestroyProcess(game);
-            sQuit = true;
-        }
+    if (big_button("Jugar", true)) {
+        play_game();
     }
 }
 
 static void page_failed() {
-    heading("Setup stopped", "Nothing is broken: finished steps are kept, and Install continues from where it stopped.");
+    heading("Instalación detenida", "Puedes volver a intentarlo. Se conservan los archivos ya verificados.");
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.93f, 0.36f, 0.33f, 0.10f));
     ImGui::BeginChild("why", ImVec2(0.0f, sMissing.empty() ? 150.0f : 90.0f), ImGuiChildFlags_AlwaysUseWindowPadding);
     ImGui::TextWrapped("%s", sError.c_str());
@@ -568,15 +577,15 @@ static void page_failed() {
         ImGui::EndTable();
     }
     bottom_row(3);
-    if (big_button("Open the log", false)) {
+    if (big_button("Ver registro", false)) {
         SDL_OpenURL(("file://" + sRoot + "install.log").c_str());
     }
     ImGui::SameLine();
-    if (big_button("Close", false)) {
+    if (big_button("Cerrar", false)) {
         sQuit = true;
     }
     ImGui::SameLine();
-    if (big_button("Back", true)) {
+    if (big_button("Volver", true)) {
         sPage = PAGE_PICK;
     }
 }

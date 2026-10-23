@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern unsigned gGsFrame;
 #define TEXT_MAX 128
 #define IDLE_MS 1000 /* a line not asked for that long gives its place to another */
 
@@ -30,17 +31,22 @@ typedef struct {
     uint32_t generation; /* of the fonts it was measured with */
     uint32_t version;    /* changes whenever what the place holds changes (0: never used) */
     uint64_t askedMs;
+    unsigned askedFrame;
     int advance, w, h, base, pad, cap, outline;
 } TboLine;
 
 static TboLine sLines[TBO_TEXT_SLOTS];
 static uint32_t sVersion;
 static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
+unsigned PortTbo_TextGeneration(void){return MenuText_LineGeneration();}
 
 /* The size the letters are drawn at, by kind (capitals, in pixels: the screens show them smaller, from smaller
    copies), and the outline's thickness: as the letter sheet had it, about a 16th of the capitals. */
 static int line_cap(int kind) { return kind == 0 ? 80 : 48; }
-static int line_outline(int kind) { return kind == 0 ? 5 : 3; }
+static int line_outline(int kind) { return kind == 0 ? 3 : 2; }
+/* Keep the fill and outline on aligned, power-of-two rows. Otherwise their
+ * shared edge drifts through odd mip heights and clips short menu labels. */
+static int line_extent(int value){int size=1;while(size<value&&size<16384)size*=2;return size;}
 
 static int line_measure(TboLine *l, uint32_t generation) {
     l->generation = generation;
@@ -73,14 +79,14 @@ int PortTbo_TextId(const char *text, int kind) {
     for (i = 0; i < TBO_TEXT_SLOTS; i++) {
         TboLine *l = &sLines[i];
         if (l->version != 0 && l->kind == kind && strncmp(l->text, text, TEXT_MAX - 1) == 0) {
-            l->askedMs = now;
+            l->askedMs = now; l->askedFrame = gGsFrame;
             if (l->generation != generation && !line_measure(l, generation)) {
                 break;
             }
             id = l->advance > 0 ? TBO_TEXT_BASE + i : -1;
             break;
         }
-        if (spare < 0 && (l->version == 0 || now - l->askedMs >= IDLE_MS)) {
+        if (spare < 0 && (l->version == 0 || (now - l->askedMs >= IDLE_MS && gGsFrame - l->askedFrame > 2))) {
             spare = i;
         }
     }
@@ -88,7 +94,7 @@ int PortTbo_TextId(const char *text, int kind) {
         TboLine *l = &sLines[spare];
         SDL_strlcpy(l->text, text, sizeof(l->text));
         l->kind = kind;
-        l->askedMs = now;
+        l->askedMs = now; l->askedFrame = gGsFrame;
         if (line_measure(l, generation)) {
             id = TBO_TEXT_BASE + spare;
         }
@@ -117,7 +123,7 @@ int PortTbo_TextInfo(int id, int what) {
     pthread_mutex_lock(&sLock);
     if (id >= TBO_TEXT_BASE && id < TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         const TboLine *l = &sLines[id - TBO_TEXT_BASE];
-        v = what == 0 ? l->advance : what == 1 ? l->w : what == 2 ? l->h : what == 3 ? l->base : what == 4 ? l->pad : 0;
+        v = what == 0 ? l->advance : what == 1 ? (l->kind==2?l->w:line_extent(l->w)) : what == 2 ? (l->kind==2?l->h:line_extent(l->h)) : what == 3 ? l->base : what == 4 ? l->pad : 0;
         r = l->cap > 0 ? (int)((int64_t)v * 1000 / l->cap) : 0;
     }
     pthread_mutex_unlock(&sLock);
@@ -142,7 +148,7 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
     TboLine l;
     uint8_t *cov;
     uint32_t *px;
-    int lw, lh, lb, x, y, dx, dy, r;
+    int lw, lh, lb, x, y, dx, dy, r,tw,th;
 
     if (id < TBO_TEXT_BASE || id >= TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         return NULL;
@@ -172,12 +178,14 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
         free(cov);
         return NULL;
     }
-    px = malloc((size_t)lw * lh * 2 * 4);
+    tw=line_extent(lw);th=line_extent(lh);
+    px = malloc((size_t)tw * th * 2 * 4);
     if (px == NULL) {
         free(cov);
         return NULL;
     }
     r = l.outline;
+    for(y=0;y<th*2;++y)for(x=0;x<tw;++x)px[(size_t)y*tw+x]=0x00FFFFFFu;
     for (y = 0; y < lh; y++) {
         for (x = 0; x < lw; x++) {
             int fill = cov[(size_t)y * lw + x], line = 0;
@@ -197,12 +205,12 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
                     }
                 }
             }
-            px[(size_t)y * lw + x] = 0xFFFFFFu | (uint32_t)((fill * 128 + 127) / 255) << 24;
-            px[(size_t)(y + lh) * lw + x] = 0xFFFFFFu | (uint32_t)((line * 128 + 127) / 255) << 24;
+            px[(size_t)y * tw + x] = 0xFFFFFFu | (uint32_t)((fill * 128 + 127) / 255) << 24;
+            px[(size_t)(y + th) * tw + x] = 0xFFFFFFu | (uint32_t)((line * 128 + 127) / 255) << 24;
         }
     }
     free(cov);
-    *w = (uint32_t)lw;
-    *h = (uint32_t)lh * 2;
+    *w = (uint32_t)tw;
+    *h = (uint32_t)th * 2;
     return px;
 }

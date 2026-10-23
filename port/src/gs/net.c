@@ -53,7 +53,9 @@ enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4, T_PING = 5, T_PONG 
 /* The version of what goes over the line. The greeting and its answer carry it, and two copies that differ do not
    start a match (the input packets changed with version 2: times for the ping were added; a copy that read them
    the old way took them for input). 1 was releases 0.1.8 and 0.1.9, which said no version. */
-enum { NET_VERSION = 5, IN_HEAD = 44 }; /* 3 (0.1.15): the host's battle rules travel with its choices.
+enum { NET_VERSION = 0x4254340E, IN_HEAD = 44 }; /* BT4 v0.1.38.1 r8: one-bar Z-counter Ki reward.
+   This keeps the mod's simulation in its own matchmaking pool and handshake.
+   3 (0.1.15): the host's battle rules travel with its choices.
    4 (0.1.34): a session's start-up no longer follows the player's "Skip logos" / "Skip intro video" (0.1.32 and
    0.1.33 with either on computed another start-up than the other side and the two never agreed again: such a copy
    must not be let into a match); the input packets carry the sender's check value (sync_*, below), 12 bytes more
@@ -66,6 +68,7 @@ static const uint32_t kVersion = NET_VERSION;
 #include "net_match.h"
 #include "net_relay.h"
 #include "net_chat.h"
+#include "voice.h"
 static int sLobbyOther;
 
 /* What the meter shows (ui.cpp): the round trip time, and per second how often the game went back, how far, and
@@ -620,7 +623,19 @@ static void send_inputs(void) {
 }
 
 /* The lines of text that are due to go to the other player (net_chat.c: each is sent a few times). */
+static unsigned char sVoiceRoomKey[32];
+static int sVoiceRoomKeyKnown;static uint32_t sVoiceRoomKeySent;
+static void voice_key_send(void){
+    if(!sConnected)return;
+    if(sMe==0&&!sVoiceRoomKeyKnown&&PortVoice_NewKey(sVoiceRoomKey)){
+        sVoiceRoomKeyKnown=1;PortVoice_DuelKey(sVoiceRoomKey,sMe,sNames[sMe]);
+    }
+    if(sMe==0&&sVoiceRoomKeyKnown&&now_ms()-sVoiceRoomKeySent>=1000){
+        uint32_t packet[10]={MAGIC,13};memcpy(packet+2,sVoiceRoomKey,32);send_to_peer(packet,sizeof(packet));sVoiceRoomKeySent=now_ms();
+    }
+}
 static void chat_send(void) {
+    voice_key_send();
     uint8_t pkt[16 + CHAT_TEXT];
     uint32_t head[4] = {MAGIC, T_CHAT};
     int len;
@@ -686,6 +701,10 @@ static int receive(void) {
             net_send(ack, sizeof(ack), &from);
         } else if (type == T_CONFIG_ACK && sMode == 1) {
             sCfgAcked = 1;
+        } else if(type==13&&sConnected&&sMe==1&&n==40){
+            if(!sVoiceRoomKeyKnown||memcmp(sVoiceRoomKey,pkt+8,32)){
+                memcpy(sVoiceRoomKey,pkt+8,32);sVoiceRoomKeyKnown=1;PortVoice_DuelKey(sVoiceRoomKey,sMe,sNames[sMe]);
+            }
         } else if (type == T_CHAT && sConnected && n >= 16) { /* (from the other player's address only: above) */
             uint32_t seq, len;
             memcpy(&seq, pkt + 8, 4);
@@ -1811,6 +1830,7 @@ void Port_NetArrived(void) {
 /* The session is over (the game went back to the main menu, or the other side is gone): back to the game as it
    normally is. */
 void Port_NetLeave(void) {
+    PortVoice_Leave(1);sVoiceRoomKeyKnown=0;sVoiceRoomKeySent=0;memset(sVoiceRoomKey,0,sizeof(sVoiceRoomKey));
     fprintf(stderr, "bt3: net: the session has ended\n");
     if (sApartAt != 0) {
         fprintf(stderr, "bt3: net: the two games differed from blank %u on (%u comparisons differed)\n", (unsigned)sApartAt, sApartCount);

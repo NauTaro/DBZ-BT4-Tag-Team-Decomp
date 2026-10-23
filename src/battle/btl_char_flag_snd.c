@@ -244,16 +244,16 @@ void BtlCharSnd_PlayRequests(void) {
         switch (req->p.kind) {
         case 4:
             BtlCharSnd_CalcVolPan(&req->pos, &vol, &pan, req->p.near, req->p.far);
-            StreamSe_Play(owner, req->p.id, vol, pan);
+            StreamSe_Play(owner & 1, req->p.id, vol, pan);
             break;
         case 5:
         case 6:
             BtlCharSnd_CalcVolPan(&req->pos, &vol, &pan, req->p.near, req->p.far);
-            Voice_PlayCharaEx(owner, chara, req->p.id, vol, pan);
+            Voice_PlayCharaEx(owner & 1, chara, req->p.id, vol, pan);
             break;
         case 7:
             BtlCharSnd_CalcVolPan(&req->pos, &vol, &pan, req->p.near, req->p.far);
-            Voice_Play(owner, req->p.id, vol, pan);
+            Voice_Play(owner & 1, req->p.id, vol, pan);
             break;
         default:
             if (Snd_IsLoopSe(gBtlSndBankMask[req->p.kind], req->p.id)) {
@@ -308,7 +308,7 @@ void BtlCharSnd_PlayOwn(BtlFlagChr *chr, s32 id) {
     Vec4 pos;
 
     BtlCharApi_GetNodePos(chr->objId, 0x30, &pos);
-    BtlCharSnd_Request(&pos, chr->player, chr->player + 2, 200.0f, 1500.0f, id);
+    BtlCharSnd_Request(&pos, chr->player, (chr->player & 1) + 2, 200.0f, 1500.0f, id);
 }
 
 /* Queues a streamed sound (kind 4) at the fighter's node 3. */
@@ -324,7 +324,7 @@ void BtlCharSnd_PlayVoice(BtlFlagChr *chr, s32 line) {
     Vec4 pos;
 
     BtlCharApi_GetNodePos(chr->objId, 0x30, &pos);
-    BtlCharSnd_Request(&pos, chr->player, chr->player + 5, 200.0f, 1500.0f, line);
+    BtlCharSnd_Request(&pos, chr->player, (chr->player & 1) + 5, 200.0f, 1500.0f, line);
 }
 
 /* Plays the sounds and voice lines of the technique in use when its animation raises the matching event bits. */

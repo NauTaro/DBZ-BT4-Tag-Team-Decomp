@@ -1,8 +1,11 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+#include <stdio.h>
 #include "main.h"
 #include "battle/battle.h"
 #include "battle/btl_cam.h"
 #include "battle/btl_demo_cam.h"
+#include "battle/tag_team_native.h"
 #include "sys/heap.h"
 #include "sys/pad.h"
 
@@ -517,6 +520,49 @@ s32 BtlCam_UpdateOverride(void) {
     s32 ret = 0;
     s32 idx;
 
+    if (TagBattle_Active()) {
+        /* Each TAG client keeps its own fighter's camera. Another fighter's
+         * cut must not replace the local view. Advance shared demo animation
+         * time normally, then restore the local view when it has another owner. */
+        void *own;
+        s32 localActor=TagBattle_ViewActor();
+        s32 actor,focus=localActor,priority=-1,demoOwner=-1;
+        s32 defaultOwner=TagBattle_DefaultCutOwner();
+        extern void *BtlChar_Get(s32 actor);
+        extern s32 BtlAct_GetCurrent(void *chr),ChrCam_IsCutActive(void *chr);
+        extern void *BtlObj_Get(s32 objId);
+        focus=TagBattle_CameraActor(localActor);
+        for(actor=0;actor<TagBattle_Count();++actor){
+            void *obj=BtlObj_Get(BattleSide_GetObjId(actor));
+            if(gDemoCam->obj==obj || gDemoCam->chr==obj)demoOwner=actor;
+        }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RUSH_SCENE")){
+            static s32 last=-1;int action=BtlAct_GetCurrent(BtlChar_Get(0));
+            if(action!=last){printf("tag rush camera: viewer=%d action=%x focus=%d pair=%d global=%d demo=%d active=%d visible=%d\n",localActor,action,focus,TagBattle_Pair(0),defaultOwner,demoOwner,DemoCam_IsActive(),demoOwner>=0?TagBattle_CutVisible(demoOwner,localActor):0);last=action;}
+        }
+        BtlCam_SelectView(0);
+        BtlCam_SetLayout(0, 1);
+        BtlCharApi_GetCamPose(BattleSide_GetObjId(focus),&gBtlCam->cur->pos,&gBtlCam->cur->rot);
+        BtlCam_BuildView(gBtlCam->cur,1);
+        own=BtlObj_Get(BattleSide_GetObjId(0));
+        if(DemoCam_IsActive()) {
+            s32 local=demoOwner>=0 && demoOwner==focus;
+            DemoCam_Update();
+            if(!local) { BtlCam_SelectView(0); BtlCam_ApplyView(1); }
+        }
+        if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_HUD_VIEW_TEST")){
+            extern s32 BtlChar_FrameMod(s32 n);
+            s32 phase=BtlChar_FrameMod(240)/60;
+            /* A hidden renderer fixture, using the real scene and projection.
+             * Holds front/right/rear/left views long enough to inspect edge
+             * indicators. It never changes the character's pose or inputs. */
+            BtlCam_SelectView(0);
+            gBtlCam->cur->rot.y+=phase*1.57079632679f;
+            BtlCam_BuildView(gBtlCam->cur,1);
+        }
+        return 1;
+    }
+
     if (!Battle_IsSplitScreen() || BattleReplay_IsActive() != 0) {
         idx = BtlCam_GetPriorityView();
         if (idx < 0) {
@@ -548,6 +594,43 @@ s32 BtlCam_UpdateOverride(void) {
     }
     return ret;
 }
+
+#include "battle/tag_team_hud_math.h"
+static f32 sTagHudView[16],sTagHudProjection[16],sTagHudNear;
+static s32 sTagHudViewValid;
+/* Snapshot the view used to draw the scene, before any effect/HUD pass can
+ * replace the global current view. UI queries do not change render state. */
+void TagBattle_HudCaptureView(void *ptr) {
+    View *view=ptr;s32 i;
+    sTagHudViewValid=TagBattle_Active() && view!=NULL;
+    if(!sTagHudViewValid)return;
+    for(i=0;i<16;++i){sTagHudView[i]=((f32 *)&view->world2view2)[i];sTagHudProjection[i]=((f32 *)&view->world2screen)[i];}
+    sTagHudNear=view->nearZ;
+    if(getenv("BT4_TAG_HUD_LOG")){
+        extern void Port_TagHudView(f32 *v,f32 *p,f32 *nearZ);
+        Port_TagHudView(sTagHudView,sTagHudProjection,&sTagHudNear);
+    }
+}
+s32 TagBattle_HudCamera(f32 *basis) { return sTagHudViewValid && ThBasis(sTagHudView,basis); }
+s32 TagBattle_HudHead(s32 actor,f32 *out) {
+    Vec4 p,base;
+    s32 j;
+    extern void BtlCharApi_GetPos(s32 actor,Vec4 *out);
+    extern void BtlCharApi_GetNodePos(s32 actor,s32 node,Vec4 *out);
+    extern f32 BtlCharApi_GetHeight(s32 actor);
+    if(!sTagHudViewValid || actor<0 || actor>=TagBattle_Count())return 0;
+    BtlCharApi_GetPos(BattleSide_GetObjId(actor),&base);
+    /* Node 0x2F is also used by the engine's head-tracking code. Following
+     * its animated pose keeps the marker attached during jumps and attacks. */
+    BtlCharApi_GetNodePos(BattleSide_GetObjId(actor),0x2F,&p);
+    if(p.x==base.x && p.y==base.y && p.z==base.z)
+        p.y-=BtlCharApi_GetHeight(BattleSide_GetObjId(actor))*0.7f;
+    p.y-=3.0f;
+    for(j=0;j<4;++j)out[j]=((f32 *)&p)[j];
+    return 1;
+}
+s32 TagBattle_HudProject(f32 *head,f32 *out) { return sTagHudViewValid && ThProject(sTagHudProjection,head,sTagHudNear,out); }
+void TagBattle_HudRear(f32 *head,f32 *out) { ThRear(sTagHudView,head,out); }
 
 /* Clears the debug camera's own view and gives it the full-screen layout. */
 void DbgCam_Init(void) {

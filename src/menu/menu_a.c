@@ -8,6 +8,8 @@ extern void Port_NetLeave(void);
 #endif
 #include "sys/pad.h"
 #include "sys/save.h"
+#include <stdlib.h>
+#include <stdio.h>
 
 /* The screen's work (overlay .data, 0x3B0E80). */
 MainMenu *gMainMenu = NULL;
@@ -33,6 +35,7 @@ MainMenu *gMainMenu = NULL;
  * menu/port_tbo.c. It has no voiced line of the guides.
  */
 #include "port_tbo_label.h"
+#include "port_bt4_label.h"
 
 #define MAINMENU_TBO 11
 #define MM_ICON(item) ((item) == MAINMENU_TBO ? 4 : (item)) /* whose icon an item shows */
@@ -49,8 +52,27 @@ static s32 PortMainMenu_PixelAt(s32 x, s32 y) {
 /* Writes runs of palette indices into label row `row` of a sheet. */
 static void PortMainMenu_WriteRuns(u8 *tex, s32 row, const PortLabelRun *run, s32 count) {
     u8 *px = *(u8 **)(tex + 0x38) + 0x60;
+    u64 layout = *(u64 *)(tex + 0x30);
     s32 i;
     s32 k;
+
+    if (row == 3 && ((layout >> 26) & 15) == 9 && ((layout >> 30) & 15) == 7) {
+        const Bt4LabelPatch *patch;
+        s32 patches;
+        if (run == sPortTboOff && ((layout >> 20) & 63) == 20) {
+            patch = sBt4TboOff;
+            patches = sizeof(sBt4TboOff) / sizeof(sBt4TboOff[0]);
+        } else if (run == sPortTboOn && ((layout >> 20) & 63) == 19) {
+            patch = sBt4TboOn;
+            patches = sizeof(sBt4TboOn) / sizeof(sBt4TboOn[0]);
+        } else return;
+        for (i = 0; i < patches; i++) {
+            px[patch[i].off] = (px[patch[i].off] & ~patch[i].mask) | patch[i].value;
+        }
+        return;
+    }
+    if (((layout >> 20) & 0x3F) != 0x13 || ((layout >> 26) & 15) != 9 ||
+        (1 << ((layout >> 30) & 15)) < (row + 1) * 32) return;
 
     for (i = 0; i < count; i++) {
         for (k = 0; k < run[i].len; k++) {
@@ -155,7 +177,7 @@ void MainMenu_Init(s32 section) {
     gMainMenu->tex[49] = MTEX(res, 5);
     MM_RES(13);
     gMainMenu->tex[22] = MTEX(res, 0);
-    MM_RES(26);
+    MM_RES(29 + Rand_Range(3) * 2 + 1);
     gMainMenu->tex[27] = MTEX(res, 0);
     gMainMenu->tex[28] = MTEX(res, 1);
     gMainMenu->tex[29] = MTEX(res, 2);
@@ -164,7 +186,7 @@ void MainMenu_Init(s32 section) {
     gMainMenu->tex[13] = MTEX(res, 1);
     gMainMenu->tex[14] = MTEX(res, 2);
     gMainMenu->tex[15] = MTEX(res, 3);
-    MM_RES(14);
+    MM_RES(29 + Rand_Range(3) * 2);
     gMainMenu->tex[31] = MTEX(res, 0);
     gMainMenu->tex[32] = MTEX(res, 1);
     gMainMenu->tex[33] = MTEX(res, 2);
@@ -230,7 +252,7 @@ void MainMenu_Init(s32 section) {
     }
 #ifdef PORT
     /* the second sheet of each state (slot 8 not chosen, 12 chosen) is the entry behind the first */
-    if (!PortMainMenu_WriteDisc(gMainMenu->tex[8] + 0x40, 3, 0) || !PortMainMenu_WriteDisc(gMainMenu->tex[12] + 0x40, 3, 1)) {
+    if (1) { /* The BT4 sheets use their own lettering; the port's bundled online label occupies the spare row. */
         PortMainMenu_WriteRuns(gMainMenu->tex[8] + 0x40, 3, sPortTboOff, sizeof(sPortTboOff) / sizeof(sPortTboOff[0]));
         PortMainMenu_WriteRuns(gMainMenu->tex[12] + 0x40, 3, sPortTboOn, sizeof(sPortTboOn) / sizeof(sPortTboOn[0]));
     }
@@ -539,7 +561,7 @@ void MainMenu_Input(s32 *result) {
             break;
         case 4:
 #ifdef PORT
-            Port_NetMenuOpen(); /* the port's own screen for online play (port/src/gs/ui.cpp); the menu stays where it is */
+            Port_NetMenuOpen(); /* the port's own online lobby */
 #endif
             break;
         case 5:
@@ -600,6 +622,20 @@ s32 MainMenu_Run(s32 section) {
     while (1) {
         Gfx_BeginFrame();
         Pad_Update();
+#ifdef PORT
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_TEST")){
+            static s32 videoTick,videoReady;
+            if(ColorFade_IsInDone()&&(gMainMenu->flash[0].flags&MFLASH_PAD)&&!(gMainMenu->flags&MAINMENU_LEAVING)){
+                ++videoTick;
+                if(videoTick>90&&videoTick%18==0){
+                    extern s32 TagHudEditor_RecordDone(void);
+                    s32 wanted=getenv("BT4_TAG_RECORD_HUD")&&!TagHudEditor_RecordDone()?9:MAINMENU_TBO;
+                    if(MAINMENU_CUR(gMainMenu)!=wanted)gPad[0].gameRepeat=PADG_DOWN;
+                    else if(++videoReady>=4){gPad[0].gamePressed=PADG_CROSS;fprintf(stderr,"tag video: main menu chose %s\n",wanted==9?"Options":"Tenkaichi Budokai Online");videoReady=0;}
+                }
+            }
+        }
+#endif
         Snd_Update();
         ColorFade_Update();
         if (!(gProgress->flags & MPROG_FREEZE)) {

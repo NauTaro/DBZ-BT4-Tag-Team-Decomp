@@ -30,7 +30,7 @@ void CharRef_ScissorOff(void);
 void CharRef_Term(void);
 void CharRef_Draw(void);
 
-#define CHARREF_IMAGE_FILE 0x2F9     /* file id of character 0's large picture */
+#define CHARREF_IMAGE_FILE 0x71C     /* file id of character 0's large picture */
 #define CHARREF_IMAGE_SIZE 0x16800
 
 #define CR_RES(n) \
