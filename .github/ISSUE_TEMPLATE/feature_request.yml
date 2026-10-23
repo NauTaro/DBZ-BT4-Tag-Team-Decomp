@@ -1,0 +1,23 @@
+name: Proponer una mejora
+description: Sugiere una mejora de juego, interfaz, documentación o herramientas.
+title: '[Mejora] '
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: ¿Qué problema quieres resolver?
+      description: Explica una situación concreta y a quién afecta.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Cambio propuesto
+      description: Describe cómo debería funcionar y cómo comprobarías que mejora la experiencia.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas o referencias
+      description: Opcional. Incluye ejemplos o soluciones que ya hayas probado.

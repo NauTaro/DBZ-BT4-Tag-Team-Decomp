@@ -1,0 +1,40 @@
+name: Reportar un error
+description: Describe un fallo reproducible de BT4 Tag Team.
+title: '[Error] '
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Versión de BT4 Tag Team
+      description: Copia el contenido de BT4_VERSION.txt e indica si usas una compilación propia.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Equipo y modo de juego
+      description: Windows, CPU, GPU, controlador gráfico y modo local u online. Para voz, indica los dispositivos de audio.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Pasos para reproducirlo
+      description: Incluye personajes, trajes, escenario, número de jugadores y técnica cuando corresponda.
+      placeholder: |
+        1. Abrir...
+        2. Seleccionar...
+        3. Ejecutar...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado y resultado observado
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Registros o capturas
+      description: Adjunta solo lo necesario de bt3_log.txt o bt3_crash.txt, eliminando datos personales. No adjuntes ISO, archivos del juego, partidas, credenciales ni códigos de sala activos.
