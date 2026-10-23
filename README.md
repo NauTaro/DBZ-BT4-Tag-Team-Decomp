@@ -2,7 +2,7 @@
    <img src="docs/presentation/cover.jpg" width="960" alt="Dragon Ball Z Budokai Tenkaichi 4 Tag Team presentation">
   <h1>DBZ BT4 Tag Team Recomp</h1>
   <p>Native Windows mod based on Tenkaichi3Decomp.</p>
-  <p><strong>R16-rc1 · Review preview</strong></p>
+  <p><strong>Work in progress.</strong></p>
    <img src="docs/presentation/icon.png" width="144" alt="BT4 Tag Team icon">
 </div>
 
