@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="docs/presentation/icon.png" width="144" alt="BT4 Tag Team icon">
-  <h1>BT4 Tag Team Recomp</h1>
+   <img src="docs/presentation/cover.jpg" width="960" alt="Dragon Ball Z Budokai Tenkaichi 4 Tag Team presentation">
+  <h1>DBZ BT4 Tag Team Recomp</h1>
   <p>Native Windows mod based on Tenkaichi3Decomp.</p>
   <p><strong>R16-rc1 · Review preview</strong></p>
-  <img src="docs/presentation/cover.jpg" width="960" alt="Dragon Ball Z Budokai Tenkaichi 4 Tag Team presentation">
+   <img src="docs/presentation/icon.png" width="144" alt="BT4 Tag Team icon">
 </div>
 
 Simultaneous team battles, room-code lobbies, proximity voice and an adjustable
@@ -16,19 +16,6 @@ R16-rc1 is a test revision. The reported multicolored effect in Hit's rush
 was not reproduced in the reviewed captures and remains open. This release
 does not certify that defect as fixed. Performance across all hardware and
 independent household networks has not been certified.
-
-## Changes in this revision
-
-- Tag Team always uses Default Attacks; the attack-style selector is removed.
-- Shared attack preparation is retained. Rush impact cameras are restricted
-  to the attacker and victim, while outsiders resume play.
-- Cinematic midpoint calculations use the actual actors. Grabs cancel stale
-  cuts; ordinary projectile impacts no longer transfer the victim's camera.
-- Transformation resources also reload for additional fighters, with deferred
-  retirement of the previous model buffers.
-- Windows voice capture and playback use independent WinMM buffers. The exact
-  previously reported SDL access violation was not reproduced.
-- The supplied icon is embedded in the game executable and used by its window.
 
 ## Validation
 
@@ -70,6 +57,4 @@ BT4 content belongs to its respective authors. Game data must be supplied
 by the player. Retained licenses are [AGPL](LICENSE), [MIT](LICENSE-MIT)
 and the third-party notices shipped with the runtime and voice libraries.
 
-Presentation artwork: `Gemini_Generated_Image_46di9146di9146di.jpg`, selected
-by the maintainer from Drive. The game icon is
-the supplied `icon_game.ico`; artwork and icon retain their respective rights.
+Artwork and icon retain their respective rights.
