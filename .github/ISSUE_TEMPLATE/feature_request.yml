@@ -1,0 +1,23 @@
+name: Suggest an improvement
+description: Suggest an improvement to gameplay, the interface, documentation or tools.
+title: '[Enhancement] '
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would you like to solve?
+      description: Describe a specific situation and who it affects.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Explain how it should work and how you would check that it improves the experience.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or references
+      description: Optional. Include examples or solutions you have already tried.

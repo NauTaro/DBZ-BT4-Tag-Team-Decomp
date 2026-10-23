@@ -1,0 +1,40 @@
+name: Report a bug
+description: Describe a reproducible BT4 Tag Team bug.
+title: '[Bug] '
+body:
+  - type: input
+    id: version
+    attributes:
+      label: BT4 Tag Team version
+      description: Copy the contents of BT4_VERSION.txt and mention whether you use a custom build.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: System and game mode
+      description: Include Windows version, CPU, GPU, graphics driver and local or online mode. For voice issues, include audio devices.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include characters, costumes, stage, player count and move where applicable.
+      placeholder: |
+        1. Open...
+        2. Select...
+        3. Perform...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Attach only relevant excerpts from bt3_log.txt or bt3_crash.txt, with personal information removed. Do not attach ISOs, game files, saves, credentials or active room codes.
