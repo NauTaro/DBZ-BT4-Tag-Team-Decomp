@@ -2,7 +2,7 @@
   <h1>DBZ BT4 Tag Team Recomp</h1>
   <p>Dragon Ball Z: Budokai Tenkaichi 4 on Windows, with battles of up to 5v5.</p>
   <img src="docs/presentation/bt4-intro-hq.gif" width="960" alt="BT4 Tag Team animated artwork">
-  <p><strong>BT4 B14 Rev2 · R16 RC1</strong></p>
+  <p><strong>BT4 B14 Rev2 · R24 RC1</strong></p>
   <p><a href="#about-the-mod">About the mod</a> · <a href="#install-or-update">Installation</a> · <a href="#support-and-contact">Donate &amp; contact</a></p>
 </div>
 
@@ -40,19 +40,20 @@ The game runs natively on Windows, using the PC port by
   <br><em>Video settings in the PC port.</em>
 </p>
 
+<!-- bt4-bilingual-install -->
+## Game language / Idioma del juego
+
+Choose **Spanish** or **English** in the original startup menu to change text and voices. English is included in the installer: your Spanish BT4 B14 Rev2 installation or ISO is sufficient. No English ISO or additional download is required. Both languages can play online together on R24 RC1.
+
+Elige **Español** o **Inglés** al abrir el juego para cambiar textos y voces. El inglés está incluido: basta tu instalación o ISO española. Abre **`Install.exe`** una vez para añadirlo, sin volver a decompilar.
+<!-- /bt4-bilingual-install -->
+
 ## Install or update
 
-Check [Releases](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Recomp/releases)
-for available Windows packages. You need your own **BT4 B14 Rev2 ISO**.
-Game data is not included, and downloading the source code alone will not give
-you a playable installation.
+Download the Windows ZIP from [Releases](https://github.com/NauTaro/tenkaichi3decomp-fork-DBZ-BT4-Decomp/releases). Extract **all contents directly into the game folder**; `Install.exe` sits beside `Tenkaichi3Decomp.exe`.
 
-- **First install:** use the launcher to extract your compatible ISO.
-- **Updating:** close the game, then copy the new program files into your existing
-  installation. The package leaves out `gamedata`, `saves` and `bt3_settings.txt`
-  to preserve your data and settings.
-
-You only need to extract the ISO again if the required game-data profile changes.
+- **First install:** run `Install.exe` and select your own Spanish BT4 B14 Rev2 ISO. Setup extracts the base game and installs the included English text and voices. An English ISO is also supported if you already own one.
+- **Updating:** close the game, copy all ZIP contents over your existing installation and replace files. Preserve `gamedata`, `saves` and `bt3_settings.txt`. Run `Install.exe` once to add the included English language; you do not need to extract your ISO again.
 
 ## Development
 
