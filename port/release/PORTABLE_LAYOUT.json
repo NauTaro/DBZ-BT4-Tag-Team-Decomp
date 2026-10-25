@@ -1,10 +1,45 @@
 {
   "description": "Portable Windows installation layout.",
-  "root_directories": ["fonts", "gamedata", "licenses", "net_session", "saves", "songs", "stages", "tbo", "textures", "translations"],
-  "root_files": ["bt3_crash.txt", "bt3_log.txt", "bt3_log_prev.txt", "bt3_pipelines.txt", "bt3_settings.txt", "BT4_VERSION.txt", "libdatachannel.dll", "libopus-0.dll", "libwinpthread-1.dll", "LICENSE", "LICENSE-MIT", "online_name.txt", "SDL3.dll", "Tenkaichi3Decomp.dat", "Tenkaichi3Decomp.exe", "Tenkaichi3Decomp.exe.mem"],
-  "preserve_user_content": ["gamedata", "saves", "net_session", "bt3_settings.txt", "online_name.txt"],
+  "root_directories": [
+    "fonts",
+    "gamedata",
+    "licenses",
+    "net_session",
+    "saves",
+    "songs",
+    "stages",
+    "tbo",
+    "textures",
+    "translations"
+  ],
+  "root_files": [
+    "bt3_crash.txt",
+    "bt3_log.txt",
+    "bt3_log_prev.txt",
+    "bt3_pipelines.txt",
+    "bt3_settings.txt",
+    "BT4_VERSION.txt",
+    "libdatachannel.dll",
+    "libopus-0.dll",
+    "libwinpthread-1.dll",
+    "LICENSE",
+    "LICENSE-MIT",
+    "online_name.txt",
+    "SDL3.dll",
+    "Tenkaichi3Decomp.dat",
+    "Tenkaichi3Decomp.exe",
+    "Tenkaichi3Decomp.exe.mem",
+    "Install.exe"
+  ],
+  "preserve_user_content": [
+    "gamedata",
+    "saves",
+    "net_session",
+    "bt3_settings.txt",
+    "online_name.txt"
+  ],
   "icon_source": "port/release/icon_game.ico",
   "icon_installed_path": "fonts/icon_game.ico",
   "development_artifacts": "Keep test reports, screenshots, source archives, build outputs, backups and distribution ZIPs outside the game installation. Do not delete unknown user files automatically.",
-  "separate_installer": "A distribution installer may be supplied separately; its development and release reports must not be copied into the portable game root."
+  "separate_installer": "Install.exe is the portable root entry point; installer implementation and included English data stay under tbo/setup."
 }
