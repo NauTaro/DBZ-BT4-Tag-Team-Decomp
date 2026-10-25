@@ -35,9 +35,7 @@ The game runs natively on Windows, using the PC port by
 | HUD | Shows the two active fighters. | Adds ally information, targets and radar. |
 | Platform | PlayStation 2. | Native Windows port with video, audio and control settings. |
 
-
-
-## Game language / Idioma del juego
+## Game language
 
 `Install.exe` has its own **Spanish / English** interface and lets you choose
 **Spanish**, **English** or **both** for the complete game, including voices.
@@ -46,14 +44,9 @@ The game runs natively on Windows, using the PC port by
   directly in that language, without the startup language selector.
 - **Both languages:** setup installs the ISO language and downloads the missing
   text and voice package from this same private repository. Progress appears
-  as “Instalando paquete de idioma” or “Installing language pack”.
+  as “Installing language pack”.
 - **Private downloads:** sign in with a GitHub account that has read access to
   this repository. Existing installed language files can be reused.
-
-El instalador permite elegir **Español**, **Inglés** o **ambos**, con textos y
-voces. Con un solo idioma, se usa la ISO correspondiente y el juego arranca
-directamente. Con ambos, el idioma que falta se descarga de este repositorio
-privado: cada tester necesita acceso y sesión de GitHub.
 
 ## Install or update
 
@@ -70,7 +63,7 @@ Extract all contents directly into the game directory. `Install.exe` and
   profile. The cosmetic R label is not the room compatibility check.
 
 <p align="center">
-  <img src="docs/presentation/installer-es.png" width="960" alt="Installer with interface and game language choices">
+  <img src="docs/presentation/installer-en.png" width="960" alt="Installer with interface and game language choices">
 </p>
 
 ## Custom maps
