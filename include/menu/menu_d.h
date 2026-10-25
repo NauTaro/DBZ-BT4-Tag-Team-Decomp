@@ -215,7 +215,7 @@ typedef struct CharSel {
 /* The stage thumbnails are 0x39D..0x3C0 (one per stage of the disc); the loading screen files start right after,
    at 0x3C1. A stage added from outside the disc has an id past 0x23, so its thumbnail would fall on a loading
    screen: it reuses an existing thumbnail instead. */
-#define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + (id))
+#define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + ((id)>=0x63?0:(id)))
 #else
 #define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + (id))
 #endif

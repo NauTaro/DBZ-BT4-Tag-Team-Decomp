@@ -13,7 +13,7 @@
 #define TT_CPU_MEMBER 0x80000000u
 enum { TT_CLOSED, TT_LOBBY, TT_SELECT, TT_LOADING, TT_ARMED, TT_FIGHT, TT_ABORTED };
 enum { TT_OK, TT_BAD_PHASE, TT_BAD_MEMBER, TT_FULL, TT_NOT_OWNER,
-       TT_NOT_TURN, TT_BAD_CHOICE, TT_NOT_READY, TT_STALE, TT_MISMATCH };
+       TT_NOT_TURN, TT_BAD_CHOICE, TT_NOT_READY, TT_STALE, TT_MISMATCH, TT_DESYNC };
 typedef struct TtPlayer {
     uint32_t member; /* Nonzero connection identity, never a client-supplied seat. */
     char name[20];
@@ -56,6 +56,7 @@ int Tt_Choose(TtRoom *r, uint32_t sender, uint32_t epoch, int chara, int costume
 int Tt_ChooseSeat(TtRoom *r, uint32_t sender, uint32_t epoch, int seat, int chara, int costume);
 int Tt_BeginLoad(TtRoom *r, uint32_t sender, uint32_t epoch, uint64_t digest);
 int Tt_Loaded(TtRoom *r, uint32_t sender, uint32_t epoch, uint64_t digest);
+uint64_t Tt_LoadDigest(const TtRoom *r);
 int Tt_Arm(TtRoom *r, uint32_t sender, uint32_t epoch);
 int Tt_ArmAck(TtRoom *r, uint32_t sender, uint32_t epoch);
 int Tt_Start(TtRoom *r, uint32_t sender, uint32_t epoch);

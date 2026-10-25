@@ -22,7 +22,7 @@
 /* (70000: past the end of the second archive, which has 65,201 files. It was 30000, taken for free; those are
    the training mode's guide voice lines, and with n stages added the first n of them were replaced by stage
    files. Found 2026-10-08 while listing the file ids for added characters.) */
-#define PORT_ADDED_STAGE_FILE(stage) (0xD48 + 70000 + ((stage) - 0x63))
+#define PORT_ADDED_STAGE_FILE(stage) (0x30000 + ((stage) - 0x63))
 #define BTL_STAGE_MODEL(stage) ((stage) >= 0x63 ? PORT_ADDED_STAGE_FILE(stage) : (stage) + BTL_FILE_STAGE)
 #define BTL_STAGE_BANK(stage) (((stage) >= 0x63 ? 0 : (stage)) + BTL_FILE_SND_STAGE)
 #else
@@ -423,6 +423,7 @@ s32 BtlLoad_StepObject(BtlJob *job) {
 }
 
 /* Job: loads a side's character (model, voice bank, data block) and swaps it in. */
+s32 TagBattle_VoiceBank(s32 chara){return BTL_VOICE_FILE(chara,gSaveData->flags&SAVE_FLAG_VOICE);}
 s32 BtlLoad_StepChara(BtlJob *job) {
     BattleRes *res = BATTLE_RES;
     s32 model;
@@ -503,6 +504,9 @@ s32 BtlLoad_StepChara(BtlJob *job) {
         job->state++;
         BtlRes_CommitReload2();
         if (job->modelOnly == 0) {
+#ifdef PORT
+            if(TagBattle_Active()){extern void Port_SeActorFile(s32,s32);Port_SeActorFile(job->side,TagBattle_VoiceBank(job->voiceChara));}else
+#endif
             if ((job->side&1) == 0) {
                 Snd_ReloadBank(0x10, res->bank, 0);
             } else {

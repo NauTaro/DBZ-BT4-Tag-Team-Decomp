@@ -3,6 +3,7 @@
 #include "menu/menu_e.h"
 #include "sys/pad.h"
 #include "menu/port_screen.h"
+#include "../../port/src/gs/online_language.h"
 
 #ifdef PORT
 /*
@@ -635,13 +636,12 @@ s32 PortScreen_Main(void) {
         if(Port_TagNetwork()&&Port_TagPhase()==3&&Port_TagResultChoice()==0&&TagBattle_ConfigureLocal()){
             gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;return 3;
         }}
-        {extern s32 TagBattle_TakeReturn(void),Port_TagReselect(void);
+        {extern s32 TagBattle_TakeReturn(void);
         extern void Port_TagClose(void);
         s32 back=TagBattle_TakeReturn();
-        if(back==2){Port_TagClose();gProgress->mode=4;return 0;}
-        if(back==1 && Port_TagReselect() && TeamSel_TagRun(2)){
-            gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;return 3;
-        }}
+        /* Returning nonzero here starts a battle. Leave the menu dispatcher
+           running and open the online hub after a room exit instead. */
+        if(back==2)Port_TagClose();}
         Bgm_Play(0x816 + 2);
         do {
             result = PortTbo_Run();
@@ -656,5 +656,11 @@ s32 PortScreen_Main(void) {
         break;
     }
     return result;
+}
+#endif
+
+#ifdef PORT
+void Ps_TextRaw(f32 x,f32 y,char *s,f32 scale,f32 width,s32 style){
+    PortOnline_Raw(1);Ps_Text(x,y,s,scale,width,style);PortOnline_Raw(0);
 }
 #endif

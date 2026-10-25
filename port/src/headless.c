@@ -243,6 +243,20 @@ int __wrap_Progress_Main(int arg) {
             extern void BattleSetup_Finish(void);
             BattleSide_GetMember(1,0)->chara=atoi(getenv("BT4_TEST_OPP_CHARA"));BattleSide_GetMember(1,0)->costume=0;BattleSide_GetMember(1,0)->variant=0;BattleSetup_Finish();
         }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TRAINING_MAP_TEST")){
+            extern unsigned char GAME_PTR Battle_GetSetup(void);
+            extern void BattleSetup_SetRule(int,int,int,int,int,int,int),BattleSetup_Finish(void);
+            unsigned char GAME_PTR setup=Battle_GetSetup();int stage=atoi(getenv("BT4_TRAINING_MAP_TEST"));
+            /* The real training rule and inert opponent, not the demo sequence.
+             * This opt-in fixture does not run in ordinary player sessions. */
+            BattleSetup_SetRule(0,6,54,0,7,stage,0);
+            *(int GAME_PTR)(setup+0xC0+0x208)=0;
+            *(int GAME_PTR)(setup+0xC0+0x270+0x208)=2;
+            *(int GAME_PTR)(setup+0xC0+0x270+0x10)=-1;
+            BattleSetup_Finish();
+            {extern int Battle_GetMode(void);
+             fprintf(stderr,"training map fixture: mode=%d stage=%d opponent-level=-1\n",Battle_GetMode(),stage);}
+        }
     }
     fflush(stdout);
     return 0;
@@ -286,12 +300,9 @@ int Port_NetMenuListed(void) {
    here, on the game's side, at a vertical blank. */
 
 
-/* For gs/net.c's check that the two copies of an online match still compute the same game: a number made of what
-   has to be the same on both at a vertical blank whatever each player's settings, view and system are. Where the
-   game is (the start-up's end, the menu mode, whether the first-run part still runs) and, in a fight, the values
-   BT3_HASH logs as the fight's own without the generator: both fighters' health and position, the sequence's
-   state and the battle clock. (Not the whole state: each copy shows its own view, and two systems' programs keep
-   other addresses in the game's memory.) */
+/* For gs/net.c's check that the two copies of an online match still compute the same game: 1v1 keeps its original
+   two-fighter digest. Tag Team online uses a separate branch that hashes every active actor, since its roster can
+   contain ten fighters. */
 unsigned long long Port_NetDigest(void) {
     struct { unsigned arrived; int mode, first, battle, seq, clock, hp[2]; unsigned pos[2][3]; } d;
     float q[4] __attribute__((aligned(16)));
@@ -299,6 +310,57 @@ unsigned long long Port_NetDigest(void) {
     const unsigned char *b = (const unsigned char *)&d;
     unsigned i;
     int k;
+
+    /* Tag Team's lockstep roster can contain up to ten actors. Keep its
+       synchronization identity separate from the two-fighter 1v1 digest. */
+    {
+        extern int TagBattle_Network(void), TagBattle_Count(void), TagBattle_Team(int), TagBattle_Target(int);
+        if (TagBattle_Network() && gBtlSeq != NULL && gBtlSeq->state >= 2) {
+            struct TagActorDigest {
+                int hp, ki, chara, costume, action, target, team;
+                int pos[3];
+            };
+            struct TagDigest {
+                int mode, first, seq, clock, count;
+                struct TagActorDigest actors[10];
+            } tag;
+            extern unsigned char GAME_PTR BtlChar_Get(int);
+            extern int BtlSide_GetKi(int), BtlCharApi_GetChara(int), BtlCharApi_GetCostume(int);
+            extern int BtlAct_GetCurrent(void *);
+            int count = TagBattle_Count();
+            int actor, axis;
+
+            memset(&tag, 0, sizeof(tag));
+            tag.mode = gProgress != NULL ? gProgress->mode : 0;
+            tag.first = gProgress != NULL && (gProgress->flags & 0x40) != 0;
+            tag.seq = gBtlSeq->state;
+            tag.clock = BtlSeq_GetClock()[0];
+            if (count < 0) count = 0;
+            if (count > 10) count = 10;
+            tag.count = count;
+            for (actor = 0; actor < count; ++actor) {
+                float pos[4] __attribute__((aligned(16)));
+                struct TagActorDigest *d = &tag.actors[actor];
+                d->hp = BtlCharApi_GetHp(actor);
+                d->ki = BtlSide_GetKi(actor);
+                d->chara = BtlCharApi_GetChara(actor);
+                d->costume = BtlCharApi_GetCostume(actor);
+                d->action = BtlAct_GetCurrent(BtlChar_Get(actor));
+                d->target = TagBattle_Target(actor);
+                d->team = TagBattle_Team(actor);
+                BtlCharApi_GetPos(actor, pos);
+                for (axis = 0; axis < 3; ++axis) {
+                    float scaled = pos[axis] * 16.0f;
+                    d->pos[axis] = (int)(scaled + (scaled >= 0.0f ? 0.5f : -0.5f));
+                }
+            }
+            b = (const unsigned char *)&tag;
+            for (i = 0; i < sizeof(tag); ++i) {
+                h = (h ^ b[i]) * 0x100000001B3ull;
+            }
+            return h;
+        }
+    }
 
     memset(&d, 0, sizeof(d));
     d.arrived = sNetArrivedAt;
@@ -357,13 +419,17 @@ void Port_Trace(unsigned vblanks) {
     {
         extern int Port_NetActive(void),Port_NetView(void),TagBattle_Active(void),TagBattle_Count(void),TagBattle_ViewActor(void);
         extern void PortVoice_World(int,int,int,const float *);
-        float positions[40]={0};int count=0,mode=0,listener=0,a;
+        extern int BattleSide_GetObjId(int);
+        extern void BtlCharApi_GetBasePos(int,float *);
+        extern void PortAudio_World(int,int,int,const float *,const int *);
+        float positions[40]={0};int alive[10]={0};int count=0,mode=0,listener=0,a;
         if(gBtlSeq&&gBtlSeq->state==3){
             if(TagBattle_Active()){mode=2;count=TagBattle_Count();listener=TagBattle_ViewActor();}
             else if(Port_NetActive()){mode=1;count=2;listener=Port_NetView();}
-            for(a=0;a<count;++a)BtlCharApi_GetPos(a,positions+a*4);
+            for(a=0;a<count;++a){int object=BattleSide_GetObjId(a);BtlCharApi_GetBasePos(object,positions+a*4);alive[a]=BtlCharApi_GetHp(object)>0;}
         }
         PortVoice_World(mode,listener,count,positions);
+        PortAudio_World(mode==2,listener,count,positions,alive);
     }
     if ((getenv("BT4_TAG_ACTOR_TEST") != NULL || getenv("BT4_TAG_LOCAL_TEST") != NULL) && gBtlSeq != NULL && gBtlSeq->state >= 2 && vblanks % 120 == 0) {
         extern int TagBattle_Count(void),TagBattle_Team(int),TagBattle_Target(int), BtlAiMgr_GetLevel(int side);

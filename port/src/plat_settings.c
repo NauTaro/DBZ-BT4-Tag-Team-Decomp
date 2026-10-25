@@ -18,7 +18,7 @@
 static struct { char name[24]; int value; } sSet[MAX_SETTINGS];
 /* The few settings that are text (online name, menu language): `name="text"` in the file, after the numbers. A
    release from before these reads past such a line. */
-#define MAX_TEXTS 8
+#define MAX_TEXTS 16
 static struct { char name[24]; char value[64]; } sText[MAX_TEXTS];
 static int sTextCount;
 static int sDirty;

@@ -53,7 +53,7 @@ enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4, T_PING = 5, T_PONG 
 /* The version of what goes over the line. The greeting and its answer carry it, and two copies that differ do not
    start a match (the input packets changed with version 2: times for the ping were added; a copy that read them
    the old way took them for input). 1 was releases 0.1.8 and 0.1.9, which said no version. */
-enum { NET_VERSION = 0x4254340E, IN_HEAD = 44 }; /* BT4 v0.1.38.1 r8: one-bar Z-counter Ki reward.
+enum { NET_VERSION = 0x42543411, IN_HEAD = 44 }; /* Shared bilingual stream timing; use the compatible gameplay ABI.
    This keeps the mod's simulation in its own matchmaking pool and handshake.
    3 (0.1.15): the host's battle rules travel with its choices.
    4 (0.1.34): a session's start-up no longer follows the player's "Skip logos" / "Skip intro video" (0.1.32 and
@@ -93,6 +93,7 @@ extern void Port_UiNotice(const char *text); /* ui.cpp: a line over the picture 
 extern void Port_UiBanner(const char *text, int ms); /* ui.cpp: a line in the middle while the game waits */
 extern void Gs_HoldFrame(void);                      /* gs_draw.c: the last picture again, with that line on it */
 extern const char *MenuTranslation_PortText(const char *id);
+extern const char *PortOnline_Text(const char *text);
 static void session_hold(void);
 
 static int sAutoDelay;
@@ -1393,13 +1394,14 @@ static void session_banner(void) {
     snprintf(sBannerSaid, sizeof(sBannerSaid), "%s", k != 0 ? name : "\x01");
     if (k == 0) {
         line = MenuTranslation_PortText("net/connecting");
-        Port_UiBanner(line != NULL ? line : "Connecting to your rival...", 0);
+        Port_UiBanner(PortOnline_Text(line != NULL ? line : "Connecting to your rival..."), 0);
         return;
     }
     line = MenuTranslation_PortText("net/rival_here");
     if (line == NULL) {
         line = "Your rival \"{name}\" is here! The match begins.";
     }
+    line=PortOnline_Text(line);
     for (i = n = 0; line[i] != '\0' && n + 1 < sizeof(text); i++) {
         if (strncmp(line + i, "{name}", 6) == 0) {
             for (k = 0; name[k] != '\0' && n + 1 < sizeof(text); k++) {
@@ -1615,6 +1617,22 @@ int Port_NetView(void) {
 #include <unistd.h>
 #endif
 
+/* Two windows launched from one installation must not read or delete each
+ * other's temporary card. These files belong only to the current process. */
+static const char *session_saves(void){
+    static char root[96];
+#ifdef _WIN32
+    if(!root[0])snprintf(root,sizeof(root),"net_session/%lu",(unsigned long)GetCurrentProcessId());
+#else
+    if(!root[0])snprintf(root,sizeof(root),"net_session/%lu",(unsigned long)getpid());
+#endif
+    return root;
+}
+static void session_card_reset(void){
+    const char *names[3]={"BASLUS-21678DBZT3","icon.sys","dbzsm.ico"};char path[256];int i;
+    for(i=0;i<3;i++){snprintf(path,sizeof(path),"%s/card1/BASLUS-21678DBZT3/%s",session_saves(),names[i]);remove(path);}
+}
+
 static void relaunch(int role, const char *join, int port) {
     char value[160];
 #ifdef _WIN32
@@ -1667,11 +1685,9 @@ static void relaunch(int role, const char *join, int port) {
             snprintf(value, sizeof(value), "%u", (unsigned)(own_options() & 0xFFFFu));
             SETENV("BT3_NET_OPTS", value);
         }
-        SETENV("BT3_SAVES", "net_session");
+        SETENV("BT3_SAVES", session_saves());
         /* the session's own save folder starts empty: both sides begin from the game's defaults */
-        remove("net_session/card1/BASLUS-21678DBZT3/BASLUS-21678DBZT3");
-        remove("net_session/card1/BASLUS-21678DBZT3/icon.sys");
-        remove("net_session/card1/BASLUS-21678DBZT3/dbzsm.ico");
+        session_card_reset();
     } else {
         SETENV("BT3_SAVES", NULL); /* (a save folder named on the command line is not carried over a session: known) */
         SETENV("BT3_NOMOVIE", "1");
@@ -1777,11 +1793,9 @@ void Port_NetSessionBegin(int role, const char *address, int port) {
         snprintf(sSavesBefore, sizeof(sSavesBefore), "%s", saves != NULL ? saves : "");
     }
     /* the session's own save folder starts empty: both sides begin from the game's defaults */
-    remove("net_session/card1/BASLUS-21678DBZT3/BASLUS-21678DBZT3");
-    remove("net_session/card1/BASLUS-21678DBZT3/icon.sys");
-    remove("net_session/card1/BASLUS-21678DBZT3/dbzsm.ico");
+    session_card_reset();
     sVoiceAlt = own_voice_alt(); /* (before the save folder changes: it is read from the player's own) */
-    put_env("BT3_SAVES", "net_session");
+    put_env("BT3_SAVES", session_saves());
     snprintf(host, sizeof(host), "%d", port);
     snprintf(join, sizeof(join), "%s:%d", address, port);
     if (sSock >= 0) {

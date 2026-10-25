@@ -21,14 +21,27 @@
 #include <thread>
 #include <vector>
 #include <algorithm>
+#include <zlib.h>
 #include "../src/plat_verify_tab.h"
+#include "../src/plat_verify_tab_eng.h"
+#include "../include/bt4_build_identity.h"
 #include <SDL3/SDL.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 #include "native.h"
 
 namespace {
 
 const char *kRomSha1 = "2ae9c636de479c01d2b4e9906c25b7ca807e80d9";
 const char *kDbzpSha1 = "de91913f40bd675d70ee748aa16a42a96dff5919";
+bool sEnglish;
+std::string sDataRoot, sDedupeRoot;
+const unsigned int (*sVerify)[2] = kVerify;
+const int *sVerifyCount = kVerifyCount;
+std::vector<Uint8> sPrograms[2];
 const Uint32 kRomBase = 0x100000, kRomEnd = 0x2FF180;
 #ifdef _WIN32
 const char *kGame = "Tenkaichi3Decomp.exe";
@@ -242,6 +255,9 @@ void step_disc(Iso &iso, const std::string &path) {
                    "Other regions and the Wii version have different programs and are not supported."};
     }
     say("@note checking");
+    if (slus->size < 0x34 || slus->size > 16*1024*1024 || dbzp->size > 16*1024*1024) {
+        throw Stop{"Unsupported BT4 executable size."};
+    }
     std::vector<Uint8> elf((size_t)slus->size), rom(kRomEnd - kRomBase, 0), menu((size_t)dbzp->size);
     iso.read(slus->offset, elf.data(), elf.size());
     iso.read(dbzp->offset, menu.data(), menu.size());
@@ -251,10 +267,13 @@ void step_disc(Iso &iso, const std::string &path) {
         memcpy(&shoff, &elf[0x20], 4);
         memcpy(&shentsize, &elf[0x2E], 2);
         memcpy(&shnum, &elf[0x30], 2);
+        if (shentsize < 24 || (Uint64)shoff + (Uint64)shnum * shentsize > elf.size()) {
+            throw Stop{"Invalid BT4 executable section table."};
+        }
         for (Uint32 i = 0; i < shnum && (size_t)shoff + (size_t)(i + 1) * shentsize <= elf.size(); i++) {
             Uint32 sh[6]; // name, type, flags, address, offset, size
             memcpy(sh, &elf[shoff + (size_t)i * shentsize], sizeof(sh));
-            if ((sh[2] & 2) && sh[1] != 8 && sh[5] != 0 && sh[3] >= kRomBase && sh[3] + sh[5] <= kRomEnd && (size_t)sh[4] + sh[5] <= elf.size()) {
+            if ((sh[2] & 2) && sh[1] != 8 && sh[5] != 0 && sh[3] >= kRomBase && (Uint64)sh[3] + sh[5] <= kRomEnd && (Uint64)sh[4] + sh[5] <= elf.size()) {
                 memcpy(&rom[sh[3] - kRomBase], &elf[sh[4]], sh[5]);
             }
         }
@@ -262,11 +281,16 @@ void step_disc(Iso &iso, const std::string &path) {
     Sha1 a, b;
     a.add(rom.data(), rom.size());
     b.add(menu.data(), menu.size());
-    if (a.hex() != kRomSha1 || b.hex() != kDbzpSha1) {
-        throw Stop{"Los programas de esta ISO no coinciden con Team BT4 B14 Rev2.\n"
-                   "Este launcher incluye el motor nativo para B14 Rev2. Usa la ISO de esa version."};
+    const std::string executable = a.hex(), overlay = b.hex();
+    sEnglish = executable == "a4776fbadd2d266f42cf559a3530c2e6454d01a3" && overlay == "1d9f8da80c200bb50e7df3210fff30827e5dae9c";
+    if (!sEnglish && (executable != kRomSha1 || overlay != kDbzpSha1)) {
+        throw Stop{"Unsupported BT4 disc profile. Use the LATINO or English B14 Rev2 ISO.\n"
+                   "Both executable and overlay must match one of the verified profiles."};
     }
-    say("@ok Team BT4 B14 Rev2: programas verificados");
+    sVerify = sEnglish ? kVerifyEng : kVerify;
+    sVerifyCount = sEnglish ? kVerifyEngCount : kVerifyCount;
+    sPrograms[0] = std::move(rom); sPrograms[1] = std::move(menu);
+    say(sEnglish ? "@ok BT4 B14 Rev2 English: verified programs" : "@ok BT4 B14 Rev2 LATINO: verified programs");
 }
 
 
@@ -283,11 +307,54 @@ Uint32 file_crc(const std::string &path, Uint64 size, std::vector<Uint8> &buf) {
     SDL_CloseIO(f); return crc;
 }
 
+// Link only after the source matches the selected disc's size and CRC.
+// This keeps shared assets in one physical copy without mixing differing files.
+bool share_file(const std::string &source,const std::string &destination) {
+#ifdef _WIN32
+    int a=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,source.c_str(),-1,NULL,0);
+    int b=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,destination.c_str(),-1,NULL,0);
+    if(a<1||b<1)return false;
+    std::vector<WCHAR> src(a),dst(b);
+    MultiByteToWideChar(CP_UTF8,0,source.c_str(),-1,src.data(),a);
+    MultiByteToWideChar(CP_UTF8,0,destination.c_str(),-1,dst.data(),b);
+    return CreateHardLinkW(dst.data(),src.data(),NULL)!=0;
+#else
+    return link(source.c_str(),destination.c_str())==0;
+#endif
+}
+void select_data_root(const std::string &root) {
+    std::string base=root+"gamedata/";size_t bytes=0;
+    char *tag=(char *)SDL_LoadFile((base+".bt4-language").c_str(),&bytes);
+    bool baseExists=SDL_GetPathInfo((base+"disc/SLUS_219.78").c_str(),NULL);
+    bool baseEnglish=tag&&bytes>=2&&!strncmp(tag,"en",2);SDL_free(tag);
+    if(baseExists&&!SDL_GetPathInfo((base+".bt4-language").c_str(),NULL)) {
+        tag=(char *)SDL_LoadFile((base+".installed-bt4-b14rev2").c_str(),&bytes);
+        baseEnglish=tag&&std::string(tag,bytes).find("ENG")!=std::string::npos;SDL_free(tag);
+    }
+    sDataRoot=base;sDedupeRoot.clear();
+    if(baseExists&&sEnglish!=baseEnglish){
+        sDataRoot=base+"languages/"+(sEnglish?"en/":"es/");sDedupeRoot=base;
+    }
+    SDL_CreateDirectory(sDataRoot.c_str());
+    const char *locale=sEnglish?"en\n":"es\n";
+    if(!SDL_SaveFile((sDataRoot+".bt4-language").c_str(),locale,3))throw Stop{"Could not save the language profile."};
+}
+
 void checked_out(Iso &iso, Uint64 off, Uint64 size, const std::string &path,
                  unsigned expectedSize, unsigned expectedCrc, std::vector<Uint8> &buf) {
     if (size != expectedSize) throw Stop{"Tamano incompatible en " + path};
     if (file_crc(path, size, buf) == expectedCrc) return;
     std::string temp = path + ".part";
+    if(!sDedupeRoot.empty() && path.compare(0,sDataRoot.size(),sDataRoot)==0) {
+        std::string shared=sDedupeRoot+path.substr(sDataRoot.size());
+        if(file_crc(shared,expectedSize,buf)==expectedCrc) {
+            SDL_RemovePath(temp.c_str());
+            if(share_file(shared,temp)) {
+                if(!SDL_RenamePath(temp.c_str(),path.c_str()))throw Stop{"Could not finalize the shared language asset."};
+                return;
+            }
+        }
+    }
     SDL_IOStream *f = SDL_IOFromFile(temp.c_str(), "wb");
     if (!f) throw Stop{"No se puede escribir en " + temp};
     Uint32 crc = 0;
@@ -312,11 +379,12 @@ void step_data(Iso &iso, const std::string &root) {
     std::vector<Uint8> db((size_t)index->size), buf(1024*1024);
     iso.read(index->offset, db.data(), db.size());
     Sha1 hash; hash.add(db.data(), db.size());
-    if (hash.hex() != "989ee93cbd31508717bc245793c1e89c50109e0f") throw Stop{"DBZ4.BIN no coincide con BT4 B14 Rev2."};
-    std::string data = root + "gamedata/";
+    const char *indexHash = sEnglish ? "145837274421c39ae7eedc3fa1b697d4212541c2" : "989ee93cbd31508717bc245793c1e89c50109e0f";
+    if (hash.hex() != indexHash) throw Stop{"DBZ4.BIN does not match the selected BT4 B14 Rev2 profile."};
+    std::string data = sDataRoot.empty() ? root + "gamedata/" : sDataRoot;
     SDL_CreateDirectory(data.c_str());
     int entry = 0, percent = -1, files = 0;
-    const int countAll = sizeof(kVerify)/sizeof(kVerify[0]);
+    const int countAll = sVerifyCount[0]+sVerifyCount[1]+sVerifyCount[2]+sVerifyCount[3]+sizeof(kVerifyLoose)/sizeof(kVerifyLoose[0]);
     auto progress = [&]() {
         files++;
         int now = files*100/countAll;
@@ -337,7 +405,7 @@ void step_data(Iso &iso, const std::string &root) {
         size_t at=(size_t)(found-db.begin())-16;
         Uint32 header[4]; memcpy(header,db.data()+at,16);
         Uint32 count=header[2];
-        if (header[0]!=0 || count!=(Uint32)kVerifyCount[part] || header[3]!=count || header[1]!=0x11A+count*2 || at+header[1]>db.size())
+        if (header[0]!=0 || count!=(Uint32)sVerifyCount[part] || header[3]!=count || header[1]!=0x11A+count*2 || at+header[1]>db.size())
             throw Stop{"Tabla de sectores BT4 incompatible."};
         std::string dir=data+"pzs4us"+std::to_string(part)+"/";
         SDL_CreateDirectory(dir.c_str());
@@ -350,7 +418,7 @@ void step_data(Iso &iso, const std::string &root) {
                 bytes=afs->size-offset;
             }
             char name[32]; snprintf(name,sizeof(name),"%05u.bin",i);
-            checked_out(iso,afs->offset+offset,bytes,dir+name,kVerify[entry][0],kVerify[entry][1],buf);
+            checked_out(iso,afs->offset+offset,bytes,dir+name,sVerify[entry][0],sVerify[entry][1],buf);
             offset+=(Uint64)sectors*2048; progress();
         }
     }
@@ -359,10 +427,35 @@ void step_data(Iso &iso, const std::string &root) {
         if (!f) throw Stop{"Falta " + std::string(loose+5)};
         std::string path=data+loose;
         SDL_CreateDirectory(path.substr(0,path.rfind('/')).c_str());
-        checked_out(iso,f->offset,f->size,path,kVerify[entry][0],kVerify[entry][1],buf);
+        checked_out(iso,f->offset,f->size,path,sVerify[entry][0],sVerify[entry][1],buf);
         entry++; progress();
     }
-    say("@ok 116685 archivos de BT4 extraidos y verificados por CRC-32");
+    say("@ok " + std::to_string(files) + " BT4 files extracted and verified with CRC-32");
+}
+
+// Recompute only the small native-table fingerprint, using the strictly verified
+// programs. Destinations remain those generated for this exact linked executable.
+void step_tables(const std::string &root) {
+    step("Native data tables");
+    size_t bytes = 0;
+    Uint8 *loaded = (Uint8 *)SDL_LoadFile((root + "Tenkaichi3Decomp.dat").c_str(), &bytes);
+    if (!loaded) throw Stop{"The matching native data table is missing."};
+    std::vector<Uint8> table(loaded, loaded + bytes); SDL_free(loaded);
+    Uint32 count = 0;
+    if (bytes < 16 || memcmp(table.data(), "BT3D", 4)) throw Stop{"Invalid native data table."};
+    memcpy(&count, table.data()+4, 4);
+    if (count > 100000 || bytes != 16 + (size_t)count * 16) throw Stop{"Invalid native data table length."};
+    Uint64 hash = 0xcbf29ce484222325ULL;
+    for (Uint32 i=0; i<count; i++) {
+        Uint32 record[4]; memcpy(record, table.data()+16+(size_t)i*16, 16);
+        if (record[1]>1 || (Uint64)record[2]+record[3]>sPrograms[record[1]].size()) throw Stop{"Native data table exceeds the selected program."};
+        for (Uint32 j=0; j<record[3]; j++) hash=(hash^sPrograms[record[1]][record[2]+j])*0x100000001b3ULL;
+    }
+    memcpy(table.data()+8, &hash, 8);
+    std::string temporary = root + "Tenkaichi3Decomp.dat.part";
+    if (!SDL_SaveFile(temporary.c_str(), table.data(), table.size()) ||
+        !SDL_RenamePath(temporary.c_str(), (root+"Tenkaichi3Decomp.dat").c_str())) throw Stop{"Could not finalize the native data table."};
+    say("@ok Native table matches the selected disc profile");
 }
 
 void step_test(const std::string &root) {
@@ -374,8 +467,11 @@ void step_test(const std::string &root) {
     SDL_SetEnvironmentVariable(env, "BT3_DEMO", "1", true);
     SDL_SetEnvironmentVariable(env, "BT3_SETTINGS", "", true);
     SDL_SetEnvironmentVariable(env, "BT3_SAVES", saves.c_str(), true);
-    SDL_SetEnvironmentVariable(env, "BT3_GS", "none", true); // no window: a release program opens one by default
-    for (const char *name : {"BT3_REPLAY", "BT3_PAD_PLAY", "BT3_PAD_REC", "BT3_DATA"}) {
+    SDL_SetEnvironmentVariable(env, "BT3_GS", "none", true);
+    SDL_SetEnvironmentVariable(env, "BT3_NOSOUND", "1", true);
+    SDL_SetEnvironmentVariable(env, "BT4_MUSIC_NO_CACHE", "1", true);
+    SDL_SetEnvironmentVariable(env, "BT3_DATA", sDataRoot.c_str(), true); // no window: a release program opens one by default
+    for (const char *name : {"BT3_REPLAY", "BT3_PAD_PLAY", "BT3_PAD_REC"}) {
         SDL_UnsetEnvironmentVariable(env, name);
     }
     SDL_PropertiesID props = SDL_CreateProperties();
@@ -420,7 +516,8 @@ void step_test(const std::string &root) {
             SDL_free(crash);
         }
     }
-    SDL_IOStream *log = SDL_IOFromFile((root + "install.log").c_str(), "wb");
+    SDL_CreateDirectory((root + "net_session/setup/").c_str());
+    SDL_IOStream *log = SDL_IOFromFile((root + "net_session/setup/install.log").c_str(), "wb");
     if (log != NULL) {
         SDL_WriteIO(log, text.data(), text.size());
         SDL_CloseIO(log);
@@ -428,7 +525,7 @@ void step_test(const std::string &root) {
     if (text.find("battle finished") == std::string::npos) {
         size_t end = text.find_last_not_of("\r\n"), begin = end == std::string::npos ? std::string::npos : text.rfind('\n', end);
         std::string last = end == std::string::npos ? "no output" : text.substr(begin == std::string::npos ? 0 : begin + 1, end - (begin == std::string::npos ? 0 : begin + 1) + 1);
-        throw Stop{"The game's demo fight did not finish. Its last line was:\n" + last + "\nThe full output is in install.log."};
+        throw Stop{"The game's demo fight did not finish. Its last line was:\n" + last + "\nThe full output is in net_session/setup/install.log."};
     }
     say("@ok the demo fight ran to its end");
 }
@@ -487,46 +584,60 @@ void step_eu(const std::string &root, const std::string &path) {
     say("@ok Spanish, German, French and Italian: the game makes them at its next start");
 }
 
+#include "private_packages.inc"
+#include "language_install.inc"
+
+bool installed_language(const std::string &root,bool english){
+    bool base=base_english(root);std::string data=root+"gamedata/"+(base==english?"":english?"languages/en/":"languages/es/");
+    if(base!=english&&!SDL_GetPathInfo((data+".installed-bt4-b14rev2").c_str(),NULL))return false;
+    const int *counts=english?kVerifyEngCount:kVerifyCount;
+    const unsigned int (*verify)[2]=english?kVerifyEng:kVerify;
+    int offset=counts[0]+counts[1]+counts[2]+counts[3],checked=0;std::vector<Uint8> buf(1024*1024);
+    for(int i=0;i<(int)(sizeof(kVerifyLoose)/sizeof(kVerifyLoose[0]));++i){
+        std::string relative=kVerifyLoose[i];
+        if(relative=="disc/SLUS_219.78"||relative=="disc/BIN/DBZ4.BIN"||relative=="disc/BIN/DBZP.BIN"){
+            if(file_crc(data+relative,verify[offset+i][0],buf)!=verify[offset+i][1])return false;++checked;
+        }
+    }
+    return checked==3;
+}
 void work(std::string root, std::string path, std::string eu) {
     try {
-        sStep = 0;
-        sSteps = (path.empty() ? 0 : 3) + (eu.empty() ? 0 : 1);
-        if (!path.empty()) {
-            Iso iso;
-            step_disc(iso, path);
-            check_cancel();
-            step_data(iso, root);
-            check_cancel();
-        }
-        if (!eu.empty()) {
-            step_eu(root, eu);
-            check_cancel();
-        }
-        if (!path.empty()) {
-            step_test(root);
-            const char *profile = "BT4 B14 Rev2; SLUS_219.78; native profile 6\n";
-            SDL_IOStream *marker = SDL_IOFromFile((root + "gamedata/.installed-bt4-b14rev2").c_str(), "wb");
-            if (!marker || SDL_WriteIO(marker, profile, strlen(profile)) != strlen(profile)) throw Stop{"No se pudo guardar el estado de instalacion."};
-            if (!SDL_CloseIO(marker)) throw Stop{"No se pudo guardar el estado de instalacion."};
-        }
-        say("@done " + root + kGame);
-    } catch (const Stop &s) {
-        std::string why = s.why;
-        for (size_t i = 0; (i = why.find('\n', i)) != std::string::npos;) {
-            why.replace(i, 1, "\\n");
-        }
-        say("@fail");
-        say("@stopped " + why);
-    }
-    sRunning = false;
+        sStep=0;sSteps=(path.empty()?0:4)+(sInstallMask==3?2:0);
+        if(!path.empty()){
+            Iso iso;step_disc(iso,path);check_cancel();
+            if(sInstallMask!=3&&sInstallMask!=(sEnglish?2:1))throw Stop{"LANGUAGE_ISO_MISMATCH"};
+            select_data_root(root);step_data(iso,root);check_cancel();step_tables(root);check_cancel();step_test(root);
+            const char *profile=sEnglish?"BT4 B14 Rev2 ENG; SLUS_219.78; native profile 7\n":"BT4 B14 Rev2 LATINO; SLUS_219.78; native profile 7\n";
+            if(!SDL_SaveFile((sDataRoot+".installed-bt4-b14rev2").c_str(),profile,strlen(profile)))throw Stop{"INSTALL_STATE_FAILED"};
+        }else if(!Native_Installed(root))throw Stop{"ISO_REQUIRED"};
+        bool base=base_english(root);
+        if(sInstallMask==3){
+            if(!installed_language(root,!base))install_language(root,!base);
+            else {step("Language package");say("@package 100");say("@skip verified language is installed");}
+        }else if(!installed_language(root,sInstallMask==2))throw Stop{"ISO_REQUIRED"};
+        SDL_CreateDirectory((root+"tbo").c_str());
+        std::string options=std::to_string(sInstallMask)+"\n";
+        if(!SDL_SaveFile((root+"tbo/languages.ini").c_str(),options.data(),options.size()))throw Stop{"INSTALL_STATE_FAILED"};
+        const char *identity=BT4_BUILD_IDENTITY;
+        SDL_SaveFile((root+BT4_BUILD_MARKER).c_str(),identity,strlen(identity));
+        say("@done "+root+kGame);
+    }catch(const Stop &e){
+        SDL_CreateDirectory((root+"tbo/setup").c_str());
+        SDL_SaveFile((root+"tbo/setup/install.log").c_str(),e.why.data(),e.why.size());
+        std::string why=e.why;for(size_t i=0;(i=why.find('\n',i))!=std::string::npos;)why.replace(i,1,"\\n");
+        say("@fail");say("@stopped "+why);
+    }catch(...){say("@fail");say("@stopped INSTALL_FAILED");}
+    sRunning=false;
 }
 
 } // namespace
 
-void Native_Start(const std::string &root, const std::string &iso, const std::string &eu) {
+void Native_Start(const std::string &root, const std::string &iso, const std::string &eu,int mask) {
     if (sThread.joinable()) {
         sThread.join();
     }
+    sInstallMask=mask>=1&&mask<=3?mask:1;
     sCancel = false;
     sRunning = true;
     sThread = std::thread(work, root, iso, eu);
@@ -555,7 +666,20 @@ void Native_Join() {
 
 bool Native_Installed(const std::string &root) {
     SDL_PathInfo info;
-    return SDL_GetPathInfo((root + "gamedata/.installed-bt4-b14rev2").c_str(), &info) && SDL_GetPathInfo((root + "gamedata/disc/SLUS_219.78").c_str(), &info);
+    if(!SDL_GetPathInfo((root+"gamedata/disc/SLUS_219.78").c_str(),&info))return false;
+    if(SDL_GetPathInfo((root+"gamedata/.installed-bt4-b14rev2").c_str(),&info))return true;
+    // Older portable installations can add English without extracting their ISO again.
+    std::vector<Uint8> buf(1024*1024);
+    for(int en=0;en<2;++en){
+        const int *counts=en?kVerifyEngCount:kVerifyCount;
+        const unsigned int (*verify)[2]=en?kVerifyEng:kVerify;
+        int off=counts[0]+counts[1]+counts[2]+counts[3];
+        if(file_crc(root+"gamedata/disc/SLUS_219.78",verify[off+7][0],buf)==verify[off+7][1]&&
+           file_crc(root+"gamedata/disc/BIN/DBZP.BIN",verify[off+1][0],buf)==verify[off+1][1])return true;
+    }
+    return false;
 }
 
 bool Native_EuInstalled(const std::string &root) { return true; }
+bool Native_BundledEnglish(const std::string &root) { return false; }
+bool Native_EnglishInstalled(const std::string &root) { return english_installed(root); }

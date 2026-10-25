@@ -44,9 +44,10 @@ static int sAtLeast; /* counted by size only (the quick pass): files of the same
 static char sSummary[160];
 
 extern int Port_BuildIdentity(unsigned long long *out);
+extern const char *Port_BuildIdentitySummary(void);
 int Port_DataState(void) { return Port_BuildIdentity(NULL)==1?DATA_ORIGINAL:DATA_MODIFIED; }
 const char *Port_DataSummary(void) {
-    return Port_DataState()==DATA_ORIGINAL?"":"This is an old or incompatible version. Please update the complete BT4 launcher.";
+    return Port_DataState()==DATA_ORIGINAL?"":Port_BuildIdentitySummary();
 }
 
 /* CRC-32 (the zlib one), eight bytes a step. */
@@ -263,5 +264,5 @@ static void *verify_thread(void *arg) {
 void Port_VerifyStart(void) {
     static int once;if(once)return;once=1;
     sState=Port_DataState();
-    fprintf(stderr,"bt4 build identity: %s files-read=1 extracted-assets-scanned=0\n",sState==DATA_ORIGINAL?"current":"missing or incompatible");
+    fprintf(stderr,"bt4 build identity: %s revision-marker=ignored extracted-assets-scanned=0\n",sState==DATA_ORIGINAL?"compatible base data":"missing or unsupported base data");
 }

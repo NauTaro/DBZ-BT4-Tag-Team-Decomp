@@ -87,7 +87,7 @@
   {
     "source": "port/release/BT4_VERSION.txt",
     "target": "BT4_VERSION.txt",
-    "sha256": "f662147d0ded1ddc0244daca67fdf6f009e33ea459e111b48f975af3af39189a"
+    "sha256": "fa777f1776cc6ec8bf9330702f08f600f8d51735a53ca267d152be990800e154"
   },
   {
     "source": "port/tbo/ui/kit_bar_compact.png",

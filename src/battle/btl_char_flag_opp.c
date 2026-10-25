@@ -79,11 +79,18 @@ void BtlOpp_GetDelta(BtlFlagChr *chr, Vec4 *out) {
 
 /* Copies the vector at +0x30 of the opponent's pose. */
 void BtlOpp_GetPoseVec30(BtlFlagChr *chr, Vec4 *out) {
+    /* In Tag Team the attacker can advance while this target is held by a
+     * finite hit stop. EndFrame leaves the held fighter's previous delta
+     * untouched, so it must not be extrapolated as current movement. */
+    extern s32 BtlChar_IsFrozen(BtlFlagChr *);
+    if(TagBattle_Active()&&BtlChar_IsFrozen(OPPONENT(chr))){memset(out,0,sizeof(*out));return;}
     Vec4_Copy(out, &BtlChar_GetPos(OPPONENT(chr))->unk30);
 }
 
 /* Copies the opponent's velocity (pose +0x40). */
 void BtlOpp_GetVelocity(BtlFlagChr *chr, Vec4 *out) {
+    extern s32 BtlChar_IsFrozen(BtlFlagChr *);
+    if(TagBattle_Active()&&BtlChar_IsFrozen(OPPONENT(chr))){memset(out,0,sizeof(*out));return;}
     Vec4_Copy(out, &BtlChar_GetPos(OPPONENT(chr))->vel);
 }
 

@@ -13,31 +13,32 @@ extern void BtlCam_SelectView(s32 view),BtlCam_ApplyView(s32 scissor);
 static u8 sTagOnlinePads[10][18];
 static u32 sTagOnlineFrame;
 static u32 sTagOnlinePressed;
+static u32 sTagOnlinePausePressed,sTagOnlinePauseRepeat;
+static s32 sTagOnlinePausePending;
 static s32 sTagOnlineCaptured;
 static s32 sTagOnlineEnding;
-static s32 sTagOnlineMenu,sTagOnlineMenuCursor;
 extern void Port_TagMenuSet(int,int);
-static void TagOnline_MenuDraw(void);
 static u32 sTagOnlineWaitStarted;
 extern unsigned Port_TagMenuMillis(void);
 extern void Port_TagCapture(void);
 static void TagOnline_Ending(void){sTagOnlineEnding=1;}
 extern void Port_TagHash(u32 frame,u32 hash),Port_TagYield(void);
+extern void Port_TagHashActor(s32,u32,u32,u32,u32,u32,u32,u32,u32,u32,u32);
 static s32 sTagOnlineSent,sTagOnlineLoaded,sTagOnlineAck,sTagOnlineArm,sTagOnlineStart;
 s32 TagBattle_Network(void){return TagBattle_Active()&&Port_TagNetwork();}
 u8 *TagBattle_NetPad(s32 actor){return sTagOnlinePads[actor>=0&&actor<10?actor:0];}
 static void TagOnline_Reset(void){
     s32 i;extern void Port_Srand(u32),Rand_SeedByArray(u32 *,s32);extern s32 Port_Rand(void);
-    u32 key[4];sTagOnlineCaptured=0;sTagOnlinePressed=0;sTagOnlineEnding=sTagOnlineMenu=sTagOnlineMenuCursor=0;sTagOnlineWaitStarted=0;sTagOnlineFrame=sTagOnlineSent=sTagOnlineLoaded=sTagOnlineAck=sTagOnlineArm=sTagOnlineStart=0;
+    u32 key[4];sTagOnlineCaptured=0;sTagOnlinePressed=0;sTagOnlinePausePressed=sTagOnlinePauseRepeat=0;sTagOnlinePausePending=0;sTagOnlineEnding=0;sTagOnlineWaitStarted=0;sTagOnlineFrame=sTagOnlineSent=sTagOnlineLoaded=sTagOnlineAck=sTagOnlineArm=sTagOnlineStart=0;
     memset(sTagOnlinePads,0,sizeof(sTagOnlinePads));for(i=0;i<10;++i)sTagOnlinePads[i][4]=sTagOnlinePads[i][5]=127;
     Port_TagMenuSet(0,0);
     if(!TagBattle_Network())return;
     Port_Srand(Port_TagSeed());for(i=0;i<4;++i)key[i]=Port_Rand();Rand_SeedByArray(key,4);
 }
 static s32 TagOnline_Tick(void){
-    s32 phase,wasMenu=sTagOnlineMenu;Port_TagPoll();phase=Port_TagPhase();
+    s32 phase;Port_TagPoll();phase=Port_TagPhase();
     sTagOnlinePressed|=gPad[0].pressed;
-    if(sTagResultActive||sTagOnlineEnding){Port_TagMenuSet(0,0);return 1;}
+    if(sTagResultActive||sTagOnlineEnding){sTagOnlinePausePressed=sTagOnlinePauseRepeat=0;sTagOnlinePausePending=0;Port_TagMenuSet(0,0);return 1;}
     if(phase==6||phase==0)return -1;
     if(phase==3){
         if(!sTagOnlineLoaded){Port_TagCommand(6,0,0);sTagOnlineLoaded=1;}
@@ -50,23 +51,31 @@ static s32 TagOnline_Tick(void){
         return 0;
     }
     if(phase!=5)return 0;
-    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_PAUSE_TEST")&&Port_TagHost()&&sTagOnlineFrame>=650){
+    if(!sTagOnlineSent&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_PAUSE_TEST")&&Port_TagHost()&&sTagOnlineFrame>=650){
         static s32 step;extern void Port_TagUiCapture(int);
         ++step;gPad[0].gamePressed=gPad[0].gameRepeat=0;
+        if(getenv("BT4_TAG_RETURN_TEST")){
+            if(step==1)gPad[0].gamePressed=PADG_START;
+            if(step==20||step==24)gPad[0].gamePressed=PADG_DOWN;
+            if(step==28||step==50)gPad[0].gamePressed=PADG_CROSS;
+            if(step==45)gPad[0].gamePressed=PADG_UP;
+            if(step==16||step==35)Port_TagUiCapture(step==16?1:2);
+        }else{
         if(step==1||step==70)gPad[0].gamePressed=PADG_START;
-        if(step==30)gPad[0].gameRepeat=PADG_DOWN;
+        if(step==30)gPad[0].gamePressed=gPad[0].gameRepeat=PADG_DOWN;
         if(step==50)gPad[0].gamePressed=PADG_TRIANGLE;
         if(step==90)gPad[0].gamePressed=PADG_CROSS;
         if(step==12)Port_TagUiCapture(1);
         if(step==35)Port_TagUiCapture(2);
         if(step==60)Port_TagUiCapture(3);
         if(step==100){Port_TagUiCapture(4);fprintf(stderr,"tag pause fixture: START DOWN TRIANGLE START CROSS completed\n");}
+        }
     }
-    if(gPad[0].gamePressed&PADG_START){sTagOnlineMenu=!sTagOnlineMenu;if(sTagOnlineMenu)sTagOnlineMenuCursor=0;}
-    if(sTagOnlineMenu&&(gPad[0].gamePressed&PADG_TRIANGLE))sTagOnlineMenu=0;
-    if(sTagOnlineMenu){Ps_Move(&sTagOnlineMenuCursor,2);if(gPad[0].gamePressed&PADG_CROSS){
-        if(sTagOnlineMenuCursor){Port_TagClose();return -1;}sTagOnlineMenu=0;}}
-    Port_TagMenuSet(sTagOnlineMenu,sTagOnlineMenuCursor);
+    if(gPad[0].gamePressed&PADG_START)sTagOnlinePausePending=1;
+    if(sTagOnlinePausePending||(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)){
+        sTagOnlinePausePressed|=gPad[0].gamePressed;
+        sTagOnlinePauseRepeat|=gPad[0].gameRepeat;
+    }
     if(!sTagOnlineSent){
         u8 packet[18]={0};s32 actor=Port_TagSeat();Pad *pad=&gPad[0];
         BtlInputChr *chr=BtlChar_Get(actor);u32 buttons=BtlInput_RemapButtons(pad->held|sTagOnlinePressed,chr->input.mask);
@@ -74,8 +83,8 @@ static s32 TagOnline_Tick(void){
          * cannot reinterpret it. Commands/double taps use shared fighter state. */
         memcpy(packet,&buttons,4);packet[4]=BtlInput_StickToByte(pad->left[0]);packet[5]=BtlInput_StickToByte(pad->left[1]);
         packet[6]=(sTagOnlinePressed&PAD_L3)!=0;packet[7]=pad->status==0||pad->status==1?pad->status:2;
-        if(sTagOnlineMenu||wasMenu){memset(packet,0,sizeof(packet));packet[4]=packet[5]=127;}
-        if(!sTagOnlineMenu&&!wasMenu&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")){
+        if(sTagOnlinePausePending||(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)){memset(packet,0,sizeof(packet));packet[4]=packet[5]=127;}
+        if(!sTagOnlinePausePending&&!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")){
             u32 n=sTagOnlineFrame,held=0;packet[4]=packet[5]=127;
             if(n%240<70)held=BTLB_DASH|BTLB_UP;
             else if(n%240<140)held=BTLB_RUSH|BTLB_ANY_FACE|BTLB_SQUARE;
@@ -91,6 +100,12 @@ static s32 TagOnline_Tick(void){
         static s32 waitTick;if(++waitTick%4){if(!sTagOnlineWaitStarted)sTagOnlineWaitStarted=Port_TagMenuMillis();return 0;}
     }
     if(!Port_TagTakeFrame(sTagOnlinePads)){if(!sTagOnlineWaitStarted)sTagOnlineWaitStarted=Port_TagMenuMillis();return 0;}
+    if(sTagOnlinePausePressed||sTagOnlinePauseRepeat){
+        gPad[0].gamePressed|=sTagOnlinePausePressed;
+        gPad[0].gameRepeat|=sTagOnlinePauseRepeat;
+        sTagOnlinePausePressed=sTagOnlinePauseRepeat=0;
+        sTagOnlinePausePending=0;
+    }
     ++sTagOnlineFrame;sTagOnlineSent=0;
 
     /* Opt-in reproduction of the first Hit rush in a real network room.
@@ -142,7 +157,7 @@ static s32 TagOnline_Tick(void){
         fprintf(stderr,"tag net cut fixture: native technique requested at shared frame=650\n");
     }
     sTagOnlineWaitStarted=0;
-    {extern void Port_TagWaitClear(void);Port_TagWaitClear();}
+    {extern void Port_TagWaitResumed(void),Port_TagWaitClear(void);Port_TagWaitResumed();Port_TagWaitClear();}
     return 1;
 }
 /* Waiting must not rebuild PS2 draw lists: the effect uploads, palettes and
@@ -155,7 +170,7 @@ static void TagOnline_WaitDraw(void){
     s32 image,clut,afterImage,afterClut,ai=BtlAiMgr_GetFrame();
     static s32 checked;
     EftVram_GetCursor(&image,&clut);
-    Port_TagWait(Port_TagPhase(),sTagOnlineMenu,sTagOnlineMenuCursor,
+    Port_TagWait(Port_TagPhase(),0,0,
         Port_TagPhase()<5 || Port_TagMenuMillis()-sTagOnlineWaitStarted>=750);
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RENDER_AUDIT")){
         EftVram_GetCursor(&afterImage,&afterClut);
@@ -165,8 +180,12 @@ static void TagOnline_WaitDraw(void){
         if(++checked%100==0)fprintf(stderr,"tag held-frame audit: waits=%d no-scene-redraw=1 cursors-stable=1 ai-stable=1\n",checked);
     }
 }
-static void TagOnline_MenuDraw(void){
-    Port_TagMenuSet(TagBattle_Network()&&sTagOnlineMenu&&!sTagResultActive,sTagOnlineMenuCursor);
+/* Position checks must tolerate harmless sub-pixel floating-point rounding
+ * differences between PCs. Keep 1/16 world-unit precision while still
+ * detecting movement that can affect combat. */
+static u32 TagOnline_PositionHashWord(f32 position){
+    f32 scaled=position*16.0f;
+    return (u32)(s32)(scaled+(scaled>=0.0f?0.5f:-0.5f));
 }
 static void TagOnline_Trace(void){
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RENDER_SEQUENCE")&&sTagOnlineFrame>=600&&sTagOnlineFrame<660)Port_TagCapture();
@@ -177,14 +196,18 @@ static void TagOnline_Trace(void){
         if(safe||sTagOnlineFrame>=1800){Port_TagCapture();sTagOnlineCaptured=1;}
     }
     if(sTagResultActive||sTagOnlineEnding||sTagOnlineFrame%30)return;
-    {u32 hash=2166136261u; s32 i,k;extern s32 BtlAct_GetCurrent(void *);
-        for(i=0;i<TagBattle_Count();++i){f32 pos[4];u32 words[7];
-            BtlCharApi_GetPos(i,pos);memcpy(words,pos,12);words[3]=BtlCharApi_GetHp(i);words[4]=BtlSide_GetKi(i);
+    {u32 hash=2166136261u; s32 i,k,count=TagBattle_Count();extern s32 BtlAct_GetCurrent(void *),BtlCharApi_GetChara(s32),BtlCharApi_GetCostume(s32);
+        hash^=(u32)count;hash*=16777619u;
+        for(i=0;i<count;++i){f32 pos[4];u32 words[10];
+            BtlCharApi_GetPos(i,pos);words[0]=TagOnline_PositionHashWord(pos[0]);words[1]=TagOnline_PositionHashWord(pos[1]);words[2]=TagOnline_PositionHashWord(pos[2]);
+            words[3]=BtlCharApi_GetHp(i);words[4]=BtlSide_GetKi(i);
             words[5]=BtlAct_GetCurrent(BtlChar_Get(i));words[6]=TagBattle_Target(i);
-            for(k=0;k<7;++k){hash^=words[k];hash*=16777619u;}}
+            words[7]=TagBattle_Team(i);words[8]=BtlCharApi_GetChara(i);words[9]=BtlCharApi_GetCostume(i);
+            Port_TagHashActor(i,words[0],words[1],words[2],words[3],words[4],words[5],words[6],words[7],words[8],words[9]);
+            for(k=0;k<10;++k){hash^=words[k];hash*=16777619u;}}
         Port_TagHash(sTagOnlineFrame,hash);
         if(!getenv("BT4_RENDER_TEST")||!getenv("BT4_TAG_ONLINE_TEST"))return;
-        fprintf(stderr,"tag online frame=%u hash=%08X seat=%d hp0=%d hp1=%d\n",sTagOnlineFrame,hash,Port_TagSeat(),BtlCharApi_GetHp(0),BtlCharApi_GetHp(1));fflush(stderr);
+        fprintf(stderr,"tag online frame=%u hash=%08X actors=%d seat=%d hp0=%d hp1=%d char0=%d char1=%d\n",sTagOnlineFrame,hash,count,Port_TagSeat(),BtlCharApi_GetHp(0),BtlCharApi_GetHp(1),BtlCharApi_GetChara(0),BtlCharApi_GetChara(1));fflush(stderr);
         if(sTagOnlineFrame>=2100){fprintf(stderr,"tag online test completed\n");fflush(NULL);exit(0);}
     }
 }

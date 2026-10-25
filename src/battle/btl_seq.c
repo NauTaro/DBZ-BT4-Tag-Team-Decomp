@@ -6,6 +6,11 @@ extern int TagBattle_Active(void);
 #include "battle/battle_work.h"
 #include "sys/heap.h"
 #include "sys/adx.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#include "sys/pad.h"
+#endif
 extern s32 TagBattle_Count(void);
 extern s32 BtlCharApi_GetHp(s32 actor);
 
@@ -592,6 +597,7 @@ extern int Port_NetActive(void); /* port/src/gs/net.c: 1 in an online match */
 extern int Port_NetMe(void);     /* which player this copy plays (0 or 1) */
 extern s32 gPortSeSilent;        /* src/sys/snd.c */
 extern void PauseMenu_Reset(void);
+extern int TagBattle_Network(void);
 #endif
 extern void PauseMenu_Draw(void);
 extern void Snd_SetPause(s32 a, s32 b);
@@ -1352,7 +1358,24 @@ s32 BtlSeqFight_PreUpdate(BtlSeqWaitCtx *ctx) {
 
 /* State 3 update: opens / runs the pause menu, then checks for the end of the battle (-> 4, or 6 without a finish scene). */
 s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
-    if (Battle_GetMode() != 8 && !TagBattle_Network()) {
+#ifdef PORT
+    if (TagBattle_Network() && getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_PAUSE_TEST")) {
+        static s32 was = -1;
+        s32 opened = (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) != 0;
+        if (opened != was || gPad[0].gamePressed) {
+            fprintf(stderr, "tag native pause: clock=%d mode=%d menu=%d frozen=%d pressed=%x pads=%d poll=%d\n",
+                    BtlSeq_GetClock()->ticks, Battle_GetMode(), opened,
+                    (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE) != 0,
+                    gPad[0].gamePressed, BtlPause_GetPadCount(), ctx->poll != NULL);
+            was = opened;
+        }
+    }
+#endif
+#ifdef PORT
+    if (Battle_GetMode() != 8 || TagBattle_Network()) {
+#else
+    if (Battle_GetMode() != 8) {
+#endif
         if (ctx->poll != NULL && !(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && ctx->poll()) {
             if (Battle_GetMode() == 7) {
                 BattleResult_Set(BTL_RESULT_ABORT, 0);
@@ -1365,7 +1388,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
                    long as they liked): the menu opens for the one who pressed START, the fight, its clock and its
                    sound go on. That player's fighter takes no buttons meanwhile (BtlInput_Sample) and the menu is
                    drawn on that player's screen only (PauseMenu_Draw). */
-                if (Port_NetActive()) {
+                if (Port_NetActive() || TagBattle_Network()) {
                     Battle_GetWork()->flags |= BATTLE_FLAG_PAUSE_MENU;
                 } else
 #endif
@@ -1378,8 +1401,12 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
         }
         if (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) {
 #ifdef PORT
-            if (Port_NetActive()) {
-                gPortSeSilent = BtlPause_GetMenuPad() != Port_NetMe(); /* (its sounds are for its owner) */
+            if (Port_NetActive() || TagBattle_Network()) {
+                if (Port_NetActive()) {
+                    gPortSeSilent = BtlPause_GetMenuPad() != Port_NetMe(); /* (its sounds are for its owner) */
+                } else {
+                    gPortSeSilent = 0;
+                }
                 if (PauseMenu_Update(BtlPause_GetMenuPad(), 0) == 0) {
                     Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE_MENU;
                 }
@@ -1396,7 +1423,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
 #ifdef PORT
         /* Online the fight can end under an open pause menu (it does not stop for it): the menu is closed, unless
            it is what ended the battle (as in the original, where it stays up through the fade). */
-        if (Port_NetActive() && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && !BattleResult_IsAborted()) {
+        if ((Port_NetActive() || TagBattle_Network()) && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && !BattleResult_IsAborted()) {
             PauseMenu_Reset();
             Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE_MENU;
         }

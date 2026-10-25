@@ -239,6 +239,14 @@ u16 *BtlMenu_GetItemText(s32 n) {
     extern s32 gPortTboSpar; /* menu/port_tbo.c */
     u16 *s = BtlMenu_GetText(n + 8);
 
+    {
+        extern s32 TagBattle_Network(void);
+        if (TagBattle_Network() && n == 6) {
+            static u16 onlineHub[] = {'T','e','n','k','a','i','c','h','i',' ','B','u','d','o','k','a','i',' ','O','n','l','i','n','e',0};
+            return onlineHub;
+        }
+    }
+
     if (gPortTboSpar) {
         u16 *t = *s == 0xFEFF ? s + 1 : s;
         s32 i;

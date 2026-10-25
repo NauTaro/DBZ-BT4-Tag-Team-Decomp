@@ -40,6 +40,11 @@ extern BtlMenu gPauseMenuMode4;
 extern BtlMenu gPauseMenuMode5;
 extern BtlMenu gPauseMenuMode6;
 extern BtlMenu gPauseMenuMode7;
+#ifdef PORT
+extern s32 TagBattle_Network(void);
+static BtlMenu sTagPauseMenu;
+static BtlMenuItem sTagPauseItems[5];
+#endif
 /* The cursor words (BtlMenu + 0x18) of the yes / no box at 0x2C4F00 and of the CPU level menu at 0x2C5158. */
 extern s32 gPauseMenuConfirmCursor[8];
 extern s32 gPauseMenuCpuLevelCursor[8];
@@ -93,6 +98,9 @@ s32 BtlGame_IsReplay(void) {
 /* Returns the menu tree for the battle: which = 0 the pause menu, 1 the result menu (modes 0 and 1 only). */
 BtlMenu *PauseMenu_GetMenu(s32 which) {
     BtlMenu *menu = NULL;
+#ifdef PORT
+    if (which == 0 && TagBattle_Network()) return &sTagPauseMenu;
+#endif
 
     switch (which) {
     case 0:
@@ -316,6 +324,18 @@ static void PauseMenu_PortRemove(BtlMenu *menu, s32 id) {
 /* Battle start: allocates the menu work. */
 void PauseMenu_Init(void) {
 #ifdef PORT
+    if (TagBattle_Network()) {
+        s32 i;
+        sTagPauseMenu = gPauseMenuVersus;
+        sTagPauseMenu.items = sTagPauseItems;
+        sTagPauseMenu.count = 0;
+        for (i = 0; i < gPauseMenuVersus.count && i < 5; ++i) {
+            /* 0xD is Character Select. The original menu retains Continue,
+               Skill List and its confirmed exit, with its original artwork. */
+            if (gPauseMenuVersus.items[i].id != 0xD)
+                sTagPauseItems[sTagPauseMenu.count++] = gPauseMenuVersus.items[i];
+        }
+    }
     {
         /* Online the menu at the end of a battle does without three of its six entries (asked for by the user):
            "Return to Vs Menu" (id 0xE; a session has no versus menu, the host sets the rules in the lobby window),
@@ -363,7 +383,15 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
 
     gPauseMenuWhich = which;
     menu = PauseMenu_GetMenu(which);
+#ifdef PORT
+    {
+        extern s32 TagBattle_LocalActor(void);
+        s32 actor = TagBattle_Network() ? TagBattle_LocalActor() : pad;
+        BtlMenu_SetScript(BtlObj_Get(BattleSide_GetObjId(actor))->skillText);
+    }
+#else
     BtlMenu_SetScript(BtlObj_Get(BattleSide_GetObjId(pad))->skillText);
+#endif
     set = BattleResult_Set;
     if (BtlMenu_Update(which, NULL, menu, pad)) {
         Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE;
@@ -375,6 +403,22 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
     item = BtlMenu_FindResult(NULL, menu);
     if (item != NULL) {
         Snd_PlaySe(1, 1);
+#ifdef PORT
+        {
+            extern int TagBattle_Network(void);
+            extern void Port_TagClose(void);
+            extern void TagBattle_SetReturn(s32 choice);
+            if (TagBattle_Network()) {
+                /* A Tag Team pause-menu exit leaves the match locally and returns to the online hub. */
+                TagBattle_SetReturn(2);
+                Port_TagClose();
+                Battle_GetWork()->flags &= ~(BATTLE_FLAG_PAUSE_MENU | BATTLE_FLAG_PAUSE);
+                BtlMenu_ClearActive();
+                set(BTL_RESULT_ABORT, 0);
+                return 1;
+            }
+        }
+#endif
         switch (item->id) {
         case 0xC:
             set(BTL_RESULT_ABORT, 0x8000);

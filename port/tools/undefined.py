@@ -134,7 +134,7 @@ def main():
     OBJ.mkdir(parents=True, exist_ok=True)
     key = buildkey.flags()  # (first: a key that cannot be used stops the build before anything is compiled)
     fs = portsrc.sources()
-    with concurrent.futures.ProcessPoolExecutor(16) as ex:
+    with concurrent.futures.ProcessPoolExecutor(int(os.environ.get("BT3_BUILD_JOBS","4"))) as ex:
         res = list(ex.map(cc, fs))
     pending = [p for _, _, _, p in res if p]  # (the macOS build: files waiting for mac_finish)
     bad = [(f, e) for o, f, e, _ in res if o is None]
@@ -232,6 +232,10 @@ def main():
                    for n in ("trim", "fill"))
     (gen / "bars_png.h").write_text("/* generated from port/assets/bars by port/tools/undefined.py */\n" + bars)
     (gen / "shaders.h").write_text("/* generated from port/src/gs/shaders by port/tools/undefined.py */\n" + "".join(arrays))
+    import dx12_shaders
+    dx12_shaders.prepare(ROOT, gen, WIN)
+    import d3d9_shaders
+    d3d9_shaders.prepare(ROOT, gen, WIN)
     for f in sorted((ROOT / "port/src/gs").glob("*.c")):
         o = OBJ / ("gs_" + f.stem + ".o")
         r = run(["gcc", "-m32", "-std=gnu99", "-c", "-O2", "-g", "-fno-pic", "-msse2", "-mfpmath=sse", "-fno-strict-aliasing",
@@ -244,6 +248,8 @@ def main():
     # C++: the settings window (port/src/gs/ui.cpp) and Dear ImGui. The library is only compiled when it changed.
     imgui = ROOT / "port/third_party/imgui"
     for f in sorted(imgui.glob("*.cpp")) + sorted((ROOT / "port/src/gs").glob("*.cpp")):
+        if f.name == "imgui_impl_dx9.cpp" and not WIN:
+            continue
         o = OBJ / ("cxx_" + f.stem + ".o")
         if f.parent == imgui and o.exists() and o.stat().st_mtime > f.stat().st_mtime:
             objs.append(str(o))

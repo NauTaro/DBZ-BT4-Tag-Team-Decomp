@@ -39,10 +39,10 @@ s32 TagBattle_ResultUpdate(void){
         u32 repeat=Pad_CalcRepeat(stick,stick&~sTagResultStickHeld,&sTagResultStickTimer,&sTagResultStickLast,20,4);
         s32 was=sTagResultCursor;
         sTagResultStickHeld=stick;
-        Ps_Move(&sTagResultCursor,3);
+        Ps_Move(&sTagResultCursor,2);
         if(was==sTagResultCursor){
-            if(repeat&PADG_DOWN)sTagResultCursor=(sTagResultCursor+1)%3;
-            else if(repeat&PADG_UP)sTagResultCursor=(sTagResultCursor+2)%3;
+            if(repeat&PADG_DOWN)sTagResultCursor=(sTagResultCursor+1)%2;
+            else if(repeat&PADG_UP)sTagResultCursor=(sTagResultCursor+1)%2;
         }
     }
     if(network){
@@ -50,26 +50,26 @@ s32 TagBattle_ResultUpdate(void){
         if(choice<0){
             /* Leaving is a local action, including when a peer never reaches
              * the results barrier. Shared round transitions remain host-owned. */
-            if((confirm&&(!host||sTagResultCursor==2))||Port_TagPhase()==0||Port_TagPhase()==6){
-                sTagResultCursor=2;TagOnline_Ending();Port_TagClose();
+            if((confirm&&!host)||Port_TagPhase()==0||Port_TagPhase()==6){
+                sTagResultCursor=1;TagBattle_SetReturn(2);TagOnline_Ending();Port_TagClose();
             }else{
-                if(host&&confirm&&sTagResultPending<0)sTagResultPending=sTagResultCursor;
+                if(host&&confirm&&sTagResultPending<0)sTagResultPending=sTagResultCursor==0?0:2;
                 if(!sTagResultSent&&(gPad[0].gamePressed&PADG_TRIANGLE))sTagResultPending=-1;
                 if(host&&sTagResultPending>=0&&Port_TagAllEnded()&&!sTagResultSent){
                     Port_TagCommand(18,sTagResultPending,0);sTagResultSent=1;
                 }
                 return 0;
             }
-        }else{sTagResultCursor=choice;TagOnline_Ending();}
+        }else{sTagResultCursor=choice==0?0:1;TagOnline_Ending();}
     }else if(!confirm)return 0;
     if(sTagResultCursor==0)BattleResult_Set(BTL_RESULT_ABORT,0x8000); /* rematch, without replay bit 0x10000 */
-    else {TagBattle_SetReturn(sTagResultCursor);BattleResult_Set(BTL_RESULT_ABORT,0);}
+    else {TagBattle_SetReturn(2);BattleResult_Set(BTL_RESULT_ABORT,0);}
     if(test)printf("tag result: choice=%d confirmed\n",sTagResultCursor);
     sTagResultActive=0;
     return 1;
 }
 void TagBattle_ResultDraw(void){
-    static char *choices[3]={"Rematch","Character Select","Main Menu"};
+    static char *choices[2]={"Rematch","Tenkaichi Budokai Online"};
     s32 i;
     if(!sTagResultActive)return;
     Ps_PageSet();Ps_SetShift(0);Ps_Align(0);
@@ -78,7 +78,7 @@ void TagBattle_ResultDraw(void){
     Ps_Align(1);Ps_Heading(256,124,sTagResultWinner==1?"TEAM 1 WINS":sTagResultWinner==2?"TEAM 2 WINS":"DRAW",1.15f,280,0x80);
     s32 guest=TagBattle_Network()&&!Port_TagHost();
     Ps_Text(256,169,guest?"HOST CHOOSES THE NEXT ROUND":sTagResultPending>=0?"WAITING FOR PLAYERS...":"TAG TEAM | MATCH COMPLETE",0.48f,280,3);Ps_Align(0);
-    for(i=0;i<(guest?1:3);++i){f32 y=guest?237:202+i*35;
+    for(i=0;i<(guest?1:2);++i){f32 y=guest?237:207+i*43;
         Ps_Pill(i==sTagResultCursor?TBO_KIT_SEL:TBO_KIT_BAR,125,y,387,y+28,0x80);
         Ps_Align(1);Ps_Text(256,Ps_TextTop(y+14,0.65f),guest?"Leave Room":choices[i],0.65f,236,i==sTagResultCursor?1:0);Ps_Align(0);
     }

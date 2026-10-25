@@ -433,6 +433,7 @@ static void Port_LoadGameData(void) {
             }
         }
     }
+    { extern void Port_GameProfileInit(void); Port_GameProfileInit(); root = getenv("BT3_DATA"); }
     if (n > 4 && (strcmp(exe + n - 4, ".exe") == 0 || strcmp(exe + n - 4, ".EXE") == 0)) {
         exe[n - 4] = '\0'; /* Name.exe keeps its list in Name.dat */
     }

@@ -879,6 +879,10 @@ void BtlObj_BuildDrawList(BtlObjDrawList *list, s32 view) {
              node = (BtlObjNode *)List_GetNext(&node->link)) {
             obj = &node->obj;
             state = &node->obj.state;
+#ifdef PORT
+            /* Opt-in asset capture of the real stage, without fighters. */
+            if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_ART_CAPTURE")&&obj->type==BTL_OBJ_TYPE_CHARA)continue;
+#endif
             if (obj->unk04 != 0 && obj->active != 0) {
                 rec = state->view;
                 if (rec->flags & BTL_OBJ_FLAG_VISIBLE) {

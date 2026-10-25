@@ -6,6 +6,7 @@
 #include <math.h>
 #include <algorithm>
 #include "voice.h"
+#include "spatial_audio.h"
 #include "../../third_party/voice/rtc/rtc.h"
 #include "../../third_party/voice/opus/opus.h"
 #define JSON_NOEXCEPTION
@@ -24,6 +25,7 @@ static struct {
 static std::mutex signalingLock;
 static std::shared_ptr<VoiceWs> signaling;
 static std::atomic<unsigned> selfId{0};
+static std::vector<std::string> voiceIceServers={"stun:stun.cloudflare.com:3478"};
 static void status(const char *s){std::lock_guard<std::mutex>g(v.lock);SDL_strlcpy(v.state.status,s,sizeof(v.state.status));}
 static bool fixture(){return getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_TEST_FILE");}
 static void logVoice(const char *s){if(getenv("BT4_RENDER_TEST")){fprintf(stderr,"bt4 voice: %s\n",s);fflush(stderr);}}
@@ -93,7 +95,7 @@ static void RTC_API rtcAudio(int track,const char *data,int size,void *ptr){
     receiveAudio(p,(uint16_t)((b[2]<<8)|b[3]),b+offset,size-offset,true,track);
 }
 static void RTC_API rtcDescription(int pc,const char *sdp,const char *type,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc||!p.id)return;post({{"type","signal"},{"to",p.id.load()},{"signal",{{"type",type},{"sdp",sdp}}}});}
-static void RTC_API rtcCandidate(int pc,const char *candidate,const char *mid,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc||!p.id)return;post({{"type","signal"},{"to",p.id.load()},{"signal",{{"type","candidate"},{"candidate",candidate},{"mid",mid}}}});}
+static void RTC_API rtcCandidate(int pc,const char *candidate,const char *mid,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc||!p.id)return;if(getenv("BT4_RENDER_TEST")&&candidate&&strstr(candidate," typ relay"))logVoice("TURN relay candidate gathered");post({{"type","signal"},{"to",p.id.load()},{"signal",{{"type","candidate"},{"candidate",candidate},{"mid",mid}}}});}
 static void RTC_API voiceRtcState(int pc,rtcState state,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc)return;p.connected=state==RTC_CONNECTED;}
 static void closePeer(VoicePeer &p){
     int pc=p.pc.exchange(-1);p.track=-1;p.connected=0;
@@ -102,7 +104,9 @@ static void closePeer(VoicePeer &p){
 }
 static void openPeer(VoicePeer &p){
     if(!rtc.load()||getenv("BT4_VOICE_FORCE_RELAY"))return;
-    const char *servers[]={"stun:stun.cloudflare.com:3478"};rtcConfiguration cfg={};cfg.iceServers=servers;cfg.iceServersCount=1;cfg.disableAutoNegotiation=true;cfg.forceMediaTransport=true;
+    std::vector<const char *> servers;for(const auto &server:voiceIceServers)servers.push_back(server.c_str());
+    rtcConfiguration cfg={};cfg.iceServers=servers.data();cfg.iceServersCount=(int)servers.size();cfg.disableAutoNegotiation=true;cfg.forceMediaTransport=true;
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_ICE_RELAY_TEST"))cfg.iceTransportPolicy=RTC_TRANSPORT_POLICY_RELAY;
     int pc=rtc.rtcCreatePeerConnection(&cfg);if(pc<0)return;p.pc=pc;
     rtc.rtcSetUserPointer(pc,&p);rtc.rtcSetLocalDescriptionCallback(pc,rtcDescription);rtc.rtcSetLocalCandidateCallback(pc,rtcCandidate);rtc.rtcSetStateChangeCallback(pc,voiceRtcState);
     rtcTrackInit ti={};ti.direction=RTC_DIRECTION_SENDRECV;ti.codec=RTC_CODEC_OPUS;ti.payloadType=111;ti.ssrc=selfId.load()+0x42540000;ti.mid="voice";ti.name="BT4 Voice";ti.msid="bt4";ti.trackId="voice";
@@ -116,6 +120,25 @@ static void control(const unsigned char *data,size_t size){
     auto j=VJson::parse(data,data+size,nullptr,false);if(!j.is_object())return;
     auto type=str(j,"type");
     if(type=="hello"){
+        auto ice=j.find("iceServers");
+        if(ice!=j.end()&&ice->is_array()){
+            std::vector<std::string> list={"stun:stun.cloudflare.com:3478"};
+            auto encode=[](const std::string &value){std::string out;const char hex[]="0123456789ABCDEF";for(unsigned char c:value){if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='_'||c=='.'||c=='~')out+=(char)c;else{out+='%';out+=hex[c>>4];out+=hex[c&15];}}return out;};
+            for(const auto &entry:*ice){
+                if(!entry.is_object())continue;auto urls=entry.find("urls");if(urls==entry.end())continue;
+                std::vector<std::string> values;
+                if(urls->is_string())values.push_back(urls->get<std::string>());
+                else if(urls->is_array())for(const auto &u:*urls)if(u.is_string())values.push_back(u.get<std::string>());
+                std::string user=str(entry,"username"),password=str(entry,"credential");
+                if(user.size()>512||password.size()>512)continue;
+                for(const auto &url:values){if(url.size()>1024||list.size()>=10)continue;
+                    size_t prefix=url.rfind("turn:",0)==0?5:url.rfind("turns:",0)==0?6:0;
+                    if(prefix&&!user.empty()&&!password.empty())list.push_back(url.substr(0,prefix)+encode(user)+":"+encode(password)+"@"+url.substr(prefix));
+                }
+            }
+            voiceIceServers=std::move(list);
+            if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"bt4 voice ICE: TURN servers=%u\n",(unsigned)(voiceIceServers.size()-1));
+        }
         unsigned self=number(j,"self");auto list=j.find("peers");if(!self||list==j.end()||!list->is_array()||list->size()>9)return;selfId=self;
         for(auto &p:peers)if(p.id){bool keep=false;for(const auto &x:*list)if(number(x,"id")==p.id)keep=true;if(!keep)closePeer(p);}
         for(const auto &x:*list){unsigned id=number(x,"id"),seat=number(x,"seat",99);if(!id||id==self||seat>9)continue;
@@ -208,7 +231,7 @@ static int voiceThread(void *){
         timestamp+=960;
         int mixed[320]={};int count=0,direct=0,decodedFrames=0;PortVoicePeer publicPeers[10]={};
         for(auto &p:peers)if(p.id){
-            short pcm[320]={};int decoded=0;float proximity=1.f;
+            short pcm[320]={};int decoded=0;float proximity=worldMode==mode&&worldCount>0?0.f:1.f;
             if(worldMode==mode&&worldCount>p.seat&&listener>=0&&listener<worldCount&&now-worldAt<500){
                 const float *a=positions+listener*4,*b=positions+p.seat*4;
                 float dx=a[0]-b[0],dy=a[1]-b[1],dz=a[2]-b[2];
@@ -272,9 +295,10 @@ extern "C" void PortVoice_Session(int mode,const char *endpoint,const char *room
 extern "C" void PortVoice_Leave(int mode){init();std::lock_guard<std::mutex>g(v.lock);if(v.sessionMode==mode){v.sessionMode=0;v.url.clear();v.cap.clear();++v.generation;v.pttKey=false;v.pttPad=false;}}
 extern "C" void PortVoice_Mute(unsigned id,int muted){for(auto &p:peers)if(p.id==id)p.muted=muted!=0;}
 extern "C" float PortVoice_ProximityGain(float distance){
-    if(!std::isfinite(distance)||distance<0)return 0.f;
-    float t=std::max(0.f,std::min(1.f,(distance-80.f)/1120.f));
-    float gain=1.f-t*t*(3.f-2.f*t);return gain;
+    /* Voice uses arena units. Keep the near range clear, then fade smoothly over
+       a wider part of the stage so distant fighters remain audible without a
+       hard cutoff at the old 120-unit limit. */
+    return Bt4_AudioFalloff(distance,12.f,360.f);
 }
 extern "C" void PortVoice_World(int mode,int listener,int count,const float *positions){
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_GAME_TEST")&&mode==2){
@@ -323,7 +347,7 @@ extern "C" int PortVoice_TestRun(void){
             if(elapsed-lastMicLog>=1000){PortVoiceState s;PortVoiceOptions o;PortVoice_State(&s);PortVoice_Options(&o);fprintf(stderr,"bt4 mic audit: ms=%llu phase=%d status=%d sent=%u received=%u capture=%d\n",(unsigned long long)elapsed,phase,PortVoice_MicStatus(&o,&s),s.sent,s.received,s.capture);lastMicLog=elapsed;}
         }
         if(getenv("BT4_VOICE_TEST_PROXIMITY")){
-            int phase=(int)((SDL_GetTicks()-begin)/8000);float positions[8]={0};positions[4]=phase==0?80.f:phase==1?1200.f:640.f;
+            int phase=(int)((SDL_GetTicks()-begin)/8000);float positions[8]={0};positions[4]=phase==0?8.f:phase==1?120.f:64.f;
             PortVoice_World(1,seat,2,positions);
         }
         SDL_Delay(20);

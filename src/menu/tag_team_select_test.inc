@@ -55,6 +55,7 @@ static void TagSelectTest_Input(s32 seat,s32 ownTurn){
         }else if(gTeamSel->stage->state==TEAMSEL_STAGE_BGM && sTagTestPhase==1 && sTagTestMapTick>150){
             if(sTagTestMapTick==151)fprintf(stderr,"tag select fixture: music list open without character layers\n");
             if(!strcmp(sTagSelectTest,"map-back") && sTagTestMapTick==170){gPad[0].gamePressed=PADG_TRIANGLE;sTagTestPhase=2;}
+            if(!strcmp(sTagSelectTest,"music-preview") && sTagTestMapTick==170)gPad[0].gameRepeat=PADG_DOWN;
         }else if(gTeamSel->stage->state==TEAMSEL_STAGE_GRID && sTagTestPhase==2){
             gPad[0].gamePressed=PADG_TRIANGLE;sTagTestPhase=20;
         }

@@ -19,6 +19,7 @@ static s32 sPortSongsAdded;  /* ... and its music list songs from outside the di
 static s32 sPortSongNameHidden, sPortStageNameHidden;
 /* The port's stage-name overlay (port/src/gs/ui.cpp / gs_draw.c): the names of added stages are drawn by the
    port, over the picture, from its own stylized art. The menu only fills the name's rectangle and which image. */
+static void *sPortStagePictures[2];
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 extern volatile int gUiNameIdx, gUiNameReady;
 extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
@@ -105,8 +106,8 @@ void CharSel_SetStageChips(void) {
                 icon = 37;
             } else if (id == STGGRID_ID_EMPTY) {
                 icon = 38;
-            } else if (id >= 0x24) {
-                icon = id + 1;
+            } else if (id >= 0x63) {
+                icon = 1;
             } else {
                 icon = id + 1;
             }
@@ -117,6 +118,9 @@ void CharSel_SetStageChips(void) {
 #endif
         gCharSel->tex[41 + i] = gCharSel->tex[slot[i]];
         gCharSel->tex[slot[i]] = res->tex;
+#ifdef PORT
+        {u32 art=Port_StageArt(id,0);if(art)gCharSel->tex[slot[i]]=(void*)art;}
+#endif
     }
 }
 
@@ -299,6 +303,9 @@ void CharSel_UpdateStageLoad(void) {
         res = gCharSel->stageRes[gCharSel->stageBuf];
         Res_RelocateOffsets(&res, res, res);
         gCharSel->bg[0] = res;
+#ifdef PORT
+        {u32 art=Port_StageArt(gCharSel->stage->stage,1);sPortStagePictures[gCharSel->stageBuf]=art?(void*)art:(void*)res;gCharSel->bg[0]=sPortStagePictures[gCharSel->stageBuf];}
+#endif
         gCharSel->stageBuf ^= 1;
         gCharSel->flags |= CHARSEL_STAGE_READY;
         gCharSel->stageState = CHARSEL_LOAD_IDLE;
@@ -324,6 +331,9 @@ void CharSel_RequestStage(void) {
     gCharSel->flags |= CHARSEL_STAGE_CHANGE;
     gCharSel->bg[0] = gCharSel->stageRes[gCharSel->stageBuf];
     gCharSel->bg[1] = gCharSel->stageRes[gCharSel->stageBuf ^ 1];
+#ifdef PORT
+    if(sPortStagePictures[gCharSel->stageBuf^1])gCharSel->bg[1]=sPortStagePictures[gCharSel->stageBuf^1];
+#endif
 }
 
 /* Sends the clip of one chip or plate of a movie to a label; `kind` says which clip and from which cursor. */
@@ -555,18 +565,18 @@ void CharSel_Init(s32 section) {
         /* Room for the disc's 36 and all 26 added ones, and the padding of the last row: 62 are 11 rows of 6, 66
            cells. (It was 64 cells with the adding stopped at 60, the last whole row that fits: with every disc
            stage unlocked only 24 of 26 added stages were listed. Reported by a player.) */
-        static s32 sAllIds[96];
-        extern int Port_NetSession(void); /* port/src/gs/net.c */
-        s32 extra = Port_NetSession() ? 0 : gPortExtraStageCount;
+        static s32 sAllIds[132];
+        extern int Port_NetSession(void),Port_TagNetwork(void); /* online lists contain only shared built-in stages */
+        s32 extra = Port_NetSession()||Port_TagNetwork() ? 0 : gPortExtraStageCount;
         s32 swaps = Port_NetSession() ? 0 : gPortStageReplaceCount;
         s32 n = gCharSel->stageCount, i, rows, r;
-        if (n > 64) {
-            n = 64;
+        if (n > 99) {
+            n = 99;
         }
         for (i = 0; i < n; i++) {
             sAllIds[i] = gCharSel->stageIds[i];
         }
-        for (i = 0; i < extra && n < 90; i++) {
+        for (i = 0; i < extra && n < 125; i++) {
             sAllIds[n++] = (s32)gPortExtraStages[i];
         }
         for (r = 0; r < swaps; r++) {
@@ -581,7 +591,7 @@ void CharSel_Init(s32 section) {
         sPortStagesAdded = extra > 0 || swaps > 0;
         if (sPortStagesAdded) {
             rows = (n + STGGRID_COLS - 1) / STGGRID_COLS;
-            for (i = n; i < rows * STGGRID_COLS && i < 96; i++) {
+            for (i = n; i < rows * STGGRID_COLS && i < 132; i++) {
                 sAllIds[i] = STGGRID_ID_EMPTY;
             }
             gCharSel->stageIds = sAllIds;
@@ -742,6 +752,9 @@ void CharSel_Init(s32 section) {
     Res_RelocateOffsets(&res, res, res);
     gCharSel->bg[0] = res;
     gCharSel->bg[1] = res;
+#ifdef PORT
+    {u32 art=Port_StageArt(gCharSel->stage->stage,1);sPortStagePictures[0]=sPortStagePictures[1]=art?(void*)art:(void*)res;gCharSel->bg[0]=gCharSel->bg[1]=sPortStagePictures[0];}
+#endif
     gCharSel->stageState = CHARSEL_LOAD_IDLE;
     gCharSel->flags |= CHARSEL_STAGE_READY;
     gCharSel->bgAlpha[0] = 0x80;
@@ -1247,6 +1260,42 @@ void CharSel_Input(s32 *running) {
     s32 id;
     s32 chara;
     s32 r;
+
+#ifdef PORT
+    /* Opt-in render regression: traverse the real training selector, then capture its map reel. */
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_MAP_SELECTOR_TEST")) {
+        static int fixtureTick, fixtureSelected, fixtureShot;
+        extern void Port_TagUiCapture(int index);
+        gPad[0].gamePressed = gPad[0].gameRepeat = gPad[0].gameHeld = 0;
+        if ((gCharSel->flags & CHARSEL_STAGE_PHASE) && !fixtureSelected) {
+            int wanted = atoi(getenv("BT4_MAP_SELECTOR_TEST"));
+            for (j = 0; j < gCharSel->stageCount; ++j) {
+                if (gCharSel->stageIds[j] == wanted) {
+                    CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_off_start");
+                    gCharSel->stage->row = j / STGGRID_COLS;
+                    gCharSel->stage->col = j % STGGRID_COLS;
+                    gCharSel->stage->stage = wanted;
+                    CharSel_SetStageChips();
+                    CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_on_start");
+                    CharSel_RequestStage();
+                    fprintf(stderr, "map selector fixture: stage=%d index=%d count=%d row=%d col=%d\n",
+                            wanted, j, gCharSel->stageCount, gCharSel->stage->row, gCharSel->stage->col);
+                    fixtureSelected = 1;
+                    fixtureTick = 0;
+                    break;
+                }
+            }
+        }
+        if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
+            if (fixtureSelected && ++fixtureTick >= 150 && !fixtureShot) {
+                Port_TagUiCapture(20);
+                fixtureShot = 1;
+            }
+        } else if ((gCharSel->flash[0].flags & MFLASH_PAD) && ++fixtureTick % 30 == 0) {
+            gPad[0].gamePressed = PADG_CROSS;
+        }
+    }
+#endif
 
     if (!(gCharSel->flash[0].flags & MFLASH_PAD)) {
         return;

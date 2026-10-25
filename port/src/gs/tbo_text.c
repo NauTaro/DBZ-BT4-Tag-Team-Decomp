@@ -14,6 +14,7 @@
  * Nothing here is game state: the screens are a menu of the PC's, before and outside an online match.
  */
 #include "menu_text.h"
+#include "online_language.h"
 #include "../../../include/menu/tbo_art.h"
 #include <SDL3/SDL.h>
 #include <pthread.h>
@@ -68,6 +69,7 @@ static int line_measure(TboLine *l, uint32_t generation) {
 
 /* The number of a line (TBO_TEXT_BASE and on), -1 if it cannot be written (no font, no text, no room). */
 int PortTbo_TextId(const char *text, int kind) {
+    text=PortOnline_Text(text);
     uint32_t generation = MenuText_LineGeneration();
     uint64_t now = SDL_GetTicks();
     int i, spare = -1, id = -1;
@@ -106,6 +108,7 @@ int PortTbo_TextId(const char *text, int kind) {
 /* How far the pen goes for a line, in thousandths of its capitals' height, without keeping it (for laying out:
    where to break a line). 0 without a font. */
 int PortTbo_TextMeasure(const char *text, int kind) {
+    text=PortOnline_Text(text);
     int w, h, base, cap, adv;
     if (text == NULL || text[0] == '\0' || kind < 0 || kind > 1) {
         return 0;

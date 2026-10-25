@@ -2,7 +2,7 @@
   <h1>DBZ BT4 Tag Team Recomp</h1>
   <p>Dragon Ball Z: Budokai Tenkaichi 4 on Windows, with battles of up to 5v5.</p>
   <img src="docs/presentation/bt4-intro-hq.gif" width="960" alt="BT4 Tag Team animated artwork">
-  <p><strong>BT4 B14 Rev2 · R24 RC1</strong></p>
+  <p><strong>BT4 B14 Rev2 · R25 RC2</strong></p>
   <p><a href="#about-the-mod">About the mod</a> · <a href="#install-or-update">Installation</a> · <a href="#support-and-contact">Donate &amp; contact</a></p>
 </div>
 
@@ -35,25 +35,54 @@ The game runs natively on Windows, using the PC port by
 | HUD | Shows the two active fighters. | Adds ally information, targets and radar. |
 | Platform | PlayStation 2. | Native Windows port with video, audio and control settings. |
 
-<p align="center">
-  <img src="docs/presentation/pc-settings.jpg" width="960" alt="BT4 running on Windows with video settings open">
-  <br><em>Video settings in the PC port.</em>
-</p>
 
-<!-- bt4-bilingual-install -->
+
 ## Game language / Idioma del juego
 
-Choose **Spanish** or **English** in the original startup menu to change text and voices. English is included in the installer: your Spanish BT4 B14 Rev2 installation or ISO is sufficient. No English ISO or additional download is required. Both languages can play online together on R24 RC1.
+`Install.exe` has its own **Spanish / English** interface and lets you choose
+**Spanish**, **English** or **both** for the complete game, including voices.
 
-Elige **Español** o **Inglés** al abrir el juego para cambiar textos y voces. El inglés está incluido: basta tu instalación o ISO española. Abre **`Install.exe`** una vez para añadirlo, sin volver a decompilar.
-<!-- /bt4-bilingual-install -->
+- **One language:** use your corresponding BT4 B14 Rev2 ISO. The game opens
+  directly in that language, without the startup language selector.
+- **Both languages:** setup installs the ISO language and downloads the missing
+  text and voice package from this same private repository. Progress appears
+  as “Instalando paquete de idioma” or “Installing language pack”.
+- **Private downloads:** sign in with a GitHub account that has read access to
+  this repository. Existing installed language files can be reused.
+
+El instalador permite elegir **Español**, **Inglés** o **ambos**, con textos y
+voces. Con un solo idioma, se usa la ISO correspondiente y el juego arranca
+directamente. Con ambos, el idioma que falta se descarga de este repositorio
+privado: cada tester necesita acceso y sesión de GitHub.
 
 ## Install or update
 
-Download the Windows ZIP from [Releases](https://github.com/NauTaro/tenkaichi3decomp-fork-DBZ-BT4-Decomp/releases). Extract **all contents directly into the game folder**; `Install.exe` sits beside `Tenkaichi3Decomp.exe`.
+Download the [current Windows ZIP](https://github.com/NauTaro/tenkaichi3decomp-fork-DBZ-BT4-Decomp/releases/tag/bt4-r25-rc2).
+Extract all contents directly into the game directory. `Install.exe` and
+`Tenkaichi3Decomp.exe` must be next to each other.
 
-- **First install:** run `Install.exe` and select your own Spanish BT4 B14 Rev2 ISO. Setup extracts the base game and installs the included English text and voices. An English ISO is also supported if you already own one.
-- **Updating:** close the game, copy all ZIP contents over your existing installation and replace files. Preserve `gamedata`, `saves` and `bt3_settings.txt`. Run `Install.exe` once to add the included English language; you do not need to extract your ISO again.
+- **First install:** run `Install.exe`, choose setup and game languages, and
+  select your own compatible Spanish or English BT4 B14 Rev2 ISO.
+- **Update:** close the game, copy all ZIP contents over your installation and
+  replace files. Keep `gamedata`, `saves`, `bt3_settings.txt` and `online_name.txt`.
+  An existing installation does not need its ISO extracted again.
+- **Online compatibility:** Spanish and English share the supported BT4 gameplay
+  profile. The cosmetic R label is not the room compatibility check.
+
+<p align="center">
+  <img src="docs/presentation/installer-es.png" width="960" alt="Installer with interface and game language choices">
+</p>
+
+## Custom maps
+
+Compatible `.unk` stage models go in `stages`, with an optional PNG carrying the
+same filename stem. The original selector displays the thumbnail, preview and
+native map-name lettering. Custom maps are available offline.
+See [the map guide](docs/port/adding_stages.md).
+
+<p align="center">
+  <img src="docs/presentation/map-selector.png" width="960" alt="Kaio Planet with a clean real-stage thumbnail and native BT4 lettering">
+</p>
 
 ## Development
 

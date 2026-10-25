@@ -1,3 +1,4 @@
+#include "online_language.h"
 // One presentation layer for the local Tag Team menu, including held frames.
 // It uses the same artwork as the in-game online pages, without drawing into
 // the GS world buffers or taking ownership of the player's controls.
@@ -37,7 +38,7 @@ static void tag_menu_draw(void) {
     else {dl->AddRectFilled(ImVec2(left,top),ImVec2(right,bottom),IM_COL32(17,67,73,255),8*scale);dl->AddRect(ImVec2(left,top),ImVec2(right,bottom),IM_COL32(142,176,180,255),8*scale);}
     ImFont *font=sFontBold?sFontBold:ImGui::GetFont();
     auto text=[&](const char *label,float y,float size,ImU32 color,float maxWidth){
-        size*=scale;ImVec2 ext=font->CalcTextSizeA(size,FLT_MAX,0,label);
+        label=PortOnline_Text(label);size*=scale;ImVec2 ext=font->CalcTextSizeA(size,FLT_MAX,0,label);
         if(ext.x>maxWidth*scale){size*=maxWidth*scale/ext.x;ext=font->CalcTextSizeA(size,FLT_MAX,0,label);}
         ImVec2 pos(cx-ext.x*.5f,y-ext.y*.5f);
         dl->AddText(font,size,ImVec2(pos.x+scale,pos.y+scale),IM_COL32(3,14,25,240),label);

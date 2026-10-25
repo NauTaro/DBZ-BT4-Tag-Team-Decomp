@@ -158,6 +158,12 @@ typedef struct GsBackend {
 
 extern GsBackend sVulkanBackend; /* gs_gpu.c */
 extern GsBackend sGlBackend;     /* gs_gl.c */
+#ifdef _WIN32
+extern GsBackend sDirect3D9Backend;
+extern GsBackend sDirect3D11Backend;
+extern GsBackend sDirect3D12Backend; /* same SDL GPU command path, offline DXIL shaders */
+#endif
+void GsDraw_WindowDestroy(void); /* failed initialization only */
 
 /* gs_draw.c: the shared target table's entry for a frame-buffer address (create: one is made if absent,
    with the back end's attachments through GsBackend.targetEnsure). */

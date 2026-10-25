@@ -204,6 +204,19 @@ int Tt_ChooseSeat(TtRoom *r, uint32_t sender, uint32_t epoch,int seat,int chara,
     ++r->revision;
     return TT_OK;
 }
+static uint64_t load_word(uint64_t hash,uint32_t value){
+    int i;for(i=0;i<4;++i)hash=(hash^(uint8_t)(value>>(i*8)))*0x100000001b3ULL;return hash;
+}
+uint64_t Tt_LoadDigest(const TtRoom *r){
+    uint64_t h=0xcbf29ce484222325ULL;int i,count=Tt_Capacity(r);
+    h=load_word(h,TT_PROTOCOL);h=load_word(h,(uint32_t)r->content);h=load_word(h,(uint32_t)(r->content>>32));
+    h=load_word(h,(uint32_t)r->team_size);h=load_word(h,(uint32_t)r->time);h=load_word(h,(uint32_t)r->delay);h=load_word(h,(uint32_t)count);
+    if(count<0)count=0;if(count>TT_MAX_PLAYERS)count=TT_MAX_PLAYERS;
+    for(i=0;i<count;++i){const TtPlayer *p=&r->players[i];
+        h=load_word(h,(uint32_t)i);h=load_word(h,(uint32_t)p->team);h=load_word(h,(uint32_t)p->chara);
+        h=load_word(h,(uint32_t)p->costume);h=load_word(h,(uint32_t)p->cpu);h=load_word(h,(uint32_t)p->difficulty);h=load_word(h,(uint32_t)p->confirmed);
+    }return h;
+}
 int Tt_BeginLoad(TtRoom *r, uint32_t sender, uint32_t epoch, uint64_t digest) {
     int rc = owner(r, sender, epoch, TT_SELECT);
     if (rc) return rc;

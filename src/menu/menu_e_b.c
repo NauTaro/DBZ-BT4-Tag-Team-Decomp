@@ -18,6 +18,7 @@ extern volatile int gUiSongIdx, gUiSongReady, gUiSongLit;
 static s32 sPortSongNameHidden;
 #include "plat_stages.h" /* the stages added from outside the disc: their ids and names */
 /* The port's stage-name overlay, as the duel's select uses it. */
+static void *sPortStagePictures[2];
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 extern volatile int gUiNameIdx, gUiNameReady;
 static s32 sPortStageNameHidden;
@@ -26,7 +27,7 @@ static s32 sPortSongsAdded;  /* ... and its music list songs from outside the di
 static s32 sPortStageRows = 11; /* rows of the stage reel: the game's 6, more with stages added */
 /* The picture behind the reel: a disc stage's own (0x39D + id); an added stage borrows one (its id past 0x23
    would fall on the loading screens' files), as in the duel's select. */
-#define TS_STAGE_PICTURE(id) (TS_STAGE_FILE + (id))
+#define TS_STAGE_PICTURE(id) (TS_STAGE_FILE + ((id)>=0x63?0:(id)))
 /* include/battle/view_a.h holds these; repeated here (pulling it in clashes with the menu headers). The PC build
    moves the locked / empty markers up so added stages keep their own ids. */
 #define STGGRID_ID_LOCKED 0x24
@@ -160,7 +161,7 @@ void TeamSel_SetStageChips(void) {
         /* PC build: the markers moved up, so they keep the locked / empty icons (37, 38). */
         {
             /* (a stage added from outside the disc, id 0x24 on, borrows an icon as in the duel's select) */
-            s32 icon = id == STGGRID_ID_LOCKED ? 37 : (id == STGGRID_ID_EMPTY ? 38 : id + 1);
+            s32 icon = id == STGGRID_ID_LOCKED ? 37 : (id == STGGRID_ID_EMPTY ? 38 : id>=0x63 ? 1 : id+1);
             res = (MTexRes *)MPACK_AT(gTeamSel->stagePack, icon);
         }
 #else
@@ -168,6 +169,9 @@ void TeamSel_SetStageChips(void) {
 #endif
         gTeamSel->tex[41 + i] = gTeamSel->tex[slot[i]];
         gTeamSel->tex[slot[i]] = res->tex;
+#ifdef PORT
+        {u32 art=Port_StageArt(id,0);if(art)gTeamSel->tex[slot[i]]=(void*)art;}
+#endif
     }
 }
 
@@ -394,6 +398,9 @@ void TeamSel_UpdateStageLoad(void) {
         res = gTeamSel->stageRes[gTeamSel->stageBuf];
         Res_RelocateOffsets(&res, res, res);
         gTeamSel->bg[0] = res;
+#ifdef PORT
+        {u32 art=Port_StageArt(gTeamSel->stage->stage,1);sPortStagePictures[gTeamSel->stageBuf]=art?(void*)art:(void*)res;gTeamSel->bg[0]=sPortStagePictures[gTeamSel->stageBuf];}
+#endif
         gTeamSel->stageBuf ^= 1;
         gTeamSel->flags |= TEAMSEL_STAGE_READY;
         gTeamSel->stageState = TEAMSEL_LOAD_IDLE;
@@ -419,6 +426,9 @@ void TeamSel_RequestStage(void) {
     gTeamSel->flags |= TEAMSEL_STAGE_CHANGE;
     gTeamSel->bg[0] = gTeamSel->stageRes[gTeamSel->stageBuf];
     gTeamSel->bg[1] = gTeamSel->stageRes[gTeamSel->stageBuf ^ 1];
+#ifdef PORT
+    if(sPortStagePictures[gTeamSel->stageBuf^1])gTeamSel->bg[1]=sPortStagePictures[gTeamSel->stageBuf^1];
+#endif
 }
 
 /* Sends the clip of one chip or plate of a movie to a label; `kind` says which clip and from which cursor. */
@@ -663,21 +673,21 @@ void TeamSel_Init(s32 section) {
            DP battles). After the save's unlocks; nothing of them is looked up in the save or written to it. Not in
            an online session. The list is ours, with whole rows: the reel reads rows of six. */
         extern int gPortStageReplaceCount, gPortReplaceOld[16], gPortReplaceNew[16];
-        extern int Port_NetSession(void); /* port/src/gs/net.c */
-        static s32 sAllIds[96];
-        s32 extra = Port_NetSession() ? 0 : gPortExtraStageCount;
+        extern int Port_NetSession(void),Port_TagNetwork(void);
+        static s32 sAllIds[132];
+        s32 extra = Port_NetSession()||Port_TagNetwork() ? 0 : gPortExtraStageCount;
         s32 swaps = Port_NetSession() ? 0 : gPortStageReplaceCount;
         s32 n = gTeamSel->stageCount, k, r;
         sPortStageRows = 11;
         sPortStagesAdded = extra > 0 || swaps > 0;
         if (extra > 0 || swaps > 0) {
-            if (n > 64) {
-                n = 64;
+            if (n > 99) {
+                n = 99;
             }
-            for (k = 0; k < 96; k++) {
+            for (k = 0; k < 132; k++) {
                 sAllIds[k] = k < n ? gTeamSel->stageIds[k] : STGGRID_ID_EMPTY;
             }
-            for (k = 0; k < extra && n < 90; k++) {
+            for (k = 0; k < extra && n < 125; k++) {
                 sAllIds[n++] = (s32)gPortExtraStages[k];
             }
             for (r = 0; r < swaps; r++) {
@@ -853,6 +863,9 @@ void TeamSel_Init(s32 section) {
     Res_RelocateOffsets(&res, res, res);
     gTeamSel->bg[0] = res;
     gTeamSel->bg[1] = res;
+#ifdef PORT
+    {u32 art=Port_StageArt(gTeamSel->stage->stage,1);sPortStagePictures[0]=sPortStagePictures[1]=art?(void*)art:(void*)res;gTeamSel->bg[0]=gTeamSel->bg[1]=sPortStagePictures[0];}
+#endif
     gTeamSel->stageState = TEAMSEL_LOAD_IDLE;
     gTeamSel->flags |= TEAMSEL_STAGE_READY;
     gTeamSel->bgAlpha[0] = 0x80;

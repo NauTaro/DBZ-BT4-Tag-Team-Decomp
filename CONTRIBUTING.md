@@ -9,7 +9,7 @@
 | `port/setup/` | Installation launcher |
 | `port/release/` | Version identity, icons and portable layout |
 | `tools/review/` | Build helpers and portable layout checks |
-| `server/cloudflare/` | Tag Team room and voice service |
+| `cloudflare/` | Tag Team room and voice service |
 | `port/matchmaking/` | Matchmaking service |
 | `docs/` | Architecture and development guides |
 
@@ -32,7 +32,7 @@ For decompiled game functions, follow the [decompilation guide](docs/decomp_guid
 
 ## Reporting an issue
 
-Use the [issue templates](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Recomp/issues/new/choose).
+Use the [issue templates](https://github.com/NauTaro/tenkaichi3decomp-fork-DBZ-BT4-Decomp/issues/new/choose).
 Include the version from `BT4_VERSION.txt`, system details, reproduction steps,
 and expected and actual behavior. Combat reports should identify the characters,
 stage, move and player count; voice reports should identify the audio devices.

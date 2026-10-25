@@ -1,5 +1,5 @@
 {
-  "description": "Portable Windows installation layout.",
+  "description": "Portable game layout requested on 2026-10-23. Keep development and release evidence outside the installation root.",
   "root_directories": [
     "fonts",
     "gamedata",
@@ -41,5 +41,5 @@
   "icon_source": "port/release/icon_game.ico",
   "icon_installed_path": "fonts/icon_game.ico",
   "development_artifacts": "Keep test reports, screenshots, source archives, build outputs, backups and distribution ZIPs outside the game installation. Do not delete unknown user files automatically.",
-  "separate_installer": "Install.exe is the portable root entry point; installer implementation and included English data stay under tbo/setup."
+  "separate_installer": "Install.exe is the root entry point; implementation and GitHub authorization helper stay under tbo/setup. Optional language packages are downloaded from the existing private repository."
 }

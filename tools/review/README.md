@@ -1,36 +1,28 @@
 # Build and layout tools
 
-## Windows build helpers
-
-`build_bt4_native.py` builds selected game and runtime sources;
-`build_bt4_setup.py` builds the installation launcher.
-
-Set `BT4_SOURCE_ROOT` to the checkout. The helpers expect the MinGW UCRT toolchain
-at `work/build-tools/ucrt64/bin` relative to the invocation directory and SDL3
-under `port/build/win/SDL3-3.4.12/x86_64-w64-mingw32`.
-Generated build inputs and external dependencies must already be available.
-
-See the [PC port guide](../../docs/port/README.md) for the runtime structure
-and toolchain configuration.
-
-## Portable layout checker
-
-With Python 3.12, run from the repository root:
+The build helpers default to this checkout. `BT4_SOURCE_ROOT` can override it;
+`BT4_TOOLCHAIN` can point to a MinGW UCRT64 bin directory. Use matching Clang
+and libclang versions, and provide SDL3 through `BT3_SDL3` or the pinned build
+directory. Generated shader headers and external dependencies are required.
 
 ```sh
-python tools/review/check_portable_layout.py "path/to/installation"
+python tools/review/build_bt4_native.py
+python tools/review/build_bt4_setup.py
 python -m unittest discover -s tools/review/tests -v
 ```
 
-The checker reads `port/release/PORTABLE_LAYOUT.json`. It checks root names and
-file/directory types case-insensitively and reports unexpected entries without
-deleting files. It does not inspect nested content or verify game-data integrity.
+The setup outputs are `port/build/setup_bt4/BT4-Setup.exe` and `Install.exe`.
+The portable package places the former at `tbo/setup/BT4-Setup.exe` and the
+latter in the installation root. SDL3 and the official GitHub CLI are required
+alongside the setup helper. Account credentials are never package inputs.
+Optional language package names, sizes and hashes are pinned in
+`port/setup/language_packages.h`. Do not replace a pinned package in place.
 
-Exit codes: `0` for an accepted layout, `1` for unexpected entries, and `2` for
-an unreadable directory or policy.
+`check_portable_layout.py` reads `port/release/PORTABLE_LAYOUT.json` and reports
+unexpected root entries without deleting anything. It does not verify game
+data. Use disposable runtime folders for build validation; do not overwrite
+player data or settings as part of a source build.
 
-## Runtime preparation
-
-`prepare_update_runtime.py` is a development utility requiring an external
-`audit_mod` module, runtime assets and upstream archives. It writes test settings
-to its target directory; use a separate disposable build directory.
+The installer binds native data tables to its verified ISO during installation.
+Do not ship raw generated data tables without the matching verified program
+fingerprint. See the PC port guide and current private release for distribution.

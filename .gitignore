@@ -36,28 +36,3 @@ port/build_release/
 /stages/
 /songs/
 /textures/
-
-# Local packages and credentials
-!/tools/
-!/tools/review/
-!/tools/review/**
-publication/
-*.zip
-.env
-.env.*
-.wrangler/
-net_session/
-online_name.txt
-*.dmp
-*.key
-*.pem
-
-# Logs, caches and local workspace files
-*.log
-*.log.*
-*.tmp
-*.pyc
-__pycache__/
-.DS_Store
-Thumbs.db
-/work/

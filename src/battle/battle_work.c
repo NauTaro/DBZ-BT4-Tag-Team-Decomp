@@ -223,7 +223,7 @@ void TagBattle_Prepare(void) {
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CAMERA_VIEW")){s32 a=atoi(getenv("BT4_TAG_CAMERA_VIEW"));sTagTestView=a>=0&&a<sTagActors?a:-1;}
     if(sTagActors>2)fprintf(stderr,"tag actors: loading %d independent actors\n",sTagActors);
 }
-void TagBattle_End(void) { extern void TagClash_Reset(void);TagClash_Reset();sTagActors=2;sTagLocal=0;sTagTestView=-1;memset(sTagSides,0,sizeof(sTagSides)); }
+void TagBattle_End(void) { extern void Port_ActorAdxStopAll(void);Port_ActorAdxStopAll();extern void TagClash_Reset(void);TagClash_Reset();sTagActors=2;sTagLocal=0;sTagTestView=-1;memset(sTagSides,0,sizeof(sTagSides)); }
 
 /* Returns the battle's shared state. */
 BattleWork *Battle_GetWork(void) {

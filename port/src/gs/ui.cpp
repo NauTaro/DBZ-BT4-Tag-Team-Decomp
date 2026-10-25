@@ -11,10 +11,19 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_opengl3.h"
+#ifdef _WIN32
+#include "imgui_impl_dx9.h"
+static void *sD3D9;
+extern "C" void *GsDx9_StripTexture(const void *, int, int);
+extern "C" void GsDx9_StripTextureFree(void *);
+#endif
+extern "C" int GsGl_DirectXVersion(void);
 #include "ui.h"
 #include "namefont.h"
 #include "../port_release.h"
 #include "menu_text.h"
+#include "game_profile.h"
+extern "C" int GsDraw_PerformanceMode(void);
 #include "menu_translation.h"
 #include "../quit_dialog.h"
 #include "net_chat.h"
@@ -51,6 +60,7 @@ int Port_NetActive(void);
 int Port_NetMe(void);                          // gs/net.c: this copy's side, 0 or 1
 void *BtlChar_FindByObjId(int objId);          // the game: the fighter of a side, NULL outside a fight
 int Port_NetStats(int *out);                   // gs/net.c: the meter's numbers of an online match
+int Port_TagNetwork(void),Port_TagPing(void);
 int Port_LobbyOther(void);
 extern unsigned gPortLiveBlanks;               // plat_stub.c: vertical blanks the game has gone through
 int Port_RollCan(void);                        // gs/state.c
@@ -154,6 +164,12 @@ static SDL_GPUTexture *make_strip(uint8_t *pix, size_t bytes, uint32_t w, uint32
     SDL_GPUTexture *tex;
     void *map;
 
+#ifdef _WIN32
+    if (sD3D9) {
+        void *texture = GsDx9_StripTexture(pix, w, h * count);
+        free(pix); return (SDL_GPUTexture *)texture;
+    }
+#endif
     if (sGL) { // the OpenGL back end: a GL texture, its name carried in the pointer (ImGui's OpenGL3 backend takes it so)
         unsigned id = GsGl_StripTexture(pix, (int)w, (int)(h * count));
         free(pix);
@@ -289,6 +305,9 @@ void Ui_TextureFree(SDL_GPUTexture *tex) {
     if (tex == NULL) {
         return;
     }
+#ifdef _WIN32
+    if (sD3D9) { GsDx9_StripTextureFree(tex); return; }
+#endif
     if (sGL) {
         GsGl_StripTextureFree((unsigned)(intptr_t)tex);
     } else {
@@ -511,6 +530,7 @@ static void language_choose(int choice) {
 }
 
 int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const char *gpu_name) {
+    sGL = 0;
     static const char *fonts[] = { // a proportional system font if there is one; else the library's built-in font
         "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
@@ -525,6 +545,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = NULL; // no window-layout file next to the game
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad; // (a controller opens it too: START + SELECT)
+    if (getenv("BT4_RENDER_TEST")) { io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange; }
     style();
     for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts[0]); i++) {
         FILE *fp = fopen(fonts[i], "rb");
@@ -544,9 +565,14 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
             pf.font = panel_font_load(pf.choice);
         }
     }
+#ifdef _WIN32
+    if (sD3D9) {
+        if (!ImGui_ImplSDL3_InitForD3D(window) || !ImGui_ImplDX9_Init((IDirect3DDevice9 *)sD3D9)) { return 0; }
+    } else
+#endif
     if (device == NULL) { // the OpenGL back end (gs_gl.c), with its context current
         sGL = 1;
-        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init("#version 330 core")) {
+        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init(GsGl_DirectXVersion() ? "#version 300 es" : "#version 330 core")) {
             return 0;
         }
     } else {
@@ -580,6 +606,31 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
         gPortOverlayOpen = 1;
     }
     return 1;
+}
+
+int Ui_InitD3D9(SDL_Window *window, void *device, const char *gpu_name) {
+#ifdef _WIN32
+    sD3D9 = device;
+    int ok = Ui_Init(window, NULL, NULL, gpu_name);
+    if (!ok) {
+        if (ImGui::GetCurrentContext()) {
+            if (ImGui::GetIO().BackendRendererUserData) { ImGui_ImplDX9_Shutdown(); }
+            if (ImGui::GetIO().BackendPlatformUserData) { ImGui_ImplSDL3_Shutdown(); }
+            ImGui::DestroyContext();
+        }
+        sD3D9 = NULL; sReady = false;
+    }
+    return ok;
+#else
+    return 0;
+#endif
+}
+void Ui_D3D9Reset(int create) {
+#ifdef _WIN32
+    if (!sD3D9) { return; }
+    if (create) { ImGui_ImplDX9_CreateDeviceObjects(); }
+    else { ImGui_ImplDX9_InvalidateDeviceObjects(); }
+#endif
 }
 
 // The game gets nothing from keyboard or controller while the window or the exit question is up; and the button
@@ -1243,11 +1294,16 @@ static bool tab(const char *label, int index) {
 }
 
 static void video_tab(PortVideo &v) {
+    if (GsDraw_PerformanceMode()) {
+        ImGui::TextWrapped("Performance mode: 1x resolution, reduced post-processing and no HD texture pack. Your other renderers keep their saved quality settings.");
+        ImGui::Separator();
+    }
     static const struct { const char *name; int milli; } aspects[] = {{"4:3 (original)", 1333}, {"16:10", 1600}, {"16:9", 1778}, {"21:9", 2389}, {"32:9", 3556}};
     char label[64];
     int best = 0, count = 0;
 
     snprintf(label, sizeof(label), "%dx  (%d x %d)", v.scale, 512 * v.scale, 448 * v.scale);
+    ImGui::BeginDisabled(GsDraw_PerformanceMode() != 0);
     if (ImGui::BeginCombo("Internal resolution", label)) {
         for (int n = 1; n <= 8; n++) {
             snprintf(label, sizeof(label), "%dx  (%d x %d)", n, 512 * n, 448 * n);
@@ -1255,6 +1311,7 @@ static void video_tab(PortVideo &v) {
         }
         ImGui::EndCombo();
     }
+    ImGui::EndDisabled();
     ImGui::SetItemTooltip("How finely the game is drawn. 1x is the PlayStation 2's own resolution.\nHigher is sharper and uses more video memory.");
     for (int i = 1; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
         if (abs(aspects[i].milli - v.aspectMilli) < abs(aspects[best].milli - v.aspectMilli)) { best = i; }
@@ -1310,20 +1367,34 @@ static void video_tab(PortVideo &v) {
     }
     ImGui::SetItemTooltip("Takes effect the next time the game starts.");
     SDL_free(displays);
-    {   // which renderer draws the game: Vulkan (the default) or OpenGL 3.3, for machines without a working Vulkan
-        static const char *const kApi[] = {"Vulkan", "OpenGL"};
+    {   // Persisted choice; the active device is reported separately after fallback.
+        static const char *const kApi[] = {"Vulkan", "OpenGL",
+#ifdef _WIN32
+                                          "DirectX 12"
+#endif
+        };
         static int api = -1;
+        const int count = IM_ARRAYSIZE(kApi);
+        int active = sGL ? 1 : 0;
+#ifdef _WIN32
+        if (!sGL && sDevice && strcmp(SDL_GetGPUDeviceDriver(sDevice), "direct3d12") == 0) { active = 2; }
+#endif
         if (api < 0) {
-            api = Port_Setting("gpu_api", 0) == 1 ? 1 : 0;
+            api = Port_Setting("gpu_api", 0);
+            if (api == 3 || api == 4) { api = 2; }
+            if (api < 0 || api >= count) { api = 0; }
         }
-        if (ImGui::Combo("Renderer", &api, kApi, 2)) {
+        if (ImGui::Combo("Renderer", &api, kApi, count)) {
             Port_SettingSave("gpu_api", api);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip("Takes effect the next time the game starts. Both draw the same picture; Vulkan is faster.\n"
-                              "If the chosen one cannot start, the game tries the other.");
-        if (api != (sGL ? 1 : 0)) {
-            ImGui::TextDisabled("Running now: %s. %s from the next start.", kApi[sGL ? 1 : 0], kApi[api]);
+        ImGui::SetItemTooltip("Takes effect after restarting the game. Performance depends on your GPU and drivers.\n"
+                              "If the saved renderer is unavailable, the game tries Vulkan and then OpenGL.");
+        ImGui::TextDisabled("Running now: %s", kApi[active]);
+        static const int requestedAtStartup = Port_Setting("gpu_api", 0);
+        if (api != active) {
+            if (api == requestedAtStartup) { ImGui::TextWrapped("The requested renderer could not start. Using %s.", kApi[active]); }
+            else { ImGui::TextDisabled("After restart: %s", kApi[api]); }
         }
         ImGui::TextWrapped("Active GPU: %s", sGpuName);
     }
@@ -1334,7 +1405,7 @@ static void video_tab(PortVideo &v) {
         int smooth = gsInterp < 0 ? 0 : gsInterp > 3 ? 3 : gsInterp;
         const bool tagNativeFrames = Port_TagBattleRenderActive() != 0;
         ImGui::SetNextItemWidth(U(416.0f));
-        ImGui::BeginDisabled(tagNativeFrames);
+        ImGui::BeginDisabled(tagNativeFrames || GsDraw_PerformanceMode());
         if (ImGui::Combo("Smooth motion", &smooth, kSmooth, 4)) {
             gsInterp = smooth;
             Port_SettingSave("interp", gsInterp);
@@ -1532,27 +1603,24 @@ static void misc_tab(void) {
 }
 
 static void ui_tab(PortVideo &v) {
-    if (sLanguageCount > 0) {
-        bool overridden = getenv("BT3_MENU_LANG") != NULL && getenv("BT3_MENU_LANG")[0] != '\0';
-        ImGui::BeginDisabled(overridden || Port_NetActive());
-        if (ImGui::BeginCombo("Language", sLanguages[sLanguageChoice].name)) {
-            for (int i = 0; i < sLanguageCount; i++) {
-                if (ImGui::Selectable(sLanguages[i].name, i == sLanguageChoice) && i != sLanguageChoice) language_choose(i);
-                if (i == sLanguageChoice) ImGui::SetItemDefaultFocus();
+    {
+        static int choice = -1;
+        if (choice < 0) choice = Port_GameProfileEnglish();
+        const char *names[] = {"Espa\xC3\xB1ol (textos y voces)", "English (text and voices)"};
+        ImGui::BeginDisabled(Port_NetActive() || Port_TagBattleRenderActive());
+        if (ImGui::BeginCombo("Game language", names[choice])) {
+            for (int i=0;i<2;i++) {
+                ImGui::BeginDisabled(!Port_GameProfileAvailable(i));
+                if (ImGui::Selectable(names[i],choice==i)) {
+                    choice=i; Port_SettingTextSave("game_language",i?"en":"es"); Port_SettingsWrite();
+                }
+                ImGui::EndDisabled();
             }
             ImGui::EndCombo();
         }
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip("Game language based on available translations.");
-        bool alwaysPrompt = Port_Setting("language_prompt_always", 0) != 0;
-        if (ImGui::Checkbox("Show language selector at startup", &alwaysPrompt)) {
-            Port_SettingSave("language_prompt_always", alwaysPrompt);
-            Port_SettingsWrite();
-        }
-        ImGui::SetItemTooltip("Show the language list at every normal startup when more than one language is available.");
-        if (sLanguageRestartPending) {
-            ImGui::TextColored(ImVec4(1.0f, 0.86f, 0.35f, 1.0f), "Language saved. It will apply on the next launch.");
-        }
+        ImGui::SetItemTooltip("Full disc profile: text and voices. Install each ISO once using the launcher. The startup selector confirms your choice before the game begins.");
+        if (choice != Port_GameProfileEnglish()) ImGui::TextWrapped("Language saved for the next launch.");
         ImGui::Separator();
     }
     if (ImGui::BeginCombo("Menu font", MenuText_FontName(v.menuFont))) {
@@ -1972,7 +2040,7 @@ static void build(void) {
         ImGui::BeginChild("body", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing() - ImGui::GetStyle().ItemSpacing.y), ImGuiChildFlags_NavFlattened);
         if (ImGui::BeginTabBar("tabs")) {
             if (tab("Video", 0)) { video_tab(v); ImGui::EndTabItem(); }
-            if (tab("Effects", 1)) { effects_tab(v); ImGui::EndTabItem(); }
+            if (tab("Effects", 1)) { ImGui::BeginDisabled(GsDraw_PerformanceMode() != 0); effects_tab(v); ImGui::EndDisabled(); ImGui::EndTabItem(); }
             if (tab("Audio", 2)) { audio_tab(v); ImGui::EndTabItem(); }
             if (tab("UI", 3)) { ui_tab(v); ImGui::EndTabItem(); }
             if (tab("Controls", 4)) {
@@ -2158,6 +2226,9 @@ static void meter_draw(void) {
             if (n[9] != 0) { // the desync check found the two games apart (the match goes on)
                 ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "desync since frame %d", n[9]);
             }
+        } else if(Port_TagNetwork()) {
+            int ping=Port_TagPing();
+            if(ping>=0)ImGui::Text("ping %d ms",ping);else ImGui::TextUnformatted("ping ...");
         }
     }
     ImGui::End();
@@ -2206,11 +2277,7 @@ static const FontName *font_name(int style, const char *text) {
     }
     FontName &n = sFontNames[sFontNext++ % (sizeof(sFontNames) / sizeof(sFontNames[0]))];
     if (n.used && n.tex != NULL) {
-        if (sGL) {
-            GsGl_StripTextureFree((unsigned)(intptr_t)n.tex);
-        } else {
-            SDL_ReleaseGPUTexture(sDevice, n.tex);
-        }
+        Ui_TextureFree(n.tex);
     }
     n.tex = NULL;
     n.w = n.h = 0;
@@ -2509,6 +2576,10 @@ static bool frame_build(void) {
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     }
     sBuilt = true;
+#ifdef _WIN32
+    if (sD3D9) { ImGui_ImplDX9_NewFrame(); }
+    else
+#endif
     if (sGL) {
         ImGui_ImplOpenGL3_NewFrame();
     } else {
@@ -2684,6 +2755,11 @@ static bool frame_build(void) {
     return true;
 }
 
+void Ui_DrawD3D9(void) {
+#ifdef _WIN32
+    if (sD3D9 && frame_build()) { ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData()); }
+#endif
+}
 void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
     if (!sGL && frame_build()) {
         Ui_DrawAgain(cmd, target);

@@ -255,6 +255,9 @@ s32 Battle_Draw(void) {
     Gfx_MarkPass(1);
     StgModel_Cull(view);
     StgModel_Draw(view);
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_ART_CAPTURE")){Gfx_MarkPass(0);return 0;}
+#endif
     Dbg_ProfColor(prof, 0x80FF4040);
     Dbg_ProfMark(prof);
     Gfx_MarkPass(3);
@@ -361,13 +364,20 @@ void Battle_Loop(void) {
             Battle_Restart();
             Battle_GetWork()->flags &= ~BATTLE_FLAG_RESTART;
         }
-        Job_Run();
+        if(!TagBattle_Network())Job_Run();
         if(TagBattle_Network()){
             s32 ready,dir;Pad_Update();
             dir=(gPad[0].gamePressed&(PADG_R1|PADG_RIGHT))?1:(gPad[0].gamePressed&(PADG_L1|PADG_LEFT))?-1:0;
             TagBattle_UpdateSpectator(dir);ready=TagOnline_Tick();
-            if(ready<0){fprintf(stderr,"tag online disconnected: %s\n",Port_TagError());break;}
+            if(ready<0){
+                fprintf(stderr,"tag online disconnected: %s\n",Port_TagError());
+                TagBattle_SetReturn(2);TagOnline_Ending();Port_TagClose();
+                BattleResult_Set(BTL_RESULT_ABORT,0);break;
+            }
             if(!ready){Snd_Update();TagOnline_WaitDraw();continue;}
+            /* Streaming jobs can commit character and stage changes. Advance
+               them on the shared simulation frame, once, not on every poll. */
+            Job_Run();
         }
         Gfx_BeginFrame();
         if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) {
@@ -407,7 +417,6 @@ void Battle_Loop(void) {
             Battle_Draw();
         }
         TagBattle_ResultDraw();
-        TagOnline_MenuDraw();
         Gfx_EndFrame(2);
         Dma_Flush();
     } while (!done);

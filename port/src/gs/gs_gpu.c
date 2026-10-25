@@ -22,7 +22,11 @@
 #include <string.h>
 #include "gs_internal.h"
 #include "gs_draw.h"
-#include "shaders.h" /* generated: kGsVertSpv, kGsFragSpv */
+#include "shaders.h" /* generated: SPIR-V and GLSL */
+#ifdef _WIN32
+#include "generated/shaders_dxil.h" /* offline compiled; no runtime compiler DLL */
+static int sUseDxil;
+#endif
 #include "ui.h"
 
 extern int Port_Setting(const char *name, int def); /* plat_settings.c: the saved settings */
@@ -50,6 +54,39 @@ static SDL_GPUBuffer *sVuIbuf;          /* gsVuIdx */
 static SDL_GPUTransferBuffer *sVuIXfer;
 static SDL_GPUShader *sVu0Vs, *sVu4Vs, *sVu6Vs;
 
+/* Grow host upload and device buffers together. Keep the old pair if either
+ * allocation fails; SDL defers destruction while submitted commands use it. */
+static Uint32 sVertexCapacity, sVuCapacity, sIndexCapacity;
+static int geometry_dynamic(void) {
+    const char *v=getenv("BT4_DYNAMIC_GEOMETRY");
+    return v ? atoi(v)!=0 : 1;
+}
+static int geometry_reserve(SDL_GPUBuffer **buffer, SDL_GPUTransferBuffer **transfer,
+                            Uint32 *capacity, Uint32 needed, Uint32 limit,
+                            SDL_GPUBufferUsageFlags usage, const char *label) {
+    SDL_GPUBufferCreateInfo bi;
+    SDL_GPUTransferBufferCreateInfo ti;
+    SDL_GPUBuffer *nextBuffer;
+    SDL_GPUTransferBuffer *nextTransfer;
+    Uint32 size=*capacity?*capacity:65536;
+    if(needed<=*capacity)return 1;
+    if(needed>limit)return 0;
+    while(size<needed)size=size>limit/2?limit:size*2;
+    if(size>limit)size=limit;
+    SDL_zero(bi);bi.size=size;bi.usage=usage;
+    nextBuffer=SDL_CreateGPUBuffer(sDev,&bi);
+    if(!nextBuffer)return 0;
+    SDL_zero(ti);ti.size=size;ti.usage=SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    nextTransfer=SDL_CreateGPUTransferBuffer(sDev,&ti);
+    if(!nextTransfer){SDL_ReleaseGPUBuffer(sDev,nextBuffer);return 0;}
+    if(*buffer)SDL_ReleaseGPUBuffer(sDev,*buffer);
+    if(*transfer)SDL_ReleaseGPUTransferBuffer(sDev,*transfer);
+    *buffer=nextBuffer;*transfer=nextTransfer;*capacity=size;
+    fprintf(stderr,"gpu geometry: %s capacity=%u bytes (device + transfer)\n",label,size);
+    return 1;
+}
+
+
 typedef struct Pipe {
     uint32_t key;
     SDL_GPUGraphicsPipeline *p;
@@ -69,6 +106,10 @@ static uint64_t gpu_now(void) { return SDL_GetTicksNS(); }
 #define SHADER_FORMAT SDL_GPU_SHADERFORMAT_MSL
 #define SHADER_ENTRY "main0"
 #define SHADER_CODE(name) name##Msl, sizeof(name##Msl) - 1
+#elif defined(_WIN32)
+#define SHADER_FORMAT (sUseDxil ? SDL_GPU_SHADERFORMAT_DXIL : SDL_GPU_SHADERFORMAT_SPIRV)
+#define SHADER_ENTRY "main"
+#define SHADER_CODE(name) (sUseDxil ? name##Dxil : name##Spv), (sUseDxil ? sizeof(name##Dxil) : sizeof(name##Spv))
 #else
 #define SHADER_FORMAT SDL_GPU_SHADERFORMAT_SPIRV
 #define SHADER_ENTRY "main"
@@ -400,7 +441,33 @@ static void vsync_apply(int on) {
 
 /* --- init --------------------------------------------------------------------------------------- */
 
-static int vk_init(void) {
+/* Failure before UI setup must leave no device/window or queued upload behind,
+   so a saved unsupported renderer can safely fall back to Vulkan/OpenGL. */
+static void init_failed(void) {
+    int i;
+    sVertexCapacity = sVuCapacity = sIndexCapacity = 0;
+    for (i = 0; i < sPendingCount; i++) { free(sPending[i].px); }
+    sPendingCount = 0;
+    if (sDev) {
+#define DROP(fn, value) do { if (value) { fn(sDev, value); value = NULL; } } while (0)
+        DROP(SDL_ReleaseGPUGraphicsPipeline, sOutlinePipe);
+        DROP(SDL_ReleaseGPUGraphicsPipeline, sKeyPipe);
+        DROP(SDL_ReleaseGPUShader, sVs); DROP(SDL_ReleaseGPUShader, sFs);
+        DROP(SDL_ReleaseGPUShader, sFsNz); DROP(SDL_ReleaseGPUShader, sFsWb);
+        DROP(SDL_ReleaseGPUShader, sVu0Vs); DROP(SDL_ReleaseGPUShader, sVu4Vs); DROP(SDL_ReleaseGPUShader, sVu6Vs);
+        DROP(SDL_ReleaseGPUShader, sFxVs); DROP(SDL_ReleaseGPUShader, sDclutFs);
+        DROP(SDL_ReleaseGPUBuffer, sVbuf); DROP(SDL_ReleaseGPUBuffer, sVuVbuf); DROP(SDL_ReleaseGPUBuffer, sVuIbuf);
+        DROP(SDL_ReleaseGPUTransferBuffer, sVxfer); DROP(SDL_ReleaseGPUTransferBuffer, sVuXfer); DROP(SDL_ReleaseGPUTransferBuffer, sVuIXfer);
+        DROP(SDL_ReleaseGPUTexture, sWhite); DROP(SDL_ReleaseGPUTexture, sAuxCopy); DROP(SDL_ReleaseGPUTexture, sDateCopy);
+        for (i = 0; i < 16; i++) { DROP(SDL_ReleaseGPUSampler, sSamplers[i]); }
+#undef DROP
+        if (sWindow) { SDL_ReleaseWindowFromGPUDevice(sDev, sWindow); }
+        SDL_DestroyGPUDevice(sDev); sDev = NULL;
+    }
+    if (sWindow) { GsDraw_WindowDestroy(); sWindow = NULL; }
+}
+
+static int gpu_init(const char *driver) {
     SDL_GPUBufferCreateInfo bi;
     SDL_GPUTransferBufferCreateInfo ti;
     static uint32_t white = 0xFFFFFFFFu;
@@ -411,16 +478,24 @@ static int vk_init(void) {
         fprintf(stderr, "bt3: SDL_Init: %s\n", SDL_GetError());
         return 0;
     }
-    sDev = SDL_CreateGPUDevice(SHADER_FORMAT, getenv("BT3_GPU_DEBUG") != NULL, NULL);
+#ifdef _WIN32
+    sUseDxil = strcmp(driver, "direct3d12") == 0;
+#endif
+    sDev = SDL_CreateGPUDevice(SHADER_FORMAT, getenv("BT3_GPU_DEBUG") != NULL, driver);
+    if (!sDev) {
+        fprintf(stderr, "bt3: %s device: %s\n", driver, SDL_GetError());
+        return 0;
+    }
     sShadowStencil = sDev != NULL && SDL_GPUTextureSupportsFormat(sDev, SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT,
         SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
     sDepthFormat = sShadowStencil ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT : SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
     if (sDev != NULL && !sShadowStencil) {
         fprintf(stderr, "bt3: shadow stencil unavailable; flat shadows may show overlapping model parts\n");
     }
-    sWindow = GsDraw_WindowCreate(0); /* the shared window: shape, display and full screen decided there */    if (sWindow == NULL || !SDL_ClaimWindowForGPUDevice(sDev, sWindow)) {
+    sWindow = GsDraw_WindowCreate(0);
+    if (sWindow == NULL || !SDL_ClaimWindowForGPUDevice(sDev, sWindow)) {
         fprintf(stderr, "bt3: no GPU window: %s\n", SDL_GetError());
-        return 0;
+        goto fail;
     }
     /* The game paces itself at 30 frames per second; waiting for the display's own refresh on top of that
        (VSYNC) costs up to a refresh period per frame. Prefer MAILBOX (no tearing, no wait), then IMMEDIATE. */
@@ -431,16 +506,11 @@ static int vk_init(void) {
     sFsWb = shader(SHADER_CODE(kGswbFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
     if (sVs == NULL || sFs == NULL || sFsNz == NULL || sFsWb == NULL) {
         fprintf(stderr, "bt3: shaders: %s\n", SDL_GetError());
-        return 0;
+        goto fail;
     }
-    SDL_zero(bi);
-    bi.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-    bi.size = MAX_VERTS * sizeof(Vtx);
-    sVbuf = SDL_CreateGPUBuffer(sDev, &bi);
-    SDL_zero(ti);
-    ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    ti.size = MAX_VERTS * sizeof(Vtx);
-    sVxfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
+    if(!geometry_reserve(&sVbuf,&sVxfer,&sVertexCapacity,
+            geometry_dynamic()?16384*sizeof(Vtx):MAX_VERTS*sizeof(Vtx),
+            MAX_VERTS*sizeof(Vtx),SDL_GPU_BUFFERUSAGE_VERTEX,"GS vertices"))return 0;
     for (i = 0; i < 16; i++) {
         SDL_GPUSamplerCreateInfo si;
         SDL_zero(si);
@@ -459,16 +529,12 @@ static int vk_init(void) {
     sVu0Vs = shader(SHADER_CODE(kVu0Vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
     sVu4Vs = shader(SHADER_CODE(kVu4Vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
     sVu6Vs = shader(SHADER_CODE(kVu6Vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-    bi.size = MAX_VU_VERTS * 48;
-    sVuVbuf = SDL_CreateGPUBuffer(sDev, &bi);
-    ti.size = MAX_VU_VERTS * 48;
-    sVuXfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
-    bi.usage = SDL_GPU_BUFFERUSAGE_INDEX;
-    bi.size = MAX_VU_IDX * sizeof(uint32_t);
-    sVuIbuf = SDL_CreateGPUBuffer(sDev, &bi);
-    bi.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-    ti.size = MAX_VU_IDX * sizeof(uint32_t);
-    sVuIXfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
+    if(!geometry_reserve(&sVuVbuf,&sVuXfer,&sVuCapacity,
+            geometry_dynamic()?65536*48:MAX_VU_VERTS*48,
+            MAX_VU_VERTS*48,SDL_GPU_BUFFERUSAGE_VERTEX,"VU vertices") ||
+       !geometry_reserve(&sVuIbuf,&sVuIXfer,&sIndexCapacity,
+            geometry_dynamic()?131072*sizeof(uint32_t):MAX_VU_IDX*sizeof(uint32_t),
+            MAX_VU_IDX*sizeof(uint32_t),SDL_GPU_BUFFERUSAGE_INDEX,"VU indices"))return 0;
     {
         SDL_GPUTextureCreateInfo ci;
         SDL_zero(ci);
@@ -483,6 +549,7 @@ static int vk_init(void) {
         sPending[sPendingCount].bytes = sPending[sPendingCount].level = 0;
         sPending[sPendingCount].w = sPending[sPendingCount].h = 1;
         sPending[sPendingCount].px = malloc(4);
+        if (!sPending[sPendingCount].px) { goto fail; }
         memcpy(sPending[sPendingCount].px, &white, 4);
         sPendingCount++;
     }
@@ -511,9 +578,10 @@ static int vk_init(void) {
         ci.target_info.color_target_descriptions = &cd;
         ci.target_info.num_color_targets = 1;
         sOutlinePipe = vs && fs ? SDL_CreateGPUGraphicsPipeline(sDev, &ci) : NULL;
+        if (fs) { SDL_ReleaseGPUShader(sDev, fs); }
         if (sOutlinePipe == NULL) {
             fprintf(stderr, "bt3: outline pipeline: %s\n", SDL_GetError());
-            return 0;
+            goto fail;
         }
         /* native alpha key: the tint blended by its own alpha, colour channels only */
         fs = shader(SHADER_CODE(kAlphakeyFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
@@ -522,13 +590,17 @@ static int vk_init(void) {
         cd.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
         ci.fragment_shader = fs;
         sKeyPipe = fs ? SDL_CreateGPUGraphicsPipeline(sDev, &ci) : NULL;
+        if (fs) { SDL_ReleaseGPUShader(sDev, fs); }
         if (sKeyPipe == NULL) {
             fprintf(stderr, "bt3: alpha key pipeline: %s\n", SDL_GetError());
-            return 0;
+            goto fail;
         }
     }
     sDclutFs = shader(SHADER_CODE(kDclutFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1);
     copies_create();
+    if (!sVbuf || !sVxfer || !sVuVbuf || !sVuXfer || !sVuIbuf || !sVuIXfer ||
+        !sVu0Vs || !sVu4Vs || !sVu6Vs || !sWhite || !sDclutFs || !sAuxCopy || !sDateCopy) { goto fail; }
+    for (i = 0; i < 16; i++) { if (!sSamplers[i]) { goto fail; } }
 #if SDL_VERSION_ATLEAST(3, 4, 0)
     {   /* the graphics card's name, for F1 > Video */
         SDL_PropertiesID props = SDL_GetGPUDeviceProperties(sDev);
@@ -544,7 +616,22 @@ static int vk_init(void) {
     fprintf(stderr, "bt3: %d logical processors, %d MB of memory\n", SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM());
     pipelines_preload();
     return 1;
+fail:
+    fprintf(stderr, "bt3: %s initialization failed: %s\n", driver, SDL_GetError());
+    init_failed();
+    return 0;
 }
+
+static int vk_init(void) {
+#ifdef __APPLE__
+    return gpu_init("metal");
+#else
+    return gpu_init("vulkan");
+#endif
+}
+#ifdef _WIN32
+static int dx12_init(void) { return gpu_init("direct3d12"); }
+#endif
 
 /* --- the frame ---------------------------------------------------------------------------------- */
 
@@ -844,6 +931,15 @@ static void vk_frame_end(void) {
             }
         }
     }
+    if(!geometry_reserve(&sVbuf,&sVxfer,&sVertexCapacity,gsVertCount*sizeof(Vtx),
+            MAX_VERTS*sizeof(Vtx),SDL_GPU_BUFFERUSAGE_VERTEX,"GS vertices") ||
+       !geometry_reserve(&sVuVbuf,&sVuXfer,&sVuCapacity,gsVuVertCount*48,
+            MAX_VU_VERTS*48,SDL_GPU_BUFFERUSAGE_VERTEX,"VU vertices") ||
+       !geometry_reserve(&sVuIbuf,&sVuIXfer,&sIndexCapacity,gsVuIdxCount*sizeof(uint32_t),
+            MAX_VU_IDX*sizeof(uint32_t),SDL_GPU_BUFFERUSAGE_INDEX,"VU indices")){
+        fprintf(stderr,"gpu: geometry allocation failed: %s\n",SDL_GetError());
+        return;
+    }
     sEndT[0] = gpu_now();
     cmd = SDL_AcquireGPUCommandBuffer(sDev);
     /* uploads: this frame's vertices and the textures decoded for it */
@@ -960,6 +1056,21 @@ static void vk_frame_end(void) {
     SDL_EndGPUCopyPass(copy);
     gGsFbUploads = 0;
     sEndT[1] = gpu_now();
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_PRESENT_AUDIT") && gsDrawCount) {
+        unsigned clears = 0, mainDraws = 0, firstMain = ~0u;
+        for (uint32_t k = 0; k < gsDrawCount; ++k) {
+            const GsDraw *d = &gsDraws[k];
+            if (d->target >= 0 && gsTargets[d->target].fbp == (uint32_t)gGsMainFbp) {
+                float depth;
+                if (firstMain == ~0u) firstMain = k;
+                ++mainDraws;
+                if (!d->native && clear_draw(d, &depth)) ++clears;
+            }
+        }
+        if (mainDraws && (!clears || gGsFrame % 30 == 0))
+            fprintf(stderr, "tag present audit: frame=%u fbp=%x main-draws=%u clears=%u first=%u skipped=%d\n",
+                    gGsFrame, gGsMainFbp, mainDraws, clears, firstMain, gsSkipFrame);
+    }
     /* replay the frame */
     lastPipe = lastUni = lastSampler = -1;
     if (aux_plan_on()) {
@@ -1471,8 +1582,11 @@ static void vk_frame_end(void) {
                 every = 0;
             }
         }
+        int requestedShot = 0;
         {extern volatile int gPortTagCaptureRequest;
-            if(gPortTagCaptureRequest&&getenv("BT4_RENDER_TEST")){gPortTagCaptureRequest=0;every=1;}}
+            if(gPortTagCaptureRequest&&getenv("BT4_RENDER_TEST")){gPortTagCaptureRequest=0;requestedShot=1;}}
+        const char *auditShots = getenv("BT4_RENDER_TEST") ? getenv("BT4_TAG_PRESENT_SHOTS") : NULL;
+        if (auditShots && gsDrawCount && gGsFrame % 8 == 0) requestedShot = 1;
         int video=0;
         unsigned videoCopies=0;
         if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_PIPE")){
@@ -1493,7 +1607,7 @@ static void vk_frame_end(void) {
             }
         }
         /* BT3_SHOT_FROM / BT3_SHOT_TO limit the frames */
-        if ((video || (every > 0 && gGsFrame % (unsigned)every == 0)) && best >= 0 && gsTargets[best].cleared &&
+        if ((video || requestedShot || (every > 0 && gGsFrame % (unsigned)every == 0)) && best >= 0 && gsTargets[best].cleared &&
             (getenv("BT3_SHOT_FROM") == NULL || (int)gGsFrame >= atoi(getenv("BT3_SHOT_FROM"))) &&
             (getenv("BT3_SHOT_TO") == NULL || (int)gGsFrame <= atoi(getenv("BT3_SHOT_TO")))) {
             SDL_GPUTransferBufferCreateInfo ti;
@@ -1508,7 +1622,7 @@ static void vk_frame_end(void) {
             int videoBgr=videoUi&&(SDL_GetGPUSwapchainTextureFormat(sDev,sWindow)==SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM||SDL_GetGPUSwapchainTextureFormat(sDev,sWindow)==SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB);
             if(videoUi){w=sw;h=sh;}
             uint8_t *px;
-            char name[64];
+            char name[2048];
             FILE *fp;
 
             SDL_zero(ti);
@@ -1530,6 +1644,7 @@ static void vk_frame_end(void) {
             SDL_ReleaseGPUFence(sDev, fence);
             px = SDL_MapGPUTransferBuffer(sDev, tb, false);
             snprintf(name, sizeof(name), "port/build/shots/gpu_%05u.ppm", gGsFrame);
+            if (auditShots) snprintf(name, sizeof(name), "%s/gpu_%05u.ppm", auditShots, gGsFrame);
             if(video&&px){
                 static FILE *videoOut;static uint8_t frame[1920*1080*3],previous[1920*1080*3];
                 static unsigned written,firstBlank;unsigned vx,vy,copy;
@@ -1675,3 +1790,25 @@ GsBackend sVulkanBackend = {
     vk_target_read,
     vk_target_copy,
 };
+
+#ifdef _WIN32
+GsBackend sDirect3D12Backend = {
+    "direct3d12",
+    dx12_init,
+    vk_frame_end,
+    scale_changed,
+    white_tex,
+    tex_create,
+    tex_upload,
+    tex_destroy,
+    tex_slots_left,
+    target_ensure,
+    target_drop,
+    target_color,
+    target_aux,
+    target_depth,
+    pipe_get,
+    vk_target_read,
+    vk_target_copy,
+};
+#endif

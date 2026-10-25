@@ -1,0 +1,99 @@
+{
+  "source_sha256": {
+    "alphakey.frag": "d5bbdb44c879bf72a205cbc26707db44e3ae6de7ffbe97b4e9ed56dfd8427bc2",
+    "dclut.frag": "1d28c6df9af61c003fd293d26aeedbc775a0cecaf8e53f12a37956d748e7d2df",
+    "fx.vert": "793c060e4086765c9a98de91eb3647113f896153d34fb952190ce846dc7c8b1b",
+    "gs.frag": "7a6f641fce29184b924d56b70da011a5a8eeef2d5a39c08218d825b998a177e1",
+    "gs.vert": "2823d430a36db73f5aa4dd6b6bbc34eb3ccf5438937820573a0eabc27dd72f2a",
+    "outline.frag": "d3f356193a19bc04ad02efe60c1da630589595259c9b9fb3a3b4140b38fbe776",
+    "vu0.vert": "6c1597fbc55f2f3ee40fc1b5d428d63ecd608e839c0329fa47d5c88e6675c6c3",
+    "vu4.vert": "e6a76cfcae39d10b10a039c88700b17d69b374fca1ab124903729ea1627c8a7a",
+    "vu6.vert": "ede902d15fedbaf21f0b5804481ecbe87262172ac7629198e94967a00c9f7058"
+  },
+  "generator_sha256": "9db84014a2206da53058c4eabbf98fcb1a1c8a610c950dac33022a83ddafc5bb",
+  "header_sha256": "6d8b3dc83d669f8fd03132bd78c73005c4b2b4195ecfdd031e1b4087e2a2ff85",
+  "spv_sha256": {
+    "gs.vert": "90128f47106627bfb227b81a481179f2745f59d34b1027000bf1e182f76e95fb",
+    "gs.frag": "7a983d05752cb2ccc807ead5dfba827355b8a9d0c783d61019e837f7931178b7",
+    "gsnz.frag": "0487951e8ac6bf14f7d9843b613a3fe688721e38cbca51f22e5e9844b00ea910",
+    "gswb.frag": "7fbf9ee7212eb56f4944bcc1a731d7431798144fd69e135d4f4cc1ecef94930c",
+    "vu0.vert": "ad3c44aafba33537d0fc1b37f981e7fb18aee28f928f09e46b3883f9337a9dec",
+    "vu4.vert": "ebfad4ef4e3ad7aaa02733ef88d4a2eb48f57d9f6775ce392f31ab95a14401ab",
+    "vu6.vert": "b1ba44b470eec68d2359b230a58b0fa0d10b023c6b6cabdd177c124090fe3539",
+    "fx.vert": "a968c60d2b6bbb96a6b5f8282b9e4b52f74e015de6f49ba5f2a8598bce1d6ca1",
+    "outline.frag": "8a126c2863ea01453e45da8161b444107a3cc59c6e2ca5d34182031eaeef215b",
+    "alphakey.frag": "221ad6437b80ff3ef3dbfe53d3670842c993f58ae703a3c17e1aab47757ace9f",
+    "dclut.frag": "99d584df3317bc1b8f9a3fef72499e240c9b0781bb8098a6143b103c2d215e5c"
+  },
+  "shaders": [
+    {
+      "shader": "alphakey.frag",
+      "compiled": true,
+      "bytes": 848,
+      "sha256": "de96984595298241a98ea6be55b6efc1d876ed6f66f9cec1645d7b7ba4012294"
+    },
+    {
+      "shader": "dclut.frag",
+      "compiled": true,
+      "bytes": 876,
+      "sha256": "5995b1af764aedccd2d212c5cb12dbc6aca61f2c2ce4b822b97a7ece389c925f"
+    },
+    {
+      "shader": "fx.vert",
+      "compiled": true,
+      "bytes": 320,
+      "sha256": "8c0eccbd508d36a0f5cdff1884bba14d3a2d530d4db24180bd31624124738035"
+    },
+    {
+      "shader": "gs.frag",
+      "compiled": true,
+      "diagnostics": "C:\\Users\\ygonzalezgarcia\\Documents\\Codex\\2026-10-18\\quiero-que-me-ayudes-a-solucionar-2\\gs.frag(105,45-78): warning X4121: gradient-based operations must be moved out of flow control to prevent divergence. Performance may improve by using a non-gradient operation\n\u0000",
+      "bytes": 3432,
+      "sha256": "277af32ac3236e5661430f6d2c8157e4ab47d3bb093a1e714065500de9ac906f"
+    },
+    {
+      "shader": "gs.vert",
+      "compiled": true,
+      "bytes": 408,
+      "sha256": "a183b3f4a59acd0a1168fd6815b9622c8344afc823ef13ace9b2ed66d0c29ec7"
+    },
+    {
+      "shader": "gsnz.frag",
+      "compiled": true,
+      "diagnostics": "C:\\Users\\ygonzalezgarcia\\Documents\\Codex\\2026-10-18\\quiero-que-me-ayudes-a-solucionar-2\\gsnz.frag(103,45-78): warning X4121: gradient-based operations must be moved out of flow control to prevent divergence. Performance may improve by using a non-gradient operation\n\u0000",
+      "bytes": 3136,
+      "sha256": "350239fa68edc8416ce6c36a1d4f065cc3797fd32dbc564662f25057ea429a29"
+    },
+    {
+      "shader": "gswb.frag",
+      "compiled": true,
+      "diagnostics": "C:\\Users\\ygonzalezgarcia\\Documents\\Codex\\2026-10-18\\quiero-que-me-ayudes-a-solucionar-2\\gswb.frag(137,45-78): warning X4121: gradient-based operations must be moved out of flow control to prevent divergence. Performance may improve by using a non-gradient operation\n\u0000",
+      "bytes": 4568,
+      "sha256": "3d028da380c7ccfc95cc701f3ace734f5ac70092ad6b4f809e4da170806e1f49"
+    },
+    {
+      "shader": "outline.frag",
+      "compiled": true,
+      "bytes": 6956,
+      "sha256": "7f67472ec1d3d4538d9d351bba155e330b6b48e031816d3de9b1d9fbc5cdbe2d"
+    },
+    {
+      "shader": "vu0.vert",
+      "compiled": true,
+      "bytes": 1952,
+      "sha256": "4b22ff09805dda352e65b644a005982d2d7d298d02810b83edcf5d8c2de232ad"
+    },
+    {
+      "shader": "vu4.vert",
+      "compiled": true,
+      "bytes": 924,
+      "sha256": "692d20dc90147fd643d46a161876a2c429f18648c6d24bc5b51d02b6cbb11459"
+    },
+    {
+      "shader": "vu6.vert",
+      "compiled": true,
+      "bytes": 1024,
+      "sha256": "f4b58cbaad1b3ea63ef2df3ad796d874b21bc529e1713def0649f05357e25cf6"
+    }
+  ]
+}

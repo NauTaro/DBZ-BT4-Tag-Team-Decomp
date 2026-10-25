@@ -78,3 +78,5 @@ void Ps_Text(f32 x, f32 y, char *s, f32 scale, f32 width, s32 style);
 void Ps_Disc(f32 cx, f32 cy, f32 r, u32 mid, u32 edge);
 #endif
 #endif
+
+void Ps_TextRaw(f32 x,f32 y,char *s,f32 scale,f32 width,s32 style);

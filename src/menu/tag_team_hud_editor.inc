@@ -1,3 +1,4 @@
+#include "../../port/src/gs/online_language.h"
 #include "menu/port_screen.h"
 #include "menu/tbo_art.h"
 #include "battle/tag_team_hud_layout.h"
@@ -46,7 +47,8 @@ static void TagHudScreen_Prepare(MFlash *flash){
 }
 static void TagHudScreen_Description(void){
     static u16 line[180];
-    static const char text[]="Arrange the Tag Team HUD\nover a battle preview.";
+    extern int Port_GameProfileEnglish(void);
+    const char *text=Port_GameProfileEnglish()?"Arrange the Tag Team HUD\nover a battle preview.":"Organiza el HUD de Tag Team\nsobre una vista de combate.";
     s32 i;line[0]=0xFEFF;for(i=0;text[i];++i)line[i+1]=(u8)text[i];line[i+1]=0;
     MsgWin_PortDrawString(line);
 }
@@ -190,7 +192,7 @@ static void TagHudEditor_Draw(void){
     }
     Ps_Panel(TBO_KIT_WINDOW,156,352,356,395,0x78);
     Ps_Align(1);Ps_Text(256,356,"Tag Team HUD",.65f,190,2);
-    Ps_Copy(line,"L1 / R1: ",80);Ps_Cat(line,sHudEditorNames[sHudEditorBlock],80);Ps_Text(256,378,line,.42f,190,3);
+    Ps_Copy(line,"L1 / R1: ",80);Ps_Cat(line,(char *)PortOnline_Text(sHudEditorNames[sHudEditorBlock]),80);Ps_Text(256,378,line,.42f,190,3);
     Ps_Text(256,399,"D-PAD: MOVE | L2: FASTER | SELECT: RESET ALL",.40f,490,0);Ps_Align(0);
     Ps_PromptsClear();Ps_Prompt(0,"Save");Ps_Prompt(1,"Reset Panel");Ps_Prompt(2,"Cancel");Ps_PromptsDraw();
 }

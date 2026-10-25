@@ -58,6 +58,17 @@ extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page sho
 extern int gPortMusicPercent, gPortSePercent, gPortVoicePercent, gPortStagePercent;
 
 static GsBackend *sBackend;
+extern int Port_TagBattleRenderActive(void);
+
+/* Test-only readback: a network wait must present the completed image without
+   changing it. Read the real render target rather than comparing game state. */
+static uint32_t tag_present_hash(int target) {
+    static uint8_t pixels[512 * 448 * 4];
+    uint32_t hash = 2166136261u;
+    if (target < 0 || !sBackend->targetRead(target, pixels)) return 0;
+    for (unsigned i = 0; i < sizeof(pixels); ++i) hash = (hash ^ pixels[i]) * 16777619u;
+    return hash;
+}
 
 /* The last picture again, with the overlay on it (Port_UiBanner, ui.cpp), and the window's events taken: for the
    game's thread while it waits inside a blank (the start of an online match, gs/net.c), so that the window shows
@@ -67,11 +78,22 @@ void Gs_HoldFrame(void) {
     static uint64_t last;
     uint64_t now = SDL_GetTicksNS();
     uint32_t draws = gsDrawCount, verts = gsVertCount, vuVerts = gsVuVertCount, vuIdx = gsVuIdxCount, vuUni = gsVuUniCount;
+    unsigned targetDraws[MAX_TARGETS], skipped = gsSkipped, native = gsNative;
+    int anchor = gsAnchor;
+    static unsigned audited;
+    int audit = Port_TagBattleRenderActive() && getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_PRESENT_AUDIT") && audited < 32;
+    int target = -1;
+    uint32_t before = 0;
 
     if (sBackend == NULL || now - last < 33000000ull) {
         return;
     }
     last = now;
+    for (int i = 0; i < gsTargetCount; ++i) targetDraws[i] = gsTargets[i].draws;
+    if (audit) {
+        target = gGsMainFbp >= 0 ? GsDraw_TargetGet((uint32_t)gGsMainFbp, 0) : -1;
+        before = tag_present_hash(target);
+    }
     gsDrawCount = gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = 0;
     sBackend->frameEnd();
     gsDrawCount = draws;
@@ -79,9 +101,19 @@ void Gs_HoldFrame(void) {
     gsVuVertCount = vuVerts;
     gsVuIdxCount = vuIdx;
     gsVuUniCount = vuUni;
+    gsAnchor = anchor; gsSkipped = skipped; gsNative = native;
+    for (int i = 0; i < gsTargetCount; ++i) gsTargets[i].draws = targetDraws[i];
+    if (audit) {
+        uint32_t after = tag_present_hash(target);
+        fprintf(stderr, "tag hold pixels: frame=%u target=%d pending-draws=%u before=%08X after=%08X stable=%d\n",
+                gGsFrame, target, draws, before, after, before == after);
+        ++audited;
+    }
 }
 extern uint32_t *Bt4MenuHD_Upscale(const uint32_t *, int, int, int);
 static int sMenuHD = 4;
+static int sBootQualityScale = -1, sBootQualityHD;
+extern int Port_GameProfileMenuActive(void);
 static int sSmooth2d = 1; /* the setting "2D filtering" (smooth_2d; BT3_2D_SMOOTH=0/1 wins): 1 smooth */
 static int sWholeFrame; /* the draw being set up shows a frame the game read back (the cross-fade) */
 
@@ -119,6 +151,8 @@ GsTarget gsTargets[MAX_TARGETS];
 int gsTargetCount;
 int gsTexCount;
 unsigned gsFxOff;
+static int sPerformanceMode;
+int GsDraw_PerformanceMode(void) { return sPerformanceMode; }
 int gsGlowPercent = GLOW_DEFAULT;
 int gsGlarePercent = GLOW_DEFAULT;
 int gsSharpBlur = 1; /* the setting "Sharp stage blur" (sharp_blur): see draw_state */
@@ -496,7 +530,7 @@ static GsTex texture_get(int ctx, int menuHd) {
     if (tw > 1024) { tw = 1024; }
     if (th > 1024) { th = 1024; }
     rw = tw; rh = th;
-    menuHd = menuHd && sMenuHD >= 2 && tw >= 16 && th >= 16;
+    menuHd = (menuHd || Port_GameProfileMenuActive()) && sMenuHD >= 2 && tw >= 16 && th >= 16;
     pages = ((tbw ? tbw : 1) * 64 * th * (bits == 24 ? 32 : bits) / 8 + 8191) / 8192;
     /* `gen` identifies the CONTENT: a hash over the pages the texture and its palette occupy */
     for (i = 0; i <= pages; i++) {
@@ -1928,6 +1962,18 @@ void GsGpu_Native(int effect) {
 /* A new resolution multiplier: every render target is dropped and made again at the new size when the game next
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
 static void scale_apply(void) {
+    /* Tag Team uses the user's chosen resolution, as the other battle modes do. */
+    /* Presentation-only quality for the original boot glyphs. Restore the
+     * user's battle resolution and menu-filter preference on leaving it. */
+    if(Port_GameProfileMenuActive() && sBootQualityScale<0){
+        sBootQualityScale=gsPendingScale?gsPendingScale:gsScale;
+        sBootQualityHD=sMenuHD;sMenuHD=4;
+        gsPendingScale=sBootQualityScale<3?3:sBootQualityScale;
+        fprintf(stderr,"bt4: language selector quality: original glyphs, 4x artwork, minimum 3x target\n");
+    }else if(!Port_GameProfileMenuActive() && sBootQualityScale>=0){
+        gsPendingScale=sBootQualityScale;sMenuHD=sBootQualityHD;sBootQualityScale=-1;
+        fprintf(stderr,"bt4: language selector quality: restored game settings\n");
+    }
     if (gsPendingScale == 0 || gsPendingScale == gsScale) {
         gsPendingScale = 0;
         return;
@@ -2023,6 +2069,9 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
 }
 
 SDL_Window *GsDraw_Window(void) { return sWindow; }
+void GsDraw_WindowDestroy(void) {
+    if (sWindow) { SDL_DestroyWindow(sWindow); sWindow = NULL; }
+}
 
 void GsDraw_WindowShape(void) {
     float want = (float)Port_AspectMilli() / 1000.0f;
@@ -2060,7 +2109,7 @@ int Port_FxOff(int bit) {
 }
 
 void GsGpu_GetSettings(PortVideo *v) {
-    v->scale = gsPendingScale ? gsPendingScale : gsScale;
+    v->scale = sBootQualityScale>=0?sBootQualityScale:(gsPendingScale ? gsPendingScale : gsScale);
     v->aspectMilli = Port_AspectMilli();
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
@@ -2085,10 +2134,18 @@ void GsGpu_GetSettings(PortVideo *v) {
 
 /* Applies what differs from the current state, all of it at once, and keeps it for the next run. */
 void GsGpu_SetSettings(const PortVideo *v) {
+    PortVideo limited;
+    if (sPerformanceMode) {
+        limited = *v; limited.scale = 1; limited.fxOff |= 1 | 2 | 32;
+        limited.glow = 15; limited.glare = 0; limited.sharpBlur = 0; limited.texPack = 0;
+        v = &limited;
+    }
     PortVideo now;
     GsGpu_GetSettings(&now);
     if (v->scale != now.scale) {
-        gsPendingScale = v->scale < 1 ? 1 : v->scale > 8 ? 8 : v->scale; /* applied between two frames */
+        int requested=v->scale<1?1:v->scale>8?8:v->scale;
+        if(sBootQualityScale>=0){sBootQualityScale=requested;gsPendingScale=requested<3?3:requested;}
+        else gsPendingScale=requested; /* applied between two frames */
     }
     if (v->aspectMilli != now.aspectMilli) {
         Port_SetAspectMilli(v->aspectMilli);
@@ -2129,14 +2186,14 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("menu_font_id", MenuText_FontIdToSave());
     sSmooth2d = v->smooth2d != 0;
     Port_SettingSave("smooth_2d", sSmooth2d);
-    Port_SettingSave("texture_pack", sTexPackOn);
-    Port_SettingSave("scale", gsPendingScale ? gsPendingScale : gsScale);
+    if (!sPerformanceMode) Port_SettingSave("texture_pack", sTexPackOn);
+    if (!sPerformanceMode) Port_SettingSave("scale", sBootQualityScale>=0?sBootQualityScale:(gsPendingScale ? gsPendingScale : gsScale));
     Port_SettingSave("aspect_milli", Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
-    Port_SettingSave("fx_off", (int)gsFxOff);
-    Port_SettingSave("glow", gsGlowPercent);
-    Port_SettingSave("glare", gsGlarePercent);
-    Port_SettingSave("sharp_blur", gsSharpBlur);
+    if (!sPerformanceMode) Port_SettingSave("fx_off", (int)gsFxOff);
+    if (!sPerformanceMode) Port_SettingSave("glow", gsGlowPercent);
+    if (!sPerformanceMode) Port_SettingSave("glare", gsGlarePercent);
+    if (!sPerformanceMode) Port_SettingSave("sharp_blur", gsSharpBlur);
     Port_SettingSave("music", gPortMusicPercent);
     Port_SettingSave("effects", gPortSePercent);
     Port_SettingSave("voices", gPortVoicePercent);
@@ -2158,38 +2215,56 @@ int GsGpu_Init(void) {
     gsVuIdx = malloc(MAX_VU_IDX * sizeof(uint32_t));
     gsVuUni = malloc(MAX_VU_UNIFORMS * sizeof(Vu0Uniform));
     gsDraws = malloc(MAX_DRAWS * sizeof(GsDraw));
-    /* BT3_GPU_API=vulkan|gl|auto picks the back end. Both are complete renderers of the same list, so a
-       picture from either should be the same (see the frame-by-frame compare in the port's docs). */
+    /* Saved choices fall back if unavailable; an explicit test/API request is strict. */
     if (api == NULL || strcmp(api, "auto") == 0) {
-        /* the settings window's choice (Renderer; Vulkan unless OpenGL was picked there) */
-        sb = Port_Setting("gpu_api", 0) == 1 ? &sGlBackend : &sVulkanBackend;
+        int saved = Port_Setting("gpu_api", 0);
+        sb = saved == 1 ? &sGlBackend : &sVulkanBackend;
+#ifdef _WIN32
+        if (saved == 2) { sb = &sDirect3D12Backend; }
+        if (saved == 3 || saved == 4) {
+            sb=&sDirect3D12Backend;Port_SettingSave("gpu_api",2);Port_SettingsWrite();
+            fprintf(stderr,"bt4: retired DirectX preference migrated to DirectX 12\n");
+        }
+#endif
         api = NULL;
     } else if (strcmp(api, "vk") == 0 || strcmp(api, "vulkan") == 0) {
         sb = &sVulkanBackend;
     } else if (strcmp(api, "gl") == 0 || strcmp(api, "opengl") == 0) {
         sb = &sGlBackend;
+#ifdef _WIN32
+    } else if (strcmp(api, "dx9") == 0 || strcmp(api, "direct3d9") == 0) {
+        sb = &sDirect3D12Backend; /* retired legacy request */
+    } else if (strcmp(api, "dx11") == 0 || strcmp(api, "direct3d11") == 0) {
+        sb = &sDirect3D12Backend; /* retired legacy request */
+    } else if (strcmp(api, "dx12") == 0 || strcmp(api, "direct3d12") == 0) {
+        sb = &sDirect3D12Backend;
+#endif
     } else {
-        fprintf(stderr, "bt3: unknown BT3_GPU_API=%s (try vulkan, gl or auto)\n", api);
+        fprintf(stderr, "bt3: unknown BT3_GPU_API=%s (try vulkan, gl, dx12 or auto)\n", api);
         return 0;
     }
+    int qualityScale = gsScale;
+#ifdef _WIN32
+    sPerformanceMode = sb == &sDirect3D9Backend && !getenv("BT4_DX9_QUALITY_TEST");
+    if (sPerformanceMode) gsScale = 1;
+#endif
     sBackend = sb;
     if (!sb->init()) {
-        /* The chosen renderer cannot start (no Vulkan driver, an old graphics card): the other one is tried,
-           unless one was asked for by name. */
-        GsBackend *other = sb == &sVulkanBackend ? &sGlBackend : &sVulkanBackend;
+        gsScale = qualityScale; sPerformanceMode = 0;
         sBackend = NULL;
-        if (api != NULL) {
-            return 0;
+        if (api != NULL) { return 0; }
+        if (sb != &sVulkanBackend) {
+            fprintf(stderr, "bt3: %s unavailable; trying Vulkan\n", sb->name);
+            sb = &sVulkanBackend; sBackend = sb;
+            if (sb->init()) { goto renderer_ready; }
         }
-        fprintf(stderr, "bt3: the %s renderer could not start; trying %s\n", sb == &sVulkanBackend ? "Vulkan" : "OpenGL",
-                other == &sVulkanBackend ? "Vulkan" : "OpenGL");
-        sb = other;
-        sBackend = sb;
-        if (!sb->init()) {
-            sBackend = NULL;
-            return 0;
-        }
+        fprintf(stderr, "bt3: Vulkan unavailable; trying OpenGL\n");
+        sb = &sGlBackend; sBackend = sb;
+        if (!sb->init()) { sBackend = NULL; return 0; }
     }
+renderer_ready:
+    { extern int Port_GameProfileEnglish(void);
+      fprintf(stderr,"bt4: game profile=%s data=%s\n",Port_GameProfileEnglish()?"English":"Spanish",getenv("BT3_DATA")?getenv("BT3_DATA"):"gamedata"); }
     gsWhite = sb->whiteTex();
     gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 63;
     gsGlowPercent = getenv("BT3_GLOW") != NULL ? atoi(getenv("BT3_GLOW")) : Port_Setting("glow", GLOW_DEFAULT);
@@ -2203,6 +2278,13 @@ int GsGpu_Init(void) {
     MenuText_SetSharedFontId(Port_Setting("text_font_id", 0));
     sTexPackOn = Port_Setting("texture_pack", 1) != 0;
     sSmooth2d = getenv("BT3_2D_SMOOTH") != NULL ? atoi(getenv("BT3_2D_SMOOTH")) != 0 : Port_Setting("smooth_2d", 1) != 0;
+    if (sPerformanceMode) {
+        extern int gsInterp; gsInterp = 0;
+        gsFxOff |= 1u | 2u | 32u; /* outline, glare, camera blur; keep attack effects */
+        gsGlowPercent = 15; gsGlarePercent = 0; gsSharpBlur = 0;
+        sTexPackOn = 0; if (sMenuHD > 2) sMenuHD = 2;
+        fprintf(stderr,"bt4: DX9 Performance: scale=1 outline=off glare=off camera-blur=off texture-pack=off\n");
+    }
     gPortMusicPercent = Port_Setting("music", 100);
     gPortSePercent = Port_Setting("effects", 100);
 
@@ -4594,9 +4676,16 @@ static void skip_decide(void) {
     extern int Port_PaceBehindUs(void);        /* plat_stub.c */
     extern volatile int gPortNetWindowClose;   /* (any picture the settings or online window waits for is shown) */
     extern int gPortOverlayOpen;
+    extern int Port_TagCatchup(void);
     int behind = Port_PaceBehindUs();
     int skip = GsDraw_FrameSkip() && getenv("BT3_UNCAPPED") == NULL && getenv("BT3_SHOT") == NULL && !gPortOverlayOpen &&
                behind > (int)(Port_BlankNs() / 1000ull) && sSkipRun < 4;
+
+    /* Consume every authoritative simulation step after a local stall, but
+     * render one complete picture per five steps while catching up. This is
+     * separate from interpolation and does not reduce the chosen resolution. */
+    if(Port_TagBattleRenderActive() && Port_TagCatchup() && !gPortOverlayOpen)
+        skip=sSkipRun<4;
 
     if (getenv("BT3_SKIP_FORCE") != NULL) { /* testing: every other tick is left out, whatever the clock says */
         skip = sSkipRun == 0;
@@ -4616,7 +4705,7 @@ void GsGpu_FrameEnd(void) {
     if(Port_TagBattleRenderActive()){
         static int reported;
         sInterpNext=0;sInterpPrevCount=sInterpPrevPrimCount=0;
-        if(!reported&&gsInterp>0&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RENDER_AUDIT")){
+        if(!reported&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RENDER_AUDIT")){
             reported=1;fprintf(stderr,"tag render audit: native-frames=1 interpolation-requested=%d interpolation-history=0\n",gsInterp);
         }
     }

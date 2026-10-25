@@ -413,6 +413,10 @@ void BtlChar_StopVoiceOnFlag(BtlCharGetChr *chr) {
             return;
         }
     }
+#ifdef PORT
+    {extern s32 TagBattle_Active(void);extern void Port_ActorAdxStop(s32,s32);
+     if(TagBattle_Active()){if(BtlChar_TestFlag(chr,0x129))Port_ActorAdxStop(chr->player,1);return;}}
+#endif
     if (BtlChar_TestFlag(chr, 0x129) && !Voice_IsStopped(chr->player & 1)) {
         Voice_Stop(chr->player & 1);
     }

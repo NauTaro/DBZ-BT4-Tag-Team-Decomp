@@ -57,7 +57,8 @@ s32 BtlPause_CheckOpen(void) {
 #ifdef PORT
         /* (online nothing stops the fight, btl_seq.c: a pad pulled out does not either) */
         extern int Port_NetActive(void);
-        if (Port_NetActive()) {
+        extern int TagBattle_Network(void);
+        if (Port_NetActive() || TagBattle_Network()) {
             return 0;
         }
 #endif

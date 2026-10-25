@@ -1,27 +1,48 @@
-# BT4 game-data profile
+# BT4 native profile
 
-DBZ BT4 Tag Team Recomp targets **BT4 B14 Rev2** and uses the native PC runtime
-from Tenkaichi3Decomp `v0.1.38.1`. The upstream revision is recorded in
-[UPSTREAM_LOCK.json](UPSTREAM_LOCK.json).
+The current Windows package targets BT4 B14 Rev2, with verified LATINO and
+English data tables. The underlying Tenkaichi3Decomp engine provenance is in
+[UPSTREAM_LOCK.json](UPSTREAM_LOCK.json). Source and runtime licenses remain
+in the repository and release package.
 
-## Game data
+## Data and language installation
 
-The launcher extracts data from the player's compatible ISO. Game data, saves
-and settings remain in the installation and are excluded from this repository.
-The BT4 resource loader supports four archive ranges, expanded character resources
-and the corresponding menu textures. Resource verification is implemented in
-`port/src/plat_verify.c` and `port/src/plat_verify_tab.h`.
+`port/setup/native.cpp` verifies and extracts the chosen compatible ISO.
+`language_install.inc` adds the alternate language when both are requested.
+`language_packages.h` pins the exact private release assets, sizes and SHA-256
+values. Downloads use the official GitHub CLI and the user's authorization.
+No account credential is part of the package. Per-entry CRC checks and a hidden
+fight run before an alternate installation is marked complete.
 
-## Version compatibility
+`tbo/languages.ini` records Spanish (1), English (2) or both (3). Runtime profile
+selection uses `game_profile.c`; only a two-language installation presents the
+startup selector. Text and voices switch together.
 
-The R16 RC1 build identity is defined in `port/include/bt4_build_identity.h` and
-`port/release/BT4_VERSION.txt`. Duel networking uses protocol `0x4254340E`;
-Tag Team uses `0x54540007`. Players in the same session must use the same revision.
+## Online compatibility and timing
 
-## Runtime layout
+The compatibility family is `BT4-B14-Rev2-sim1`. The base-data check reads the
+three verified program resources once per process, rather than treating the
+displayed R revision as a gameplay identity. This is not a full roster audit or
+compatibility with arbitrary other BT4 modifications.
 
-`port/release/PORTABLE_LAYOUT.json` defines the installation layout. Updates
-replace program files while retaining `gamedata`, `saves`, `net_session`,
-`bt3_settings.txt` and `online_name.txt`.
+Tag Team includes up to ten actor identities and gameplay state in detailed
+sync samples. The Worker and client share the room kernel. When supported by
+all connected clients, the server commits input at 34.2 simulation steps/second
+(114% of the original 30 Hz simulation). Missing input is neutral for that seat;
+late packets do not rewrite committed history. The Tag Team FPS meter reports
+measured ping. Rendering uses the selected resolution scale.
 
-See the [PC port guide](docs/port/README.md) for development requirements.
+## Maps and presentation
+
+BT4 owns native stage IDs 0 through 98. Offline custom stages append at 99,
+with up to 26 slots. A same-name PNG supplies native thumbnail and preview
+packets; the map name uses glyphs from the selected ISO's original atlas.
+
+## Recorded validation for the current package
+
+Four native mixed-language clients reached 1,200 common simulation frames on
+the production service without hash mismatches. A normal ES/EN room-code fight
+also passed. Both private language downloads, both directions of alternate
+language installation and six profile-selection combinations were checked.
+The exact four-PC disconnect originally reported was not reproduced by these
+local tests. Full story and roster coverage is not claimed.

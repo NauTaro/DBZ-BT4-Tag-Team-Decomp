@@ -67,12 +67,29 @@ static s32 TagAudit_RushCuts(void){
     printf("tag rush audit: checks=%d failures=%d\n",sTagAuditChecks,sTagAuditFailures);return sTagAuditFailures;
 }
 #include "tag_team_camera_audit.inc"
+static s32 TagAudit_WarpPrediction(void){
+    extern void BtlOpp_GetPoseVec30(void *,void *),BtlOpp_GetVelocity(void *,void *);
+    extern void BtlMove_WarpBehindOpponent(void *,f32);
+    s32 target=TagBattle_Target(0);BtlMgrChr *c=BtlChar_Get(target);TagAuditVec velocity={80,0,80,0},got,before,after;
+    sTagAuditChecks=sTagAuditFailures=0;TagAudit_Clear();
+    memcpy(BtlChar_GetPos(c)->unk30,&velocity,sizeof(velocity));memcpy(BtlChar_GetPos(c)->unk40,&velocity,sizeof(velocity));
+    c->freeze=2;BtlOpp_GetPoseVec30(BtlChar_Get(0),&got);
+    TagAudit_Check("held_target_has_no_predicted_delta",got.x==0&&got.y==0&&got.z==0);
+    BtlOpp_GetVelocity(BtlChar_Get(0),&got);TagAudit_Check("held_target_has_no_predicted_velocity",got.x==0&&got.y==0&&got.z==0);
+    BtlCharApi_GetBasePos(c->objId,&before);BtlMove_WarpBehindOpponent(BtlChar_Get(0),0.f);
+    memcpy(&after,BtlChar_GetPos(BtlChar_Get(0)),sizeof(after));
+    TagAudit_Check("back_kick_warp_stays_next_to_held_victim",(after.x-before.x)*(after.x-before.x)+(after.z-before.z)*(after.z-before.z)<900.f);
+    c->freeze=0;BtlOpp_GetPoseVec30(BtlChar_Get(0),&got);TagAudit_Check("moving_target_keeps_original_prediction",got.x==80&&got.z==80);
+    printf("tag warp audit: checks=%d failures=%d\n",sTagAuditChecks,sTagAuditFailures);return sTagAuditFailures;
+}
 s32 TagBattle_RunCombatAudit(void){
     extern void BtlSuper_RequestHitStop(BtlMgrChr *,s32),BtlAct_UpdateTimers(BtlMgrChr *),BtlAct_UpdateGauges(BtlMgrChr *);
     extern s32 BtlAnim_GetFlags(s32),BtlSeq_CheckBattleEnd(void);
     extern void BtlCharApi_GetNodePos(s32,s32,void *);
     s32 i,teamA[10],teamB[10],na=0,nb=0,n=BtlChar_GetCount();TagAuditVec a,b;f32 d;
     sTagAuditChecks=sTagAuditFailures=0;
+    if(getenv("BT4_TAG_AUDIO_AUDIT")){extern s32 BtlCharSnd_RunAudit(void);return BtlCharSnd_RunAudit();}
+    if(getenv("BT4_TAG_WARP_AUDIT"))return TagAudit_WarpPrediction();
     if(getenv("BT4_TAG_CAMERA_AUDIT"))return TagAudit_CameraPolicy();
     if(getenv("BT4_TAG_RUSH_AUDIT"))return TagAudit_RushCuts();
     if(getenv("BT4_TAG_DEFAULT_AUDIT"))return TagAudit_DefaultCuts();

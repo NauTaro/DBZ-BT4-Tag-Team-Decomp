@@ -100,6 +100,18 @@ int Port_PaceBehindUs(void) {
     return sPaceNext != 0 && t > sPaceNext && t - sPaceNext < 100000000ull ? (int)((t - sPaceNext) / 1000ull) : 0;
 }
 
+/* Lockstep network waits do not advance the game's clock. Remove only their
+   contribution to an overdue presentation deadline, so frame skipping does
+   not treat network latency as a graphics backlog. */
+void Port_PaceNetworkResume(unsigned long long waited) {
+    unsigned long long t = now_ns();
+    if (sPaceNext != 0 && t > sPaceNext) {
+        unsigned long long behind = t - sPaceNext;
+        sPaceNext += waited < behind ? waited : behind;
+    }
+    gPortSleptNs += waited;
+}
+
 /* The game's pace, 1000 = its own. Online it is the match's and nothing else (gs/net.c: 1000 or 1200, the same on
    both copies); otherwise the player's own "Game speed" of the Cheats tab (setting game_speed, percent, 50..200),
    which an online match never reads. Like the match's speed it is the vertical blanks' pace and the pitch of what
@@ -125,6 +137,8 @@ void Port_GameSpeedSet(int percent) {
     }
 }
 int Port_SpeedMilli(void) {
+    extern int Port_TagBattleRenderActive(void);
+    if(Port_TagBattleRenderActive())return 1140;
     return Port_NetSession() || Port_NetActive() ? Port_NetSpeedMilli() : Port_GameSpeed() * 10;
 }
 /* BT3_LAG_LOG=1: when things happen in a tick, in microseconds since the start: V a vertical blank (after its wait),
@@ -305,7 +319,12 @@ void Port_VBlank(void) {
                those due before this blank now, those due at it after the wait */
             extern void GsGpu_InterpPump(int ahead_ms, int all);
             extern int gsInterp; /* gs/gs_draw.c: in-between pictures (their timing counts from the blanks) */
+            extern int Port_TagCatchup(void);
             int timed = (GsGpu_Enabled() || getenv("BT3_PACED") != NULL) && getenv("BT3_UNCAPPED") == NULL && !warp && !again;
+            /* A paced Tag client already has these simulation steps waiting
+             * in its authoritative queue. Waiting for local vblanks again
+             * would prevent it from recovering from a render/network stall. */
+            if(Port_TagCatchup()) {timed=0;sLateOwed=0;sPaceNext=0;}
             /* (not while blanks are run again after a rollback or run ahead for an online session: those are
                not shown and not timed, and waiting for a picture here would slow the catching up) */
             if (timed && Port_LateInput() && !Port_NetSession() && sLateOwed < 2) {

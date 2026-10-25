@@ -1,6 +1,7 @@
 #include <stdio.h>
 extern int Port_TagTeams(int,int),Port_TagSlot(int,int,int),Port_TagSlots(void),Port_TagTeam(int),Port_TagTeamIndex(int),Port_TagTeamCount(int),Port_TagTeamSlots(int),Port_TagCanStart(void);
 #include "common.h"
+#include "../../port/src/gs/online_language.h"
 #include "menu/menu_e.h"
 #include "sys/pad.h"
 #include "sys/save.h"
@@ -490,7 +491,7 @@ static void Tb_DelayText(char *out, s32 delay) {
     if (delay < 0) {
         sprintf(out, "Automatic");
     } else {
-        sprintf(out, "%d frame", (int)delay);
+        sprintf(out, (char *)PortOnline_Text("%d frame"), (int)delay);
         if (delay != 1) {
             Ps_Cat(out, "s", 32);
         }
@@ -503,7 +504,7 @@ static void Tb_RollText(char *out, s32 roll) {
     } else if (roll <= 0) {
         sprintf(out, "Off");
     } else {
-        sprintf(out, "Up to %d frames", (int)roll);
+        sprintf(out, (char *)PortOnline_Text("Up to %d frames"), (int)roll);
     }
 }
 
@@ -515,7 +516,7 @@ static void Tb_RollText(char *out, s32 roll) {
 static s32 Tb_Vanilla(void) {
     extern s32 Port_DataState(void);
     if(Port_DataState()==1)return 1;
-    Tb_Note("This is an old or incompatible version. Please update the complete BT4 launcher.");
+    Tb_Note("BT4 base data is missing or unsupported. Repair the game data with Install.exe.");
     Snd_PlaySe(1,2);return 0;
 }
 
@@ -1334,6 +1335,10 @@ static f32 Tb_HubRowEnd(s32 i) {
     return 270.0f - 7.0f * (f32)i; /* the bars cascade: each a little shorter than the one above */
 }
 
+static f32 Tb_HubBadgeWidth(void){
+    f32 width=Ps_TextWidth("SOON",0.34f)+12.0f;
+    return width<40?40:width>90?90:width;
+}
 static void Tb_DrawHub(void) {
     s32 i;
     f32 slide = (1.0f - Tb_In(0)) * -160.0f;
@@ -1352,7 +1357,7 @@ static void Tb_DrawHub(void) {
     Ps_Pill(TBO_KIT_SEL, TB_BAR_LEFT + slide, sTb->hubY - 3.0f, Tb_HubRowEnd(sTb->hubCur) + 22.0f + slide, sTb->hubY + 27.0f, 0x80);
     for (i = 0; i < HUB_COUNT; i++) {
         if (!sTbHubReady[i]) {
-            Ps_Pill(TBO_KIT_STEEL, Tb_HubRowEnd(i) - 46.0f + slide + (i == sTb->hubCur ? 18.0f : 0.0f), Tb_HubRowY(i) + 5.0f,
+            Ps_Pill(TBO_KIT_STEEL, Tb_HubRowEnd(i) - 6.0f - Tb_HubBadgeWidth() + slide + (i == sTb->hubCur ? 18.0f : 0.0f), Tb_HubRowY(i) + 5.0f,
                     Tb_HubRowEnd(i) - 6.0f + slide + (i == sTb->hubCur ? 18.0f : 0.0f), Tb_HubRowY(i) + 19.0f, 0x80);
         }
     }
@@ -1367,14 +1372,14 @@ static void Tb_DrawHubText(void) {
 
         /* each label's capitals in the middle of its bar (the bar under the cursor: hubY - 3 to hubY + 27) */
         if (i == sTb->hubCur) {
-            Ps_Text(36.0f + slide, Ps_TextTop(sTb->hubY + 12.0f, 0.84f), sTbHubName[i], 0.84f, 0.0f, 1);
+            Ps_Text(36.0f + slide, Ps_TextTop(sTb->hubY + 12.0f, 0.84f), sTbHubName[i], 0.84f, Tb_HubRowEnd(i)-42.0f-(sTbHubReady[i]?0:Tb_HubBadgeWidth()+8), 1);
         } else {
-            Ps_Text(36.0f + slide, Ps_TextTop(y + 12.0f, 0.7f), sTbHubName[i], 0.7f, 0.0f, sTbHubReady[i] ? 0 : 4);
+            Ps_Text(36.0f + slide, Ps_TextTop(y + 12.0f, 0.7f), sTbHubName[i], 0.7f, Tb_HubRowEnd(i)-42.0f-(sTbHubReady[i]?0:Tb_HubBadgeWidth()+8), sTbHubReady[i] ? 0 : 4);
         }
         if (!sTbHubReady[i]) {
             Ps_Align(1);
-            Ps_Text(Tb_HubRowEnd(i) - 26.0f + slide + (i == sTb->hubCur ? 18.0f : 0.0f), Ps_TextTop(Tb_HubRowY(i) + 12.0f, 0.42f), "SOON", 0.42f,
-                    0.0f, 4);
+            Ps_Text(Tb_HubRowEnd(i) - 6.0f - Tb_HubBadgeWidth()*0.5f + slide + (i == sTb->hubCur ? 18.0f : 0.0f), Ps_TextTop(Tb_HubRowY(i) + 12.0f, 0.34f), "SOON", 0.34f,
+                    Tb_HubBadgeWidth()-10.0f, 4);
             Ps_Align(0);
         }
     }
@@ -1435,8 +1440,8 @@ static void Tb_DrawTagText(void){
     Ps_Text(26,65,"SIMULTANEOUS TEAM BATTLES",.47f,274,2);
     for(i=0;i<8;++i){f32 y=84+29.0f*i;
         Ps_Text(36,Ps_TextTop(y+11,.56f),labels[i],.56f,126,i==sTb->tagCur?1:0);value[0]=0;
-        if(i==0)sprintf(value,sTb->tagLeft==1?"%d slot":"%d slots",sTb->tagLeft);if(i==1)sprintf(value,sTb->tagRight==1?"%d slot":"%d slots",sTb->tagRight);
-        if(i==2)Ps_Copy(value,sTagTime[sTb->time],48);if(i==3)sprintf(value,"%d frames",sTb->tagDelay);
+        if(i==0)sprintf(value,sTb->tagLeft==1?(char *)PortOnline_Text("%d slot"):(char *)PortOnline_Text("%d slots"),sTb->tagLeft);if(i==1)sprintf(value,sTb->tagRight==1?(char *)PortOnline_Text("%d slot"):(char *)PortOnline_Text("%d slots"),sTb->tagRight);
+        if(i==2)Ps_Copy(value,sTagTime[sTb->time],48);if(i==3)sprintf(value,(char *)PortOnline_Text("%d frames"),sTb->tagDelay);
         if(i==4)Ps_Copy(value,sTb->tagCPU?"CPU":"Open",48);if(i==5)Ps_Copy(value,sTagDifficulty[sTb->tagDifficulty],48);
         Ps_Align(2);Ps_Text(278,Ps_TextTop(y+11,.51f),value,.51f,104,3);Ps_Align(0);
     }
@@ -1450,23 +1455,23 @@ static void Tb_DrawTagRoom(void){
 }
 static void Tb_DrawTagRoomText(void){
     char line[128];s32 i;
-    sprintf(line,"ROOM %s  |  %d/%d FIGHTERS",Port_TagCode()[0]?Port_TagCode():"......",Port_TagCount(),Port_TagSlots());
+    sprintf(line,(char *)PortOnline_Text("ROOM %s  |  %d/%d FIGHTERS"),Port_TagCode()[0]?Port_TagCode():"......",Port_TagCount(),Port_TagSlots());
     Ps_Align(1);Ps_Text(256,66,line,.56f,460,3);Ps_Align(0);
     if(sTb->tagChatTyping){
         Ps_Text(44,107,"ROOM CHAT",.65f,410,3);
-        for(i=0;i<Port_TagChatCount();++i)Ps_Text(44,141+i*20,(char*)Port_TagChatLine(i),.43f,420,0);
-        Ps_Text(48,284,sTb->tagChatLen?sTb->tagChat:"Type a message...",.46f,410,sTb->tagChatLen?0:4);
+        for(i=0;i<Port_TagChatCount();++i)Ps_TextRaw(44,141+i*20,(char*)Port_TagChatLine(i),.43f,420,0);
+        if(sTb->tagChatLen)Ps_TextRaw(48,284,sTb->tagChat,.46f,410,0);else Ps_Text(48,284,"Type a message...",.46f,410,4);
         Ps_Text(44,309,"ENTER: SEND   |   ESC: CLOSE",.35f,410,3);return;
     }
     Ps_Text(28,90,"TEAM 1",.64f,200,3);Ps_Text(278,90,"TEAM 2",.64f,200,1);
     for(i=0;i<Port_TagSlots();++i){const char *name=Port_TagPlayerName(i);f32 x=Port_TagTeam(i)?278:28,y=123+21.0f*Port_TagTeamIndex(i);
         if(Port_TagCPU(i))sprintf(line,"%d  CPU %02d",Port_TagTeamIndex(i)+1,Port_TagTeamIndex(i)+1);
-        else sprintf(line,"%d  %s%s",Port_TagTeamIndex(i)+1,name[0]?name:"Empty",i==Port_TagSeat()?" (YOU)":"");
-        Ps_Text(x,y,line,.48f,122,i==sTb->tagRoomCur?1:name[0]?0:4);
+        else sprintf(line,"%d  %s%s",Port_TagTeamIndex(i)+1,name[0]?name:(char *)PortOnline_Text("Empty"),i==Port_TagSeat()?(char *)PortOnline_Text(" (YOU)"):"");
+        Ps_TextRaw(x,y,line,.48f,122,i==sTb->tagRoomCur?1:name[0]?0:4);
         if(Port_TagCPU(i)){Ps_Align(2);Ps_Text(x+204,y,sTagDifficulty[Port_TagDifficulty(i)],.36f,78,3);Ps_Align(0);}
     }
     if(Port_TagNetwork()){Ps_Align(1);Ps_Text(256,106,"SELECT: COPY CODE",.33f,220,0);Ps_Align(0);}
-    if(Port_TagChatCount())Ps_Text(24,326,(char*)Port_TagChatLine(Port_TagChatCount()-1),.42f,464,0);
+    if(Port_TagChatCount())Ps_TextRaw(24,326,(char*)Port_TagChatLine(Port_TagChatCount()-1),.42f,464,0);
 }
 static void Tb_DrawJoin(void) {
     s32 c;
@@ -1521,14 +1526,14 @@ static void Tb_DrawWaitText(void) {
         Ps_Text(22.0f, 172.0f, "THE SERVICE PAIRS YOU", 0.46f, 150.0f, 0);
         Ps_Text(22.0f, 190.0f, "WITH THE NEXT RIVAL", 0.46f, 150.0f, 0);
         if (n > 0) {
-            sprintf(line, "%d IN THIS QUEUE", (int)n);
+            sprintf(line, (char *)PortOnline_Text("%d IN THIS QUEUE"), (int)n);
             Ps_Text(22.0f, 214.0f, line, 0.42f, 150.0f, 5);
         }
     } else if (sTb->host) {
         Ps_Text(22.0f, 94.0f, "ROOM CODE", 0.56f, 0.0f, 0);
         Ps_Align(1);
         if (code[0] != 0) {
-            Ps_Text(95.0f, 120.0f, (char *)code, 1.2f, 156.0f, 0);
+            Ps_TextRaw(95.0f, 120.0f, (char *)code, 1.2f, 156.0f, 0);
         } else {
             Ps_Text(95.0f, 130.0f, "GETTING A CODE...", 0.5f, 156.0f, 0);
         }
@@ -1541,7 +1546,7 @@ static void Tb_DrawWaitText(void) {
     } else {
         Ps_Text(22.0f, 94.0f, "JOINING ROOM", 0.56f, 0.0f, 0);
         Ps_Align(1);
-        Ps_Text(95.0f, 120.0f, sTb->code, 1.2f, 156.0f, 0);
+        Ps_TextRaw(95.0f, 120.0f, sTb->code, 1.2f, 156.0f, 0);
         Ps_Align(0);
         Ps_Text(22.0f, 172.0f, "LOOKING FOR", 0.46f, 150.0f, 0);
         Ps_Text(22.0f, 190.0f, "THE HOST...", 0.46f, 150.0f, 0);
@@ -1550,7 +1555,7 @@ static void Tb_DrawWaitText(void) {
     if (sTb->found) {
         Ps_Text(262.0f, 302.0f, "YOUR RIVAL IS HERE!", 0.56f, 164.0f, 5);
     } else {
-        sprintf(line, "SEARCHING...  %d:%02d", (int)(secs / 60), (int)(secs % 60));
+        sprintf(line, (char *)PortOnline_Text(sTb->host==2?"SEARCHING...  %d:%02d":"WAITING...  %d:%02d"), (int)(secs / 60), (int)(secs % 60));
         Ps_Text(262.0f, 302.0f, line, 0.52f, 164.0f, 0);
     }
     Ps_Align(0);
@@ -1613,7 +1618,7 @@ static void Tb_DrawName(void) {
     Ps_Pill(TBO_KIT_BAR, 84.0f, 94.0f, 428.0f, 124.0f, 0x80);
     Ps_Copy(line, sTb->typed, 40);
     Ps_Cat(line, (sTb->frames / 16) & 1 ? "_" : " ", 40);
-    Ps_Text(100.0f, 97.0f, line, 0.86f, 310.0f, 1);
+    Ps_TextRaw(100.0f, 97.0f, line, 0.86f, 310.0f, 1);
     Tb_Keypad(94.0f, 134.0f, NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4);
 }
 
@@ -1636,7 +1641,7 @@ static void Tb_DrawSparText(void) {
     Ps_Text(266.0f, 151.0f, Tb_Fighter(sTb->spFoe), 0.54f, 170.0f, 3);
     Ps_Align(0);
     Ps_Text(28.0f, 240.0f, sTb->host == 2 ? "QUICK MATCH SEARCH" : sTb->host ? "YOUR ROOM IS OPEN" : "JOINING A ROOM", 0.5f, 260.0f, 2);
-    sprintf(line, "SEARCHING  %d:%02d", (int)(secs / 60), (int)(secs % 60));
+    sprintf(line, (char *)PortOnline_Text("SEARCHING  %d:%02d"), (int)(secs / 60), (int)(secs % 60));
     Ps_Text(28.0f, 264.0f, line, 0.52f, 260.0f, 5);
     Ps_Text(28.0f, 292.0f, "THE MATCH STARTS THE MOMENT", 0.42f, 260.0f, 0);
     Ps_Text(28.0f, 308.0f, "YOUR RIVAL ARRIVES", 0.42f, 260.0f, 0);
@@ -1666,13 +1671,13 @@ static void Tb_DrawQuickText(void) {
         if (n < 0) {
             sprintf(line, "...");
         } else {
-            sprintf(line, "%d WAITING", (int)n);
+            sprintf(line, (char *)PortOnline_Text("%d WAITING"), (int)n);
         }
         Ps_Align(2);
         Ps_Text(286.0f, 236.0f + 26.0f * (f32)q, line, 0.5f, 120.0f, n > 0 ? 5 : 3);
         Ps_Align(0);
     }
-    sprintf(line, "NO TIME LIMIT - %d%% SPEED", (int)Port_NetSpeedStandard());
+    sprintf(line, (char *)PortOnline_Text("NO TIME LIMIT - %d%% SPEED"), (int)Port_NetSpeedStandard());
     Ps_Text(28.0f, 296.0f, line, 0.46f, 260.0f, 3);
 }
 
@@ -1693,7 +1698,7 @@ static void Tb_DrawProfileText(void) {
 
         Ps_Text(36.0f, Ps_TextTop(y + 13.0f, 0.66f), label[i], 0.66f, 110.0f, i == sTb->prCur ? 1 : 0);
         Ps_Align(2);
-        Ps_Text(266.0f, Ps_TextTop(y + 13.0f, 0.54f), value[i], 0.54f, 140.0f, 3);
+        Ps_TextRaw(266.0f, Ps_TextTop(y + 13.0f, 0.54f), value[i], 0.54f, 140.0f, 3);
         Ps_Align(0);
     }
 }
@@ -1727,13 +1732,16 @@ static char *Tb_Help(void) {
     case TB_JOIN:
         return sTb->tagJoin?"Enter the six-character room code or paste it from the clipboard, then confirm to join.":"Enter the six-character room code or paste it from the clipboard, then confirm to join.";
     case TB_WAIT:
-        return sTb->found ? "Here we go! The match is starting!" : "Looking for a worthy challenger... Warm up in Training meanwhile!";
+        if(sTb->found)return "Here we go! The match is starting!";
+        if(sTb->host==2)return "Quick Match searches its public queue. It only matches players using the same battle type. To enter a room code, choose Join Room.";
+        if(sTb->host)return "Your private room is open. Share its code; your rival must choose Join Room and enter it. Quick Match does not use room codes.";
+        return "Joining the private room with this code. Wait for the host to connect.";
     case TB_BLOCK:
         return sTb->blockBack==TB_TAG||(sTb->blockBack==TB_JOIN&&sTb->tagJoin)?"Every player needs the same BT4 B14 Rev2 build and verified game data.":"Online fights require the same BT4 B14 Rev2 build and verified data on both computers.";
     case TB_SPAR:
         return "Warm up at the tournament while we search! Pick yourself and a sparring partner.";
     case TB_QUICK:
-        return "Choose a battle type to search for an opponent. Quick Match has no time limit and uses the listed game speed.";
+        return "Press Search to enter the public queue. It only matches players searching the same battle type. To use a room code, choose Join Room.";
     case TB_NAME:
         return "Enter your player name, then choose Done. SQUARE deletes a character; START confirms.";
     case TB_PROFILE:
@@ -1939,7 +1947,7 @@ static u16 *Tb_BoxLine(void) {
     static u16 buf[2][TB_BOX_LINE];
     static char said[TB_BOX_LINE];
     static s32 cur = -1;
-    char *say = Tb_Help();
+    char *say = (char *)PortOnline_Text(Tb_Help());
     u16 *out;
     s32 room;
     s32 n;
@@ -2023,7 +2031,7 @@ static void Tb_DrawHelpCaption(void){
     static unsigned generation;
     static s32 count;
     static f32 scale,lastWidth;
-    char *text=Tb_Help();f32 width=(512.0f-2.0f*Ps_Left())*.72f;
+    char *text=(char *)PortOnline_Text(Tb_Help());f32 width=(512.0f-2.0f*Ps_Left())*.72f;
     unsigned current=PortTbo_TextGeneration();s32 i,same=1;
     for(i=0;text[i]||previous[i];++i)if(text[i]!=previous[i]){same=0;break;}
     if(!same||current!=generation||width!=lastWidth||!count){
@@ -2087,9 +2095,11 @@ static void Tb_Draw(void) {
 
 static void Tb_DrawText(void) {
     char **title = sTbTitle;
+    const char *heading=title[sTb->mode];
+    if(sTb->mode==TB_WAIT&&!sTb->found&&sTb->host!=2)heading=sTb->host?"Room Open":"Joining Room";
 
     /* its capitals centred on the crest beside it (y 32); up to the player card */
-    Ps_Heading(Tb_TitleLeft() + 44.0f, Ps_TextTop(32.0f, 1.3f), (sTb->mode==TB_JOIN&&sTb->tagJoin)?"Join Room":title[sTb->mode], 1.3f, 248.0f, 0x80);
+    Ps_Heading(Tb_TitleLeft() + 44.0f, Ps_TextTop(32.0f, 1.3f), (char *)PortOnline_Text((sTb->mode==TB_JOIN&&sTb->tagJoin)?"Join Room":heading), 1.3f, 248.0f, 0x80);
     Tb_PageIn(1);
     switch (sTb->mode) {
     case TB_HUB:
@@ -2123,10 +2133,10 @@ static void Tb_DrawText(void) {
     Tb_PageIn(0);
     /* (no status and no title under it: "ONLINE" was not whether the game is connected, and the title is the
        screen's heading) */
-    Ps_Text(322.0f, Ps_TextTop(27.0f, 0.6f), (char *)Port_NetNameGet(), 0.6f, 166.0f, 1);
+    Ps_TextRaw(322.0f, Ps_TextTop(27.0f, 0.6f), (char *)Port_NetNameGet(), 0.6f, 166.0f, 1);
     if (sTb->mode == TB_TAG_ROOM) {
         char occupancy[40];
-        sprintf(occupancy, Port_TagHumans()==1?"%d/%d | %d PLAYER + %d CPU":"%d/%d | %d PLAYERS + %d CPU", Port_TagCount(), Port_TagCapacity(), Port_TagHumans(), Port_TagCount() - Port_TagHumans());
+        sprintf(occupancy, Port_TagHumans()==1?(char *)PortOnline_Text("%d/%d | %d PLAYER + %d CPU"):(char *)PortOnline_Text("%d/%d | %d PLAYERS + %d CPU"), Port_TagCount(), Port_TagCapacity(), Port_TagHumans(), Port_TagCount() - Port_TagHumans());
         Ps_Align(2); Ps_Text(494.0f, 48.0f, occupancy, 0.50f, 190.0f, 3); Ps_Align(0);
     }
     if (sTb->mode == TB_BLOCK) {
@@ -2179,6 +2189,8 @@ static void Tb_WinTerm(void) {
 
 s32 PortTbo_Run(void) {
     s32 train;
+    static s32 returnTestRuns;
+    s32 returnedTest=getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RETURN_TEST")&&returnTestRuns++;
 
     sTb = Heap_Alloc(sizeof(TboScreen), 0x20, 0, 2);
     memset(sTb, 0, sizeof(TboScreen));
@@ -2212,7 +2224,7 @@ s32 PortTbo_Run(void) {
         else if (which[0] == 'h') { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
         else { sTb->host = 1; Tb_SetMode(TB_WAIT); }
     }
-    if (getenv("BT4_TAG_CREATE_TEST") && !getenv("BT4_TAG_VIDEO_TEST")) {
+    if (!returnedTest && getenv("BT4_TAG_CREATE_TEST") && !getenv("BT4_TAG_VIDEO_TEST")) {
         sTb->tagCPU=1; sTb->tagCur=6;
         sTb->tagSize=getenv("BT4_TAG_TEST_SIZE")?atoi(getenv("BT4_TAG_TEST_SIZE")):5;
         sTb->tagLeft=getenv("BT4_TAG_TEST_LEFT")?atoi(getenv("BT4_TAG_TEST_LEFT")):sTb->tagSize;
@@ -2235,7 +2247,7 @@ s32 PortTbo_Run(void) {
         sTb->hubCur=HUB_TAG;sTb->hubY=Tb_HubRowY(HUB_TAG);sTb->tagLeft=sTb->tagRight=2;sTb->tagCPU=1;sTb->tagDifficulty=3;sTb->tagCur=6;
         if(getenv("BT4_TAG_LONG_VIDEO")){sTb->tagLeft=getenv("BT4_TAG_TEST_LEFT")?atoi(getenv("BT4_TAG_TEST_LEFT")):5;sTb->tagRight=getenv("BT4_TAG_TEST_RIGHT")?atoi(getenv("BT4_TAG_TEST_RIGHT")):5;sTb->tagAttacks=1;}
     }
-    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_JOIN_UI_TEST")){sTb->tagJoin=1;sTb->tagCur=7;Tb_SetMode(TB_TAG);}
+    if(!returnedTest&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_JOIN_UI_TEST")){sTb->tagJoin=1;sTb->tagCur=7;Tb_SetMode(TB_TAG);}
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         s32 live;
@@ -2331,6 +2343,8 @@ s32 PortTbo_Run(void) {
         Gfx_EndFrame(1);
         Dma_Flush();
         sTb->frames++;
+        if(returnedTest&&sTb->frames==60){extern void Port_TagUiCapture(int);Port_TagUiCapture(9);}
+        if(returnedTest&&sTb->frames==65){fprintf(stderr,"tag return verified: online-hub=%d room-phase=%d\n",sTb->mode==TB_HUB,Port_TagPhase());fflush(NULL);exit(sTb->mode==TB_HUB?0:3);}
         sTb->modeT++;
         if (sTb->note > 0) {
             sTb->note--;
