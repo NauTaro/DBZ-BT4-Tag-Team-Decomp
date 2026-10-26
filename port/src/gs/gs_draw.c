@@ -1384,7 +1384,10 @@ void GsGpu_PagesMoved(uint32_t delta) {
     }
 }
 
+static int sPresentationHudScope;
+extern int PortHud_Hidden(void);
 void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
+    if(sPresentationHudScope && PortHud_Hidden())return;
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
@@ -1914,6 +1917,7 @@ void Port_TagHudTrace(int actor,int front,int kind,const float *basis,const floa
     tag_trace_array("screen",scr,3);tag_trace_array("marker",marker,2);tag_trace_array("radar",radar,5);fprintf(stderr,"}\n");
 }
 void GsGpu_Native(int effect) {
+    if(effect==0x70 || effect==0x71){sPresentationHudScope=effect==0x70;return;}
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }

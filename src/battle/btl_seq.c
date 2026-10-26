@@ -1359,6 +1359,23 @@ s32 BtlSeqFight_PreUpdate(BtlSeqWaitCtx *ctx) {
 /* State 3 update: opens / runs the pause menu, then checks for the end of the battle (-> 4, or 6 without a finish scene). */
 s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
 #ifdef PORT
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_MENU_TEST")) {
+        static s32 step;
+        extern s32 PortHud_Hidden(void);
+        extern volatile s32 gPortTagUiCaptureRequest;
+        ++step;gPad[0].gamePressed=0;
+        if(step==30)gPortTagUiCaptureRequest=30;
+        if(step==60 || step==110)gPad[0].gamePressed=PADG_START;
+        if(step==80 || step==82)gPad[0].gamePressed=PADG_DOWN;
+        if(step==85 || step==130)gPad[0].gamePressed=PADG_CROSS;
+        if(step==70)gPortTagUiCaptureRequest=31;
+        if(step==100){gPortTagUiCaptureRequest=32;fprintf(stderr,"HUD fixture: hidden=%d expected=1\n",PortHud_Hidden());}
+        if(step==122)gPortTagUiCaptureRequest=33;
+        if(step==145){gPortTagUiCaptureRequest=34;fprintf(stderr,"HUD fixture: hidden=%d expected=0\n",PortHud_Hidden());}
+        if(step==155){fprintf(stderr,"HUD fixture: complete\n");exit(0);}
+    }
+#endif
+#ifdef PORT
     if (TagBattle_Network() && getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_PAUSE_TEST")) {
         static s32 was = -1;
         s32 opened = (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) != 0;
@@ -1372,7 +1389,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
     }
 #endif
 #ifdef PORT
-    if (Battle_GetMode() != 8 || TagBattle_Network()) {
+    if (Battle_GetMode() != 8 || TagBattle_Active()) {
 #else
     if (Battle_GetMode() != 8) {
 #endif

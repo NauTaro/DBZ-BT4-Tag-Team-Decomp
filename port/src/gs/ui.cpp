@@ -19,6 +19,7 @@ extern "C" void GsDx9_StripTextureFree(void *);
 #endif
 extern "C" int GsGl_DirectXVersion(void);
 #include "ui.h"
+#include "presentation.h"
 #include "namefont.h"
 #include "../port_release.h"
 #include "menu_text.h"
@@ -1294,6 +1295,10 @@ static bool tab(const char *label, int index) {
 }
 
 static void video_tab(PortVideo &v) {
+    const bool english=Port_GameProfileEnglish()!=0;
+    const char *hudLabel=PortHud_Hidden() ? (english?"Show HUD":"Mostrar HUD") : (english?"Hide HUD":"Ocultar HUD");
+    if(ImGui::Button(hudLabel))PortHud_Toggle();
+    ImGui::Separator();
     if (GsDraw_PerformanceMode()) {
         ImGui::TextWrapped("Performance mode: 1x resolution, reduced post-processing and no HD texture pack. Your other renderers keep their saved quality settings.");
         ImGui::Separator();
@@ -2544,12 +2549,15 @@ static bool frame_build(void) {
         sBanner[0] = '\0';
     }
     bool tagMenu = sReady && sTagMenuOpen;
+    extern int gPortMenuMode;
+    if(PortHud_Hidden() && !gPortMenuMode)meter=names=chat=bars=notice=false;
     PortVoiceOptions voiceOptions;PortVoice_Options(&voiceOptions);
     PortVoiceState voiceState;PortVoice_State(&voiceState);
     bool voice = sReady && voiceOptions.indicators && (voiceState.sessionMode!=0||(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_ICON_TEST")));
     bool banner = sReady && sBanner[0] != '\0' && !tagMenu;
     Uint64 now = SDL_GetTicks();
     bool saving = save_icon_on(now) && sReady && gUiPresentW > 0 && gUiPresentH > 0;
+    if(PortHud_Hidden() && !gPortMenuMode)voice=banner=saving=false;
     meter_count();
     sBuilt = false;
     if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !tagMenu && !voice)) {

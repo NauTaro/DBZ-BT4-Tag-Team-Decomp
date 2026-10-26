@@ -1,4 +1,8 @@
 #include "common.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 #include "battle/hud_0.h"
 #include "battle/battle.h"
 #include "sys/pad.h"
@@ -42,8 +46,25 @@ extern BtlMenu gPauseMenuMode6;
 extern BtlMenu gPauseMenuMode7;
 #ifdef PORT
 extern s32 TagBattle_Network(void);
+extern s32 TagBattle_Active(void);
 static BtlMenu sTagPauseMenu;
 static BtlMenuItem sTagPauseItems[5];
+static BtlMenu sPresentationPauseMenu;
+static BtlMenuItem sPresentationPauseItems[32];
+static s32 sPresentationPauseReady;
+extern int PortHud_Hidden(void);
+extern void PortHud_Toggle(void);
+/* The menu input is simulated on both 1v1 peers; only its owner changes
+   local presentation. The shared menu still closes identically. */
+static s32 PauseMenu_HudToggle(BtlMenuEvent *ev) {
+    extern int Port_NetActive(void),Port_NetMe(void);
+    if (ev->selected) {
+        if (!Port_NetActive() || BtlMenu_GetWork()->pad == Port_NetMe())
+            PortHud_Toggle();
+        ev->menu->state=BTL_MENU_STATE_CLOSE;
+    }
+    return 1;
+}
 #endif
 /* The cursor words (BtlMenu + 0x18) of the yes / no box at 0x2C4F00 and of the CPU level menu at 0x2C5158. */
 extern s32 gPauseMenuConfirmCursor[8];
@@ -74,6 +95,9 @@ extern s32 CpuLevel_FromSetting(s32 setting); /* menu difficulty 0..4 -> interna
 
 /* Draws the battle's 2D layers: the HUD, the script's view update, then the pause menu. */
 void BtlGame_Draw(void) {
+#ifdef PORT
+    { extern void Port_GsMarker(s32);Port_GsMarker(0x70); }
+#endif
     Hud_Draw();
 #ifdef PORT
     {
@@ -82,6 +106,9 @@ void BtlGame_Draw(void) {
     }
 #endif
     BtlScript_UpdateView();
+#ifdef PORT
+    { extern void Port_GsMarker(s32);Port_GsMarker(0x71); }
+#endif
     PauseMenu_Draw();
 }
 
@@ -99,7 +126,8 @@ s32 BtlGame_IsReplay(void) {
 BtlMenu *PauseMenu_GetMenu(s32 which) {
     BtlMenu *menu = NULL;
 #ifdef PORT
-    if (which == 0 && TagBattle_Network()) return &sTagPauseMenu;
+    if (which == 0 && sPresentationPauseReady) return &sPresentationPauseMenu;
+    if (which == 0 && TagBattle_Active()) return &sTagPauseMenu;
 #endif
 
     switch (which) {
@@ -324,7 +352,21 @@ static void PauseMenu_PortRemove(BtlMenu *menu, s32 id) {
 /* Battle start: allocates the menu work. */
 void PauseMenu_Init(void) {
 #ifdef PORT
-    if (TagBattle_Network()) {
+    sPresentationPauseReady=0;
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_MENU_MATRIX")) {
+        BtlMenu *menus[]={&gPauseMenuVersus,&gPauseMenuReplayRec,&gPauseMenuReplayPlay,
+            &gPauseMenuMode1,&gPauseMenuMode2,&gPauseMenuMode3,&gPauseMenuMode4,
+            &gPauseMenuMode5,&gPauseMenuMode6,&gPauseMenuMode7};
+        s32 m,i;
+        for(m=0;m<10;++m) {
+            s32 skill=-1;
+            if(!menus[m]->items || menus[m]->count<1 || menus[m]->count>30)exit(4);
+            for(i=0;i<menus[m]->count;++i)
+                if(menus[m]->items[i].sub && BtlMenu_IsSkillList(menus[m]->items[i].sub))skill=i;
+            fprintf(stderr,"HUD menu descriptor: variant=%d count=%d skill=%d\n",m,menus[m]->count,skill);
+        }
+    }
+    if (TagBattle_Active()) {
         s32 i;
         sTagPauseMenu = gPauseMenuVersus;
         sTagPauseMenu.items = sTagPauseItems;
@@ -365,6 +407,31 @@ void PauseMenu_Init(void) {
             gPauseMenuMode1.count = 5;
         }
     }
+    {
+        BtlMenu *base=PauseMenu_GetMenu(0);
+        s32 i,n=0,insertAfter=0;
+        if (base && base->count>0 && base->count<31) {
+            insertAfter=base->count>2?2:base->count-1;
+            for(i=0;i<base->count;++i) {
+                if(base->items[i].sub && BtlMenu_IsSkillList(base->items[i].sub)) {
+                    insertAfter=i;break;
+                }
+            }
+            sPresentationPauseMenu=*base;
+            sPresentationPauseMenu.items=sPresentationPauseItems;
+            for(i=0;i<base->count;++i) {
+                sPresentationPauseItems[n++]=base->items[i];
+                if(i==insertAfter) {
+                    BtlMenuItem *item=&sPresentationPauseItems[n++];
+                    memset(item,0,sizeof(*item));
+                    item->id=0x7000;item->text[0]=item->text[1]=0x7000;
+                    item->func=PauseMenu_HudToggle;item->type=BTL_MENU_ITEM_VALUE;
+                }
+            }
+            sPresentationPauseMenu.count=n;
+            sPresentationPauseReady=1;
+        }
+    }
 #endif
     BtlMenu_Init();
 }
@@ -372,6 +439,9 @@ void PauseMenu_Init(void) {
 /* Battle end: frees it. */
 void PauseMenu_Term(void) {
     BtlMenu_Term();
+#ifdef PORT
+    sPresentationPauseReady=0;
+#endif
 }
 
 /* One frame of the pause menu (which = 0) or the result menu (which = 1) for controller port `pad`.

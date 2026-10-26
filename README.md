@@ -2,7 +2,7 @@
   <h1>DBZ BT4 Tag Team Decomp</h1>
   <p>A native Windows port of BT4 B14 Rev2 with simultaneous battles of up to five fighters per team.</p>
   <img src="docs/presentation/bt4-intro-hq.gif" width="960" alt="DBZ BT4 animated presentation artwork">
-  <p><strong>BT4 B14 Rev2 · R25 RC2</strong></p>
+  <p><strong>BT4 B14 Rev2 · R25 RC3</strong></p>
   <p><a href="#gameplay">Gameplay</a> · <a href="#installation">Installation</a> · <a href="#languages">Languages</a> · <a href="#support-and-contact">Support &amp; contact</a></p>
 </div>
 
@@ -15,6 +15,13 @@ the HUD displays ally health, enemy targets and a radar.
 Built-in proximity voice chat works across both teams. Volume decreases with
 distance and fades to silence outside the hearing range.
 
+During combat, open the pause menu and select **Hide HUD**, directly below
+**Look at Skill List**. Select **Show HUD** to restore it. The Spanish labels
+are **Ocultar HUD** and **Mostrar HUD**. This hides health bars, damage and
+technique labels, radar, player names and battle overlays on your own screen.
+The same control is available under **F1 → Video**, including modes without a
+standard pause menu. Online opponents keep their own HUD setting.
+
 The Windows runtime is based on
 [Tenkaichi3Decomp](https://github.com/z3xox/Tenkaichi3Decomp), which compiles the
 original game code for PC.
@@ -26,7 +33,7 @@ original game code for PC.
 
 ## Installation
 
-Download the [Windows package](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/bt4-r25-rc2)
+Download the [Windows package](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/bt4-r25-rc3)
 and extract the entire ZIP into the folder where you want to keep the game.
 `Install.exe` and `Tenkaichi3Decomp.exe` must be in the same folder.
 

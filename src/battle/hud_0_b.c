@@ -232,6 +232,16 @@ u16 *BtlMenu_GetText(s32 n) {
 /* Text of a menu item. */
 u16 *BtlMenu_GetItemText(s32 n) {
 #ifdef PORT
+    if (n==0x7000) {
+        extern int PortHud_Hidden(void),Port_GameProfileEnglish(void);
+        static u16 line[32];
+        const char *label=Port_GameProfileEnglish()
+            ? (PortHud_Hidden()?"Show HUD":"Hide HUD")
+            : (PortHud_Hidden()?"Mostrar HUD":"Ocultar HUD");
+        s32 i;
+        for(i=0;label[i] && i<31;++i)line[i]=(u8)label[i];
+        line[i]=0;return line;
+    }
     /* Tenkaichi Budokai Online's sparring fight goes back to its search, and its pause menu says so */
     static const char from[] = "Return to Character Select";
     static const char to[] = "Back to Budokai Online";
