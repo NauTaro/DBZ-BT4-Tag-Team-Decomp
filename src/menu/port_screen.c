@@ -74,9 +74,17 @@ void Ps_ScreenQuad(f32 x0, f32 y0, f32 x1, f32 y1, f32 x2, f32 y2, f32 x3, f32 y
     Dma_EndDirect(p);
 }
 
+extern int Port_TrLine(const char *original, char *out, int size); /* port/src/gs/menu_translation.c */
+
+/* (`src` in the chosen language when it is a line of the menus' translation file: the pieces a line is put together
+   from, with Ps_Cat; a whole line is translated where it is drawn, port/src/gs/tbo_text.c) */
 void Ps_Copy(char *dst, const char *src, s32 max) {
+    static char tr[512];
     s32 i;
 
+    if (src != dst && src != tr && Port_TrLine(src, tr, sizeof(tr))) {
+        src = tr;
+    }
     for (i = 0; i < max - 1 && src[i] != 0; i++) {
         dst[i] = src[i];
     }

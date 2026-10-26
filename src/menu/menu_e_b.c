@@ -1218,10 +1218,13 @@ void TeamSel_Draw(void) {
             *(void **)((u8 *)&gTeamSel->costumeBox[i] + 4) =
                 (u8 *)gTeamSel->costumeText + ((u32 *)gTeamSel->costumeText)[1 + gTeamSel->side[i]->chara];
             Flash_FindLabel(flash, NULL, "mc_color_name_text", &ref);
-            {
+            if(gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color>=0 && gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color<gTeamSel->colorCount[i]) {
                 u32 *row = *(u32 **)((u8 *)&gTeamSel->costumeBox[i] + 4);
                 const u16 *label = (const u16 *)((u8 *)row + (row[1 + gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color] & ~3u));
                 Bt4Costume_AttachCaption(flash, &ref, gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color + 1, gTeamSel->colorCount[i], label, &gTeamSel->costumeBox[i]);
+            } else {
+                /* Native TextBox_AttachLine also clears its callback for line -1. */
+                TextBox_AttachLine(flash, &ref, 0, 0, -1, &gTeamSel->costumeBox[i]);
             }
         }
     }

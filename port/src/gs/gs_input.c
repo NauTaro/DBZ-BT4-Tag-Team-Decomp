@@ -576,6 +576,7 @@ int Port_ClashSquareX(void) {
 void Port_ClashSquareXSet(int quarters) {
     sClashSquareX = quarters == 4 || quarters == 6 || quarters == 7 || quarters == 8 || quarters == 9 ? quarters : 9;
     Port_SettingSave("clash_square_x", sClashSquareX);
+    Port_SettingsWrite(); /* (in the file at once: the value was lost at the end unless another setting was written after it) */
 }
 
 void Port_ClashSquareSet(int on) {
@@ -891,7 +892,8 @@ void Port_PadVibrate(int socket, int small, int large) {
         return;
     }
     if (Port_NetActive()) {
-        if (socket != Port_NetMe()) {
+        extern int Port_NetSpectating(void);
+        if (socket != Port_NetMe() || Port_NetSpectating()) { /* (a spectator's controller plays nobody) */
             return;
         }
         player = 0;
@@ -944,7 +946,50 @@ void PortInput_VibrationTest(int player) {
 /* The controllers' and the keyboard's state as it is at this moment (plat_stub.c, "Low input lag": the pads are
    read long after the window's events were last taken). The events themselves stay queued for the window. */
 void PortInput_Fresh(void) {
+    if (Gs_RenderThreaded() && !Gs_OnRenderThread()) {
+        return; /* (the window is the render thread's: it takes the events, every millisecond it waits: PortInput_Pump) */
+    }
     SDL_PumpEvents();
+}
+
+/* The render thread (BT3_GS_THREAD): the window's events, taken while it waits for work or for a picture's time.
+   The controllers' and the keys' state the game's thread reads is then never more than a millisecond old. */
+void PortInput_Pump(void) {
+    SDL_PumpEvents();
+}
+
+/* BT3_LAG_LOG (plat_stub.c, Port_LagMark): how old a press is when the game first reads it. An event watch notes
+   when each button or key press arrived (the event's own time: the system's or SDL's reading of the controller);
+   the read that first has a new press logs "lag P <time> <frame> <microseconds since the press arrived>". */
+static uint64_t sPressNs; /* the latest press's arrival, SDL_GetTicksNS's clock */
+static bool SDLCALL press_watch(void *unused, SDL_Event *ev) {
+    (void)unused;
+    if (ev->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || (ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat)) {
+        __atomic_store_n(&sPressNs, ev->common.timestamp, __ATOMIC_RELEASE);
+    }
+    return true;
+}
+static void press_age(int socket, unsigned btn) {
+    static unsigned prev[2];
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("BT3_LAG_LOG") != NULL;
+        if (on) {
+            SDL_AddEventWatch(press_watch, NULL);
+        }
+    }
+    if (on && (btn & ~prev[socket]) != 0) {
+        /* (each press counted once: a direction from a stick is a new bit without a press of its own, and was given
+           the age of the last button press, seconds old) */
+        static uint64_t used;
+        uint64_t at = __atomic_load_n(&sPressNs, __ATOMIC_ACQUIRE), now = SDL_GetTicksNS();
+        extern void Port_LagNote(int what, unsigned long long value);
+        if (at != 0 && at != used && now >= at && now - at < 1000000000ull) {
+            used = at;
+            Port_LagNote('P', (unsigned long long)((now - at) / 1000ull));
+        }
+    }
+    prev[socket] = btn;
 }
 
 int Port_PadRead(int socket, unsigned char *data) {
@@ -1051,6 +1096,7 @@ int Port_PadRead(int socket, unsigned char *data) {
         }
     }
     clash_square(socket, &btn, &lx, &ly);
+    press_age(socket, btn);
     memset(data, 0, 18);
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);

@@ -11,6 +11,7 @@ extern "C" {
 uint8_t *MenuText_Render(const uint8_t *rgba, int width, int height, int indexed, int scale, int *outWidth, int *outHeight);
 /* Whether the original indexed texture contains a Battle font label, also when Battle font is on Original. */
 int MenuText_IsBattleTexture(const uint8_t *rgba, int width, int height, int indexed);
+void MenuText_NewTexture(void); /* a new texture's pixels come next: the label hash of the one before is forgotten */
 /* Whether a texture's dimensions match any Battle label, for deciding if a texture-pack source needs decoding. */
 int MenuText_MayHaveBattleTexture(int width, int height, int indexed);
 /* The size text is drawn at for an internal resolution: that resolution, at least 2 and at most 4 times the PS2's. */

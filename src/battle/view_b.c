@@ -280,9 +280,15 @@ void TextBox_AttachString(Flash *flash, FlashRef *ref, s32 x, s32 y, u16 *str, T
 extern int PortTbo_TextId(const char *text, int kind);
 extern int PortTbo_TextInfo(int id, int what);
 typedef struct Bt4CostumeCaption {
+    const void *key;
+    unsigned stamp;
     s32 number, total;
-    const u16 *name;
+    char name[128];
 } Bt4CostumeCaption;
+/* The caller's storage is an active TextBox, not spare callback memory.
+ * Never overwrite its resource pointer or retain a label from its file. */
+static Bt4CostumeCaption sCostumeCaptions[16];
+static unsigned sCostumeCaptionStamp;
 
 static void Bt4Costume_Utf8(char *out, const u16 *in) {
     s32 n = 0, i;
@@ -326,9 +332,13 @@ static void Bt4Costume_DrawCaption(void *arg, TextBoxClipProp *prop) {
     if (alpha <= 0) return;
     if (alpha > 128) alpha = 128;
     sprintf(number, "%02d", caption->number);
-    sprintf(counter, "TRAJE %d/%d", caption->number, caption->total);
-    Bt4Costume_Utf8(name, caption->name);
-    if (!name[0]) sprintf(name, "Traje %d", caption->number);
+    {
+        extern int Port_GameProfileEnglish(void);
+        s32 english=Port_GameProfileEnglish();
+        sprintf(counter,english?"COSTUME %d/%d":"TRAJE %d/%d",caption->number,caption->total);
+        strcpy(name,caption->name);
+        if(!name[0])sprintf(name,english?"Costume %d":"Traje %d",caption->number);
+    }
     Bt4Costume_Line(number, cx, prop->y + 18, 18, 42,
                     Ps_Rgba(255,255,235,255), Ps_Rgba(105,231,240,255), alpha);
     Bt4Costume_Line(name, cx, prop->y + 43, 10, 184,
@@ -340,8 +350,30 @@ static void Bt4Costume_DrawCaption(void *arg, TextBoxClipProp *prop) {
 
 void Bt4Costume_AttachCaption(Flash *flash, FlashRef *ref, s32 number, s32 total,
                               const u16 *name, void *storage) {
-    Bt4CostumeCaption *caption = storage;
-    caption->number = number; caption->total = total; caption->name = name;
+    Bt4CostumeCaption *caption = NULL;
+    s32 i,pick=0;
+    for(i=0;i<16;++i){
+        if(sCostumeCaptions[i].key==storage){caption=&sCostumeCaptions[i];break;}
+        if(sCostumeCaptions[i].stamp<sCostumeCaptions[pick].stamp)pick=i;
+    }
+    if(!caption)caption=&sCostumeCaptions[pick];
+    caption->key=storage;caption->stamp=++sCostumeCaptionStamp;
+    caption->number=number;caption->total=total;
+    {
+        const u32 *row=*(const u32 **)((const u8 *)storage+4);
+        u32 offset=(u32)name-(u32)row;
+        /* A costume name is a short line in the current character's table.
+         * Reject missing/header entries instead of treating table metadata as
+         * a UTF-16 pointer. The visible fallback still identifies the costume. */
+        if(!row || !name || offset<(u32)(number+1)*4 || offset>65536u){
+            if(getenv("BT4_RENDER_TEST")){
+                static s32 shown;
+                if(shown++<16)fprintf(stderr,"costume caption fallback: number=%d total=%d offset=%08X header=%08X\n",number,total,offset,row?row[0]:0);
+            }
+            name=NULL;
+        }
+        Bt4Costume_Utf8(caption->name,name);
+    }
     Flash_ClipSetFlags(flash, ref, 0x800, 1);
     Flash_ClipSetCallbackC(flash, ref, Bt4Costume_DrawCaption, caption);
 }

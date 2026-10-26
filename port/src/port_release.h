@@ -7,5 +7,5 @@
 /* Where releases are published: the game asks GitHub for the newest one's number once per start (gs/net_match.c,
    "Check for updates") and opens this repository's release page from the settings window. A fork that publishes
    its own releases names its own repository here. */
-#define PORT_UPDATE_REPO "z3xox/Tenkaichi3Decomp"
+#define PORT_UPDATE_REPO "NauTaro/DBZ-BT4-Tag-Team-Decomp"
 #endif

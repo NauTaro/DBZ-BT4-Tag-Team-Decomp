@@ -10,7 +10,8 @@ typedef struct PortVideo {
     int scale;       /* internal resolution multiplier, 1..8 */
     int aspectMilli; /* width / height of the picture * 1000 */
     int fullscreen;
-    int fxOff;       /* bits: 1 outline, 2 see-through tint, 4 depth tint, 8 glare and glow, 16 distance blur, 32 movement blur */
+    int fxOff;       /* bits: 1 outline, 2 see-through tint, 4 depth tint, 8 glare and glow, 16 distance blur, 32 movement blur, 64 weather,
+                        128 weather light (half of it) */
     int glow;        /* percent: the glow of characters and objects */
     int glare;       /* percent: the sky's glare */
     int sharpBlur;   /* 1 = the stage's blur sampled at the internal resolution (crisper than the PS2) */

@@ -3,7 +3,6 @@
 #include "menu_text.h"
 #include "ui_text_extract.h"
 #include "ui_text_translate.h"
-#include "../../../include/menu/tbo_art.h"
 #ifndef _WIN32
 #include <dirent.h>
 #else
@@ -25,15 +24,32 @@
 #endif
 
 enum { TR_MAX_FILE = 1024 * 1024, TR_MAX_ROWS = 640, TR_MAX_GROUPS = 160 };
-enum { TR_PORT_TEXT_COUNT = 3, TR_PORT_TEXT_MAX = 1024, TR_PORT_MAX_FILE = 64 * 1024 };
+enum { TR_PORT_TEXT_COUNT = 13, TR_PORT_TEXT_MAX = 1024, TR_PORT_MAX_FILE = 1024 * 1024 };
+/* The online menus' lines (ids "tbo/..."): looked up by their English text, as the menu draws them (MenuTranslation_Line).
+   Any number up to TR_LINES_MAX; a table is made once per load and kept (the game's thread may be reading the last). */
+enum { TR_LINES_MAX = 2048, TR_LINES_HASH = 4096 };
+typedef struct TrLine { char *original, *text; } TrLine;
+typedef struct TrLines { TrLine line[TR_LINES_MAX]; int count; short hash[TR_LINES_HASH]; } TrLines;
+static TrLines *sLines;
 static const struct { const char *id, *original; } kPortText[TR_PORT_TEXT_COUNT] = {
     {PORT_TEXT_QUIT_CONFIRM, "Close the game?\nUnsaved progress will be lost."},
     {PORT_TEXT_NET_CONNECTING, "Connecting to your rival..."},
-    {PORT_TEXT_NET_RIVAL, "Your rival \"{name}\" is here! The match begins."}
+    {PORT_TEXT_NET_RIVAL, "Your rival \"{name}\" is here! The match begins."},
+    {PORT_TEXT_LOBBY_JOINED, "You are in the lobby. Its screen opens from the main menu (Tenkaichi Budokai Online)."},
+    {PORT_TEXT_NET_RIVAL_FROM, "Your rival \"{name}\" from {region} is here! The match begins."},
+    {PORT_TEXT_NET_ROUND_TRIP, "Round trip: ~{ms} ms"},
+    {"region/NA", "North America"},
+    {"region/SA", "South America"},
+    {"region/EU", "Europe"},
+    {"region/ME", "the Middle East"},
+    {"region/AF", "Africa"},
+    {"region/AS", "Asia"},
+    {"region/OC", "Oceania"},
 };
 typedef struct TrPortCatalog {
     char text[TR_PORT_TEXT_COUNT][TR_PORT_TEXT_MAX];
     unsigned char present[TR_PORT_TEXT_COUNT];
+    TrLines *lines; /* the "tbo/" lines read (NULL: none yet) */
 } TrPortCatalog;
 typedef struct TrRow {
     char *id, *original, *text, *from;
@@ -220,6 +236,83 @@ static int tr_parse(const char *buf, size_t size, const char *locale) {
     } while (tr_take(&p, ','));
     return 0;
 }
+/* A line's printf slots in their order (%d, %02d, %s, %u, %x: those the menus use) into out; -1 when the line
+   has a % that is neither one of them nor %% ("100% Power" in a fighter's name is not a format: a line without
+   any slot is never given to printf). */
+static int tr_slots(const char *s, char *out, int size) {
+    int n = 0, stray = 0;
+    for (; *s; s++) {
+        const char *t;
+        if (*s != '%') continue;
+        if (s[1] == '%') { s++; continue; }
+        for (t = s + 1; *t && strchr("-+#0123456789.", *t); t++) {}
+        if (*t == 'l') t++;
+        if (*t && strchr("dsuxX", *t) && n < size - 1) { out[n++] = *t; s = t; }
+        else stray = 1;
+    }
+    out[n] = 0;
+    return stray ? -1 : n;
+}
+/* What a line's translation has to keep of it: its printf slots in their order (the menu fills them in that order,
+   so a slot left out or swapped would read the wrong thing; in such a line a lone % would reach printf too), and
+   its {names} (moved freely). */
+static int tr_slots_same(const char *a, const char *b) {
+    char sa[32], sb[32];
+    const char *s;
+    int na = tr_slots(a, sa, sizeof(sa));
+    if (na > 0) {
+        if (tr_slots(b, sb, sizeof(sb)) != na || strcmp(sa, sb) != 0) return 0;
+    } else {
+        tr_slots(b, sb, sizeof(sb));
+        if (sb[0] != 0) return 0; /* (a slot where the English has none would read what is not there) */
+    }
+    for (s = strchr(a, '{'); s != NULL; s = strchr(s + 1, '{')) { /* every {name} of the English is in the translation */
+        const char *e = strchr(s, '}');
+        char name[64];
+        if (e == NULL || e - s >= (long)sizeof(name)) break;
+        memcpy(name, s, (size_t)(e - s + 1));
+        name[e - s + 1] = 0;
+        if (strstr(b, name) == NULL) return 0;
+    }
+    return 1;
+}
+static unsigned tr_line_hash(const char *s) {
+    unsigned h = 2166136261u;
+    while (*s) h = (h ^ (unsigned char)*s++) * 16777619u;
+    return h;
+}
+static void tr_lines_free(TrLines *t) {
+    int i;
+    if (t == NULL) return;
+    for (i = 0; i < t->count; i++) { free(t->line[i].original); free(t->line[i].text); }
+    free(t);
+}
+/* Adds (or, for an English line already there, replaces) a translation of the online menus. */
+static void tr_line_add(TrPortCatalog *catalog, const char *original, const char *text) {
+    TrLines *t = catalog->lines;
+    unsigned h;
+    int i;
+    if (t == NULL) {
+        t = catalog->lines = calloc(1, sizeof(*t));
+        if (t == NULL) return;
+    }
+    for (h = tr_line_hash(original) % TR_LINES_HASH; t->hash[h] != 0; h = (h + 1) % TR_LINES_HASH) {
+        i = t->hash[h] - 1;
+        if (strcmp(t->line[i].original, original) == 0) {
+            char *copy = strdup(text);
+            if (copy != NULL) { free(t->line[i].text); t->line[i].text = copy; }
+            return;
+        }
+    }
+    if (t->count >= TR_LINES_MAX) return;
+    t->line[t->count].original = strdup(original);
+    t->line[t->count].text = strdup(text);
+    if (t->line[t->count].original == NULL || t->line[t->count].text == NULL) {
+        free(t->line[t->count].original); free(t->line[t->count].text);
+        return;
+    }
+    t->hash[h] = (short)(++t->count);
+}
 /* Port-owned strings use the same JSON shape as label translations, but have their own IDs and limits. */
 static int tr_port_row(TrParser *p, const char *id, TrPortCatalog *catalog) {
     char *key, *original = NULL, *text = NULL;
@@ -240,6 +333,16 @@ static int tr_port_row(TrParser *p, const char *id, TrPortCatalog *catalog) {
         if (tr_take(p, '}')) { closed = 1; break; }
     } while (tr_take(p, ','));
     if (!closed || !original || !text) goto done;
+    if (strncmp(id, "tbo/", 4) == 0) {
+        /* (a line left as its English, or empty, is not a translation; one that lost a slot is not used: see
+           tr_slots_same) */
+        if (text[0] && strcmp(text, original) != 0 && strlen(text) < TR_PORT_TEXT_MAX) {
+            if (tr_slots_same(original, text)) tr_line_add(catalog, original, text);
+            else fprintf(stderr, "bt3: translation of \"%s\" not used: it has to keep the %%d, %%s and {name} parts\n", original);
+        }
+        ok = 1;
+        goto done;
+    }
     for (i = 0; i < TR_PORT_TEXT_COUNT; i++) {
         if (!strcmp(id, kPortText[i].id) && !strcmp(original, kPortText[i].original) &&
             text[0] && strlen(text) < TR_PORT_TEXT_MAX) {
@@ -306,16 +409,26 @@ static int tr_port_read(const char *outDir, const char *locale, TrPortCatalog *c
     return ok;
 }
 static void tr_port_load(const char *outDir, const char *locale) {
-    TrPortCatalog catalog;
+    static TrPortCatalog catalog; /* (big: not on the stack) */
     int i;
     if (tr_port_read(outDir, "en", &catalog)) {
         for (i = 0; i < TR_PORT_TEXT_COUNT; i++) if (catalog.present[i])
             snprintf(sPortText[i], sizeof(sPortText[i]), "%s", catalog.text[i]);
     }
+    tr_lines_free(catalog.lines); /* (English lines are the menu's own: none are kept) */
+    catalog.lines = NULL;
     if (strcmp(locale, "en") && tr_port_read(outDir, locale, &catalog)) {
         for (i = 0; i < TR_PORT_TEXT_COUNT; i++) if (catalog.present[i])
             snprintf(sPortText[i], sizeof(sPortText[i]), "%s", catalog.text[i]);
+        if (catalog.lines != NULL) {
+            fprintf(stderr, "bt3: %d lines of the online menus in %s\n", catalog.lines->count, locale);
+        }
+        __atomic_store_n(&sLines, catalog.lines, __ATOMIC_RELEASE); /* (the table before is kept: it may be in use) */
+    } else {
+        tr_lines_free(catalog.lines);
+        __atomic_store_n(&sLines, (TrLines *)NULL, __ATOMIC_RELEASE);
     }
+    catalog.lines = NULL;
 }
 static const char *tr_resolve(TrRow *r, int depth) {
     TrRow *src;
@@ -512,46 +625,10 @@ static int tr_bundled_dir(char *out, size_t size) {
 }
 static void tr_copy_all(const char *outDir, const char *labelsDir) {
     const char *src = NULL;
-    char source[1200], destination[1200], assetsDir[1200], oldAssetsDir[1200], catalogDir[1200], bundled[1100];
+    char catalogDir[1200], bundled[1100];
     int i;
     static const char *const extraCatalogs[] = {"ui", "port"};
     if (tr_bundled_dir(bundled, sizeof(bundled))) src = bundled;
-    {
-        static const char *const artwork[] = {
-            TBO_LANG_BG_FILE, TBO_LANG_ARROW_LEFT_FILE, TBO_LANG_ARROW_RIGHT_FILE
-        };
-        size_t k;
-        assetsDir[0] = 0;
-        oldAssetsDir[0] = 0;
-        if (snprintf(assetsDir, sizeof(assetsDir), "%s/assets", outDir) >= (int)sizeof(assetsDir)) assetsDir[0] = 0;
-        if (snprintf(oldAssetsDir, sizeof(oldAssetsDir), "%s/translations/assets", outDir) >= (int)sizeof(oldAssetsDir)) oldAssetsDir[0] = 0;
-        if (assetsDir[0] != 0) {
-#ifdef _WIN32
-            _mkdir(assetsDir);
-#else
-            mkdir(assetsDir, 0755);
-#endif
-            for (k = 0; k < sizeof(artwork) / sizeof(artwork[0]); k++) {
-                if (snprintf(destination, sizeof(destination), "%s/%s", assetsDir, artwork[k]) >= (int)sizeof(destination)) continue;
-                if (oldAssetsDir[0] != 0 && access(destination, 0) != 0 &&
-                    snprintf(source, sizeof(source), "%s/%s", oldAssetsDir, artwork[k]) < (int)sizeof(source)) {
-                    if (rename(source, destination) != 0) tr_copy_one(source, destination);
-                }
-                if (src == NULL) continue;
-                if (snprintf(source, sizeof(source), "%s/assets/%s", src, artwork[k]) >= (int)sizeof(source)) continue;
-                if (access(source, 0) != 0 &&
-                    snprintf(source, sizeof(source), "%s/%s", src, artwork[k]) >= (int)sizeof(source)) continue;
-                tr_copy_one(source, destination);
-            }
-            if (oldAssetsDir[0] != 0) {
-#ifdef _WIN32
-                _rmdir(oldAssetsDir);
-#else
-                rmdir(oldAssetsDir);
-#endif
-            }
-        }
-    }
     if (src == NULL) return;
     tr_copy_catalogs(src, "labels", labelsDir);
     for (i = 0; i < (int)(sizeof(extraCatalogs) / sizeof(extraCatalogs[0])); i++) {
@@ -802,29 +879,13 @@ int MenuTranslation_Available(MenuTranslationOption *out, int capacity) {
     }
     return MenuTranslation_List(folder, out, capacity);
 }
-int MenuTranslation_ArtPath(int artId, char *out, size_t capacity) {
-    const char *data = getenv("BT3_DATA"), *folder = getenv("BT3_MENU_FONT"), *name;
-    char root[1200];
-    if (out == NULL || capacity == 0) return 0;
-    switch (artId) {
-        case TBO_LANG_BG: name = TBO_LANG_BG_FILE; break;
-        case TBO_LANG_ARROW_LEFT: name = TBO_LANG_ARROW_LEFT_FILE; break;
-        case TBO_LANG_ARROW_RIGHT: name = TBO_LANG_ARROW_RIGHT_FILE; break;
-        default: return 0;
-    }
-    if (folder == NULL || folder[0] == 0) {
-        if (snprintf(root, sizeof(root), "%s/game-text", data != NULL ? data : "gamedata") >= (int)sizeof(root)) return 0;
-        folder = root;
-    }
-    if (snprintf(out, capacity, "%s/assets/%s", folder, name) >= (int)capacity) return 0;
-    return access(out, 0) == 0;
-}
+extern int Port_NetSession(void); /* gs/net.c: an online session (begun without starting the program again too) */
 int MenuTranslation_ShouldPrompt(const MenuTranslationOption *options, int count) {
     char saved[16];
     int i;
     const char *override = getenv("BT3_MENU_LANG");
     if (count <= 1 || options == NULL || (override != NULL && override[0] != '\0') ||
-        getenv("BT3_NET_SESSION") != NULL || getenv("BT3_PAD_PLAY") != NULL ||
+        getenv("BT3_NET_SESSION") != NULL || Port_NetSession() || getenv("BT3_PAD_PLAY") != NULL ||
         getenv("BT3_PAD_TABLE") != NULL || getenv("BT3_SYNCTEST") != NULL) return 0;
     if (__atomic_load_n(&sBootChoiceMade, __ATOMIC_ACQUIRE)) return 0;
     if (Port_Setting("language_prompt_always", 0) != 0) return 1;
@@ -902,6 +963,24 @@ int MenuTranslation_Ensure(void) {
 }
 const char *MenuTranslation_Locale(void) { return __atomic_load_n(&sReady, __ATOMIC_ACQUIRE) ? sLocale : NULL; }
 const char *MenuTranslation_Text(const char *id) { TrRow *r = __atomic_load_n(&sReady, __ATOMIC_ACQUIRE) ? tr_find(id) : NULL; return r != NULL ? r->resolved : NULL; }
+/* The translation of a line of the online menus (`original`: its English, as the menu has it), or NULL. */
+const char *MenuTranslation_Line(const char *original) {
+    TrLines *t = __atomic_load_n(&sLines, __ATOMIC_ACQUIRE);
+    unsigned h;
+    if (t == NULL || original == NULL || original[0] == 0) return NULL;
+    for (h = tr_line_hash(original) % TR_LINES_HASH; t->hash[h] != 0; h = (h + 1) % TR_LINES_HASH) {
+        const TrLine *l = &t->line[t->hash[h] - 1];
+        if (strcmp(l->original, original) == 0) return l->text;
+    }
+    return NULL;
+}
+/* For the game's code (menu/port_screen.c): the translation copied into out (size bytes), 1; or 0 when there is none. */
+int Port_TrLine(const char *original, char *out, int size) {
+    const char *t = MenuTranslation_Line(original);
+    if (t == NULL || out == NULL || size <= 0) return 0;
+    snprintf(out, (size_t)size, "%s", t);
+    return 1;
+}
 const char *MenuTranslation_PortText(const char *id) {
     int i;
     if (!__atomic_load_n(&sReady, __ATOMIC_ACQUIRE) || !id) return NULL;

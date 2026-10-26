@@ -2,7 +2,7 @@
   <h1>DBZ BT4 Tag Team Decomp</h1>
   <p>A native Windows port of BT4 B14 Rev2 with simultaneous battles of up to five fighters per team.</p>
   <img src="docs/presentation/bt4-intro-hq.gif" width="960" alt="DBZ BT4 animated presentation artwork">
-  <p><strong>BT4 B14 Rev2 · R25 RC3</strong></p>
+  <p><strong>BT4 B14 Rev2 · R26 RC1</strong></p>
   <p><a href="#gameplay">Gameplay</a> · <a href="#installation">Installation</a> · <a href="#languages">Languages</a> · <a href="#support-and-contact">Support &amp; contact</a></p>
 </div>
 
@@ -11,6 +11,9 @@
 Up to ten fighters share the arena in Tag Team, with human players and CPU
 fighters on either team. Online rooms use a shareable code. During a match,
 the HUD displays ally health, enemy targets and a radar.
+
+Quick Match supports automatic nearby matching or a chosen region. Room codes
+remain available for arranged matches.
 
 Built-in proximity voice chat works across both teams. Volume decreases with
 distance and fades to silence outside the hearing range.
@@ -31,9 +34,23 @@ original game code for PC.
   <br><em>A 5v5 match with the Tag Team HUD.</em>
 </p>
 
+## Video and performance
+
+Smooth motion defaults to 60 displayed pictures per second. Combat retains
+the original 30-step simulation; online Tag Team runs that simulation at
+114% speed. Extra pictures are rendered between steps, without changing
+movement speed, hit timing or network inputs. F1 > Video offers an explicit
+30-picture option and higher presentation rates. The renderer reduces extra
+pictures when the graphics workload cannot fit the frame budget.
+
+On supported systems with more than two logical CPU cores, rendering uses a
+separate thread by default. OpenGL and smaller CPU configurations retain the
+single-thread path. Resolution remains configurable; updating does not force
+Tag Team to a particular scale.
+
 ## Installation
 
-Download the [Windows package](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/bt4-r25-rc3)
+Download the [Windows package](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/bt4-r26-rc1)
 and extract the entire ZIP into the folder where you want to keep the game.
 `Install.exe` and `Tenkaichi3Decomp.exe` must be in the same folder.
 
@@ -116,7 +133,7 @@ and include reproduction steps and the relevant log.
 ## Credits and licenses
 
 The original decompilation and PC port are by the **Tenkaichi3Decomp
-contributors**. This project is based on upstream `v0.1.38.1`; the exact
+contributors**. This project is based on upstream `v0.1.38.9`; the exact
 source revision is recorded in [UPSTREAM_LOCK.json](UPSTREAM_LOCK.json).
 The [upstream README](README_UPSTREAM.md) is retained for attribution and
 reference.

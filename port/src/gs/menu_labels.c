@@ -36,6 +36,7 @@
 #include <windows.h>
 #endif
 #include "menu_labels.h"
+#include "../../../include/menu/tbo_art.h"
 
 /* namefont.c again, as this file's own: the functions the game calls get other names, the variables are static. */
 #define Port_NameFontSheets MenuLabels_NameSheets_
@@ -294,7 +295,7 @@ typedef struct MlGroup { /* the labels of one texture (or, for the name strips, 
 
 typedef struct MlRow { /* one label: a row of labels.tsv, an entry of labels.json */
     char id[64], textFrom[64];
-    uint64_t hash;
+    uint64_t hash, quick; /* (quick: MenuLabels_Quick) */
     int isRect, texW, texH, x, y, w;
     const char *text;
     int height, cap, baseline, center, margin, art, widthMilli;
@@ -1297,6 +1298,7 @@ static int ml_rows(MlCtx *c) {
                 snprintf(r->id, sizeof(r->id), "%s/0/%d", g->id, n);
                 r->isRect = 1;
                 r->hash = tex->hash;
+                r->quick = MenuLabels_Quick(tex->rgba, tex->w, tex->h);
                 r->texW = g->width;
                 r->texH = tex->h;
                 r->x = rc->x;
@@ -1365,6 +1367,7 @@ static int ml_rows(MlCtx *c) {
                 }
                 snprintf(r->id, sizeof(r->id), "%s/%d/%d", g->id, t, y / g->height);
                 r->hash = tex->hash;
+                r->quick = MenuLabels_Quick(tex->rgba, tex->w, tex->h);
                 r->texW = g->width;
                 r->texH = tex->h;
                 r->y = y;
@@ -1534,7 +1537,7 @@ static int ml_tsv(MlCtx *c, MlText *labels, MlText *styles, int *count) {
     int i;
 
     ml_put(labels, "# " MENU_LABELS_VERSION " hash width height y row_height cap_height baseline center margin width_milli x row_width art_width top bottom "
-                   "middle_rgb has_middle outline italic outline_milli outer_milli outer_rgb shadow outline_bottom bevel_milli bevel_light bevel_dark depth_milli mid_gradient font_face label_id\n");
+                   "middle_rgb has_middle outline italic outline_milli outer_milli outer_rgb shadow outline_bottom bevel_milli bevel_light bevel_dark depth_milli mid_gradient font_face label_id quick\n");
     /* the names of added songs and stages are drawn like the disc's (ui.cpp) */
     ml_put(styles, "# kind (0 song, 1 selected song, 2 stage) cap_height baseline margin width_milli top bottom outline\n");
     for (i = 0; i < 3; i++) {
@@ -1557,7 +1560,7 @@ static int ml_tsv(MlCtx *c, MlText *labels, MlText *styles, int *count) {
             return ml_fail(c, "%s: the label was measured outside its texture", r->id);
         }
         if (original == NULL || original[0] == '\0') return ml_fail(c, "%s: original label is missing", r->id);
-        ml_put(labels, "%016llx\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%s\t%d\t%d\t%d\t%s\t%d\t%s\t%d\t%s\t%s\t%d\t%d\t%d\t%s\n", (unsigned long long)r->hash,
+        ml_put(labels, "%016llx\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%d\t%s\t%d\t%d\t%d\t%s\t%d\t%s\t%d\t%s\t%s\t%d\t%d\t%d\t%s\t%016llx\n", (unsigned long long)r->hash,
                r->texW, r->texH, r->y, r->height, r->cap, r->baseline, r->center, r->margin,
                r->widthMilli ? r->widthMilli : 1000, r->x, r->w, r->art,
                ml_hex(col->top, top), ml_hex(col->bottom, bottom), ml_hex(col->middle, middle), col->hasMiddle,
@@ -1568,7 +1571,8 @@ static int ml_tsv(MlCtx *c, MlText *labels, MlText *styles, int *count) {
                ml_hex(r->colors == ML_MAIN_HEADING ? kHeadingBevelLight : col->top, bevelLight),
                ml_hex(r->colors == ML_MAIN_HEADING ? kHeadingBevelDark : col->depth ? col->outerColor : col->outline, bevelDark),
                (int)(col->depth * 1000.0f + 0.5f), col->midGradient, ml_starts(r->id, "notice-") || ml_starts(r->id, "combo-") ||
-               ml_starts(r->id, "timer-") || ml_starts(r->id, "win-counter/") || ml_starts(r->id, "blast-stock-counter/"), r->id);
+               ml_starts(r->id, "timer-") || ml_starts(r->id, "win-counter/") || ml_starts(r->id, "blast-stock-counter/"), r->id,
+               (unsigned long long)r->quick);
         ++*count;
     }
     if (*count > ML_ROWS) {
@@ -2182,6 +2186,66 @@ static uint8_t *ml_member(MlBuf packed, int raw, size_t *n) {
     }
     *n = full;
     return out;
+}
+
+/* The startup selector is in EU0, not the EU1 archives used for translated menu lettering. The three
+   decoded hashes identify the exact original pictures and reject a different or damaged archive. */
+static const struct { int id, index, w, h; uint64_t hash; } kMlLanguageArt[] = {
+    {TBO_LANG_BG,          1, 256, 512, UINT64_C(0xab29f0394b8dccee)},
+    {TBO_LANG_ARROW_LEFT,  6,  32,  32, UINT64_C(0xb46a6e3e734cdff9)},
+    {TBO_LANG_ARROW_RIGHT, 5,  32,  32, UINT64_C(0x9c1b444555c4b833)}
+};
+
+static int ml_language_path(char *path, size_t capacity) {
+    const char *data = getenv("BT3_DATA");
+    int n = snprintf(path, capacity, "%s/pzs3eu0/00001.bin", data != NULL && *data != 0 ? data : "gamedata");
+    return n >= 0 && (size_t)n < capacity;
+}
+
+int MenuLabels_LanguageArtAvailable(void) {
+    char path[1200];
+    return ml_language_path(path, sizeof(path)) && access(path, 0) == 0;
+}
+
+int MenuLabels_LanguageArtPixels(int id, unsigned char **pixels, int *w, int *h) {
+    MlCtx *c = NULL;
+    MlTex tex = {0};
+    MlBuf packed, member, part;
+    uint8_t *file = NULL, *unpacked = NULL, *copy = NULL;
+    const int art = id - TBO_LANG_BG;
+    char path[1200];
+    FILE *fp = NULL;
+    long size;
+    size_t n = 0;
+    int ok = 0;
+    if (pixels == NULL || w == NULL || h == NULL || art < 0 || art >= 3 ||
+        !ml_language_path(path, sizeof(path))) return 0;
+    *pixels = NULL;
+    fp = fopen(path, "rb");
+    if (fp == NULL || fseek(fp, 0, SEEK_END) != 0 || (size = ftell(fp)) <= 0 || size > 1024 * 1024 ||
+        fseek(fp, 0, SEEK_SET) != 0 || (file = malloc((size_t)size)) == NULL ||
+        fread(file, 1, (size_t)size, fp) != (size_t)size) goto done;
+    packed.p = file; packed.n = (size_t)size;
+    unpacked = ml_member(packed, 0, &n);
+    if (unpacked == NULL) goto done;
+    member.p = unpacked; member.n = n;
+    if (ml_table_count(member) < 1) goto done;
+    part = ml_part(member, 1);
+    if (part.n == 0 || (c = calloc(1, sizeof(*c))) == NULL ||
+        ml_texture(c, part, (uint32_t)kMlLanguageArt[art].index, &tex) <= 0 ||
+        tex.w != kMlLanguageArt[art].w || tex.h != kMlLanguageArt[art].h ||
+        tex.hash != kMlLanguageArt[art].hash ||
+        (copy = malloc((size_t)tex.w * tex.h * 4)) == NULL) goto done;
+    memcpy(copy, tex.rgba, (size_t)tex.w * tex.h * 4);
+    *pixels = copy;
+    *w = tex.w; *h = tex.h;
+    ok = 1;
+done:
+    if (fp != NULL) fclose(fp);
+    if (c != NULL) { ml_free(c); free(c); }
+    free(unpacked);
+    free(file);
+    return ok;
 }
 
 /* The two discs' sections side by side (path: the member, then the section numbers below it): every texture file

@@ -10,6 +10,7 @@
  * A movie is two files in the disc's DATA directory, opened by name (not through the AFS archives):
  *   zs3usop.pss / zs3usop.adx   opening   (Movie_PlayOpening)
  *   zs3used.pss / zs3used.adx   ending    (Movie_PlayEnding)
+ * On the PC port, the opening can use the European zs3euop.adx soundtrack while keeping the USA video.
  * The .PSS is an MPEG-2 program stream of which only the video stream is used; the sound is the separate
  * .ADX, played by ADX player 0 (the music player) at volume 0x40, pan 0.
  *

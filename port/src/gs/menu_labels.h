@@ -2,12 +2,29 @@
 #ifndef GS_MENU_LABELS_H
 #define GS_MENU_LABELS_H
 #include <stddef.h>
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Header of the current labels.tsv layout. A list without this version is made again. */
-#define MENU_LABELS_VERSION "BT3 menu text v12:"
+#define MENU_LABELS_VERSION "BT3 menu text v13:"
+
+/* A label texture's fingerprint (labels.tsv's last column, since v13): FNV-1a over 64 of its pixels, spread evenly
+   over it. A texture whose fingerprint no label of its size has is no label, without the hash over all of its bytes
+   (menu_text.c): that hash was most of the work for a fight's big new textures. Both sides take it from the same
+   decoded pixels (RGBA, 4 bytes each). */
+static inline uint64_t MenuLabels_Quick(const uint8_t *rgba, int width, int height) {
+    uint64_t hash = UINT64_C(14695981039346656037), pixels = (uint64_t)width * (uint64_t)height;
+    int k, b;
+    for (k = 0; k < 64 && pixels != 0; k++) {
+        const uint8_t *p = rgba + (size_t)((uint64_t)k * pixels / 64) * 4;
+        for (b = 0; b < 4; b++) {
+            hash = (hash ^ p[b]) * UINT64_C(1099511628211);
+        }
+    }
+    return hash;
+}
 
 enum { MENU_LABELS_MADE = 0, MENU_LABELS_OTHER_DISC = 1, MENU_LABELS_FAILED = -1 };
 
@@ -40,6 +57,12 @@ void MenuLabels_ItemPixels(const unsigned char *pic, const unsigned char *table,
 int MenuLabels_Art(const char *dataDir, int bank, char *why, size_t whyLen);
 int MenuLabels_ArtSwap(unsigned char *rgba, int w, int h);
 unsigned MenuLabels_ArtKey(void);
+
+/* Native startup language selector pictures from the player's European disc (PZS3EU0.AFS, entry 1).
+   `id` is TBO_LANG_BG/ARROW_LEFT/ARROW_RIGHT. On success `pixels` is malloc-owned RGBA in GS alpha
+   (0x80 is opaque); the caller frees it. No PNG assets are involved. */
+int MenuLabels_LanguageArtAvailable(void);
+int MenuLabels_LanguageArtPixels(int id, unsigned char **pixels, int *w, int *h);
 
 #ifdef __cplusplus
 }

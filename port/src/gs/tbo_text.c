@@ -15,6 +15,7 @@
  */
 #include "menu_text.h"
 #include "online_language.h"
+#include "menu_translation.h" /* the online menus' lines in the chosen language */
 #include "../../../include/menu/tbo_art.h"
 #include <SDL3/SDL.h>
 #include <pthread.h>
@@ -77,6 +78,13 @@ int PortTbo_TextId(const char *text, int kind) {
     if (text == NULL || text[0] == '\0' || kind < 0 || kind > 2) {
         return -1;
     }
+    {   /* a line of the menu in the chosen language (translations/port/<language>.json; as it is without one), here
+           where each is drawn and measured, so the two always agree */
+        const char *t = MenuTranslation_Line(text);
+        if (t != NULL) {
+            text = t;
+        }
+    }
     pthread_mutex_lock(&sLock);
     for (i = 0; i < TBO_TEXT_SLOTS; i++) {
         TboLine *l = &sLines[i];
@@ -112,6 +120,12 @@ int PortTbo_TextMeasure(const char *text, int kind) {
     int w, h, base, cap, adv;
     if (text == NULL || text[0] == '\0' || kind < 0 || kind > 1) {
         return 0;
+    }
+    {
+        const char *t = MenuTranslation_Line(text); /* (as PortTbo_TextId) */
+        if (t != NULL) {
+            text = t;
+        }
     }
     cap = line_cap(kind);
     adv = MenuText_LineMeasure(kind, text, cap, 0, &w, &h, &base);

@@ -67,6 +67,7 @@ typedef struct GsTarget {
 extern float gsZMax; /* gs_draw.c */
 
 typedef struct GsDraw {
+    uint32_t object; /* display-list actor/model identity; presentation only */
     int vu;      /* 1, 2, 3: vertex programs' vertices (gsVuVerts, uniform block at `uniform`); 0: gsVerts */
     int uniform;
     int native; /* 0: primitives; otherwise a native full-screen effect (PORT_FX_*) at this point of the frame;

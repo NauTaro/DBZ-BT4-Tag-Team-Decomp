@@ -29,6 +29,7 @@ extern "C" int GsDraw_PerformanceMode(void);
 #include "../quit_dialog.h"
 #include "net_chat.h"
 #include "voice.h"
+#include "net_lobby.h"
 
 static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
 static bool meter_on(void);
@@ -99,12 +100,30 @@ int Port_LobbyRelayed(void);                                 // the other player
 int Port_LobbyPoll(void);
 void Port_LobbyCancel(void);
 void Port_LobbyLaunch(void);
+int Port_LobbySpectate(const char *address, int port);        // gs/net.c: watch the match hosted there (a spectator)
+int Port_LobbySpectateCode(const char *code);                // ... the match of that room code
+int Port_LobbySpectateWaiting(void);                         // ... the host is there and has no match yet
+int Port_NetSpectating(void);                                // this copy watches a match
+void Port_NetSpecLeave(void);                                // ... stop watching (at the game's next blank)
+void Port_NetSpecViewSet(int view);                          // ... 0 player 1's view, 1 player 2's, 2 both (split)
+int Port_NetSpecView(void);
+int Port_NetSpecStatus(int *out);                            // ... catching up (%), waiting, desync blank
+void Port_NetSpectatorsAllow(int on);                        // the host lets spectators in
+int Port_NetWatchers(void);                                  // how many watch this match (the players)
+const char *Port_NetWatcher(int i);                          // ... their names
 }
 static bool sReady, sOpen;
 static MenuTranslationOption sLanguages[256];
 static int sLanguageCount, sLanguageChoice;
 static bool sLanguageRestartPending;
 static bool sNet;                              // the open window is the online screen (Dragon Net Battle), not the settings
+// A spectator's own pause menu is the game's (src/menu/port_tbo.c, PortTbo_SpecDraw): Esc, or the test's moment, asks
+// for it here; the controller's START and the key bound to it reach it through the pad.
+extern "C" volatile int gPortSpecMenuAsk;
+volatile int gPortSpecMenuAsk;
+extern "C" void Port_UiNotice(const char *text);
+static void spec_view_next(void);               // watching a match: the next view (player 1, player 2, both)
+static const char *spec_view_name(int view);
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
 static Uint64 sCapUntil;                       // ... until then: a controller has no button that is not a binding, so the wait ends by itself
@@ -821,6 +840,7 @@ static void build_net(void) {
     static bool useCode = true;       // host with a room code (no port forwarding) or on a port
     static char roomCode[8] = "";     // the code to join with
     static int lastState = 0;         // what the lobby said last (for its messages after a failure)
+    static bool watching;             // the lobby is a spectator's
     ImGuiIO &io = ImGui::GetIO();
     bool open = true;
 
@@ -836,11 +856,11 @@ static void build_net(void) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.35f, 1.0f));
                 ImGui::TextWrapped("Update available. Online servers are unreachable until you update.");
                 ImGui::PopStyleColor();
-                ImGui::TextDisabled("You have 0.%d.%d; 0.%d.%d or newer is needed. github.com/z3xox/Tenkaichi3Decomp/releases", mine / 100, mine % 100, min / 100, min % 100);
+                ImGui::TextDisabled("You have 0.%d.%d; 0.%d.%d or newer is needed. github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases", mine / 100, mine % 100, min / 100, min % 100);
                 ImGui::Separator();
             } else if (latest > mine) {
                 ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Update available: release 0.%d.%d.", latest / 100, latest % 100);
-                ImGui::TextDisabled("github.com/z3xox/Tenkaichi3Decomp/releases");
+                ImGui::TextDisabled("github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases");
                 ImGui::Separator();
             }
         }
@@ -926,6 +946,16 @@ static void build_net(void) {
                                               "release only 100%%.", Port_NetSpeedStandard());
                     }
                 }
+                {
+                    bool watch = Port_Setting("net_spectators", 1) != 0;
+                    if (ImGui::Checkbox("Let others watch the match", &watch)) {
+                        Port_SettingSave("net_spectators", watch ? 1 : 0);
+                        Port_SettingsWrite();
+                    }
+                    Port_NetSpectatorsAllow(watch);
+                    ImGui::SetItemTooltip("Up to 6 spectators can watch, with your address or room code (Join tab, \"Watch the\n"
+                                          "match\"). They cost your match nothing: it never waits for them.");
+                }
                 ImGui::TextDisabled("The host's choices apply to both players.");
                 ImGui::EndTabItem();
             }
@@ -1003,6 +1033,14 @@ static void build_net(void) {
         {
             int state = Port_LobbyPoll();
             sNetBusy = state == 1 || state == 3;
+            if (state == 5) { // the code or address was a lobby's: this game is its member; its screen is the game's
+                Port_LobbyCancel(); // (the lobby has the socket now)
+                const char *said = MenuTranslation_PortText(PORT_TEXT_LOBBY_JOINED);
+                Port_UiNotice(said != NULL ? said : "You are in the lobby. Its screen opens from the main menu (Tenkaichi Budokai Online).");
+                set_open(false);
+                ImGui::End();
+                return;
+            }
             if (state == 2) {
                 Port_LobbyLaunch(); // the other player is there: the game turns into the session at its next blank
                 set_open(false);
@@ -1035,7 +1073,9 @@ static void build_net(void) {
                     }
                     ImGui::TextUnformatted(state == 3 ? "Tell the other player this code. Waiting for them to join..." : "The other player has joined. Connecting...");
                 } else {
-                    ImGui::TextUnformatted(state == 1 ? "Found the room. Connecting to the host..." : tab == 0 ? "Getting a room code..." : "Looking for the room...");
+                    ImGui::TextUnformatted(watching && Port_LobbySpectateWaiting() ? "The room's match has not begun yet. Waiting for it..."
+                                           : state == 1 ? (watching ? "Found the room. Asking the host to let you watch..." : "Found the room. Connecting to the host...")
+                                           : tab == 0 ? "Getting a room code..." : "Looking for the room...");
                 }
                 if (ImGui::Button("Cancel", ImVec2(U(120.0f), 0.0f))) {
                     Port_LobbyCancel();
@@ -1047,6 +1087,10 @@ static void build_net(void) {
                     if (Port_LobbyOther()) {
                         ImGui::TextWrapped("A player with a different version of the game is trying to join. Both need the same release.");
                     }
+                } else if (watching && Port_LobbySpectateWaiting()) {
+                    ImGui::TextWrapped("The host is there but its match has not begun yet. You will watch it as soon as it does...");
+                } else if (watching) {
+                    ImGui::Text("Asking %s to let you watch...", address);
                 } else {
                     ImGui::Text("Looking for %s...", address);
                 }
@@ -1082,11 +1126,29 @@ static void build_net(void) {
                     Port_SettingTextSave("net_name", name);
                     Port_SettingsWrite();
                     lastState = 0;
+                    watching = false;
                     if (byCode) {
                         Port_LobbyStartCode(tab == 0, roomCode);
                     } else {
                         Port_LobbyStart(tab == 0, address, atoi(port));
                     }
+                }
+                if (tab == 1) { // the same match, only watched (a spectator)
+                    ImGui::SameLine();
+                    if (ImGui::Button("Watch the match", ImVec2(U(160.0f), 0.0f))) {
+                        Port_NetNameSet(name);
+                        Port_SettingTextSave("net_name", name);
+                        Port_SettingsWrite();
+                        lastState = 0;
+                        watching = true;
+                        if (byCode) {
+                            Port_LobbySpectateCode(roomCode);
+                        } else {
+                            Port_LobbySpectate(address, atoi(port));
+                        }
+                    }
+                    ImGui::SetItemTooltip("Watch the host's match as a spectator: you see the fight as it is played, about a\n"
+                                          "second behind, and your controller does nothing. Up to 6 can watch a match.");
                 }
                 ImGui::EndDisabled();
                 ImGui::SameLine();
@@ -1138,7 +1200,7 @@ static void bind(int value) {
 }
 
 static bool chat_can_open(void) {
-    return sReady && !sOpen && !sQuit && PortChat_Enabled() && Port_NetActive();
+    return sReady && !sOpen && !sQuit && PortChat_Enabled() && Port_NetActive() && !Port_NetSpectating();
 }
 
 static void chat_open(void) {
@@ -1219,6 +1281,16 @@ int Ui_Event(const SDL_Event *ev) {
     }
     if (sChat && !sOpen && !sQuit) {
         return chat_event(ev);
+    }
+    if (!sOpen && !sQuit && Port_NetSpectating() && ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat && ev->key.scancode == SDL_SCANCODE_ESCAPE) {
+        gPortSpecMenuAsk = 1; // a spectator's own pause menu (the game's, over the match: only on this screen)
+        return 1;
+    }
+    if (!sOpen && !sQuit && Port_NetSpectating() &&
+        ((ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat && ev->key.scancode == SDL_SCANCODE_V) ||
+         (ev->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && ev->gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))) {
+        spec_view_next(); // (a spectator's keys and controller play nobody: the view is all they change)
+        return 1;
     }
     if (ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat && *PortInput_ChatKey() > 0 && (int)ev->key.scancode == *PortInput_ChatKey() &&
         chat_can_open()) {
@@ -1355,8 +1427,22 @@ static void video_tab(PortVideo &v) {
             ImGui::SetItemTooltip("The game reads the controller, computes, and then waits before the picture is shown:\n"
                                   "about 33 ms in a fight. With this on the wait comes first, so the picture follows\n"
                                   "your press by the few milliseconds the machine needs. The game itself is unchanged.\n"
-                                  "Not used online or with in-between pictures. Off by default: on a machine that\n"
+                                  "With Smooth motion as well: its in-between picture then follows your press at once and\n"
+                                  "the full one a refresh later. Not used online. Off by default: on a machine that\n"
                                   "cannot keep up it may stutter where the original order would not.");
+        }
+        {
+            extern int Port_Setting(const char *name, int def);
+            extern void Port_SettingSave(const char *name, int value);
+            bool thr = Port_Setting("render_thread", 1) != 0;
+            if (ImGui::Checkbox("Render on a second processor core (experimental, after a restart)", &thr)) {
+                Port_SettingSave("render_thread", thr ? 1 : 0);
+                Port_SettingsWrite(); /* (kept outside the window's own values: written here, or it was lost at the end) */
+            }
+            ImGui::SetItemTooltip("The picture is prepared and shown on a core of its own while the game computes the next\n"
+                                  "moment: faster where the processor is the slow part (older or low-power machines).\n"
+                                  "The same picture and the same game. Takes effect when the game is started again.\n"
+                                  "Not with the OpenGL renderer, and not on machines with two cores or fewer.");
         }
     }
     SDL_DisplayID *displays = SDL_GetDisplays(&count);
@@ -1407,17 +1493,15 @@ static void video_tab(PortVideo &v) {
         // In-between pictures (gs_draw.c): the fight is computed 30 times a second, as on the console; with this
         // on one more picture is drawn between each two. The game itself, its replays and online play are the same.
         static const char *kSmooth[] = { "Off (30, as the console)", "60 pictures a second", "120 pictures a second", "240 pictures a second" };
-        int smooth = gsInterp < 0 ? 0 : gsInterp > 3 ? 3 : gsInterp;
-        const bool tagNativeFrames = Port_TagBattleRenderActive() != 0;
+        int smooth = gsInterp < 0 ? 1 : gsInterp > 3 ? 3 : gsInterp;
         ImGui::SetNextItemWidth(U(416.0f));
-        ImGui::BeginDisabled(tagNativeFrames || GsDraw_PerformanceMode());
+        ImGui::BeginDisabled(GsDraw_PerformanceMode());
         if (ImGui::Combo("Smooth motion", &smooth, kSmooth, 4)) {
             gsInterp = smooth;
             Port_SettingSave("interp", gsInterp);
             Port_SettingsWrite();
         }
         ImGui::EndDisabled();
-        if (tagNativeFrames) ImGui::TextDisabled("Tag Team uses native frames for stable fighter rendering.");
         ImGui::SetItemTooltip("Experimental. The game computes a fight 30 times a second. With this, more pictures are\n"
                               "drawn between each two. The fight itself does not change, and neither does online play.\n"
                               "The newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\n"
@@ -1465,18 +1549,31 @@ static void video_tab(PortVideo &v) {
 }
 
 static void effects_tab(PortVideo &v) {
-    static const struct { const char *name, *tip; } fx[6] = {
+    static const struct { const char *name, *tip; } fx[7] = {
         {"Outline", "The black line around the fighters."},
         {"See-through tint", "The tint that shows a fighter behind scenery."},
         {"Depth tint", "The haze that colours distant things."},
         {"Glare and glow", "The bloom around bright things and the sky's glare."},
         {"Distance blur", "The soft focus on distant scenery."},
         {"Movement blur", "The blur of the scenery while the view turns or moves fast."},
+        {"Weather", "The haze of dust or mist that drifts over some stages (Desert and Rocky Area at noon, Rocky Area\n"
+                    "in the evening, Kami's Lookout; Glacier, Muscle Tower and the Time Chamber have a little of it too).\n"
+                    "A faint tint, made of big soft sprites over the whole picture: off, those stages run as fast as the\n"
+                    "others (a fifth faster at 3x)."},
     };
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 7; i++) {
         bool on = !((v.fxOff >> i) & 1);
         if (ImGui::Checkbox(fx[i].name, &on)) { v.fxOff = (v.fxOff & ~(1 << i)) | (on ? 0 : 1 << i); }
         ImGui::SetItemTooltip("%s", fx[i].tip);
+        if (i == 6 && on) { /* Weather on: how much of it (fx_off bit 128: half the sprites) */
+            static const char *const amount[2] = {"Full", "Light"};
+            int light = (v.fxOff >> 7) & 1;
+            ImGui::Indent();
+            ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
+            if (ImGui::Combo("Weather amount", &light, amount, 2)) { v.fxOff = (v.fxOff & ~128) | (light ? 128 : 0); }
+            ImGui::SetItemTooltip("Light: half of the haze's sprites, a thinner haze; about half of what switching it off gains.");
+            ImGui::Unindent();
+        }
     }
     ImGui::Spacing();
     ImGui::SliderInt("Glow strength", &v.glow, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
@@ -1719,6 +1816,7 @@ static void audio_tab(PortVideo &v) {
         if (ImGui::Checkbox("Music follows game speed", &follows)) {
             gPortMusicFollows = follows;
             Port_SettingSave("music_follows_speed", follows);
+            Port_SettingsWrite(); // (in the file at once: it was lost at the end unless another setting was written after it)
         }
         ImGui::SetItemTooltip("When the game runs at another speed than 100%% (an online match, the Cheats tab):\n"
                               "off, the music plays as it is; on, it is sped up or slowed down with the game,\n"
@@ -1743,6 +1841,9 @@ static void cheats_tab(void) {
             Port_GameSpeedSet(speed);
             Port_AudioRefresh();
         }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            Port_SettingsWrite(); // (when the slider is let go: the speed was lost at the end unless another setting was written)
+        }
         ImGui::SetItemTooltip("How fast the game runs outside online play (the sound keeps its pitch). 100%% is the game's own;\n"
                               "114%% is what competitive play uses. An online match never uses this value:\n"
                               "its speed is the host's or the queue's.");
@@ -1750,6 +1851,7 @@ static void cheats_tab(void) {
         if (ImGui::Button("Reset")) {
             Port_GameSpeedSet(100);
             Port_AudioRefresh();
+            Port_SettingsWrite();
         }
         ImGui::Separator();
         ImGui::Spacing();
@@ -2027,6 +2129,45 @@ static void build(void) {
                                         sh < io.DisplaySize.y * 0.94f ? sh : io.DisplaySize.y * 0.94f), ImGuiCond_Appearing);
     }
     if (ImGui::Begin("Settings", &open, ImGuiWindowFlags_NoCollapse)) {
+        PortLobbyView lv;
+        bool inLobby = Port_LobbyView(&lv) && lv.inMatch;
+        if (inLobby) { // a lobby's match: the ways back (the owner: for everyone) and out
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Lobby%s%s", lv.code[0] != '\0' ? " " : "", lv.code);
+            if (lv.owner) {
+                ImGui::SameLine();
+                if (ImGui::Button("Back to the lobby")) {
+                    Port_LobbyDo(LOBBY_BACK, 0, 0);
+                    open = false;
+                }
+                ImGui::SetItemTooltip("Ends the match for everyone: all go back to the lobby window, where the rules can be changed.");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(lv.owner ? "Close the lobby" : "Leave the lobby")) {
+                Port_LobbyDo(LOBBY_LEAVE, 0, 0);
+                open = false;
+            }
+            ImGui::SetItemTooltip(lv.owner ? "Ends the match and the lobby for everyone." : "Back to the main menu. A player leaving ends the match; a spectator leaving changes nothing for the others.");
+            ImGui::Separator();
+        }
+        if (Port_NetSpectating()) { // watching a match: whose view, and the way out
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Spectating %s vs %s", Port_NetName(0), Port_NetName(1));
+            ImGui::SameLine();
+            if (ImGui::Button("Change view")) {
+                spec_view_next();
+            }
+            ImGui::SetItemTooltip("Player 1's view, player 2's, or both (split screen). Also V or R1 while watching.");
+            if (!inLobby) { // (in a lobby: "Leave the lobby", above)
+                ImGui::SameLine();
+                if (ImGui::Button("Stop watching")) {
+                    Port_NetSpecLeave();
+                    open = false;
+                }
+            }
+            ImGui::TextDisabled("View: %s", spec_view_name(Port_NetSpecView()));
+            ImGui::Separator();
+        }
         {
             int latest = update_latest();
             if (latest > PORT_RELEASE) {
@@ -2176,6 +2317,40 @@ static void save_icon_draw(Uint64 now) {
     dl->AddRectFilled(ImVec2(x0 + w * 0.18f, y0 + h * 0.48f), ImVec2(x1 - w * 0.18f, y1 - h * 0.14f), col(245, 140, 35, 235), h * 0.05f);
 }
 
+// Watching a match (gs/net.c, a spectator): a line at the top, whose match and whose view, and how to change it.
+static const char *spec_view_name(int view) {
+    static char text[48];
+    if (view == 2) {
+        return "both (split screen)";
+    }
+    SDL_snprintf(text, sizeof(text), "%s", Port_NetName(view)[0] != '\0' ? Port_NetName(view) : view == 0 ? "player 1" : "player 2");
+    return text;
+}
+
+static void spec_view_next(void) {
+    Port_NetSpecViewSet((Port_NetSpecView() + 1) % 3);
+}
+
+// For the players: who watches their match (small, in the top right corner).
+static void watchers_line(void) {
+    ImGuiIO &io = ImGui::GetIO();
+    char text[200];
+    int n = Port_NetWatchers();
+    size_t at = (size_t)SDL_snprintf(text, sizeof(text), "%d watching: ", n);
+    for (int i = 0; i < n && at < sizeof(text); i++) {
+        at += (size_t)SDL_snprintf(text + at, sizeof(text) - at, "%s%s", i > 0 ? ", " : "", Port_NetWatcher(i));
+    }
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - U(6.0f), U(6.0f)), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.35f);
+    if (ImGui::Begin("##watchers", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+                                             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::SetWindowFontScale(0.85f);
+        ImGui::TextDisabled("%s", text);
+        ImGui::SetWindowFontScale(1.0f);
+    }
+    ImGui::End();
+}
+
 // The meter: frames shown and the game's speed, and in an online match the connection. A setting (Video tab).
 static bool meter_on(void) {
     if (sMeter < 0) {
@@ -2271,6 +2446,11 @@ static unsigned sFontNext;
 
 static const FontName *font_name(int style, const char *text) {
     int choice = MenuText_GetFont();
+    if (choice == 0) {
+        for (int i = 1; i < MenuText_FontCount(); i++) {
+            if (MenuText_FontAvailable(i, MENU_TEXT_MENU)) { choice = i; break; }
+        }
+    }
     int resolution = choice ? 4 : 1; // (a font's strip: 4 times the disc's, for a window larger than the game's picture)
     if (text == NULL || text[0] == '\0' || (choice == 0 && !NameFont_Ready())) { // (not ready: asked again next frame)
         return NULL;
@@ -2520,6 +2700,18 @@ static bool frame_build(void) {
         gPortNetMenuRequest = 0;
         net_open();
     }
+    { // BT3_SPEC_PAUSE_AT=<seconds>: testing, a spectator's own pause menu (the game's) opens that long into its match
+        static Uint64 since;
+        static bool done;
+        if (!done && getenv("BT3_SPEC_PAUSE_AT") != NULL && sReady && Port_NetSpectating() && !sOpen) {
+            if (since == 0) {
+                since = SDL_GetTicks();
+            } else if (SDL_GetTicks() - since > (Uint64)atoi(getenv("BT3_SPEC_PAUSE_AT")) * 1000) {
+                done = true;
+                gPortSpecMenuAsk = 1;
+            }
+        }
+    }
     if (sReady && !sUpdTold && update_latest() > PORT_RELEASE && SDL_GetTicks() >= sNoticeUntil) {
         int latest = update_latest(); // (told once, and not over another notice)
         sUpdTold = true;
@@ -2540,7 +2732,7 @@ static bool frame_build(void) {
     // the players' names under the gauges of an online fight
     bool names = sReady && Port_NetActive() && BtlChar_FindByObjId(0) != NULL && (Port_NetName(0)[0] != '\0' || Port_NetName(1)[0] != '\0');
     bool bars = sReady && bars_on();
-    bool online = sReady && Port_NetActive() && PortChat_Enabled();
+    bool online = sReady && Port_NetActive() && PortChat_Enabled() && !Port_NetSpectating(); // (a spectator has no one to talk to)
     if (sChat && !online) { // (the match ended while a line was typed)
         chat_close();
     }
@@ -2557,10 +2749,12 @@ static bool frame_build(void) {
     bool banner = sReady && sBanner[0] != '\0' && !tagMenu;
     Uint64 now = SDL_GetTicks();
     bool saving = save_icon_on(now) && sReady && gUiPresentW > 0 && gUiPresentH > 0;
+    bool watched = sReady && Port_NetWatchers() > 0 && !sOpen;  // a player's: who watches the match
     if(PortHud_Hidden() && !gPortMenuMode)voice=banner=saving=false;
+    if(PortHud_Hidden() && !gPortMenuMode)watched=false;
     meter_count();
     sBuilt = false;
-    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !tagMenu && !voice)) {
+    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !tagMenu && !voice && !watched)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -2678,6 +2872,9 @@ static bool frame_build(void) {
     if (saving) {
         save_icon_draw(now);
     }
+    if (watched) {
+        watchers_line();
+    }
     if (notice) { // a line over the picture for a few seconds (the end of an online match)
         ImGuiIO &io = ImGui::GetIO();
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.12f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -2693,11 +2890,11 @@ static bool frame_build(void) {
            window (the letterbox gs_gpu.c just blitted into). */
         float sx = (float)gUiPresentW / 512.0f;
         float sy = (float)gUiPresentH / 448.0f;
-        // With a menu font every name is drawn here, so the names belong to the game picture, behind the settings
-        // and other windows. With "Original" only an added stage or song is, in front of everything as before.
-        ImDrawList *dl = MenuText_GetFont() != 0 ? ImGui::GetBackgroundDrawList() : ImGui::GetForegroundDrawList();
+        // Stage/song names belong to the game picture, behind settings and other windows,
+        // including added names rendered while Menu font is Original.
+        ImDrawList *dl = ImGui::GetBackgroundDrawList();
 
-        if (nameOn && MenuText_GetFont() != 0) {
+        if (nameOn) {
             const FontName *fn = font_name(NF_STAGE, PortStages_Name(gUiNameIdx));
             float x = (float)gUiPresentX + (float)gUiNameX * sx, y = (float)gUiPresentY + (float)gUiNameY * sy;
             if (fn != NULL) {
@@ -2706,30 +2903,8 @@ static bool frame_build(void) {
             } else {
                 name_text(dl, PortStages_Name(gUiNameIdx), x, y, (float)gUiNameW * sx, (float)gUiNameH * sy, true);
             }
-        } else if (nameOn && gUiNameIdx >= (int)sNameCount) { // no pre-rendered name for this one
-            /* In the game's lettering if the disc's names have all its characters, else as plain text. The menu's
-               rectangle is the strip image's (384x48, set 64 right and 14 down in the 512x64 row of the disc's own
-               name picture); the lettering goes where that row is. The menu's movie draws the row a little below
-               the clip's position: kNameDy, measured by drawing a disc name both ways (the same for the songs). */
-            static const float kNameDy = 1.5f;
-            const FontName *fn = font_name(NF_STAGE, PortStages_Name(gUiNameIdx));
-            if (fn != NULL) {
-                float kx = (float)gUiNameW * sx / 384.0f, ky = (float)gUiNameH * sy / 48.0f;
-                font_draw(dl, fn, (float)gUiPresentX + (float)gUiNameX * sx - 64.0f * kx, (float)gUiPresentY + (float)gUiNameY * sy + (kNameDy - 14.0f) * ky, kx, ky, true);
-            } else {
-                name_text(dl, PortStages_Name(gUiNameIdx), (float)gUiPresentX + (float)gUiNameX * sx, (float)gUiPresentY + (float)gUiNameY * sy,
-                          (float)gUiNameW * sx, (float)gUiNameH * sy, true);
-            }
-        } else if (nameOn) {
-            float x = (float)gUiPresentX + (float)gUiNameX * sx;
-            float y = (float)gUiPresentY + (float)gUiNameY * sy;
-            float w = (float)gUiNameW * sx;
-            float h = (float)gUiNameH * sy;
-            dl->AddImage(ImTextureRef((ImTextureID)(intptr_t)sNameTex), ImVec2(x, y), ImVec2(x + w, y + h),
-                         ImVec2(0.0f, (float)gUiNameIdx / (float)sNameCount),
-                         ImVec2(1.0f, (float)(gUiNameIdx + 1) / (float)sNameCount));
         }
-        if (songOn && MenuText_GetFont() != 0) {
+        if (songOn) {
             const FontName *fn = font_name(gUiSongLit ? NF_SONG_LIT : NF_SONG, PortSongs_Name(gUiSongIdx));
             float x = (float)gUiPresentX + (float)gUiSongX * sx, y = (float)gUiPresentY + (float)gUiSongY * sy;
             if (fn != NULL) {
@@ -2737,25 +2912,6 @@ static bool frame_build(void) {
             } else {
                 name_text(dl, PortSongs_Name(gUiSongIdx), x, y, (float)gUiSongW * sx, (float)gUiSongH * sy, false);
             }
-        } else if (songOn && gUiSongIdx >= (int)sSongCount) {
-            // (the rectangle is the 512x32 row of the disc's song-name picture itself)
-            const FontName *fn = font_name(gUiSongLit ? NF_SONG_LIT : NF_SONG, PortSongs_Name(gUiSongIdx));
-            if (fn != NULL) {
-                static const float kSongDx = -0.2f, kSongDy = 2.35f;
-                float kx = (float)gUiSongW * sx / 512.0f, ky = (float)gUiSongH * sy / 32.0f;
-                font_draw(dl, fn, (float)gUiPresentX + (float)gUiSongX * sx + kSongDx * kx, (float)gUiPresentY + (float)gUiSongY * sy + kSongDy * ky, kx, ky, false);
-            } else {
-                name_text(dl, PortSongs_Name(gUiSongIdx), (float)gUiPresentX + (float)gUiSongX * sx, (float)gUiPresentY + (float)gUiSongY * sy,
-                          (float)gUiSongW * sx, (float)gUiSongH * sy, false);
-            }
-        } else if (songOn) {
-            float x = (float)gUiPresentX + (float)gUiSongX * sx;
-            float y = (float)gUiPresentY + (float)gUiSongY * sy;
-            float w = (float)gUiSongW * sx;
-            float h = (float)gUiSongH * sy;
-            dl->AddImage(ImTextureRef((ImTextureID)(intptr_t)sSongTex), ImVec2(x, y), ImVec2(x + w, y + h),
-                         ImVec2(0.0f, (float)gUiSongIdx / (float)sSongCount),
-                         ImVec2(1.0f, (float)(gUiSongIdx + 1) / (float)sSongCount));
         }
     }
     voice_indicator_draw();

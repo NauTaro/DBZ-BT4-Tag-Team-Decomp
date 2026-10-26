@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <pthread.h>
 #include <string.h>
 #include <time.h>
@@ -188,6 +189,7 @@ static uint32_t sMoved;
 
 void Gs_StateKeep(void) {
     extern void GsVu1_StateKeep(int restore); /* gs_vu1.c: the vertex unit's memory and programs */
+    Gs_RenderIdle(); /* (GS memory and registers are the render thread's while it runs a list) */
     if (sKept.vram == NULL) {
         sKept.vram = malloc(sizeof(sVram));
     }
@@ -201,6 +203,7 @@ void Gs_StateKeep(void) {
 void Gs_StateBack(void) {
     extern void GsVu1_StateKeep(int restore);
     int i;
+    Gs_RenderIdle();
     if (!sKept.valid) {
         return;
     }
@@ -569,8 +572,73 @@ static void draw_line(Target *sf, int ctx, const Vertex *a, const Vertex *b) {
     }
 }
 
+/* The seam's exact positions. A model's seam (the strip joining two of its parts: the back of Videl's shirt) is
+   projected on the CPU and sent as plain GS triangles, rounded to the GS's 1/16 pixel (src/port/vu0_a.c, the seam
+   routine); the parts beside it come out of the vertex programs, which the port draws at full precision. Their
+   shared edges did not meet: pixels covered by neither showed the black outline behind, a dashed line down the
+   seam, at 1x already and more at higher resolutions. The routine leaves here each vertex's position before the
+   rounding, under the rounded one; a GS vertex with that rounded position (and depth) is drawn at it. Kept, not
+   cleared (the game's thread writes while the render thread reads): an entry from before is off by less than the
+   1/16 pixel the rounding was, and a read is checked against its key. BT3_SEAM_ROUND=1: as before. */
+#define SEAM_SLOTS 16384
+static struct { volatile uint64_t key; volatile float fx, fy; } sSeam[SEAM_SLOTS];
+static int sSeamOn = -1;
+static int sSeamWiden = 1; /* BT3_SEAM_WIDEN=0: seam triangles at their own size */
+
+static uint64_t seam_key(uint32_t x, uint32_t y, uint32_t z) {
+    return ((uint64_t)(z & 0xFFFFFF) << 32 | (uint64_t)(y & 0xFFFF) << 16 | (x & 0xFFFF)) | 1ull << 63; /* (never 0) */
+}
+
+void Port_SeamExact(uint32_t x, uint32_t y, uint32_t z, uint32_t fxBits, uint32_t fyBits) {
+    uint64_t key = seam_key(x, y, z >> 4); /* (the seam goes to the GS as XYZF2: its depth is the word's bits 4..27) */
+    float fx, fy;
+    memcpy(&fx, &fxBits, 4);
+    memcpy(&fy, &fyBits, 4);
+    unsigned slot = (unsigned)((key * 0x9E3779B97F4A7C15ull) >> 50) & (SEAM_SLOTS - 1);
+    if (sSeamOn < 0) {
+        sSeamOn = getenv("BT3_SEAM_ROUND") == NULL || atoi(getenv("BT3_SEAM_ROUND")) == 0;
+        sSeamWiden = getenv("BT3_SEAM_WIDEN") == NULL || atoi(getenv("BT3_SEAM_WIDEN")) != 0;
+    }
+    __atomic_store_n(&sSeam[slot].key, 0, __ATOMIC_RELEASE); /* (a reader in between finds no key) */
+    sSeam[slot].fx = fx;
+    sSeam[slot].fy = fy;
+    __atomic_store_n(&sSeam[slot].key, key, __ATOMIC_RELEASE);
+}
+
+static int seam_exact(uint32_t x, uint32_t y, uint32_t z, float *fx, float *fy) {
+    uint64_t key = seam_key(x, y, z);
+    unsigned slot = (unsigned)((key * 0x9E3779B97F4A7C15ull) >> 50) & (SEAM_SLOTS - 1);
+    if (sSeamOn != 1 || __atomic_load_n(&sSeam[slot].key, __ATOMIC_ACQUIRE) != key) {
+        return 0;
+    }
+    *fx = sSeam[slot].fx;
+    *fy = sSeam[slot].fy;
+    return __atomic_load_n(&sSeam[slot].key, __ATOMIC_ACQUIRE) == key;
+}
+
+/* Which of gs.vtx are a seam's (seam_exact found them): a triangle of three is drawn a little larger (seam_widen). */
+static uint8_t sVtxSeam[3];
+
+/* A seam triangle, half a picture pixel larger all round (each corner moved that far from the middle, at the internal
+   resolution). Even at their exact positions the seam and the parts beside it left a pixel open here and there,
+   where one's edge has a corner the other's has not; overlapping them a little closes those. */
+static void seam_widen(Vertex *t) {
+    extern int gsScale;
+    float cx = (t[0].x + t[1].x + t[2].x) / 3.0f, cy = (t[0].y + t[1].y + t[2].y) / 3.0f;
+    float d = 0.5f / (float)(gsScale > 0 ? gsScale : 1);
+    int i;
+    for (i = 0; i < 3; i++) {
+        float dx = t[i].x - cx, dy = t[i].y - cy, len = sqrtf(dx * dx + dy * dy);
+        if (len > 1e-4f) {
+            t[i].x += dx / len * d;
+            t[i].y += dy / len * d;
+        }
+    }
+}
+
 /* A vertex arrives (XYZ2 / XYZF2 with kick = 1, XYZ3 / XYZF3 with kick = 0). */
 static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
+    int seamHit = 0;
     int ctx = (gs.prim >> 9) & 1, type = gs.prim & 7;
     Target *sf;
     Vertex v;
@@ -584,14 +652,26 @@ static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
     v.x = ((float)(int)x - (float)(gs.xyoffset[ctx] & 0xFFFF)) / 16.0f;
     v.y = ((float)(int)y - (float)((gs.xyoffset[ctx] >> 32) & 0xFFFF)) / 16.0f;
     v.z = z;
+    {   /* a seam's vertex: where it was before the rounding (Port_SeamExact) */
+        float fx, fy;
+        if (sGpu && seam_exact(x, y, z, &fx, &fy)) {
+            seamHit = 1;
+            v.x = fx - (float)(gs.xyoffset[ctx] & 0xFFFF) / 16.0f;
+            v.y = fy - (float)((gs.xyoffset[ctx] >> 32) & 0xFFFF) / 16.0f;
+        }
+    }
     v.r = gs.rgbaq & 0xFF; v.g = (gs.rgbaq >> 8) & 0xFF; v.b = (gs.rgbaq >> 16) & 0xFF; v.a = (gs.rgbaq >> 24) & 0xFF;
     memcpy(&v.s, &gs.st, 4);
     { uint32_t tt = (uint32_t)(gs.st >> 32); memcpy(&v.t, &tt, 4); }
     v.q = gs.q;
     v.u = gs.uv & 0x3FFF; v.v = (gs.uv >> 16) & 0x3FFF;
     if (gs.vcount < 3) {
+        sVtxSeam[gs.vcount] = (uint8_t)seamHit;
         gs.vtx[gs.vcount++] = v;
     } else {
+        sVtxSeam[0] = sVtxSeam[1];
+        sVtxSeam[1] = sVtxSeam[2];
+        sVtxSeam[2] = (uint8_t)seamHit;
         gs.vtx[0] = gs.vtx[1]; gs.vtx[1] = gs.vtx[2]; gs.vtx[2] = v;
     }
     gs.strip++;
@@ -650,7 +730,7 @@ static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
     case 0: if (kick) { if (sGpu) { GsGpu_Draw(0, ctx, &v); } else { pixel(sf, ctx, (int)v.x, (int)v.y, v.z, vcol(&v)); } } gs.vcount = 0; break;
     case 1: if (gs.vcount == 2) { if (kick) { if (sGpu) { GsGpu_Draw(1, ctx, gs.vtx); } else { draw_line(sf, ctx, &gs.vtx[0], &gs.vtx[1]); } } gs.vcount = 0; } break;
     case 2: if (gs.vcount == 2) { if (kick) { if (sGpu) { GsGpu_Draw(1, ctx, gs.vtx); } else { draw_line(sf, ctx, &gs.vtx[0], &gs.vtx[1]); } } gs.vtx[0] = gs.vtx[1]; gs.vcount = 1; } break;
-    case 3: if (gs.vcount == 3) { if (kick) { if (sGpu) { GsGpu_Draw(3, ctx, gs.vtx); } else { draw_triangle(sf, ctx, &gs.vtx[0], &gs.vtx[1], &gs.vtx[2]); } } gs.vcount = 0; } break;
+    case 3: if (gs.vcount == 3) { if (kick) { if (sGpu && sVtxSeam[0] && sVtxSeam[1] && sVtxSeam[2] && sSeamWiden) { Vertex t[3] = {gs.vtx[0], gs.vtx[1], gs.vtx[2]}; seam_widen(t); GsGpu_Draw(3, ctx, t); } else if (sGpu) { GsGpu_Draw(3, ctx, gs.vtx); } else { draw_triangle(sf, ctx, &gs.vtx[0], &gs.vtx[1], &gs.vtx[2]); } } gs.vcount = 0; } break;
     case 4: if (gs.vcount == 3 && kick) { if (sGpu) { GsGpu_Draw(3, ctx, gs.vtx); } else { draw_triangle(sf, ctx, &gs.vtx[0], &gs.vtx[1], &gs.vtx[2]); } } break;
     case 5:
         if (gs.vcount == 3) {
@@ -701,6 +781,8 @@ static void transfer_begin(void) {
                 (unsigned)((gs.bitbltbuf >> 48) & 0x3F), (unsigned)((gs.bitbltbuf >> 56) & 0x3F), gs.tx, gs.ty, gs.tw, gs.th);
     }
 }
+
+static uint64_t now_ns(void); /* (below) */
 
 static void transfer_data(const uint8_t *p, uint32_t bytes) {
     uint32_t dbp = (gs.bitbltbuf >> 32) & 0x3FFF, dbw = (gs.bitbltbuf >> 48) & 0x3F, dpsm = (gs.bitbltbuf >> 56) & 0x3F;
@@ -908,8 +990,11 @@ void Gs_Gif(const uint8_t *p, uint32_t qwc) {
             qwc--;
         } else { /* IMAGE */
             uint32_t n = loops < qwc ? loops : qwc;
+            extern uint64_t gDrawXferNs; /* (BT3_DRAW_LOG: the time writing pictures into GS memory) */
+            uint64_t t0 = now_ns();
             sStat[6] += n;
             transfer_data((const uint8_t *)q, n * 16);
+            gDrawXferNs += now_ns() - t0;
             q += 2 * n;
             qwc -= n;
             loops -= n;
@@ -990,8 +1075,13 @@ static void vif(const uint32_t *w, uint32_t count) {
         case 0x03: GsVu1_SetBase(imm); break;
         case 0x04: GsVu1_SetItop(imm); break;
         case 0x05: GsVu1_SetMode(imm); break;
-        case 0x14: case 0x15: GsVu1_Call((int)imm); break;
-        case 0x17: GsVu1_Call(-1); break;
+        case 0x14: case 0x15: case 0x17: { /* (BT3_DRAW_LOG: the time in vertex programs, their draws in it) */
+            extern uint64_t gDrawVuNs;
+            uint64_t t0 = now_ns();
+            GsVu1_Call(cmd == 0x17 ? -1 : (int)imm);
+            gDrawVuNs += now_ns() - t0;
+            break;
+        }
         case 0x20: need = 1; break;
         case 0x30: case 0x31: need = 4; break;
         case 0x4A: need = (num ? num : 256) * 2; break;
@@ -1084,7 +1174,13 @@ static int sThreaded;
 static int sJob;            /* 0 none, 1 start the GPU back end, 2 run a list */
 static uint32_t sJobTadr;
 static int sJobTte, sInitResult;
+static int sStopping; /* the program is ending: the render thread leaves its loop (render_stop) */
+static int sListDone; /* the list being run has been drawn and its first picture shown (Smooth motion's others may follow) */
 static void run_chain(uint32_t tadr, int tte);
+static void run_frozen(void);
+static void walk_chain(uint32_t tadr, int tte, void (*block)(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte));
+static void freeze_block(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte);
+static size_t sFrozenUsed; /* (the copy of a frame's list for the render thread: freeze_block) */
 
 /* BT3_GS_RACE=1 (with the render thread): finds data of a frame's list that the game changes while the list is
    being drawn. The list's blocks are hashed when the game hands the list over and again when the drawing is
@@ -1145,11 +1241,28 @@ static void race_compare(void) {
 }
 
 static void *render_thread(void *arg) {
+    extern void PortInput_Pump(void); /* gs_input.c */
     (void)arg;
     pthread_mutex_lock(&sLock);
     for (;;) {
-        while (sJob == 0) {
-            pthread_cond_wait(&sWake, &sLock);
+        while (sJob == 0 && !sStopping) {
+            /* waiting for the game's next list: the window's events every millisecond (the window is this thread's) */
+            struct timespec until;
+            clock_gettime(CLOCK_REALTIME, &until);
+            until.tv_nsec += 1000000;
+            if (until.tv_nsec >= 1000000000) {
+                until.tv_nsec -= 1000000000;
+                until.tv_sec++;
+            }
+            if (pthread_cond_timedwait(&sWake, &sLock, &until) != 0 && sJob == 0 && !sStopping && sGpu) {
+                pthread_mutex_unlock(&sLock);
+                PortInput_Pump();
+                pthread_mutex_lock(&sLock);
+            }
+        }
+        if (sStopping && sJob == 0) {
+            pthread_mutex_unlock(&sLock);
+            return NULL;
         }
         if (sJob == 1) {
             sInitResult = GsGpu_Init();
@@ -1157,7 +1270,21 @@ static void *render_thread(void *arg) {
             uint32_t tadr = sJobTadr;
             int tte = sJobTte;
             pthread_mutex_unlock(&sLock);
-            run_chain(tadr, tte);
+            {
+                extern void GsGpu_InterpHurry(int on);
+                GsGpu_InterpHurry(0);
+            }
+            run_frozen();
+            pthread_mutex_lock(&sLock);
+            sListDone = 1;
+            pthread_cond_broadcast(&sDone);
+            pthread_mutex_unlock(&sLock);
+            {
+                extern void GsGpu_InterpRun(void); /* gs_draw.c: Smooth motion's pictures after the first, each when due */
+                if (sGpu) {
+                    GsGpu_InterpRun();
+                }
+            }
             if (getenv("BT3_GS_RACE") != NULL) {
                 race_walk(tadr, 1);
                 race_compare();
@@ -1179,9 +1306,57 @@ static void render_wait(void) {
     pthread_mutex_unlock(&sLock);
 }
 
+/* At the program's end (atexit), from the game's thread: the list being drawn is finished, then the thread leaves
+   its loop and is waited for, so that nothing it uses (the window, the device) is taken down under it. From the
+   render thread itself (Esc in the window, the settings window's Quit) there is nothing to wait for. */
+static void render_stop(void) {
+    if (!sThreaded || pthread_equal(pthread_self(), sThread)) {
+        return;
+    }
+    render_wait();
+    pthread_mutex_lock(&sLock);
+    sStopping = 1;
+    pthread_cond_broadcast(&sWake);
+    pthread_mutex_unlock(&sLock);
+    pthread_join(sThread, NULL);
+}
+
+/* For the pad read (plat_stub.c), when the game has time to spare: returns once the list handed over last has been
+   drawn and its first picture shown. Without the thread that drawing comes before the pads are read, at the start of
+   the next tick; with it the game read the pads at once and the drawing went on beside it, which made what was read
+   older by the drawing's time when its picture came (2.4 ms measured at 2x). A game that is behind does not wait
+   here: then the drawing beside the game's work is what the thread is for. */
+void Gs_RenderListWait(void) {
+    if (!sThreaded || pthread_equal(pthread_self(), sThread)) {
+        return;
+    }
+    pthread_mutex_lock(&sLock);
+    while (sJob == 2 && !sListDone) {
+        pthread_cond_wait(&sDone, &sLock);
+    }
+    pthread_mutex_unlock(&sLock);
+}
+
+int Gs_RenderThreaded(void) {
+    return sThreaded;
+}
+
+int Gs_OnRenderThread(void) {
+    return sThreaded && pthread_equal(pthread_self(), sThread);
+}
+
+/* For the game's thread before it touches what the render thread uses while it runs a list (GS memory and registers,
+   the back end): returns once the thread has nothing to do. Without the thread, at once. */
+void Gs_RenderIdle(void) {
+    if (sThreaded && !pthread_equal(pthread_self(), sThread)) { /* (on the render thread itself: it is the one running) */
+        render_wait();
+    }
+}
+
 static void render_post(int job, uint32_t tadr, int tte) {
     pthread_mutex_lock(&sLock);
     sJob = job;
+    sListDone = 0;
     sJobTadr = tadr;
     sJobTte = tte;
     pthread_cond_signal(&sWake);
@@ -1236,6 +1411,20 @@ static const char *gs_mode(void) {
     return strcmp(m, "none") == 0 || strcmp(m, "off") == 0 || strcmp(m, "0") == 0 ? NULL : m;
 }
 
+static int render_thread_wanted(void) {
+    extern int Port_Setting(const char *name, int def);
+    extern int SDL_GetNumLogicalCPUCores(void);
+    const char *e = getenv("BT3_GS_THREAD");
+    int want = e != NULL ? atoi(e) != 0 : Port_Setting("render_thread", 1) != 0;
+#ifdef __APPLE__
+    want = 0;
+#endif
+    if (want && e == NULL && (Port_Setting("gpu_api", 0) == 1 || SDL_GetNumLogicalCPUCores() <= 2)) {
+        want = 0;
+    }
+    return want;
+}
+
 static int gs_on(void) {
     static int on = -1;
 
@@ -1249,14 +1438,20 @@ static int gs_on(void) {
             sscanf(getenv("BT3_GS_PROBE"), "%d,%d", &sProbeX, &sProbeY);
         }
         if (on && strcmp(gs_mode(), "gpu") == 0) {
-            /* BT3_GS_THREAD=1: the back end and the list run on the render thread (experimental: the game was seen
-               to change data a list still refers to, which shows as a jumping camera). Default: this thread. */
-            sThreaded = getenv("BT3_GS_THREAD") != NULL;
+            /* The render thread (setting "render_thread", F1 > Video; BT3_GS_THREAD=0/1 over it): the back end, the
+               window and the list run on a thread of their own while the game computes the next tick. Not with
+               OpenGL (its context is one thread's, and the game's thread asks the back end for a few things), not
+               on macOS (a window there is the main thread's), not with two logical processors or fewer. */
+            sThreaded = render_thread_wanted();
             if (sThreaded) {
                 pthread_create(&sThread, NULL, render_thread, NULL);
                 render_post(1, 0, 0);
                 render_wait();
                 sGpu = sInitResult;
+                atexit(render_stop);
+                if (sGpu && GsGpu_BackendIsGl()) {
+                    fprintf(stderr, "bt3: render thread: the Vulkan renderer did not start; OpenGL on the thread (the game's own reads of the picture are left out)\n");
+                }
             } else {
                 sGpu = GsGpu_Init();
             }
@@ -1312,6 +1507,8 @@ void Port_GsVif1Chain(uint32_t tadr, int tte) {
     }
     tChain = now_ns();
     if (sThreaded) {
+        extern void GsGpu_InterpHurry(int on); /* gs_draw.c: the next list is here: the tick's real picture at once */
+        GsGpu_InterpHurry(1);
         render_wait(); /* the previous list must be finished before this one starts (the PS2's sceGsSyncPath) */
     } else {
         run_chain(tadr, tte);
@@ -1386,12 +1583,66 @@ void Port_GsVif1Chain(uint32_t tadr, int tte) {
         if (getenv("BT3_GS_RACE") != NULL) {
             race_walk(tadr, 0);
         }
+        sFrozenUsed = 0;
+        walk_chain(tadr, tte, freeze_block);
         render_post(2, tadr, tte);
     }
 }
 
-/* Executes one frame's list: the DMA chain at `tadr` on VIF1, then the end-of-frame work of the back end. */
-static void run_chain(uint32_t tadr, int tte) {
+/* One block of a frame's list into VIF1: its tag's last two words (with TTE) and its data. */
+static void chain_block(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte) {
+    sStat[0]++;
+    if (tte) {
+        vif(tag + 2, 2);
+    }
+    vif(data, qwc * 4);
+}
+
+static void chain_end(void);
+
+/* With the render thread: the frame's list as it was when the game handed it over. The game goes on with the next
+   frame meanwhile and writes over data the list refers to (BT3_GS_RACE found the block of the view the fighters
+   are drawn with: a jumping camera), so every block the list takes, its tag included, is copied on the game's
+   thread at the hand-over, and the render thread works from the copy: what it sees is what the list was at that
+   moment, as without the thread. Each block in sFrozen: qwc, tte, the tag's four words, then the data. */
+static uint32_t *sFrozen;
+static size_t sFrozenSize;
+
+static void freeze_block(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte) {
+    size_t need = 6 + (size_t)qwc * 4;
+    uint32_t *o;
+
+    if (sFrozenUsed + need > sFrozenSize) {
+        size_t size = sFrozenSize ? sFrozenSize * 2 : (size_t)1 << 20;
+        while (size < sFrozenUsed + need) {
+            size *= 2;
+        }
+        sFrozen = realloc(sFrozen, size * sizeof(uint32_t));
+        sFrozenSize = size;
+    }
+    o = sFrozen + sFrozenUsed;
+    o[0] = qwc;
+    o[1] = (uint32_t)tte;
+    memcpy(o + 2, tag, 16);
+    memcpy(o + 6, data, (size_t)qwc * 16);
+    sFrozenUsed += need;
+}
+
+static void run_frozen(void) {
+    size_t at = 0;
+    extern void GsGpu_ListStart(void); /* gs_draw.c: BT3_DRAW_LOG times a picture from here */
+
+    GsGpu_ListStart();
+    while (at < sFrozenUsed) {
+        const uint32_t *b = sFrozen + at;
+        chain_block(b + 2, b + 6, b[0], (int)b[1]);
+        at += 6 + (size_t)b[0] * 4;
+    }
+    chain_end();
+}
+
+/* Walks one frame's list, the DMA chain at `tadr` on VIF1, handing each block to `block`. */
+static void walk_chain(uint32_t tadr, int tte, void (*block)(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte)) {
     uint32_t stack[2], sp = 0;
     int guard;
 
@@ -1413,15 +1664,23 @@ static void run_chain(uint32_t tadr, int tte) {
         if (sDumpFrame == (int)sFrame) {
             fprintf(stderr, "  dma tag at %08x: id %u qwc %u addr %08x | %08x %08x (depth %u)\n", (unsigned)Port_Addr(tag), id, qwc, addr, tag[2], tag[3], sp);
         }
-        sStat[0]++;
-        if (tte) {
-            vif(tag + 2, 2);
-        }
-        vif(data, qwc * 4);
+        block(tag, data, qwc, tte);
         if (end) {
             break;
         }
     }
+}
+
+/* Executes one frame's list: the DMA chain at `tadr` on VIF1, then the end-of-frame work of the back end. */
+static void run_chain(uint32_t tadr, int tte) {
+    extern void GsGpu_ListStart(void);
+
+    GsGpu_ListStart();
+    walk_chain(tadr, tte, chain_block);
+    chain_end();
+}
+
+static void chain_end(void) {
     if (getenv("BT3_GS_VERBOSE") != NULL && (sFrame < 4 || sFrame % 60 == 0)) {
         fprintf(stderr, "gs: frame %u: %u DMA tags, %u VIF codes, %u DIRECT qwords, %u GIF tags, %u register writes, %u vertices, "
                         "%u image qwords, %d targets\n", sFrame, sStat[0], sStat[1], sStat[2], sStat[3], sStat[4], sStat[5],
@@ -1470,9 +1729,10 @@ void Gs_StoreImage(unsigned bp, unsigned w, unsigned h, unsigned char *rgb) {
         fprintf(stderr, "gs: frame %u: the game reads %ux%u back from buffer %#x, row %u\n", sFrame, w, h, fbp, y0);
     }
     if (sGpu) {
-        if (sThreaded) {
-            return;
+        if (Gs_RenderThreaded() && GsGpu_BackendIsGl()) {
+            return; /* (OpenGL on the render thread: its context is that thread's; the game gets black, as before) */
         }
+        Gs_RenderIdle(); /* (the back end is the render thread's while it runs a list) */
         {
             /* First choice: the frame stays on the card as it was drawn and the cross-fade draws from that (the
                game is handed black, which it uploads and never shows). BT3_XFADE_READ=1: the game's own way. */

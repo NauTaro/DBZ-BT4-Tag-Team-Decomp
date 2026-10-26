@@ -1354,6 +1354,14 @@ s32 BtlInput_TestAction(BtlInputChr *chr, s32 id, s32 want) {
             result = 1;
         }
         break;
+#ifdef PORT
+    /* BT4 action predicate 115: original disc patch at 0x1D4E20. */
+    case 115:
+        result = BtlInput_IsPressed(chr, BTLB_GUARD);
+        if(result && getenv("BT4_RENDER_TEST") && getenv("BT4_TAUNT_AUDIT"))
+            fprintf(stderr,"BT4 input audit: predicate=115 actor=%d held=%08X action=%X\n",chr->player,chr->input.held,*(s32 *)((u8 *)chr+0x948));
+        break;
+#endif
     }
     return result ^ invert;
 }

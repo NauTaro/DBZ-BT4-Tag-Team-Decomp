@@ -26,6 +26,73 @@ The table `rooms`, one row per room (rows older than ten minutes are removed whe
 | `queue` | a quick-match room: which queue it waits in (`S`, `T`, `D10`, `D15`, `D20`); empty for a room with a code to hand on |
 | `who` | a quick-match room: a random text the host's game made up for this run, so that a room it left behind is not given back to it |
 
+## Spectators (from the release after 0.1.38.7)
+
+A third player can watch a match with its room code (the game's chapter "Spectators", docs/port/README.md). The
+Worker only introduces the spectator to the host, as it does the two players; the match itself goes from the host
+to the spectator directly.
+
+- `/v1/watch {v, rel, code, name, addrs}` -> `{key, you, peer: {name, addrs}}`: the host's addresses (and relay
+  address, if it has one), for any room of the same `v`, joined or not. The spectator's own addresses (what the
+  other player's would be, with `seen=ip`) are kept for two minutes in the table `watchers`. At most 12 such
+  requests per room in two minutes (`full`); wrong codes count against the same 30 an hour as joins (`busy`).
+- The host's `/v1/poll` with `"watch": true` also answers `watchers`: one list of addresses per spectator of the
+  last two minutes. With `"keep": true` as well, a room someone has joined starts its ten minutes again: the
+  game's host asks every five seconds while its match is on (720 requests an hour of match) and gives the room up
+  (`/v1/leave`, which now removes its spectators too) when the session ends. A host that lets nobody watch does
+  neither, and gives its room up as soon as the match begins, as before.
+- Older games send neither field and get exactly the answers they had: two 0.1.38.7 copies play through the new
+  Worker as through the old one. A spectator asking a Worker without `/v1/watch` is answered "no room" (its
+  message says the service may not take spectators yet).
+
+The table `watchers` (one row per request, removed after two minutes):
+
+| Column | |
+|---|---|
+| `key` | a random text (not handed to the host) |
+| `code` | the room |
+| `made` | seconds since 1970 |
+| `name`, `addrs` | the spectator's name and its addresses as the host is told them (JSON) |
+
+**To deploy:** run the third line of `schema.sql` (`CREATE TABLE IF NOT EXISTS watchers ...`) in the database's
+console (the other two lines change nothing that exists), then replace the Worker's code with `worker.js` and
+Deploy. Without the table, `/v1/watch` answers `{"error":"no spectators"}` (501) and polls list no spectators;
+everything else works.
+
+## Lobbies (from the release after 0.1.38.7)
+
+Up to eight games meet at one, the lobby's owner (the game's chapter "Lobbies", docs/port/README.md). The lobby
+itself (who is in which place, the rules, the matches) lives in the owner's game and travels over the games' own
+connection; the Worker only hands out the owner's addresses for its code and keeps the code while the owner asks.
+
+- `/v1/host` with `"lobby": true` makes a lobby's room (column `lobby` = 1); no relay login is handed out with it.
+- `/v1/join` of a lobby's code from a game that says `"lobby": 1` -> `{lobby: true, key, you, peer: {name, addrs}}`:
+  the owner's addresses, and the member's (with `seen=` and, on one network, `same=1`) are kept two minutes in
+  `watchers`, where the owner's polls find them as a spectator's. Any number join (12 in two minutes at most: `busy`);
+  the owner's game says when it is full. `/v1/watch` of a lobby's code is answered the same way.
+- A game that does not say `lobby` (0.1.38.7 and older) is answered `{error: "old", lobby: true, why: "This code is
+  a lobby's: update the game to join lobbies."}` (426): it shows its own words for "old", "Update available. Online
+  servers are unreachable until you update." A new game joining an ordinary room gets the answer it always had.
+- The owner's `/v1/poll` with `watch` and `keep` keeps a lobby's room (its ten minutes start again) without anyone
+  having joined as a player, and lists the members' addresses (`same=1` left out). The game asks every four seconds
+  for as long as the lobby is open (**900 requests an hour of lobby**, the same during its matches), plus one join and
+  at most a few polls per member while it connects (a member's poll with its key gets the owner's addresses again,
+  for the relay address that may come later). `/v1/leave` when the lobby is closed.
+- `/v1/relay` is the owner's once a member has come (in the last two minutes): asked only when a member that joined
+  with the code has not reached the owner in eight seconds, once per lobby. One login serves every member.
+- A database without the column answers `/v1/host` with `lobby` with `{error: "no lobbies"}` (501); the game says
+  "The matchmaking service does not take lobbies yet. A lobby by address (a port) still works." Everything else
+  works as before.
+
+**To deploy** (in this order):
+
+1. D1 -> `bt3-rooms` -> Console, run: `ALTER TABLE rooms ADD COLUMN lobby INTEGER;`
+   (if the table `watchers` of the Spectators section is not there yet, run the third line of `schema.sql` too:
+   `CREATE TABLE IF NOT EXISTS watchers (key TEXT PRIMARY KEY, code TEXT NOT NULL, made INTEGER NOT NULL, name TEXT NOT NULL, addrs TEXT NOT NULL);`)
+2. Workers & Pages -> the Worker -> Edit code: replace everything with `worker.js`, Deploy.
+
+No new variable or secret. `node port/matchmaking/test.mjs` checks it (the lobby part: 17 checks).
+
 ## Quick match (from 0.1.27)
 
 A player who searches a queue is put with whoever waits longest in it, or, if nobody does, gets a room of their own
@@ -195,8 +262,9 @@ official release). The first is the kinder one; do both if the key is known to b
 ## Stored data
 
 For at most ten minutes per room: the room code, the two player names, the addresses each game reported about
-itself, and the host's address as Cloudflare saw it (to limit how many rooms one address can open). Nothing else,
-and nothing after the room has expired.
+itself, and the host's address as Cloudflare saw it (to limit how many rooms one address can open). A room whose
+host lets spectators in lives while its match is on (the host keeps it, see Spectators), a lobby's room while its
+owner keeps it open, and a spectator's or a lobby member's name and addresses are kept for two minutes. Nothing else, and nothing after the room has expired.
 
 ## Dashboard deployment
 
@@ -299,6 +367,10 @@ the top of that file; with `BT3_BUILD_KEY` set to the made-up key the program wa
     # -> {"key":"...","you":"...","peer":{"name":"A","addrs":["203.0.113.5:7000"]}}
     curl -s -X POST $W/v1/poll -d '{"code":"ABC234","key":"<the host key>"}'
     # -> {"peer":{"name":"B","addrs":["198.51.100.9:7000"]}}
+    curl -s -X POST $W/v1/watch -d '{"v":3,"code":"ABC234","name":"C","addrs":["192.0.2.7:7000"]}'
+    # -> {"key":"...","you":"...","peer":{"name":"A","addrs":["203.0.113.5:7000"]}}
+    curl -s -X POST $W/v1/poll -d '{"code":"ABC234","key":"<the host key>","watch":true}'
+    # -> {"peer":{...},"watchers":[["192.0.2.7:7000","seen=<C's address>"]]}
 
 ## Limits
 

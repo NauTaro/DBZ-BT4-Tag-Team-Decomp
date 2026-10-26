@@ -144,9 +144,9 @@ int Port_SpeedMilli(void) {
 /* BT3_LAG_LOG=1: when things happen in a tick, in microseconds since the start: V a vertical blank (after its wait),
    R a pad read, E the window's events taken (which is when a controller's state is renewed), S a picture handed to
    the window. For measuring how old the input is that the game reads, and how long until its picture is shown. */
+PORT_HOST static unsigned long long sLagFirst; /* (the lag log's clock starts at its first line) */
 void Port_LagMark(int what) {
     PORT_HOST static int on = -1;
-    PORT_HOST static unsigned long long first = 0;
     unsigned long long t;
     if (on < 0) {
         on = getenv("BT3_LAG_LOG") != NULL;
@@ -155,12 +155,28 @@ void Port_LagMark(int what) {
         return;
     }
     t = now_ns();
-    if (first == 0) {
-        first = t;
+    if (sLagFirst == 0) {
+        sLagFirst = t;
     }
     {
         extern unsigned gGsFrame; /* gs/gs_draw.c: the pictures so far */
-        fprintf(stderr, "lag %c %u %u\n", what, (unsigned)((t - first) / 1000ull), gGsFrame);
+        fprintf(stderr, "lag %c %u %u\n", what, (unsigned)((t - sLagFirst) / 1000ull), gGsFrame);
+    }
+}
+
+/* The same line with a value after it (the press's age: gs/gs_input.c; the graphics chip's end: gs/gs_gpu.c). */
+void Port_LagNote(int what, unsigned long long value) {
+    unsigned long long t;
+    if (getenv("BT3_LAG_LOG") == NULL) {
+        return;
+    }
+    t = now_ns();
+    if (sLagFirst == 0) {
+        sLagFirst = t;
+    }
+    {
+        extern unsigned gGsFrame;
+        fprintf(stderr, "lag %c %u %u %llu\n", what, (unsigned)((t - sLagFirst) / 1000ull), gGsFrame, value);
     }
 }
 
@@ -169,6 +185,30 @@ int Port_LateInput(void);
 /* A vertical blank's length: 16.68 ms at the game's own pace. */
 #define BLANK_NS (16683350ull * 1000ull / (unsigned long long)Port_SpeedMilli())
 unsigned long long Port_BlankNs(void) { return BLANK_NS; }
+
+/* The last vertical blank was waited for (the game had time to spare), not reached late: then the pad read waits
+   for the render thread to have drawn the last list (Gs_RenderListWait), as the game without the thread does. */
+PORT_HOST static int sPaceSlack;
+
+#ifdef _WIN32
+/* Windows 11 throttles a process it takes for background work (its "EcoQoS"): on a processor with performance and
+   efficiency cores (Intel's 12th generation on) its threads may be put on the efficiency cores, and its timer requests
+   are ignored while its window is covered. Reported: the efficiency cores at 100% while the game stuttered. The
+   process asks for neither (as emulators do). Looked up at run time: Windows 8 and later have the call, Windows 10
+   1709 and later the throttling; older ones simply go on as before. */
+static void win_no_throttling(void) {
+    typedef BOOL (WINAPI *SetInfo)(HANDLE, int, void *, DWORD);
+    struct { ULONG version, controlMask, stateMask; } state = {
+        1,         /* PROCESS_POWER_THROTTLING_CURRENT_VERSION */
+        0x1 | 0x4, /* EXECUTION_SPEED | IGNORE_TIMER_RESOLUTION: both decided here, */
+        0,         /* both off: full speed, timer requests honoured */
+    };
+    SetInfo set = (SetInfo)(void *)GetProcAddress(GetModuleHandleA("kernel32.dll"), "SetProcessInformation");
+    if (set != NULL) {
+        set(GetCurrentProcess(), 4 /* ProcessPowerThrottling */, &state, sizeof(state));
+    }
+}
+#endif
 
 static void vblank_wait(void) {
     struct timespec ts;
@@ -190,20 +230,45 @@ static void vblank_wait(void) {
         after = t;
         next += BLANK_NS;
         sPaceLate++;
+        sPaceSlack = 0;
     } else if (next > t && next - t < 100000000ull) {
 #ifdef _WIN32
-        /* Windows' sleep is only good to about a millisecond, and only once the timer resolution has been asked
-           for: sleep to within a millisecond and a half of the moment, then give the rest away in small slices. */
+        /* Windows 10 (1803) and later have a timer good to a fraction of a millisecond: waited on to within 0.4 ms of
+           the moment, then the rest is spent spinning (the processor's pause between looks). Before, Sleep went to
+           within 1.5 ms and Sleep(0) gave the rest away in slices: a core kept busy for a tenth of every blank, which
+           Windows can take for background work. Without that timer (older Windows), as before. */
         static int asked;
+        static HANDLE timer;
         if (!asked) {
             asked = 1;
             timeBeginPeriod(1);
+            win_no_throttling();
+            {   /* (looked up: not in every SDK's headers, and not in Windows before 10) */
+                typedef HANDLE (WINAPI *CreateTimerEx)(void *, const WCHAR *, DWORD, DWORD);
+                CreateTimerEx create = (CreateTimerEx)(void *)GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateWaitableTimerExW");
+                if (create != NULL) {
+                    timer = create(NULL, NULL, 0x00000002 /* CREATE_WAITABLE_TIMER_HIGH_RESOLUTION */, 0x1F0003 /* TIMER_ALL_ACCESS */);
+                }
+            }
         }
-        if (next - t > 1500000ull) {
-            Sleep((DWORD)((next - t - 1500000ull) / 1000000ull));
-        }
-        while (now_ns() < next) {
-            Sleep(0);
+        if (timer != NULL) {
+            if (next - t > 400000ull) {
+                LARGE_INTEGER due;
+                due.QuadPart = -(LONGLONG)((next - t - 400000ull) / 100ull); /* relative, in 100 ns */
+                if (SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE)) {
+                    WaitForSingleObject(timer, INFINITE);
+                }
+            }
+            while (now_ns() < next) {
+                YieldProcessor();
+            }
+        } else {
+            if (next - t > 1500000ull) {
+                Sleep((DWORD)((next - t - 1500000ull) / 1000000ull));
+            }
+            while (now_ns() < next) {
+                Sleep(0);
+            }
         }
 #else
         ts.tv_sec = 0;
@@ -213,6 +278,7 @@ static void vblank_wait(void) {
         after = now_ns();
         gPortSleptNs += after - t; /* the time really spent waiting (a sleep can return early or late) */
         next += BLANK_NS;
+        sPaceSlack = 1;
     } else {
         after = t;
         next = t + BLANK_NS; /* the first one, or more than a tenth of a second behind: a new grid from now */
@@ -267,8 +333,10 @@ int Port_LateInput(void) {
 
 void Port_LateInputSet(int on) {
     extern void Port_SettingSave(const char *name, int value);
+    extern void Port_SettingsWrite(void);
     sLateOn = on != 0;
     Port_SettingSave("late_input", sLateOn);
+    Port_SettingsWrite(); /* (in the file at once: it was lost at the end unless another setting was written after it) */
 }
 
 /* The blanks owed are waited for now: called before the first pad is read. */
@@ -310,7 +378,8 @@ void Port_VBlank(void) {
         extern int gPortResim;                                /* gs/state.c: no picture, no sound */
         int warp = Port_NetWarp();
         extern int Port_NetResim(void); /* blanks being run again after a rollback: not shown, not timed either */
-        int again = Port_NetResim();
+        extern int Port_NetSpecSkip(void); /* (a spectator catching up with the match: the same) */
+        int again = Port_NetResim() || Port_NetSpecSkip();
         if (Port_NetSession() || again) {
             gPortResim = warp || again; /* an online session's start-up up to the versus menu is not shown and not timed */
         }
@@ -434,6 +503,10 @@ int scePad2Read(int socket, unsigned char *data) {
 
     if (socket == 0) {
         late_wait();
+        if (sPaceSlack) {
+            extern void Gs_RenderListWait(void); /* gs/gs_core.c: the render thread's drawing of the last list */
+            Gs_RenderListWait();
+        }
         Port_LagMark('R');
     }
     if (Port_NetActive()) {

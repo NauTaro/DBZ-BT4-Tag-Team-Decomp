@@ -98,6 +98,26 @@ missing or invalid catalog. The returned text is UTF-8; ImGui can display it
 directly. Native game dialogs need conversion to UTF-16 and a buffer large
 enough for translated text, as in `port/src/quit_dialog.c`.
 
+**The online menus (Tenkaichi Budokai Online):** their lines are entries of
+`port/<locale>.json` too, with ids `tbo/<8 hex digits>`, looked up by their
+English `original` where the menu draws or measures a line
+(`port/src/gs/tbo_text.c`), where it joins pieces (`Ps_Copy`/`Ps_Cat`, which
+also feed the screen reader) and where it formats a number (`Tb_Fmt` around a
+`sprintf` format). The talk box at the foot of the screen takes UTF-8. To make
+or bring up to date a file for translators:
+
+    python3 port/tools/tbo_strings.py es --name "Español" --out es.json      # --bt4: without BT3's fighter names
+
+A new line's `text` is its English, as a placeholder (a line left so is shown in
+English); running the tool again on the same file keeps what is translated,
+adds new lines and drops the ones the menus no longer have. A `note` says where
+a line is shown. A line with a player's name in it (the lobby's "%s joined
+the lobby", "Spectating %s vs %s") has `%s` for each name. A translation has to keep the line's `%d`/`%02d`/`%s` parts in
+their order (and `%%` for a percent sign in such a line) and its `{name}`
+parts; one that does not is not used, and the console says so. The file goes in
+`translations/port/` beside the program; its language is then offered in the
+first-run language screen and F1 even without menu labels of its own.
+
 Adding an ID to a JSON file alone cannot translate an arbitrary hardcoded
 string: the code or data that displays it must use the corresponding
 translation system.
@@ -117,7 +137,8 @@ Each catalog handles missing entries differently:
 ## The European disc's languages
 
 The European release (SLES-54945) has the menus, the battle HUD and their text five times, once per language
-(English, Spanish, German, French, Italian). Its 60 archive entries with them are what the port needs:
+(English, Spanish, German, French, Italian). The port extracts 60 translated menu/HUD entries, one native
+language-selector entry, and the opening soundtrack:
 
 - the setup window takes them from a second, optional disc image (in a release folder: native.cpp `step_eu`;
   the "Ready to play" page has "Add languages..." for a game set up before; without a window
@@ -125,9 +146,12 @@ The European release (SLES-54945) has the menus, the battle HUD and their text f
 - in a source checkout `python3 install.py --iso <USA image> --eu-iso <European image>`, or on its own
   `python3 port/tools/extract_eu.py <European image>`.
 
-They go as they are into `gamedata/pzs3eu1/<entry>.bin` (the battle HUD is entries 5 to 9, one per language; the
-USA menu archive 448 + k is entry 451 + k + 31 per language). They are the player's own disc data: never commit
-them. The game does the rest itself:
+The translated entries go as they are into `gamedata/pzs3eu1/<entry>.bin` (the battle HUD is entries 5 to 9, one
+per language; the USA menu archive 448 + k is entry 451 + k + 31 per language). The selector textures are in
+`gamedata/pzs3eu0/00001.bin` (entry 1 of `DATA/PZS3EU0.AFS`); the renderer decodes the background and arrows
+directly from it, without PNG assets. For an existing EU installation, run
+`python3 port/tools/extract_eu.py <European image> --selector-only` to add just this entry. These are the
+player's own disc data: never commit them. The game does the rest itself:
 
 - `ui/es.json`, `de.json`, `fr.json`, `it.json`: at the first start after the entries arrive, before the language
   list (`UiText_EuropeanOnStartup`, ui_text_extract.c; under a second). The menu, dialog and pause menu text,

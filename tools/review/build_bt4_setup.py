@@ -1,11 +1,13 @@
 """Build the current installer after the core's ImGui objects exist."""
 from pathlib import Path
-import os,subprocess
+import os,subprocess,shutil
 root=Path(os.environ.get('BT4_SOURCE_ROOT',Path(__file__).resolve().parents[2])).resolve();env=dict(os.environ)
 if env.get('BT4_TOOLCHAIN'):env['PATH']=env['BT4_TOOLCHAIN']+os.pathsep+env['PATH']
 out=root/'port/build/setup_bt4';out.mkdir(parents=True,exist_ok=True)
 inc=root/'port/third_party/imgui';sdl=Path(env.get('BT3_SDL3',root/'port/build/win/SDL3-3.4.12/x86_64-w64-mingw32'))
-def run(args):subprocess.run(args,cwd=root,env=env,check=True)
+def run(args):
+    args[0]=shutil.which(args[0],path=env.get('PATH')) or args[0]
+    subprocess.run(args,cwd=root,env=env,check=True,**({'creationflags':0x08000000} if os.name=='nt' else {}))
 for name in ['native','setup']:
     run(['g++','-std=c++17','-O2','-I'+str(inc),'-I'+str(sdl/'include'),'-c',str(root/'port/setup'/(name+'.cpp')),'-o',str(out/(name+'.o'))])
 objects=[str(p) for p in (root/'port/build/obj_win64').glob('cxx_imgui*.o') if p.stem!='cxx_imgui_impl_dx9'];assert objects,'Build the native core first'

@@ -16,6 +16,12 @@ typedef struct MenuTranslationOption {
 /* The start of an online match (gs/net.c): before the other player is there, and once they are ({name}: theirs). */
 #define PORT_TEXT_NET_CONNECTING "net/connecting"
 #define PORT_TEXT_NET_RIVAL "net/rival_here"
+/* ... a quick match's rival, with where the matchmaking service placed them ({region}: one of region/NA, SA, EU, ME,
+   AF, AS, OC), and the round trip once measured ({ms}, a line under it). */
+#define PORT_TEXT_NET_RIVAL_FROM "net/rival_from"
+#define PORT_TEXT_NET_ROUND_TRIP "net/round_trip"
+/* Dragon Net Battle's Join tab found a lobby (gs/ui.cpp): its screen is in Tenkaichi Budokai Online. */
+#define PORT_TEXT_LOBBY_JOINED "net/lobby_joined"
 
 /* Copies bundled label and port catalogs without replacing local edits, then loads
    BT3_MENU_LANG or the saved menu_lang setting (English if neither is set). */
@@ -25,13 +31,13 @@ int MenuTranslation_List(const char *outDir, MenuTranslationOption *out, int cap
 int MenuTranslation_Available(MenuTranslationOption *out, int capacity);
 int MenuTranslation_ShouldPrompt(const MenuTranslationOption *options, int count);
 int MenuTranslation_BootPending(void);
-/* Optional first-run language screen artwork. Returns its PNG path when present. */
-int MenuTranslation_ArtPath(int artId, char *out, size_t capacity);
 void MenuTranslation_SaveChoice(const char *locale);
 const char *MenuTranslation_Locale(void);
 const char *MenuTranslation_Text(const char *id);
 /* Port-owned UI text, decoded from translations/port/<locale>.json; NULL uses the built-in English string. */
 const char *MenuTranslation_PortText(const char *id);
+/* A line of the online menus in the chosen language (ids "tbo/..." of that file, looked up by their English); NULL: as it is. */
+const char *MenuTranslation_Line(const char *original);
 const char *MenuTranslation_Original(const char *id);
 const char *MenuTranslation_Group(const char *id);
 const char *const *MenuTranslation_StageNames(void); /* 36 entries */

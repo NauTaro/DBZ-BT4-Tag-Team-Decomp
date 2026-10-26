@@ -15,6 +15,7 @@
  * Not handled yet: a target sampled while it is being drawn to, region clamp / repeat, destination-alpha tests,
  * frame-buffer masks, 16-bit targets' precision.
  */
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,11 +30,11 @@
 #include <SDL3/SDL.h>   /* the one window both back ends share */
 #include "gs_internal.h"
 #include "gs_draw.h"
+static uint32_t sPresentationObject;
 #include "ui.h"         /* PortVideo and the window helpers */
 #include "gs_texpack.h" /* texture packs (replacement textures) */
 #include "menu_text.h"  /* editable labels in the original menu texture slots */
-#include "menu_translation.h" /* optional language screen artwork */
-#include "menu_labels.h"      /* the chosen language's menu art from the European disc */
+#include "menu_labels.h"      /* European menu art and native language selector pictures */
 #include <math.h>
 
 /* Stage-name overlay: defined here (C) so both the renderer (gs_gpu.c) and the game's menu (menu_c_e.c) can
@@ -89,6 +90,10 @@ void Gs_HoldFrame(void) {
         return;
     }
     last = now;
+    if (Gs_RenderThreaded() && !Gs_OnRenderThread() && GsGpu_BackendIsGl()) {
+        return; /* (OpenGL on the render thread: its context is that thread's) */
+    }
+    Gs_RenderIdle(); /* (from the game's thread: the list and the back end are the render thread's while it runs one) */
     for (int i = 0; i < gsTargetCount; ++i) targetDraws[i] = gsTargets[i].draws;
     if (audit) {
         target = gGsMainFbp >= 0 ? GsDraw_TargetGet((uint32_t)gGsMainFbp, 0) : -1;
@@ -180,6 +185,18 @@ unsigned gsSkipped;
 unsigned gGpuNewTex, gGpuNewTexPixels, gGpuNewPipes; /* created since the front end last cleared them (slow-frame report) */
 unsigned gGpuTexReplaced; /* textures taken from a texture pack so far */
 uint64_t gGpuTexNs, gGpuPipeNs, gGpuEndNs; /* time spent decoding textures, creating pipelines, in GsGpu_FrameEnd */
+/* The same for the picture being drawn only, where it is drawn (the render thread's, or the game's): BT3_DRAW_LOG
+   (gs_gpu.c, draw_log). From the start of its list (GsGpu_ListStart). */
+uint64_t gDrawStartNs, gDrawTexNs, gDrawPipeNs, gDrawUpBytes, gDrawImgNs, gDrawLookNs, gDrawVuNs, gDrawXferNs;
+unsigned gDrawNewTex, gDrawImgMade, gDrawImgFreed, gDrawImgPooled; /* (the last three counted in gs_gpu.c: graphics-chip images, uploads) */
+int gDrawLogged; /* the picture's line is written (Smooth motion's other pictures of the list are not) */
+
+void GsGpu_ListStart(void) {
+    gDrawStartNs = SDL_GetTicksNS(); /* (gs_gpu.c's clock, where it is compared) */
+    gDrawTexNs = gDrawPipeNs = gDrawUpBytes = gDrawImgNs = gDrawLookNs = gDrawVuNs = gDrawXferNs = 0;
+    gDrawNewTex = gDrawImgMade = gDrawImgFreed = gDrawImgPooled = 0;
+    gDrawLogged = 0;
+}
 
 static uint64_t gpu_now(void) {
     struct timespec ts;
@@ -210,8 +227,12 @@ static Tex *sLast; /* the entry the previous lookup returned */
    Handle + content checks invalidate an alias when its cache slot is recycled. */
 static struct { uint64_t tex0,texa,hdKey; GsTex handle; uint32_t gen,index; } sHdAlias[HD_ALIAS_COUNT];
 
-/* The 256-colour tables as textures, by hash of the palette entries they use (64 slots). */
+/* The 256-colour tables as textures, by their entries (64 slots): found by a hash, taken only if every entry is the
+   same. (By the hash alone two different tables were one: the object glow's table and the glare's ramp, which differ
+   only in alpha, came out the same with teen Gohan's third costume on Namek, and the glow of the fighters was drawn
+   through the glare's ramp, every pixel of the stage as if it glowed: a white picture, seen by a player.) */
 static struct { uint32_t hash, last; GsTex tex; } sCluts[MAX_CLUTS];
+static uint32_t sClutPx[MAX_CLUTS][256]; /* (apart: the slots the lookup goes through stay together) */
 
 static uint32_t tex_bucket(uint64_t t0, uint64_t texa, uint32_t gen) {
     uint64_t h = (t0 ^ (texa * 0x9E3779B97F4A7C15ull) ^ ((uint64_t)gen << 17)) * 0xD6E8FEB86659FD93ull;
@@ -356,7 +377,9 @@ static GsTex tbo_text_texture(uint32_t id) {
 
 static GsTex tbo_texture(uint32_t id) {
     char path[1024] = {0};
-    SDL_Surface *png, *rgba;
+    SDL_Surface *png = NULL, *rgba = NULL;
+    uint8_t *native = NULL;
+    int nativeW = 0, nativeH = 0;
     uint32_t *px, w, h, x, y;
     GsTex tex;
     const char *base;
@@ -380,7 +403,11 @@ static GsTex tbo_texture(uint32_t id) {
         return gsWhite; /* (no room this frame: the next one tries again) */
     }
     if (languageArt) {
-        png = MenuTranslation_ArtPath((int)id, path, sizeof(path)) ? SDL_LoadPNG(path) : NULL;
+        if (MenuLabels_LanguageArtPixels((int)id, &native, &nativeW, &nativeH)) {
+            w = (uint32_t)nativeW;
+            h = (uint32_t)nativeH;
+            snprintf(path, sizeof(path), "EU disc PZS3EU0.AFS selector texture %u", (unsigned)id);
+        }
     } else {
         base = SDL_GetBasePath();
         snprintf(path, sizeof(path), "%stbo/ui/%s.png", base != NULL ? base : "", kTboNames[id]);
@@ -398,21 +425,23 @@ static GsTex tbo_texture(uint32_t id) {
     if (png != NULL) {
         SDL_DestroySurface(png);
     }
-    if (rgba == NULL) {
-        fprintf(stderr, "bt3: artwork: cannot read %s\n", path);
+    if (native == NULL && rgba == NULL) {
+        fprintf(stderr, "bt3: artwork: cannot read %s\n", languageArt ? "EU disc selector textures" : path);
         *missing = 1;
         return gsWhite;
     }
-    w = (uint32_t)rgba->w;
-    h = (uint32_t)rgba->h;
+    if (rgba != NULL) {
+        w = (uint32_t)rgba->w;
+        h = (uint32_t)rgba->h;
+    }
     px = malloc((size_t)w * h * 4);
     for (y = 0; px != NULL && y < h; y++) {
-        const uint8_t *row = (const uint8_t *)rgba->pixels + (size_t)y * rgba->pitch;
+        const uint8_t *row = native != NULL ? native + (size_t)y * w * 4 : (const uint8_t *)rgba->pixels + (size_t)y * rgba->pitch;
         for (x = 0; x < w; x++) {
             const uint8_t *c = row + x * 4;
             uint32_t imageAlpha = c[3];
             uint32_t a;
-            /* These arrow PNGs use 127 for their solid pixels. Preserve the antialiased edge while
+            /* The original arrow textures use 127 for their solid pixels. Preserve the antialiased edge while
                bringing the chevron itself up to full opacity over the green selection bar. */
             if (languageArt && id != TBO_LANG_BG) {
                 imageAlpha = imageAlpha * 2 > 255 ? 255 : imageAlpha * 2;
@@ -427,7 +456,8 @@ static GsTex tbo_texture(uint32_t id) {
             }
         }
     }
-    SDL_DestroySurface(rgba);
+    free(native);
+    if (rgba != NULL) SDL_DestroySurface(rgba);
     tex = tbo_upload(px, w, h);
     if (tex == 0) {
         return gsWhite;
@@ -464,6 +494,36 @@ static void menu_hd_trim(uint64_t incoming) {
     }
 }
 
+/* How much of a texture pack's pictures a frame takes in (BT3_PACK_FRAME_MB, 4 MB; 0: no limit). Each one in is
+   copied in the frame (pack_texture) and again into the upload at its end, and the driver then takes it over: with a
+   large pack (18 597 DXT5 pictures, mostly 512 x 512 and 1024 x 1024 with their smaller copies) a fight's new
+   effects brought 26 to 34 MB into one frame, 13 to 23 ms of uploading and as long again handing the frame over.
+   Past the budget a texture keeps the original for a frame or two more and its replacement comes in a following
+   frame, the way one whose file is still being read does (pack_arrived). At least one a frame comes in. */
+static int pack_budget_take(const TexPackImage *pack) {
+    static unsigned frame = ~0u;
+    static uint64_t used, budget = ~0ull;
+    uint64_t bytes = 0;
+    int level;
+
+    if (budget == ~0ull) {
+        const char *e = getenv("BT3_PACK_FRAME_MB");
+        budget = (uint64_t)(e != NULL ? atoi(e) : 4) * 1024 * 1024;
+    }
+    if (frame != gGsFrame) {
+        frame = gGsFrame;
+        used = 0;
+    }
+    for (level = 0; level < pack->levels; level++) {
+        bytes += pack->bytes[level];
+    }
+    if (budget != 0 && used != 0 && used + bytes > budget) {
+        return 0;
+    }
+    used += bytes;
+    return 1;
+}
+
 /* A pack's levels into a new texture (the back end takes a copy of each). */
 static GsTex pack_texture(const TexPackImage *pack) {
     GsTex tex = sBackend->texCreate(pack->w, pack->h, pack->format & 3, pack->levels);
@@ -495,7 +555,7 @@ static void pack_arrived(Tex *c) {
         c->pack = -1;
         return;
     }
-    if (got == 0 || oldHead - oldTail == 256 || sBackend->texSlotsLeft() < pack.levels) {
+    if (got == 0 || oldHead - oldTail == 256 || sBackend->texSlotsLeft() < pack.levels || !pack_budget_take(&pack)) {
         return; /* (not yet: asked again at the next frame's first use) */
     }
     tex = pack_texture(&pack);
@@ -511,6 +571,100 @@ static void pack_arrived(Tex *c) {
     c->amax = c->packAlpha;
     c->pack = -1;
     gGpuTexReplaced++;
+}
+
+/* Decoding a texture's rows: a large one is shared among worker threads (and the caller), which only read GS memory
+   while the caller waits, so nothing after it changes. When a fight's first effects come, one frame decodes 10 to
+   100 new textures; on one thread that was 20 to 30 ms of the frame. BT3_TEX_THREADS=<n>: that many workers (0: none;
+   by default the logical processors less two, at most 7). */
+typedef struct TexDecode {
+    uint32_t tbp, tbw, psm, bits, tw, th;
+    const uint32_t *lut; /* a palette's colours by index (bits <= 8) */
+    uint32_t *px;
+} TexDecode;
+
+static void tex_decode_rows(const TexDecode *d, uint32_t y0, uint32_t y1) {
+    uint32_t x, y;
+    for (y = y0; y < y1; y++) {
+        for (x = 0; x < d->tw; x++) {
+            uint32_t c = Gs_VramRead(d->tbp, d->tbw, d->psm, x, y);
+            /* (alpha is kept as the GS has it, 0x80 = opaque, up to 0xFF: the shader rescales it. Values above 0x80
+               matter: the see-through pass gives palettes alpha 0xF9 to write an id) */
+            d->px[y * d->tw + x] = d->bits > 8 ? Gs_Expand(c, d->psm) : d->lut[d->bits == 8 ? c & 0xFF : c & 0xF];
+        }
+    }
+}
+
+#define TEX_DECODE_CHUNK 16 /* rows taken at a time */
+static pthread_mutex_t sDecLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t sDecWake = PTHREAD_COND_INITIALIZER, sDecDone = PTHREAD_COND_INITIALIZER;
+static const TexDecode *sDecJob;
+static unsigned sDecGen, sDecNext, sDecBusy;
+static int sDecWorkers = -1;
+
+static void tex_decode_share(const TexDecode *d) { /* takes chunks of rows until there are none left */
+    for (;;) {
+        uint32_t y0 = __atomic_fetch_add(&sDecNext, TEX_DECODE_CHUNK, __ATOMIC_RELAXED);
+        if (y0 >= d->th) {
+            return;
+        }
+        tex_decode_rows(d, y0, y0 + TEX_DECODE_CHUNK < d->th ? y0 + TEX_DECODE_CHUNK : d->th);
+    }
+}
+
+static void *tex_decode_worker(void *unused) {
+    unsigned seen = 0;
+    (void)unused;
+    for (;;) {
+        const TexDecode *d;
+        pthread_mutex_lock(&sDecLock);
+        while (sDecGen == seen) {
+            pthread_cond_wait(&sDecWake, &sDecLock);
+        }
+        seen = sDecGen;
+        d = sDecJob;
+        pthread_mutex_unlock(&sDecLock);
+        tex_decode_share(d);
+        pthread_mutex_lock(&sDecLock);
+        if (--sDecBusy == 0) {
+            pthread_cond_signal(&sDecDone);
+        }
+        pthread_mutex_unlock(&sDecLock);
+    }
+    return NULL;
+}
+
+static void tex_decode(const TexDecode *d) {
+    if (sDecWorkers < 0) {
+        const char *e = getenv("BT3_TEX_THREADS");
+        int n = e != NULL ? atoi(e) : SDL_GetNumLogicalCPUCores() - 2, i;
+        sDecWorkers = n < 0 ? 0 : n > 7 ? 7 : n;
+        for (i = 0; i < sDecWorkers; i++) {
+            pthread_t t;
+            if (pthread_create(&t, NULL, tex_decode_worker, NULL) != 0) {
+                sDecWorkers = i;
+                break;
+            }
+            pthread_detach(t);
+        }
+    }
+    if (sDecWorkers == 0 || d->tw * d->th < 16384) { /* (a small one: waking the workers would cost more) */
+        tex_decode_rows(d, 0, d->th);
+        return;
+    }
+    pthread_mutex_lock(&sDecLock);
+    sDecJob = d;
+    __atomic_store_n(&sDecNext, 0, __ATOMIC_RELAXED);
+    sDecBusy = (unsigned)sDecWorkers;
+    sDecGen++;
+    pthread_cond_broadcast(&sDecWake);
+    pthread_mutex_unlock(&sDecLock);
+    tex_decode_share(d);
+    pthread_mutex_lock(&sDecLock);
+    while (sDecBusy != 0) {
+        pthread_cond_wait(&sDecDone, &sDecLock);
+    }
+    pthread_mutex_unlock(&sDecLock);
 }
 
 /* GS memory -> an RGBA texture for the current TEX0 (alpha as stored: 0x80 is opaque). The back end makes
@@ -612,39 +766,43 @@ static GsTex texture_get(int ctx, int menuHd) {
     if (sTexPackOn && TexPack_Count() != 0) {
         int id = TexPack_Lookup(tbp, tbw, psm, tw, th, (uint32_t)((t0 >> 34) & 1), cbp, cpsm, &packMaxAlpha);
         int got = id >= 0 ? TexPack_Get(id, &pack) : -1;
-        if (got > 0 && sBackend->texSlotsLeft() >= pack.levels) {
+        if (got > 0 && sBackend->texSlotsLeft() >= pack.levels && pack_budget_take(&pack)) {
             replaced = 1;
             gGpuTexReplaced++;
             rw = pack.w;
             rh = pack.h;
-        } else if (got == 0) {
-            packWait = id; /* still being read: the original until it is in (pack_arrived) */
+        } else if (got >= 0) {
+            packWait = id; /* still being read, or this frame's share of the pack is taken: the original until it comes
+                              in (pack_arrived) */
         }
     }
     /* A texture pack still uses the game's source pixels to identify Battle text for widescreen geometry. */
     px = !replaced || MenuText_MayHaveBattleTexture((int)tw, (int)th, bits <= 8) ?
          malloc((size_t)tw * th * 4) : NULL;
     if (!replaced && px == NULL) { return gsWhite; }
-    for (y = 0; px != NULL && y < th; y++) {
-        for (x = 0; x < tw; x++) {
-            uint32_t c = Gs_VramRead(tbp, tbw, psm, x, y), a;
-            if (bits > 8) {
-                c = Gs_Expand(c, psm);
-            } else if (bits == 8) {
-                c = (c & 0xE7) | ((c & 8) << 1) | ((c & 0x10) >> 1);
-                c = Gs_Expand(Gs_VramRead(cbp, 1, cpsm, c & 15, c >> 4), cpsm);
-            } else {
-                c = Gs_Expand(Gs_VramRead(cbp, 1, cpsm, c & 7, c >> 3), cpsm);
+    {   /* a palette's colours read and expanded once, by the index as stored (8-bit: the GS's order of the 256 entries
+           undone), instead of again for every pixel: most of a fight's effects are 4- and 8-bit */
+        uint32_t lut[256];
+        if (px != NULL && bits <= 8) {
+            for (i = 0; i < (bits == 8 ? 256u : 16u); i++) {
+                if (bits == 8) {
+                    uint32_t n = (i & 0xE7) | ((i & 8) << 1) | ((i & 0x10) >> 1);
+                    lut[i] = Gs_Expand(Gs_VramRead(cbp, 1, cpsm, n & 15, n >> 4), cpsm);
+                } else {
+                    lut[i] = Gs_Expand(Gs_VramRead(cbp, 1, cpsm, i & 7, i >> 3), cpsm);
+                }
             }
-            (void)a; /* alpha is kept as the GS has it (0x80 = opaque, up to 0xFF): the shader rescales it. Values
-                        above 0x80 matter: the see-through pass gives palettes alpha 0xF9 to write an id */
-            px[y * tw + x] = c;
+        }
+        if (px != NULL) {
+            TexDecode d = {tbp, tbw, psm, bits, tw, th, lut, px};
+            tex_decode(&d);
         }
     }
     if (px != NULL && !replaced && bits <= 8) {
         MenuLabels_ArtSwap((unsigned char *)px, (int)tw, (int)th); /* the European picture, in the chosen language */
     }
     if (px != NULL) {
+        MenuText_NewTexture(); /* (its label hash is worked out once, for this check and MenuText_Render below) */
         battleText = MenuText_IsBattleTexture((const uint8_t *)px, (int)tw, (int)th, bits <= 8);
     }
     if (replaced) {
@@ -700,6 +858,8 @@ static GsTex texture_get(int ctx, int menuHd) {
     }
     if (hdArt) { menu_hd_trim((uint64_t)rw * rh * 4); }
     gGpuTexNs += gpu_now() - tex_t0;
+    gDrawTexNs += gpu_now() - tex_t0;
+    gDrawNewTex++;
     t = &sTex[gsTexCount];
     t->tex = replaced ? pack_texture(&pack) : sBackend->texCreate(rw, rh, GS_TEXFMT_RGBA8, 1);
     if (t->tex == 0) {
@@ -758,10 +918,10 @@ static GsTex clut_texture(uint32_t cbp) {
     for (i = 0; i < 256; i++) {
         uint32_t n = (i & 0xE7) | ((i & 8) << 1) | ((i & 0x10) >> 1);
         px[i] = Gs_VramRead(cbp, 1, 0, n & 15, n >> 4);
-        hash = (hash ^ px[i]) * 16777619u;
+        hash = (hash ^ px[i] ^ (px[i] >> 16)) * 16777619u; /* (the top bits folded in: the alpha is there) */
     }
     for (k = 0; k < MAX_CLUTS; k++) {
-        if (sCluts[k].tex != 0 && sCluts[k].hash == hash) {
+        if (sCluts[k].tex != 0 && sCluts[k].hash == hash && memcmp(sClutPx[k], px, sizeof(px)) == 0) {
             sCluts[k].last = gGsFrame;
             return sCluts[k].tex;
         }
@@ -785,6 +945,7 @@ static GsTex clut_texture(uint32_t cbp) {
     sBackend->texUpload(tex, 0, 256, 1, GS_TEXFMT_RGBA8, upload, sizeof(px));
     sCluts[old].tex = tex;
     sCluts[old].hash = hash;
+    memcpy(sClutPx[old], px, sizeof(px));
     sCluts[old].last = gGsFrame;
     return tex;
 }
@@ -984,6 +1145,7 @@ static void depth_clut(int ctx) {
     if (last != NULL && last->native == 3 && last->tex == d.tex && last->target == d.target && last->pipeline == d.pipeline && last->src == d.src) {
         return; /* the next strip of the same pass */
     }
+    d.object=sPresentationObject;
     gsDraws[gsDrawCount++] = d;
 }
 
@@ -1158,7 +1320,9 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 sBlockSample = 0;
             }
         } else {
+            uint64_t tg0=gpu_now();
             d->tex = texture_get(ctx, gPortMenuMode && !vu);
+            gDrawLookNs+=gpu_now()-tg0;
         }
     }
     d->sampler = (int)((gGs.tex1[ctx] >> 5) & 1) | ((cl & 3) ? 2 : 0) | (((cl >> 2) & 3) ? 4 : 0);
@@ -1236,6 +1400,9 @@ typedef struct WallMesh {
 #define WALL_RING 32
 static WallMesh sWallRing[WALL_RING];
 static uint32_t sWallSeq; /* patches handed over so far */
+/* With the render thread (BT3_GS_THREAD) the game hands patches over while the thread may be reading them for the
+   tick before's in-between pictures: one patch is written, and the ring read, under this lock. */
+static pthread_mutex_t sWallLock = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t sWallTex0; /* TEX0 of the wall's texture: the triangles drawn with it are the wall's */
 static float sWallUs = 1.0f, sWallVs = 1.0f;
 extern int gsInterp;
@@ -1255,6 +1422,7 @@ void Port_WallMesh(const void *key, int second, int culled, const float *screen,
         extern unsigned gPortVBlanks;
         fprintf(stderr, "wall: hook at frame %u blank %u: key %p second %d culled %d m0 %.4f (have %d)\n", gGsFrame, gPortVBlanks, key, second, culled, screen[0], (int)sWallSeq);
     }
+    pthread_mutex_lock(&sWallLock);
     sWallTex0 = tex0;
     m = &sWallRing[sWallSeq++ % WALL_RING];
     m->key = key;
@@ -1267,6 +1435,7 @@ void Port_WallMesh(const void *key, int second, int culled, const float *screen,
     for (i = 0; i < quadCount; i++) {
         memcpy(m->idx[i], (const uint8_t *)quads + i * 0x20, sizeof(m->idx[i])); /* EftBoundQuad: four vertex numbers, a normal */
     }
+    pthread_mutex_unlock(&sWallLock);
 }
 
 /* Two draws can be merged into one call when everything they need is the same. `scissor` is compared as
@@ -1657,7 +1826,8 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     if (last != NULL && same_state(last, &d)) {
         last->count += d.count; /* same state as the previous primitive: one draw call */
     } else {
-        gsDraws[gsDrawCount++] = d;
+        d.object=sPresentationObject;
+    gsDraws[gsDrawCount++] = d;
     }
 }
 
@@ -1723,6 +1893,7 @@ void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *
     }
     d.uniform = (int)gsVuUniCount;
     gsVuUni[gsVuUniCount++] = u;
+    d.object=sPresentationObject;
     gsDraws[gsDrawCount++] = d;
 }
 
@@ -1771,6 +1942,7 @@ void GsGpu_DrawVu4(int ctx, const float *vertices, uint32_t count, const float *
     }
     d.uniform = (int)gsVuUniCount;
     gsVuUni[gsVuUniCount++] = u;
+    d.object=sPresentationObject;
     gsDraws[gsDrawCount++] = d;
 }
 
@@ -1839,6 +2011,7 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     }
     d.uniform = (int)gsVuUniCount;
     gsVuUni[gsVuUniCount++] = u;
+    d.object=sPresentationObject;
     gsDraws[gsDrawCount++] = d;
 }
 
@@ -1895,7 +2068,8 @@ void GsGpu_FbUpload(int second) {
     d.native = 100 + (second != 0);
     d.target = GsDraw_TargetGet(second ? 0x70 : 0, 1);
     if (d.target >= 0) {
-        gsDraws[gsDrawCount++] = d;
+        d.object=sPresentationObject;
+    gsDraws[gsDrawCount++] = d;
     }
 }
 
@@ -1917,6 +2091,7 @@ void Port_TagHudTrace(int actor,int front,int kind,const float *basis,const floa
     tag_trace_array("screen",scr,3);tag_trace_array("marker",marker,2);tag_trace_array("radar",radar,5);fprintf(stderr,"}\n");
 }
 void GsGpu_Native(int effect) {
+    if((effect&0xF0000000)==0x40000000){sPresentationObject=(uint32_t)effect&0x0FFFFFFF;return;}
     if(effect==0x70 || effect==0x71){sPresentationHudScope=effect==0x70;return;}
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
@@ -1960,6 +2135,7 @@ void GsGpu_Native(int effect) {
     d.scissor[1] = (int)((sc >> 32) & 0x7FF) * SCALE;
     d.scissor[2] = ((int)((sc >> 16) & 0x7FF) + 1) * SCALE - d.scissor[0];
     d.scissor[3] = ((int)((sc >> 48) & 0x7FF) + 1) * SCALE - d.scissor[1];
+    d.object=sPresentationObject;
     gsDraws[gsDrawCount++] = d;
 }
 
@@ -2158,7 +2334,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     if (v->fullscreen != now.fullscreen) {
         GsDraw_FullscreenSet(v->fullscreen);
     }
-    gsFxOff = (unsigned)v->fxOff & 63;
+    gsFxOff = (unsigned)v->fxOff & 255;
     gsGlowPercent = v->glow;
     gsGlarePercent = v->glare;
     gsSharpBlur = v->sharpBlur;
@@ -2270,7 +2446,7 @@ renderer_ready:
     { extern int Port_GameProfileEnglish(void);
       fprintf(stderr,"bt4: game profile=%s data=%s\n",Port_GameProfileEnglish()?"English":"Spanish",getenv("BT3_DATA")?getenv("BT3_DATA"):"gamedata"); }
     gsWhite = sb->whiteTex();
-    gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 63;
+    gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 255;
     gsGlowPercent = getenv("BT3_GLOW") != NULL ? atoi(getenv("BT3_GLOW")) : Port_Setting("glow", GLOW_DEFAULT);
     sMenuHD = Port_Setting("menu_hd", 1) ? Port_Setting("menu_hd_scale", 4) : 0;
     if (sMenuHD < 2 || sMenuHD > 6) { sMenuHD = 0; }
@@ -2321,6 +2497,7 @@ static uint8_t sInterpFollow[MAX_VU_UNIFORMS]; /* the block is scenery that goes
 static double sInterpCamNow[3], sInterpCamWas[3]; /* where the camera stands, this picture and the previous one */
 static double sInterpSceneWas[16];                /* the scenery's screen matrix of the previous picture */
 static int sInterpHaveCam;
+static uint32_t sInterpObject[MAX_VU_UNIFORMS],sInterpPrevObject[MAX_VU_UNIFORMS];
 static uint16_t sInterpKind[MAX_VU_UNIFORMS], sInterpPrevKind[MAX_VU_UNIFORMS]; /* which vertex program and layer each block is drawn with */
 static uint16_t sInterpBucket2[4096], sInterpChain2[MAX_VU_UNIFORMS];
 static float sInterpCamMove; /* GS pixels the camera alone moved the scenery in view this tick (the middle value) */
@@ -2333,6 +2510,7 @@ static Vu0Uniform *sInterpPrev, *sInterpBlend;
 static uint32_t *sInterpPrevSig, *sInterpSig;
 static uint32_t sInterpPrevCount;
 static int sInterpNext;  /* the tick's next picture still to be shown (2..sInterpSteps), 0 = none */
+static int sInterpRepeat; /* the tick could not be blended (a camera cut): its pictures are its own, shown again */
 static int sInterpSteps = 2;
 static unsigned sInterpLastBlank;
 static uint64_t sInterpTickNs = 33366700ull; /* how long the tick being shown lasts */
@@ -2353,6 +2531,7 @@ static void interp_signatures(uint32_t *sig) {
     uint32_t n, k, j;
 
     memset(sig, 0, gsVuUniCount * sizeof(uint32_t));
+    memset(sInterpObject,0,gsVuUniCount*sizeof(uint32_t));
     for (n = 0; n < gsDrawCount; n++) {
         const GsDraw *d = &gsDraws[n];
         if (d->vu != 0 && d->uniform >= 0 && (uint32_t)d->uniform < gsVuUniCount) {
@@ -2370,6 +2549,7 @@ static void interp_signatures(uint32_t *sig) {
                 }
             }
             sig[d->uniform] = (sig[d->uniform] * 31u + h) | 1u;
+            sInterpObject[d->uniform]=d->object;
             sInterpKind[d->uniform] = (uint16_t)(d->vu * 64 + ((int)gsVuUni[d->uniform].misc[3] & 63));
             sInterpBlkView[d->uniform] = INTERP_SCISSOR_ID(d);
             if (d->vu == 3) {
@@ -2667,7 +2847,7 @@ static int interp_build_view(float t, int first) {
         for (j = sInterpBucket[sInterpSig[i] * 2654435761u >> 20]; j != 0xFFFF; j = sInterpChain[j]) {
             /* (a shadow's strips are several blocks with one fighter's matrices, and their number changes with
                the ground: each takes the nearest of the previous picture, used before or not) */
-            if (sInterpPrevSig[j] == sInterpSig[i] && sInterpPrevBlkView[j] == sInterpView && (!sInterpUsed[j] || sInterpSig[i] == 0x53484457u)) {
+            if (sInterpPrevSig[j] == sInterpSig[i] && sInterpPrevBlkView[j] == sInterpView && sInterpPrevObject[j]==sInterpObject[i] && (!sInterpUsed[j] || sInterpSig[i] == 0x53484457u)) {
                 /* Nearest first by where the mesh stands (bones and pivots), and only among equals by the screen
                    matrix. One sum over both let the camera decide: the sky is the same slice of a dome many times
                    over, and while the camera turned, the slice NEXT to a slice had the nearer screen matrix. */
@@ -2728,7 +2908,7 @@ static int interp_build_view(float t, int first) {
                 h = (h ^ w[k2]) * 16777619u;
             }
             for (j = sInterpBucket2[h * 2654435761u >> 20]; j != 0xFFFF; j = sInterpChain2[j]) {
-                if (sInterpPrevKind[j] == sInterpKind[i] && sInterpPrevBlkView[j] == sInterpView && memcmp(sInterpPrev[j].boneA, c->boneA, 40 * sizeof(float)) == 0) {
+                if (sInterpPrevKind[j] == sInterpKind[i] && sInterpPrevBlkView[j] == sInterpView && sInterpPrevObject[j]==sInterpObject[i] && memcmp(sInterpPrev[j].boneA, c->boneA, 40 * sizeof(float)) == 0) {
                     best = j;
                     break;
                 }
@@ -2740,7 +2920,7 @@ static int interp_build_view(float t, int first) {
                 for (j2 = 0; j2 < sInterpPrevCount; j2++) {
                     const float *pf = (const float *)&sInterpPrev[j2];
                     float dist = 0.0f;
-                    if (sInterpUsed[j2] || sInterpPrevKind[j2] != sInterpKind[i] || sInterpPrevBlkView[j2] != sInterpView) {
+                    if (sInterpUsed[j2] || sInterpPrevKind[j2] != sInterpKind[i] || sInterpPrevBlkView[j2] != sInterpView || sInterpPrevObject[j2]!=sInterpObject[i]) {
                         continue;
                     }
                     for (k2 = 0; k2 < 40 && dist <= mag * 0.05f; k2++) {
@@ -2883,7 +3063,7 @@ static int interp_build_view(float t, int first) {
             for (j2 = 0; j2 < sInterpPrevCount; j2++) {
                 const float *q = sInterpPrevRep[j2];
                 float e;
-                if (sInterpUsed[j2] || sInterpPrevKind[j2] != sInterpKind[i] || sInterpPrevBlkView[j2] != sInterpView) {
+                if (sInterpUsed[j2] || sInterpPrevKind[j2] != sInterpKind[i] || sInterpPrevBlkView[j2] != sInterpView || sInterpPrevObject[j2]!=sInterpObject[i]) {
                     continue;
                 }
                 e = fabsf(r[0] - q[0] - d[0]) + fabsf(r[1] - q[1] - d[1]) + fabsf(r[2] - q[2] - d[2]);
@@ -3677,6 +3857,9 @@ static uint32_t interp_prims(InterpPrim *out) {
             out[count].sig = ((uint32_t)d->tex * 2654435761u) ^ ((uint32_t)d->pipeline * 40503u) ^ (role * 0x9E3779B1u) ^ (tris * 0x85EBCA6Bu) ^ (out[count].view * 0xC2B2AE35u);
             out[count].kind = ((uint32_t)d->tex * 2654435761u) ^ ((uint32_t)d->pipeline * 40503u) ^ (role * 0x9E3779B1u) ^ (out[count].view * 0xC2B2AE35u);
             out[count].base = ((uint32_t)d->pipeline * 40503u) ^ (role * 0x9E3779B1u) ^ (out[count].view * 0xC2B2AE35u);
+            out[count].sig ^= d->object*0x27D4EB2Du;
+            out[count].kind ^= d->object*0x27D4EB2Du;
+            out[count].base ^= d->object*0x27D4EB2Du;
             out[count].first = d->first + k;
             out[count].flat2d = d->misc[3] != 0.0f;
             out[count].tris = (uint8_t)tris;
@@ -3983,7 +4166,13 @@ static void interp_wall_real(void) {
     }
 }
 
+static void interp_wall_into_locked(float t, Vtx *buf, int test);
 static void interp_wall_into(float t, Vtx *buf, int test) {
+    pthread_mutex_lock(&sWallLock);
+    interp_wall_into_locked(t, buf, test);
+    pthread_mutex_unlock(&sWallLock);
+}
+static void interp_wall_into_locked(float t, Vtx *buf, int test) {
     static const float kSame[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     /* BT3_INTERP_WALLTEST=1 (with BT3_INTERP_ONLY): the patch as it is at the tick itself, seen by the tick's own
        camera. The picture must then be the game's own picture of the tick: the test that what is drawn here is
@@ -4455,6 +4644,7 @@ static void interp_remember(void) {
     }
     memcpy(sInterpPrev, gsVuUni, gsVuUniCount * sizeof(Vu0Uniform));
     memcpy(sInterpPrevSig, sInterpSig, gsVuUniCount * sizeof(uint32_t));
+    memcpy(sInterpPrevObject,sInterpObject,gsVuUniCount*sizeof(uint32_t));
     memcpy(sInterpPrevKind, sInterpKind, gsVuUniCount * sizeof(uint16_t));
     memcpy(sInterpPrevBlkView, sInterpBlkView, gsVuUniCount * sizeof(uint32_t));
     memcpy(sInterpPrevRep, sInterpRep, gsVuUniCount * sizeof(sInterpRep[0]));
@@ -4471,6 +4661,9 @@ static void interp_present_log(char kind) {
     if (!tried) {
         tried = 1;
         fp = getenv("BT3_PRESENT_LOG") != NULL ? fopen(getenv("BT3_PRESENT_LOG"), "w") : NULL;
+        if (fp != NULL) {
+            setvbuf(fp, NULL, _IOLBF, 0); /* (whole lines: a run that is ended from outside keeps what it had) */
+        }
     }
     if (fp != NULL) {
         fprintf(fp, "%llu %c %u\n", (unsigned long long)(gpu_now() / 1000ull), kind, gPortVBlanks);
@@ -4545,6 +4738,20 @@ static void interp_cost(uint64_t ns) {
 /* Shows picture `step` of the tick's sInterpSteps: the list replayed `step / steps` of the way from the previous
    tick; the last one is the tick itself. The recorded list has to be in place (interp_counts_restore). */
 static void interp_show(int step) {
+    if (sInterpRepeat) {
+        /* A tick the in-between pictures could not be made for (a camera cut, a new scene): its own picture again, at
+           the moments they would have been shown. The same picture as before (the eye sees the cut either way), but
+           pictures keep coming at the same rate: a frame counter's lows, and a display that follows the pictures'
+           rate (G-Sync, FreeSync), no longer see a tick's worth of nothing at every cut. */
+        uint64_t t0 = gpu_now();
+        sBackend->frameEnd();
+        interp_cost(gpu_now() - t0);
+        interp_present_log(step < sInterpSteps ? 'D' : 'R');
+        if (step >= sInterpSteps) {
+            sInterpRepeat = 0;
+        }
+        return;
+    }
     if (step < sInterpSteps) {
         Vu0Uniform *real = gsVuUni;
         Vtx *realVerts = gsVerts;
@@ -4595,10 +4802,63 @@ static void interp_show(int step) {
    18 ms to the next). Called from Port_VBlank before it waits for the blank (`ahead` = what may be waited for here:
    the pictures that fall before the blank) and after (those at it).
    all = 1: the game is back with a new tick: what is left is dropped, except the tick's real picture. */
+/* The next of the tick's pictures (the in-between ones, then the real one). 0: BT3_INTERP_ONLY ended them there. */
+static int interp_show_next(void) {
+    if (sInterpNext == sInterpSteps && getenv("BT3_INTERP_ONLY") != NULL) {
+        sInterpNext = 0; /* testing: only in-between pictures are shown (so a screenshot holds one) */
+        sInterpRepeat = 0;
+        interp_counts_restore();
+        interp_remember();
+        gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0;
+        return 0;
+    }
+    interp_counts_restore();
+    {
+        int step = sInterpNext;
+        sInterpNext = step == sInterpSteps ? 0 : step + 1;
+        interp_show(step);
+    }
+    return 1;
+}
+
+/* When the tick's next picture is due. */
+static uint64_t interp_due(void) {
+    uint64_t due = sInterpBlendShown + (uint64_t)(sInterpNext - 1) * (sInterpTickNs / (uint64_t)sInterpSteps);
+    return due > sInterpBlendTook ? due - sInterpBlendTook : 0; /* (replaying the list takes that long again) */
+}
+
+/* With the render thread (BT3_GS_THREAD) the tick's pictures after the first are its: it shows each when it is due,
+   right after the list, while the game computes the next tick (the game's thread does not call the pump then).
+   When the game hands its next list over early, GsGpu_InterpHurry: the real picture at once, as the pump's `all`. */
+static volatile int sInterpHurry;
+void GsGpu_InterpHurry(int on) { /* (1 from the game's thread; 0 by the render thread as it starts a list: a hurry is for
+                                    the list it is running, not one that comes after it) */
+    __atomic_store_n(&sInterpHurry, on, __ATOMIC_RELEASE);
+}
+void GsGpu_InterpRun(void) {
+    extern void PortInput_Pump(void); /* gs_input.c: the window's events (the window is this thread's) */
+    while (sInterpNext != 0 && sBackend != NULL) {
+        uint64_t due = interp_due(), now;
+        if (getenv("BT3_UNCAPPED") == NULL) {
+            while ((now = gpu_now()) < due && !__atomic_load_n(&sInterpHurry, __ATOMIC_ACQUIRE)) {
+                SDL_DelayPrecise(due - now < 1000000ull ? due - now : 1000000ull); /* (a millisecond at a time: a hurry is seen) */
+                PortInput_Pump();
+            }
+        }
+        if (__atomic_load_n(&sInterpHurry, __ATOMIC_ACQUIRE)) {
+            sInterpNext = sInterpSteps; /* the game is back with its next tick: what is left is dropped, but the real picture */
+        }
+        if (!interp_show_next()) {
+            break;
+        }
+    }
+    __atomic_store_n(&sInterpHurry, 0, __ATOMIC_RELEASE);
+}
+
 void GsGpu_InterpPump(int ahead_ms, int all) {
-    if(Port_TagBattleRenderActive()){sInterpNext=0;sInterpPrevCount=sInterpPrevPrimCount=0;return;}
-    if (sInterpNext == 0 || sBackend == NULL) {
-        return;
+
+    if (sInterpNext == 0 || sBackend == NULL || (Gs_RenderThreaded() && !Gs_OnRenderThread())) {
+        return; /* (with the render thread the pictures are its: GsGpu_InterpRun) */
     }
     if (gsDrawCount != 0 || gsVertCount != 0 || gsVuUniCount != 0) {
         /* the game drew before the tick's pictures were shown: its new draws would be mixed into the kept list */
@@ -4611,9 +4871,8 @@ void GsGpu_InterpPump(int ahead_ms, int all) {
         return;
     }
     while (sInterpNext != 0) {
-        uint64_t due = sInterpBlendShown + (uint64_t)(sInterpNext - 1) * (sInterpTickNs / (uint64_t)sInterpSteps), now = gpu_now();
+        uint64_t due = interp_due(), now = gpu_now();
 
-        due = due > sInterpBlendTook ? due - sInterpBlendTook : 0; /* (replaying the list takes that long again) */
         if (all) {
             sInterpNext = sInterpSteps;
         } else if (getenv("BT3_UNCAPPED") == NULL) {
@@ -4632,20 +4891,14 @@ void GsGpu_InterpPump(int ahead_ms, int all) {
                 SDL_DelayPrecise(due - now);
             }
         }
-        if (sInterpNext == sInterpSteps && getenv("BT3_INTERP_ONLY") != NULL) {
-            sInterpNext = 0; /* testing: only in-between pictures are shown (so a screenshot holds one) */
-            interp_counts_restore();
-            interp_remember();
-            gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0;
+        if (!interp_show_next()) {
             return;
         }
-        interp_counts_restore();
-        {
-            int step = sInterpNext;
-            sInterpNext = step == sInterpSteps ? 0 : step + 1;
-            interp_show(step);
-        }
     }
+}
+
+int GsGpu_BackendIsGl(void) {
+    return sBackend == &sGlBackend;
 }
 
 void GsGpu_InterpFlush(void) { /* (the name Port_VBlank knew it by) */
@@ -4708,9 +4961,8 @@ static void skip_decide(void) {
 void GsGpu_FrameEnd(void) {
     if(Port_TagBattleRenderActive()){
         static int reported;
-        sInterpNext=0;sInterpPrevCount=sInterpPrevPrimCount=0;
         if(!reported&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RENDER_AUDIT")){
-            reported=1;fprintf(stderr,"tag render audit: native-frames=1 interpolation-requested=%d interpolation-history=0\n",gsInterp);
+            reported=1;fprintf(stderr,"tag render audit: actor-identities=1 interpolation-requested=%d\n",gsInterp);
         }
     }
     sInGlowChain = 0; /* (a chain is always within one frame) */
@@ -4743,7 +4995,15 @@ void GsGpu_FrameEnd(void) {
             }
         }
         if (gsInterp < 0) {
-            gsInterp = getenv("BT3_INTERP") != NULL ? atoi(getenv("BT3_INTERP")) : Port_Setting("interp", 0);
+            /* One-time upgrade of the old native-30 presentation profile.
+             * Subsequent explicit 30/60/120/240 choices remain the user's. */
+            if (!getenv("BT3_INTERP") && Port_Setting("bt4_motion_profile",0)<1) {
+                if (Port_Setting("interp",0)==0 && !GsDraw_PerformanceMode())
+                    Port_SettingSave("interp",1);
+                Port_SettingSave("bt4_motion_profile",1);
+                Port_SettingsWrite();
+            }
+            gsInterp = getenv("BT3_INTERP") != NULL ? atoi(getenv("BT3_INTERP")) : Port_Setting("interp", 1);
             gsInterp = gsInterp < 0 ? 0 : gsInterp > 3 ? 3 : gsInterp;
             sInterpPrev = malloc(MAX_VU_UNIFORMS * sizeof(Vu0Uniform));
             sInterpBlend = malloc(MAX_VU_UNIFORMS * sizeof(Vu0Uniform));
@@ -4766,11 +5026,11 @@ void GsGpu_FrameEnd(void) {
             sInterpSteps = (interp_steps() < sInterpCap ? interp_steps() : sInterpCap) * (int)blanks / 2;
             sInterpTickNs = (uint64_t)blanks * Port_BlankNs();
         }
-        if (gsInterp > 0 && !Port_TagBattleRenderActive()) {
+        if (gsInterp > 0) {
             interp_signatures(sInterpSig);
             sInterpPrimCount = interp_prims(sInterpPrims);
         }
-        if (gsInterp > 0 && !Port_TagBattleRenderActive() && sInterpSteps > 1 && interp_build(getenv("BT3_INTERP_T") != NULL ? (float)atof(getenv("BT3_INTERP_T")) : 1.0f / (float)sInterpSteps, 1)) {
+        if (gsInterp > 0 && sInterpSteps > 1 && interp_build(getenv("BT3_INTERP_T") != NULL ? (float)atof(getenv("BT3_INTERP_T")) : 1.0f / (float)sInterpSteps, 1)) {
             uint64_t before;
 
             sInterpSaved.verts = gsVertCount;
@@ -4785,6 +5045,7 @@ void GsGpu_FrameEnd(void) {
                 sInterpSaved.tdraws[i] = gsTargets[i].draws;
             }
             before = gpu_now();
+            sInterpRepeat = 0; /* (a blendable tick: its pictures are blends) */
             interp_show(1); /* the first in-between picture; the others and the real one follow (GsGpu_InterpPump) */
             sInterpBlendShown = gpu_now();
             sInterpBlendTook = sInterpBlendShown - before;
@@ -4806,9 +5067,27 @@ void GsGpu_FrameEnd(void) {
             }
         } else {
             uint64_t t1;
-            if (gsInterp > 0 && !Port_TagBattleRenderActive()) {
+            /* Smooth motion on and the tick due more than one picture, but not blendable (a cut): its picture is shown
+               now and again at the in-between pictures' moments (sInterpRepeat), from the same list, kept as an
+               in-between tick keeps it. Not where nothing is shown (BT3_INTERP_REALONLY, a run without pictures). */
+            int repeat = gsInterp > 0 && sInterpSteps > 1 && !GS_NO_PICTURE && gsDrawCount != 0 && getenv("BT3_INTERP_REALONLY") == NULL &&
+                         getenv("BT3_INTERP_NOREPEAT") == NULL;
+            if (gsInterp > 0) {
                 interp_remember();
                 gInterpSkipped++;
+            }
+            if (repeat) {
+                sInterpSaved.verts = gsVertCount;
+                sInterpSaved.vuVerts = gsVuVertCount;
+                sInterpSaved.vuIdx = gsVuIdxCount;
+                sInterpSaved.vuUni = gsVuUniCount;
+                sInterpSaved.draws = gsDrawCount;
+                sInterpSaved.anchor = gsAnchor;
+                sInterpSaved.skipped = gsSkipped;
+                sInterpSaved.native = gsNative;
+                for (i = 0; i < gsTargetCount && i < MAX_TARGETS; i++) {
+                    sInterpSaved.tdraws[i] = gsTargets[i].draws;
+                }
             }
             t1 = gpu_now();
             sBackend->frameEnd();
@@ -4816,6 +5095,12 @@ void GsGpu_FrameEnd(void) {
             interp_present_log('S');
             scale_apply();
             menu_labels_apply();
+            if (repeat) {
+                sInterpBlendShown = gpu_now();
+                sInterpBlendTook = sInterpBlendShown - t1 < 4000000ull ? sInterpBlendShown - t1 : 4000000ull;
+                sInterpRepeat = 1;
+                sInterpNext = 2;
+            }
         }
     }
     gGpuEndNs += gpu_now() - t0;

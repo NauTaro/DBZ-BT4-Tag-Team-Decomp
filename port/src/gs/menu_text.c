@@ -731,7 +731,7 @@ int MenuText_RasterScale(int internalScale) { return internalScale < 2 ? 2 : int
 /* ------------------------------------------------------------------------------------------- menu labels */
 
 typedef struct MenuLabel {
-    uint64_t hash;
+    uint64_t hash, quick; /* (quick: MenuLabels_Quick, 0 when the list has none: the hash is always worked out) */
     int width, height, y, rowHeight, cap, baseline, center, margin, widthMilli, x, rowWidth, artWidth;
     unsigned top, bottom, middleColor, outline, outlineBottom, bevelLight, bevelDark;
     int italic;
@@ -840,8 +840,15 @@ static void menu_text_labels(void) {
             label.depthMilli < 0 || label.depthMilli > 8000 || label.midGradient < 0 || label.midGradient > 1 ||
             label.fontFace < 0 || label.fontFace > 1 || label.hasMiddle < 0 || label.hasMiddle > 1 ||
             label.middleColor > 0xFFFFFF) { continue; }
-        if (sscanf(line + pos, "%63[^\r\n]%n", id, &end) != 1 || end == 0 || strchr(id, '\t') != NULL ||
-            (line[pos + end] != '\n' && line[pos + end] != '\r' && line[pos + end] != '\0')) continue;
+        if (sscanf(line + pos, "%63[^\t\r\n]%n", id, &end) != 1 || end == 0) continue;
+        if (line[pos + end] == '\t') { /* the fingerprint (v13 on) */
+            unsigned long long quick;
+            int more = 0;
+            if (sscanf(line + pos + end, "\t%llx%n", &quick, &more) != 1 || more == 0) continue;
+            label.quick = quick;
+            end += more;
+        }
+        if (line[pos + end] != '\n' && line[pos + end] != '\r' && line[pos + end] != '\0') continue;
         translated = MenuTranslation_Text(id);
         original = MenuTranslation_Original(id);
         if (translated == NULL || original == NULL || strlen(translated) >= sizeof(label.text) ||
@@ -924,16 +931,66 @@ int MenuText_MayHaveBattleTexture(int width, int height, int indexed) {
     return result;
 }
 
-int MenuText_IsBattleTexture(const uint8_t *rgba, int width, int height, int indexed) {
+/* The hash a label is known by, of the texture being made (gs_draw.c's texture_get): MenuText_IsBattleTexture and
+   MenuText_Render both need it, and it is a byte at a time over the whole texture: 60 ms over a recorded session's
+   new textures, and the same again in MenuText_Render with a menu font chosen (175 ms with its compares). Worked out
+   once per texture; MenuText_NewTexture forgets it, so a texture never gets another's. Called with sLock held. */
+static struct { const uint8_t *rgba; int width, height, valid, quickValid; uint64_t hash, quick; } sTexHash;
+
+void MenuText_NewTexture(void) {
+    pthread_mutex_lock(&sLock);
+    sTexHash.valid = sTexHash.quickValid = 0;
+    pthread_mutex_unlock(&sLock);
+}
+
+/* Whether a label of this size could be this texture: one has its fingerprint, or one has none to compare. A
+   texture of a label's size that is none (most of a fight's effects) is told by 64 of its pixels, not all of its
+   bytes. Called with sLock held. */
+static int label_could_be(const uint8_t *rgba, int width, int height, int fontFaceOnly) {
+    int n;
+    if (!sTexHash.quickValid || sTexHash.rgba != rgba || sTexHash.width != width || sTexHash.height != height) {
+        sTexHash.quick = MenuLabels_Quick(rgba, width, height);
+        sTexHash.quickValid = 1;
+        if (sTexHash.rgba != rgba || sTexHash.width != width || sTexHash.height != height) {
+            sTexHash.valid = 0; /* (another texture: its full hash is not this one's) */
+        }
+        sTexHash.rgba = rgba;
+        sTexHash.width = width;
+        sTexHash.height = height;
+    }
+    for (n = 0; n < sCount; n++) {
+        if (sLabels[n].width == width && sLabels[n].height == height && (!fontFaceOnly || sLabels[n].fontFace) &&
+            (sLabels[n].quick == 0 || sLabels[n].quick == sTexHash.quick)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static uint64_t texture_hash(const uint8_t *rgba, int width, int height) {
     uint64_t hash = UINT64_C(14695981039346656037);
     size_t i, bytes;
+    if (sTexHash.valid && sTexHash.rgba == rgba && sTexHash.width == width && sTexHash.height == height) {
+        return sTexHash.hash;
+    }
+    bytes = (size_t)width * height * 4;
+    for (i = 0; i < bytes; i++) { hash = (hash ^ rgba[i]) * UINT64_C(1099511628211); }
+    sTexHash.rgba = rgba;
+    sTexHash.width = width;
+    sTexHash.height = height;
+    sTexHash.hash = hash;
+    sTexHash.valid = 1;
+    return hash;
+}
+
+int MenuText_IsBattleTexture(const uint8_t *rgba, int width, int height, int indexed) {
+    uint64_t hash;
     int n;
     if (!indexed || rgba == NULL || width < 1 || height < 1) { return 0; }
     pthread_mutex_lock(&sLock);
     menu_text_labels();
-    if (battle_texture_size_loaded(width, height)) {
-        bytes = (size_t)width * height * 4;
-        for (i = 0; i < bytes; i++) { hash = (hash ^ rgba[i]) * UINT64_C(1099511628211); }
+    if (battle_texture_size_loaded(width, height) && label_could_be(rgba, width, height, 1)) {
+        hash = texture_hash(rgba, width, height);
         for (n = 0; n < sCount; n++) {
             if (sLabels[n].fontFace && sLabels[n].width == width && sLabels[n].height == height && sLabels[n].hash == hash) {
                 pthread_mutex_unlock(&sLock);
@@ -1743,8 +1800,7 @@ static void battle_art_fit(uint8_t *dst, int stride, const uint8_t *original, in
 }
 
 uint8_t *MenuText_Render(const uint8_t *rgba, int width, int height, int indexed, int scale, int *outWidth, int *outHeight) {
-    uint64_t hash = UINT64_C(14695981039346656037);
-    size_t i, bytes;
+    uint64_t hash;
     int n, x, y, changed = 0, rw, rh;
     uint8_t *result = NULL;
     if ((sFontChoice == 0 && sBattleChoice == 0) || !indexed) { return NULL; }
@@ -1754,9 +1810,12 @@ uint8_t *MenuText_Render(const uint8_t *rgba, int width, int height, int indexed
         pthread_mutex_unlock(&sLock);
         return NULL;
     }
-    bytes = (size_t)width * height * 4;
     rw = width * scale; rh = height * scale;
-    for (i = 0; i < bytes; i++) { hash = (hash ^ rgba[i]) * UINT64_C(1099511628211); }
+    if (!label_could_be(rgba, width, height, 0)) {
+        pthread_mutex_unlock(&sLock);
+        return NULL;
+    }
+    hash = texture_hash(rgba, width, height);
     for (n = 0; n < sCount; n++) {
         const MenuLabel *label = &sLabels[n];
         Row row;
@@ -1790,12 +1849,27 @@ uint8_t *MenuText_Render(const uint8_t *rgba, int width, int height, int indexed
 }
 
 static uint8_t *menu_text_render_name(const char *text, int kind, int scale, int *outWidth, int *outHeight) {
+    static Face addedNameFont;
+    static int addedNameChoice;
+    Face *font = &sFont;
     MenuLabel label;
     Row row;
     uint8_t *result;
     size_t bytes, i, length;
-    if (sFontChoice == 0 || sCount == 0 || text == NULL || kind < 0 || kind > 2 || scale < 1 || scale > 4 ||
+    if (sCount == 0 || text == NULL || kind < 0 || kind > 2 || scale < 1 || scale > 4 ||
         outWidth == NULL || outHeight == NULL) { return NULL; }
+    if (sFontChoice == 0) {
+        int choice;
+        for (choice = 1; choice <= sFontCount; choice++) {
+            if (!font_available(choice, MENU_TEXT_MENU)) continue;
+            if (addedNameChoice == choice) break;
+            face_close(&addedNameFont);
+            addedNameChoice = 0;
+            if (font_open(&addedNameFont, choice)) { addedNameChoice = choice; break; }
+        }
+        if (choice > sFontCount) return NULL;
+        font = &addedNameFont;
+    }
     length = strlen(text);
     if (length == 0 || length >= sizeof(label.text)) { return NULL; }
     label = sNameStyles[kind];
@@ -1803,7 +1877,7 @@ static uint8_t *menu_text_render_name(const char *text, int kind, int scale, int
     bytes = (size_t)512 * label.rowHeight * scale * scale * 4;
     result = malloc(bytes);
     if (result == NULL) { return NULL; }
-    if (!menu_text_row(&sFont, &label, scale, &row)) { free(result); return NULL; }
+    if (!menu_text_row(font, &label, scale, &row)) { free(result); return NULL; }
     row_paste(result, 512 * scale, 0, 0, 512 * scale, label.rowHeight * scale, &row);
     free(row.px);
     /* Menu texture pixels use PS2 alpha; the ImGui overlay uses conventional RGBA. */

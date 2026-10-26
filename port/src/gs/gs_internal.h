@@ -81,6 +81,14 @@ extern int gPortResim;
 extern int gsSkipFrame;
 #define GS_NO_PICTURE (gPortResim || gsSkipFrame)
 
+/* gs_core.c: with the render thread (BT3_GS_THREAD), waits until it has finished the list it runs, before the
+   game's thread touches what the thread uses (GS memory and registers, the back end). At once without it, or on
+   the render thread itself. */
+void Gs_RenderIdle(void);
+int Gs_RenderThreaded(void);  /* the render thread is on */
+int Gs_OnRenderThread(void);  /* and this is it */
+int GsGpu_BackendIsGl(void);  /* gs_draw.c: the OpenGL back end is the one running */
+
 /* Settings are read from the environment all over the renderer, some of them for every batch a model sends
    (tens of thousands of times per frame). The C library's getenv is cheap on Linux and slow on Windows (a lock
    and a case-insensitive search of a much larger environment): there it cost more than half of a frame. In the

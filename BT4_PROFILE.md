@@ -20,7 +20,7 @@ startup selector. Text and voices switch together.
 
 ## Online compatibility and timing
 
-The compatibility family is `BT4-B14-Rev2-sim1`. The base-data check reads the
+The compatibility family is `BT4-B14-Rev2-sim2`. The base-data check reads the
 three verified program resources once per process, independently of the
 displayed revision label. The check covers those resources; it does not audit
 the full roster or establish compatibility with other BT4 modifications.

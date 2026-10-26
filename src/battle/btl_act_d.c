@@ -429,7 +429,9 @@ s32 BtlAct_NeutralHandler(BtlActDChr *chr, s32 phase) {
     }
     if (phase == PHASE_DECIDE) {
         BtlDecide_Main(chr, 0x22FCBFEB);
-        if (BtlInput_IsCmdHeld(chr, 0x4000) && BtlInput_IsCmdHeld(chr, 1)) {
+        /* BT4's manual taunt hook at 0x19BF3C tests held BUTTONS through
+         * 0x1D4DD0, not command bits. 0x4000 is L1, 1 is Circle. */
+        if (BtlInput_IsHeld(chr, 0x4000) && BtlInput_IsHeld(chr, 1)) {
             extern void BtlAct_ClearQueue(void *chr);
             BtlAct_Request(chr, 0x43);
             BtlAct_ClearQueue(chr);

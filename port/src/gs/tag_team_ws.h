@@ -27,7 +27,7 @@ static DWORD WINAPI TagWs_Rx(LPVOID unused){
     parts.lpszHostName=host;parts.dwHostNameLength=256;parts.lpszUrlPath=path;parts.dwUrlPathLength=256;
     MultiByteToWideChar(CP_UTF8,0,sTagWs.url,-1,url,512);
     if(!WinHttpCrackUrl(url,0,0,&parts))goto failed;
-    if(!TagWs_Publish(&sTagWs.session,WinHttpOpen(L"BT4-Tag-Team/0.1.38.1",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0)))goto failed;
+    if(!TagWs_Publish(&sTagWs.session,WinHttpOpen(L"BT4-Tag-Team/0.1.38.9",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0)))goto failed;
     WinHttpSetTimeouts(sTagWs.session,5000,5000,5000,10000);
     if(!TagWs_Publish(&sTagWs.connection,WinHttpConnect(sTagWs.session,host,parts.nPort,0)))goto failed;
     request=WinHttpOpenRequest(sTagWs.connection,L"GET",path,NULL,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,parts.nScheme==INTERNET_SCHEME_HTTPS?WINHTTP_FLAG_SECURE:0);

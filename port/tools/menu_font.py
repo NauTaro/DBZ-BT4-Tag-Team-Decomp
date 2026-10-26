@@ -26,9 +26,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 FONT_MENU, FONT_DIALOGUE, FONT_BATTLE = 1, 2, 3
 
 # The first lines of the two files, matching port/src/gs/menu_labels.c (ml_tsv).
-LABELS_HEAD = ('# BT3 menu text v12: hash width height y row_height cap_height baseline center margin width_milli x row_width '
+LABELS_HEAD = ('# BT3 menu text v13: hash width height y row_height cap_height baseline center margin width_milli x row_width '
                'art_width top bottom middle_rgb has_middle outline italic outline_milli outer_milli outer_rgb shadow '
-               'outline_bottom bevel_milli bevel_light bevel_dark depth_milli mid_gradient font_face label_id')
+               'outline_bottom bevel_milli bevel_light bevel_dark depth_milli mid_gradient font_face label_id quick')
 STYLES_HEAD = '# kind (0 song, 1 selected song, 2 stage) cap_height baseline margin width_milli top bottom outline'
 
 
@@ -151,6 +151,15 @@ def apply_labels(out, fonts):
                 rgb(colors.get('bevel_dark', depth_color), 'bevel_dark'), round(depth * 1000), int(midpoint)]
 
     lines = [LABELS_HEAD]
+    # Each texture's fingerprint (the game's MenuLabels_Quick: 64 of its pixels) as the game wrote it, by the texture's
+    # hash: labels.json has no pixels to make it from. A row without one is checked by the full hash.
+    quick = {}
+    old = out / 'labels.tsv'
+    if old.exists():
+        for line in old.read_text(encoding='utf-8', errors='replace').splitlines():
+            parts = line.split('\t')
+            if not line.startswith('#') and len(parts) >= 32 and re.fullmatch(r'[0-9a-fA-F]{16}', parts[-1]):
+                quick[parts[0].lower()] = parts[-1]
     # The overlay uses these same styles for names of external songs and stages.
     styles = [STYLES_HEAD]
     for selected, id in ((0, 'song/0/0'), (1, 'song-highlighted/0/0'), (2, 'stage/0/0')):
@@ -197,6 +206,8 @@ def apply_labels(out, fonts):
                   int(row['align'] == 'center'), row['margin'], round(width_scale * 1000), x, row_width,
                   art_width, fill[0], fill[1], middle_rgb, int(middle is not None), fill[2],
                   int(italic), *decorations(colors), int(font_face == 'battle'), row['id']]
+        if row['hash'].lower() in quick:
+            fields.append(quick[row['hash'].lower()])
         lines.append('\t'.join(map(str, fields)))
         count += 1
     if count > 640:

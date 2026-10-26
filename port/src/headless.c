@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "port_host.h"
 #include "plat_stages.h"
 #include "plat_songs.h"
 #include "port_addr.h"
@@ -187,6 +188,17 @@ int __wrap_Progress_Main(int arg) {
                             time == 0 ? "60" : time == 1 ? "90" : time == 2 ? "180" : time == 3 ? "240" : "none");
                 }
             }
+            {   /* BT3_TBO=1 (testing): the first menu is Tenkaichi Budokai Online's (src/menu/port_tbo.c), not the
+                   title: its screens, a lobby's included (BT3_LOBBY), without a button pressed */
+                static int tboEntered;
+                extern int gPortScreen; /* src/menu/port_screen.c */
+
+                if (!tboEntered && getenv("BT3_TBO") != NULL && !Port_NetSession() && gProgress != NULL && gSaveData != NULL) {
+                    tboEntered = 1;
+                    gPortScreen = 1; /* PORT_SCREEN_TBO */
+                    gProgress->mode = 80; /* MPROG_MODE_PORT_SCREEN */
+                }
+            }
             gPortMenuMode = 1; /* the renderer treats all 2D as one centred 4:3 page while the menus run */
             r = __real_Progress_Main(arg);
             gPortMenuMode = 0;
@@ -281,12 +293,28 @@ extern void BtlCharApi_GetPos(int objId, float *out);
 
 
 
+/* For the lobby's tests (gs/net_lobby.c, BT3_LOBBY_DO "waitseq"): the battle sequence's state, -1 outside a battle. */
+int Port_BattleSeqState(void) {
+    return gBtlSeq != NULL ? gBtlSeq->state : -1;
+}
+
 /* Main-menu item 4, Dragon Net Battle, was confirmed (src/menu/menu_a.c): the settings code opens the online
    screen when it sees the request (port/src/gs/ui.cpp). Without a window nothing does. */
 volatile int gPortNetMenuRequest;
 void Port_NetMenuOpen(void) {
     gPortNetMenuRequest = 1;
 }
+/* BT3_SPEC_LINE=0 (testing): a spectator's line over the match is not drawn (src/menu/port_tbo.c). It is drawn with
+   the game's own lists, so a spectator's whole state differs from its host's by what it draws; without it (and with
+   its pause menu shut) the two are the same, blank for blank, as the spectator tests compare them. */
+int Port_SpecLineShown(void) {
+    PORT_HOST static int shown = -1; /* (not the game's state) */
+    if (shown < 0) {
+        shown = getenv("BT3_SPEC_LINE") == NULL || atoi(getenv("BT3_SPEC_LINE")) != 0;
+    }
+    return shown;
+}
+
 /* (asked here and not in the game's file: there a pointer is 4 bytes wide in the 64-bit build, and getenv's is not) */
 int Port_NetMenuListed(void) {
     const char *e = getenv("BT3_MENU_ITEM4");
@@ -730,6 +758,13 @@ void Port_Trace(unsigned vblanks) {
             printf("bt3: end of battle: gBtlSeq %p clock %08x %08x %08x %08x hp %d %d; heap dumped\n", (void *)gBtlSeq,
                    clock[0], clock[1], clock[2], clock[3], BtlCharApi_GetHp(0), BtlCharApi_GetHp(1));
             exit(0);
+        }
+    }
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAUNT_AUDIT") && gBtlSeq && gBtlSeq->state==3){
+        extern unsigned char GAME_PTR BtlChar_Get(int);
+        static int lastAction[2]={-1,-1};int i;
+        for(i=0;i<2;++i){unsigned char GAME_PTR chr=BtlChar_Get(i);int action=*(int GAME_PTR)(chr+0x948);
+            if(action!=lastAction[i]){lastAction[i]=action;fprintf(stderr,"BT4 action audit: vb=%u actor=%d action=%X animation=%X\n",vblanks,i,action,*(int GAME_PTR)(chr+0x974));}
         }
     }
     if ((sBattles != 0 || sFromMenu) && gBtlSeq != NULL && getenv("BT3_TRACE_SEQ") != NULL) { /* when the battle sequence changes state */

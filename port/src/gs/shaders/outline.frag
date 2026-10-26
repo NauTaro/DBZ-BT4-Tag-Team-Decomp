@@ -23,7 +23,14 @@ void main() {
     // measured in texels of the image: a texel at distance d from the edge darkens by clamp(width - d + 1, 0, 1),
     // which gives lines of the same thickness at any shape (a fraction of a texel as a lighter last texel).
     float tx = 1.0 / float(textureSize(aux, 0).x), width = p.step.x / tx;
-    float here = table(vUv), down = table(vUv + vec2(0.0, p.step.y)), up = table(vUv - vec2(0.0, p.step.y));
+    float here = table(vUv);
+    // Nothing to subtract (the pipeline: picture minus this, colour only), so nothing is written: the same picture,
+    // without reading and writing back every pixel of the screen. A place with no object (the table's 0: stage,
+    // sky, most of the picture) is never on the larger side of an edge, so its neighbours are not even read.
+    if (here == 0.0 && p.step.w == 0.0) {
+        discard;
+    }
+    float down = table(vUv + vec2(0.0, p.step.y)), up = table(vUv - vec2(0.0, p.step.y));
     // the subtraction keeps only positive differences: the line is drawn on the side with the larger value
     float amount = here > down || here > up ? 1.0 : 0.0;
     for (int k = 1; k <= 8 && float(k) < width + 1.0; k++) {
@@ -31,6 +38,9 @@ void main() {
             amount = max(amount, clamp(width - float(k) + 1.0, 0.0, 1.0));
             break; // (the nearest edge gives the most)
         }
+    }
+    if (amount == 0.0 && p.step.w == 0.0) {
+        discard;
     }
     if (p.step.w != 0.0) { // debug view: darken by the object number instead (255 = "nothing" stays untouched)
         float id = texture(aux, vUv).r * 255.0;

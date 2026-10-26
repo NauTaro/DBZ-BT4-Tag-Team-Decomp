@@ -542,6 +542,18 @@ void MainMenu_Input(s32 *result) {
     if (!(gMainMenu->flash[0].flags & MFLASH_PAD)) {
         return;
     }
+#ifdef PORT
+    {   /* In a lobby (joined from the Dragon Net Battle window, or back here after its match): its screen, in
+           Tenkaichi Budokai Online (menu/port_tbo.c; port/src/gs/net_lobby.c) */
+        extern int Port_LobbyWantsScreen(void);
+
+        if (!(gMainMenu->flags & MAINMENU_LEAVING) && Port_LobbyWantsScreen()) {
+            gPortScreen = PORT_SCREEN_TBO;
+            MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
+            return;
+        }
+    }
+#endif
     if (!(gMainMenu->flags & MAINMENU_STARTED)) {
         MainMenu_PlateGoto(0, "fl_on_start");
         if ((gSaveData->unlockFlags & 0x7F) == 0x7F) {

@@ -481,7 +481,20 @@ void Port_TagChatSend(const char *text){unsigned char p[512];if(!text||!text[0]|
 
 void Port_TagCPUOptions(int fill,int difficulty){cpu_fill=fill==1;cpu_difficulty=difficulty>=0&&difficulty<=4?difficulty:2;}
 
-static void fail(const char *why){SDL_SetAtomicInt(&tag_catchup,0);PortVoice_Leave(2);if(ws_mode)TagWs_Close();channel_close(&client);state.phase=TT_ABORTED;snprintf(error,sizeof(error),"%s",why);}
+/* Keep a local transport incident even when a tester restarts the game and
+ * bt3_log.txt is rotated. No room codes, names, voice tickets or credentials. */
+static void tag_transport_report(const char *why){
+    char path[2048],folder[1800];const char *base=SDL_GetBasePath();FILE *f;
+    unsigned rx=0,tx=0;
+    if(sTagWs.lockReady){EnterCriticalSection(&sTagWs.lock);rx=sTagWs.inWrite-sTagWs.inRead;tx=sTagWs.outWrite-sTagWs.outRead;LeaveCriticalSection(&sTagWs.lock);}
+    snprintf(folder,sizeof(folder),"%stbo/logs",base?base:"");SDL_CreateDirectory(folder);
+    snprintf(path,sizeof(path),"%s/tag-transport-%lld-%u.txt",folder,(long long)time(NULL),(unsigned)GetCurrentProcessId());
+    f=fopen(path,"a");if(!f)return;
+    fprintf(f,"reason=%s\nphase=%d epoch=%u paced=%d ping_ms=%d next=%u latest=%u backlog=%d rx_queue=%u tx_queue=%u seconds_since_reply=%lld\n",
+        why,state.phase,state.epoch,tag_paced,tag_ping,received.next,tag_received_latest,tag_backlog(),rx,tx,(long long)(time(NULL)-last_heard));
+    fclose(f);
+}
+static void fail(const char *why){tag_transport_report(why);SDL_SetAtomicInt(&tag_catchup,0);PortVoice_Leave(2);if(ws_mode)TagWs_Close();channel_close(&client);state.phase=TT_ABORTED;snprintf(error,sizeof(error),"%s",why);}
 
 int Port_TagConnect(const char *server){
 
@@ -675,13 +688,17 @@ void Port_TagPoll(void){
 
             uint32_t epoch=Ttw_Read(client.in+8),frame=Ttw_Read(client.in+12);int seat;
 
-            if(state.phase!=TT_FIGHT||epoch!=state.epoch){fail("Stale TAG TEAM battle input.");return;}
+            /* Input already in flight when a round ends belongs to that old
+             * round. Discard it; it cannot mutate the next round's ring. A
+             * future epoch is still a protocol error and is reported. */
+            if(epoch!=state.epoch){if((int32_t)(epoch-state.epoch)<0)continue;fail("Unexpected TAG TEAM input epoch.");return;}
+            if(state.phase!=TT_FIGHT)continue;
 
             if(received.epoch!=epoch)Tt_InputsReset(&received,epoch,Tt_Count(&state));
 
-            /* The server still echoes the one-human room's inputs. Frames
-             * already consumed locally are expected, not stale connections. */
-            if(solo_cpu_fight()&&(int32_t)(frame-received.next)<0)continue;
+            /* A consumed authoritative frame is idempotent, including the
+             * server echo used by one-human CPU rooms. */
+            if((int32_t)(frame-received.next)<0)continue;
 
             if(tag_paced&&(int32_t)(frame-received.next)>=TT_INPUT_HISTORY){
                 fprintf(stderr,"tag local backlog exceeded: next=%u incoming=%u capacity=%d\n",received.next,frame,TT_INPUT_HISTORY);
