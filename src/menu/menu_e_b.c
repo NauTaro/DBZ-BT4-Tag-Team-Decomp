@@ -418,6 +418,9 @@ void TeamSel_UpdateStageLoad(void) {
 
 /* The stage under the cursor changed: start the cross fade, or abort a load in progress, and ask for the new picture. */
 void TeamSel_RequestStage(void) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_BROWSE_TEST"))fprintf(stderr,"team map browse request: stage=%d row=%d col=%d\n",gTeamSel->stage->stage,gTeamSel->stage->row,gTeamSel->stage->col);
+#endif
     if (gTeamSel->flags & TEAMSEL_STAGE_READY) {
         gTeamSel->flags ^= TEAMSEL_STAGE_READY;
     } else {
@@ -796,7 +799,7 @@ void TeamSel_Init(s32 section) {
         s32 rows = TS_STAGE_COLS;
 
         gTeamSel->stage->col = gTsProgress->stageCell % cols;
-        gTeamSel->stage->row = gTsProgress->stageCell / rows;
+        gTeamSel->stage->row = gTsProgress->stageCell / cols;
     }
     for (i = 0; i < gTeamSel->bgmCount; i++) {
         if (gTeamSel->bgmIds[i] == gTsProgress->bgm) {
@@ -828,7 +831,8 @@ void TeamSel_Init(s32 section) {
             }
         }
     }
-    if (!StgGrid_IsSelectable(gTeamSel->stageIds, gTsProgress->stageCell)) {
+    if (gTsProgress->stageCell < 0 || gTsProgress->stageCell >= gTeamSel->stageCount ||
+        !StgGrid_IsSelectable(gTeamSel->stageIds, gTsProgress->stageCell)) {
         gTsProgress->stageCell = 0;
         gTeamSel->stage->col = 0;
         gTeamSel->stage->row = 0;
@@ -1475,6 +1479,29 @@ f32 TeamSel_Input(s32 *result) {
     s32 r;
     s32 chara;
     s32 idx;
+
+#ifdef PORT
+    /* Hidden regression enters the actual team stage reel, then sends normal
+     * directional input through the same handler as the player's controller. */
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEAM_MAP_BROWSE_TEST")&&!sTagSelectActive){
+        static int selected,tick;
+        gPad[0].gamePressed=gPad[0].gameRepeat=gPad[0].gameHeld=0;
+        if(!selected&&(gTeamSel->flash[0].flags&MFLASH_PAD)){
+            for(idx=0;idx<gTeamSel->stageCount;++idx)if(gTeamSel->stageIds[idx]==99){
+                Flash_GotoLabel(&gTeamSel->flash[0],"fl_map",1);
+                gTeamSel->flags|=TEAMSEL_STAGE|TEAMSEL_STARTED;
+                gTeamSel->faceMask=1;gTeamSel->stage->state=TEAMSEL_STAGE_GRID;
+                gTeamSel->stage->row=idx/TS_STAGE_COLS;gTeamSel->stage->col=idx%TS_STAGE_COLS;gTeamSel->stage->stage=99;
+                TeamSel_SetStageChips();TeamSel_ClipGoto(0,0,TEAMSEL_CLIP_STAGE_CHIP,"fl_on_start");TeamSel_RequestStage();
+                fprintf(stderr,"team map selector fixture: stage=99 index=%d count=%d\n",idx,gTeamSel->stageCount);selected=1;break;
+            }
+        }
+        if(selected&&++tick>=170&&(tick-170)%40==0){
+            int step=(tick-170)/40;gPad[0].gameRepeat=step<10?2:step<20?1:step<40?4:8;
+            if(step==60){fprintf(stderr,"team map browse fixture: complete\n");exit(0);}
+        }
+    }
+#endif
 
     if (!(gTeamSel->flash[0].flags & MFLASH_PAD)) {
         return;

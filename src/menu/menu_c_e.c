@@ -12,8 +12,8 @@
 /* include/battle/view_a.h holds these, but pulling it in clashes with menu_d.h (MsgWin_Init); the values are
    fixed, so they are repeated here for the stage list of the PC build. */
 #define STGGRID_COLS 6
-#define STGGRID_ID_LOCKED 0x3E
-#define STGGRID_ID_EMPTY 0x3F
+#define STGGRID_ID_LOCKED 0x24
+#define STGGRID_ID_EMPTY 0x25
 static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
 static s32 sPortSongsAdded;  /* ... and its music list songs from outside the disc */
 static s32 sPortSongNameHidden, sPortStageNameHidden;
@@ -299,6 +299,9 @@ void CharSel_UpdateStageLoad(void) {
         }
         break;
     case CHARSEL_LOAD_UNPACK:
+#ifdef PORT
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_BROWSE_TEST"))fprintf(stderr,"map browse decode: stage=%d raw=%u packed=%u\n",gCharSel->stage->stage,((u32*)gCharSel->stageFile)[0],((u32*)gCharSel->stageFile)[1]);
+#endif
         Sprite_Unpack(gCharSel->stageFile, gCharSel->stageRes[gCharSel->stageBuf], NULL);
         res = gCharSel->stageRes[gCharSel->stageBuf];
         Res_RelocateOffsets(&res, res, res);
@@ -323,6 +326,9 @@ void CharSel_UpdateStageLoad(void) {
 
 /* The stage under the cursor changed: start the cross fade, or abort a load in progress, and ask for the new picture. */
 void CharSel_RequestStage(void) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_BROWSE_TEST"))fprintf(stderr,"map browse request: stage=%d row=%d col=%d\n",gCharSel->stage->stage,gCharSel->stage->row,gCharSel->stage->col);
+#endif
     if (gCharSel->flags & CHARSEL_STAGE_READY) {
         gCharSel->flags ^= CHARSEL_STAGE_READY;
     } else {
@@ -711,7 +717,7 @@ void CharSel_Init(s32 section) {
     stageCols = 6;
     stageRows = 11;
     gCharSel->stage->col = CSPROG->stage % stageCols;
-    gCharSel->stage->row = CSPROG->stage / stageRows;
+    gCharSel->stage->row = CSPROG->stage / stageCols;
     for (i = 0; i < gCharSel->bgmCount; i++) {
         if (gCharSel->bgmIds[i] == CSPROG->bgm) {
             gCharSel->stage->bgm = i;
@@ -725,7 +731,8 @@ void CharSel_Init(s32 section) {
             CSPROG->side[i].pick = *(CharSelPick *)gCharSel->side[i];
         }
     }
-    if (!StgGrid_IsSelectable(gCharSel->stageIds, CSPROG->stage)) {
+    if (CSPROG->stage < 0 || CSPROG->stage >= gCharSel->stageCount ||
+        !StgGrid_IsSelectable(gCharSel->stageIds, CSPROG->stage)) {
         CSPROG->stage = 0;
         gCharSel->stage->col = 0;
         gCharSel->stage->row = 0;
@@ -1307,6 +1314,11 @@ void CharSel_Input(s32 *running) {
             }
         }
         if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
+            if(fixtureSelected&&getenv("BT4_MAP_BROWSE_TEST")&&fixtureTick>=170&&(fixtureTick-170)%40==0){
+                int step=(fixtureTick-170)/40;
+                gPad[0].gameRepeat=step<10?2:step<20?1:step<40?4:8;
+                if(step==60){fprintf(stderr,"map browse fixture: complete\n");exit(0);}
+            }
             if (fixtureSelected && ++fixtureTick >= 150 && !fixtureShot) {
                 Port_TagUiCapture(20);
                 fixtureShot = 1;

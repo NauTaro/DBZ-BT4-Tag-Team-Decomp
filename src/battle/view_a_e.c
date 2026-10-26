@@ -3,6 +3,9 @@
 #include "sys/heap.h"
 #include "sys/rand.h"
 #include "sys/save.h"
+#ifdef PORT
+#include "plat_stages.h"
+#endif
 
 /*
  * Progress_Init, the menu helpers and the head of the text box module, 0x25DE68..0x2600B0. See battle/view_a.h.
@@ -677,9 +680,23 @@ s32 ChrGrid_FixCursor(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
     }
 }
 
+/* One predicate for every direction: reserved cells cannot be selected, while
+ * installed map IDs past the disc's range remain reachable in every direction. */
+static s32 StgGrid_IsStage(s32 id) {
+    if (id >= 0 && (id < 0x24 || (id >= 0x27 && id < 0x63))) return 1;
+#ifdef PORT
+    if (id >= PORT_STAGE_FIRST) {
+        s32 i;
+        for (i = 0; i < gPortExtraStageCount; ++i)
+            if (gPortExtraStages[i] == id) return 1;
+    }
+#endif
+    return 0;
+}
+
 /* Non-zero if the stage cell is an unlocked stage. */
 s32 StgGrid_IsSelectable(s32 *ids, s32 index) {
-    return (ids[index] < 0x24 || (ids[index] >= 0x27 && ids[index] < 0x63));
+    return StgGrid_IsStage(ids[index]);
 }
 
 /* Moves the stage cursor right to the next unlocked stage; it stops in column 6 (the column past the grid). */
@@ -691,7 +708,7 @@ void StgGrid_MoveRight(s32 *ids, s32 *col, s32 row) {
         } else if (*col == STGGRID_COLS) {
             break;
         }
-    } while ((ids[row * STGGRID_COLS + *col] == 0x24 || ids[row * STGGRID_COLS + *col] == 0x25 || ids[row * STGGRID_COLS + *col] == 0x26));
+    } while (!StgGrid_IsStage(ids[row * STGGRID_COLS + *col]));
 }
 
 /* Moves the stage cursor left to the next unlocked stage; from column 0 it goes to column 6. */
@@ -702,7 +719,7 @@ void StgGrid_MoveLeft(s32 *ids, s32 *col, s32 row) {
             *col = STGGRID_COLS;
             return;
         }
-        if ((ids[row * STGGRID_COLS + *col] < 0x24 || (ids[row * STGGRID_COLS + *col] >= 0x27 && ids[row * STGGRID_COLS + *col] < 0x63))) {
+        if (StgGrid_IsStage(ids[row * STGGRID_COLS + *col])) {
             return;
         }
     }
@@ -722,7 +739,7 @@ s32 StgGrid_MoveRightWrap(s32 *ids, s32 *col, s32 row) {
             ok = 0;
             break;
         }
-    } while ((ids[row * STGGRID_COLS + *col] == 0x24 || ids[row * STGGRID_COLS + *col] == 0x25 || ids[row * STGGRID_COLS + *col] == 0x26));
+    } while (!StgGrid_IsStage(ids[row * STGGRID_COLS + *col]));
     return ok;
 }
 
@@ -734,7 +751,7 @@ void StgGrid_MoveDown(s32 *ids, s32 *col, s32 *row, s32 rows) {
         if (*row > rows - 1) {
             *row = 0;
         }
-        if ((ids[*row * STGGRID_COLS + *col] < 0x24 || (ids[*row * STGGRID_COLS + *col] >= 0x27 && ids[*row * STGGRID_COLS + *col] < 0x63))) {
+        if (StgGrid_IsStage(ids[*row * STGGRID_COLS + *col])) {
             break;
         }
         if (StgGrid_MoveRightWrap(ids, col, *row) != 0) {
@@ -751,7 +768,7 @@ void StgGrid_MoveUp(s32 *ids, s32 *col, s32 *row, s32 rows) {
         if (*row < 0) {
             *row = rows - 1;
         }
-        if ((ids[*row * STGGRID_COLS + *col] < 0x24 || (ids[*row * STGGRID_COLS + *col] >= 0x27 && ids[*row * STGGRID_COLS + *col] < 0x63))) {
+        if (StgGrid_IsStage(ids[*row * STGGRID_COLS + *col])) {
             break;
         }
         if (StgGrid_MoveRightWrap(ids, col, *row) != 0) {
