@@ -17,7 +17,11 @@ int snprintf(char *dst,unsigned long cap,const char *fmt,...){
     if(cap)dst[n<cap?n:cap-1]=0;va_end(a);return n;
 }
 static TtRoom room;static TtInputs frames;
-static unsigned char input[TT_WIRE_BYTES],output[TT_WIRE_BYTES],neutral[TT_PAD_BYTES];
+static unsigned char input[TT_WIRE_BYTES],output[TT_WIRE_BYTES];
+/* A centred quantised stick is 127,127. Zero would steer a late player's fighter. */
+static unsigned char neutral[TT_PAD_BYTES]={0,0,0,0,127,127};
+static unsigned char last_pad[TT_MAX_PLAYERS][TT_PAD_BYTES];
+static unsigned last_pad_frame[TT_MAX_PLAYERS],last_pad_valid;
 static unsigned inactive_mask,last_late_mask;static int paced_input;
 #include "sync_kernel.inc"
 unsigned char *Kernel_Input(void){return input;}
@@ -44,7 +48,13 @@ unsigned Kernel_PendingFrame(void){return frames.next;}
 unsigned Kernel_DeadlineFrame(void){
     int i;if(room.phase!=TT_FIGHT)return 0;last_late_mask=0;
     for(i=0;i<Tt_Count(&room);++i)if(!(frames.ring[frames.next%TT_INPUT_HISTORY].mask&(1u<<i))||frames.ring[frames.next%TT_INPUT_HISTORY].frame!=frames.next){
-        Tt_InputPut(&frames,room.epoch,i,frames.next,neutral);
+        unsigned char held[TT_PAD_BYTES];const unsigned char *pad=neutral;
+        /* Like the duel's prediction, a short gap retains held input. A longer
+         * outage releases it; one-shot target/sequence commands are not repeated. */
+        if(!room.players[i].cpu&&!(inactive_mask&(1u<<i))&&(last_pad_valid&(1u<<i))&&frames.next-last_pad_frame[i]<=3){
+            memcpy(held,last_pad[i],TT_PAD_BYTES);held[6]=held[8]=0;pad=held;
+        }
+        Tt_InputPut(&frames,room.epoch,i,frames.next,pad);
         if(!room.players[i].cpu)last_late_mask|=1u<<i;
     }
     return last_late_mask;
@@ -68,7 +78,7 @@ int Kernel_Command(unsigned member){
     case TTW_CANCEL_SELECT:return Tt_Seat(&room,member)<0?TT_BAD_MEMBER:Tt_CancelSelect(&room,room.host,epoch);
     case TTW_CHOOSE:return Tt_ChooseSeat(&room,member,epoch,Ttw_Read(input+20),a,b);
     case TTW_LOAD:
-        rc=Tt_BeginLoad(&room,member,epoch,read64(input+24));if(!rc){Tt_InputsReset(&frames,room.epoch,Tt_Count(&room));sync_reset();}return rc;
+        rc=Tt_BeginLoad(&room,member,epoch,read64(input+24));if(!rc){Tt_InputsReset(&frames,room.epoch,Tt_Count(&room));last_pad_valid=0;sync_reset();}return rc;
     case TTW_LOADED:return Tt_Loaded(&room,member,epoch,read64(input+24));
     case TTW_ARM:return Tt_Arm(&room,member,epoch);
     case TTW_ACK:return Tt_ArmAck(&room,member,epoch);
@@ -101,7 +111,7 @@ int Kernel_Command(unsigned member){
             sync_reset();
             room.phase=a==0?TT_LOADING:a==1?TT_SELECT:TT_ABORTED;
             if(a==0)room.load_digest=Tt_LoadDigest(&room);
-            Tt_InputsReset(&frames,room.epoch,Tt_Count(&room));return TT_OK;}
+            Tt_InputsReset(&frames,room.epoch,Tt_Count(&room));last_pad_valid=0;return TT_OK;}
     case TTW_RESULT_ENDED:
         if(room.phase!=TT_FIGHT||epoch!=room.epoch)return TT_BAD_PHASE;
         {int i,seat=Tt_Seat(&room,member);if(seat<0)return TT_BAD_MEMBER;
@@ -114,6 +124,9 @@ int Kernel_Command(unsigned member){
 int Kernel_TakeFrame(void){
     unsigned char pads[TT_MAX_PLAYERS][TT_PAD_BYTES];
     if(Tt_InputTake(&frames,pads)!=TT_OK)return 0;
+    {int i;for(i=0;i<Tt_Count(&room);++i)if(!(last_late_mask&(1u<<i))&&!room.players[i].cpu){
+        memcpy(last_pad[i],pads[i],TT_PAD_BYTES);last_pad_frame[i]=frames.next-1;last_pad_valid|=1u<<i;
+    }}
     Ttw_Request(output,TTW_FRAME,room.epoch);Ttw_Write(output+12,frames.next-1);memcpy(output+16,pads,sizeof(pads));
     Ttw_Write(output+492,paced_input?0x32535442u:0);Ttw_Write(output+496,last_late_mask);return 1;
 }

@@ -57,14 +57,14 @@ export function createSessionClass(module) {
             const view=new DataView(data),cmd=view.getUint32(4,true);
             peer.ack=view.getUint32(508,true);
             if(cmd===22){
-                if(view.getUint32(0,true)!==0x54540007||this.kernel.api.Kernel_Seat(peer.id)<0)return;
+                if(view.getUint32(0,true)!==0x54540008||this.kernel.api.Kernel_Seat(peer.id)<0)return;
                 peer.features=view.getUint32(12,true)&3;this.sendCapabilities(ws,peer);return;
             }
             if(cmd===20){
                 if(this.kernel.api.Kernel_Seat(peer.id)<0)return;
                 if(peer.voiceAt&&now-peer.voiceAt<1000)return;peer.voiceAt=now;
                 if(!peer.voiceToken)peer.voiceToken=[...crypto.getRandomValues(new Uint8Array(32))].map(b=>b.toString(16).padStart(2,'0')).join('');
-                const packet=new Uint8Array(512),out=new DataView(packet.buffer);out.setUint32(0,0x54540007,true);out.setUint32(4,102,true);
+                const packet=new Uint8Array(512),out=new DataView(packet.buffer);out.setUint32(0,0x54540008,true);out.setUint32(4,102,true);
                 packet.set(new TextEncoder().encode(peer.voiceToken),16);ws.send(packet.buffer);return;
             }
             if(cmd===16){
@@ -90,7 +90,7 @@ export function createSessionClass(module) {
         sendCapabilities(ws,peer){
             if(!peer.features)return;
             const packet=new ArrayBuffer(512),v=new DataView(packet);
-            v.setUint32(0,0x54540007,true);v.setUint32(4,104,true);
+            v.setUint32(0,0x54540008,true);v.setUint32(4,104,true);
             v.setUint32(12,this.paced?1:0,true);v.setUint32(16,114,true);v.setUint32(20,34200,true);
             try{ws.send(packet);}catch{this.close(ws);}
         }
@@ -124,7 +124,7 @@ export function createSessionClass(module) {
                 actor:a.Kernel_SyncActor(),field:a.Kernel_SyncField(),seatA:a.Kernel_SyncSeatA(),seatB:a.Kernel_SyncSeatB(),
                 valueA:a.Kernel_SyncValueA(),valueB:a.Kernel_SyncValueB()};
             console.warn(JSON.stringify(row));
-            const packet=new ArrayBuffer(512),v=new DataView(packet);v.setUint32(0,0x54540007,true);v.setUint32(4,103,true);v.setUint32(8,row.epoch,true);
+            const packet=new ArrayBuffer(512),v=new DataView(packet);v.setUint32(0,0x54540008,true);v.setUint32(4,103,true);v.setUint32(8,row.epoch,true);
             [row.frame,kind,row.streak,row.actor,row.field,row.seatA,row.seatB,row.valueA,row.valueB].forEach((x,i)=>v.setUint32(12+i*4,x>>>0,true));
             // Old clients do not understand notice packets. Send only to advertised/new clients.
             for(const [ws,p]of this.peers)if(p.detailedSync||(p.features&2)){try{ws.send(packet);}catch{this.close(ws);}}

@@ -3,6 +3,29 @@ from pathlib import Path
 import os,re,shutil,subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[3]
 class RenderHudTests(unittest.TestCase):
+    def test_queued_hud_anchors_keep_their_presentation_identity(self):
+        cc=shutil.which('cc') or shutil.which('gcc')
+        if not cc:self.skipTest('A C compiler is required')
+        source=(ROOT/'port/src/gs/gs_draw.c').read_text(encoding='utf8')
+        start=source.index('static int presentation_hud(void) {');end=source.index('\n}',start)+2
+        code='#include <assert.h>\nstatic int sPresentationHudScope,gPortMenuMode,gsAnchor;\n'+source[start:end]+'''
+int main(void){
+ int i;
+ for(i=1;i<=6;++i){gsAnchor=i;assert(presentation_hud());}
+ gsAnchor=8;assert(presentation_hud());
+ gsAnchor=0;assert(!presentation_hud());
+ gsAnchor=7;assert(!presentation_hud());
+ gsAnchor=9;assert(!presentation_hud());
+ gPortMenuMode=1;gsAnchor=1;assert(!presentation_hud());
+ sPresentationHudScope=1;assert(presentation_hud());
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);src=root/'anchors.c';exe=root/('anchors.exe' if os.name=='nt' else 'anchors');src.write_text(code,encoding='utf8')
+            flags={'creationflags':0x08000000} if os.name=='nt' else {}
+            p=subprocess.run([cc,'-std=c99',str(src),'-o',str(exe)],capture_output=True,text=True,timeout=30,**flags);self.assertEqual(p.returncode,0,p.stderr)
+            p=subprocess.run([str(exe)],capture_output=True,text=True,timeout=15,**flags);self.assertEqual(p.returncode,0,p.stdout+p.stderr)
     def test_hud_is_excluded_from_scene_motion_pairs(self):
         cc=shutil.which('cc') or shutil.which('gcc')
         if not cc:self.skipTest('A C compiler is required')

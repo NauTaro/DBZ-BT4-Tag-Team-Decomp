@@ -264,7 +264,7 @@ static void command(int i){
 
         if(r->phase==TT_FIGHT){
 
-            unsigned char pads[TT_MAX_PLAYERS][TT_PAD_BYTES],neutral[TT_PAD_BYTES]={0};
+            unsigned char pads[TT_MAX_PLAYERS][TT_PAD_BYTES],neutral[TT_PAD_BYTES]={0,0,0,0,127,127};
 
             TtInputs *q=&rooms[p->room].inputs;
 
@@ -579,6 +579,7 @@ static int ws_start(const char *code){
 }
 
 void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content){
+    delay=0; /* Tag Team no longer adds a user-configured simulation delay. */
 
     if(local_room){
 
@@ -880,8 +881,10 @@ int Port_TagAttacks(void){return 1;}
 unsigned Port_TagSeed(void){return state.seed;}
 
 int Port_TagDelay(void){
-    int lead=state.delay;
-    if(tag_paced&&tag_ping>=0){int needed=(tag_ping*342+9999)/10000+3;if(needed>lead)lead=needed;}
+    int lead=0;
+    /* Only the transport horizon remains: measured round trip plus queued
+     * authoritative history. No manual delay or fixed three-frame margin. */
+    if(tag_paced){lead=tag_ping>0?(tag_ping*342+9999)/10000:1;}
     /* New input belongs to the live server timeline even while this client
      * consumes old authoritative history after a local stall. */
     return (lead>120?120:lead)+tag_backlog();
@@ -957,7 +960,7 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
     request(packet);
     if(solo_cpu_fight()){
         unsigned f;int i,seat=Tt_Seat(&state,member);
-        const unsigned char neutral[TT_PAD_BYTES]={0};
+        const unsigned char neutral[TT_PAD_BYTES]={0,0,0,0,127,127};
         if(received.epoch!=state.epoch)Tt_InputsReset(&received,state.epoch,Tt_Count(&state));
         if(frame==(unsigned)state.delay&&received.next==0){
             /* Match the Worker's startup padding exactly. */

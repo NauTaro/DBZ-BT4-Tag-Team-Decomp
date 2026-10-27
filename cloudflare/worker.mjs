@@ -6,7 +6,7 @@ export class TagSession extends createSessionClass(kernelModule) {}
 export default {
     async fetch(request,env,ctx) {
         const url=new URL(request.url);
-        if(url.pathname==='/health')return Response.json({service:'BT4 Tag Team',build:'v0.1.38.9-r26-rc1',maxPlayers:10,transport:'wss',protocol:0x54540007,compatibility:'BT4-B14-Rev2-sim2',syncDetail:2,pacedInput:true,tagSpeed:114});
+        if(url.pathname==='/health')return Response.json({service:'BT4 Tag Team',build:'v0.1.38.9-r26-rc1',maxPlayers:10,transport:'wss',protocol:0x54540008,compatibility:'BT4-B14-Rev2-sim2',syncDetail:2,pacedInput:true,tagSpeed:114});
         if(url.pathname.startsWith('/v3/voice/')){
             if(request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return new Response('WebSocket required',{status:426});
             const match=url.pathname.match(/^\/v3\/voice\/(tag|duel)\/([A-HJ-NP-Z2-9]{6}|[a-f0-9]{64})$/);

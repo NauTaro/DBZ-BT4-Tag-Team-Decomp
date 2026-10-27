@@ -1554,9 +1554,14 @@ void GsGpu_PagesMoved(uint32_t delta) {
 }
 
 static int sPresentationHudScope;
+/* Some queued sprites reach the GS after the enclosing HUD scope has ended.
+ * Their explicit 2D anchors still identify them as HUD, never world motion. */
+static int presentation_hud(void) {
+    return sPresentationHudScope || (!gPortMenuMode && ((gsAnchor>=1 && gsAnchor<=6) || gsAnchor==8));
+}
 extern int PortHud_Hidden(void);
 void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
-    if(sPresentationHudScope && PortHud_Hidden())return;
+    if(presentation_hud() && PortHud_Hidden())return;
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
@@ -1751,7 +1756,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
        art and the old shot was drawn at three quarters of the width over the new one: seen by the user.) */
     /* BT4's original HUD uses the full 512-unit page, including its masks.
        Narrowing the side panels left a large gap beside the timer. */
-    int hudPanel = sPresentationHudScope && gsAnchor >= 1 && gsAnchor <= 6;
+    int hudPanel = presentation_hud() && gsAnchor >= 1 && gsAnchor <= 6;
     int bt4OriginalHud = sHudLayout == 0 && (gsAnchor == 1 || gsAnchor == 2 || gsAnchor == 5 || gsAnchor == 6);
     if (!bt4OriginalHud && gsAnchor != 9 && Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
                           (battleText && Port_PageAspectMilli() > 1340)) &&
@@ -1812,7 +1817,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             }
         }
     }
-    d.hud = sPresentationHudScope ? (uint32_t)(gsAnchor + 1) : 0;
+    d.hud = presentation_hud() ? (uint32_t)(gsAnchor + 1) : 0;
     d.count = gsVertCount - d.first;
     if (lowres_now(d.target)) { /* into a work buffer at the PS2's resolution: its corner (target_lowres) */
         uint32_t k;
@@ -5017,10 +5022,10 @@ void GsGpu_FrameEnd(void) {
         if (gsInterp < 0) {
             /* One-time upgrade of the old native-30 presentation profile.
              * Subsequent explicit 30/60/120/240 choices remain the user's. */
-            if (!getenv("BT3_INTERP") && Port_Setting("bt4_motion_profile",0)<1) {
+            if (!getenv("BT3_INTERP") && Port_Setting("bt4_motion_profile",0)<2) {
                 if (Port_Setting("interp",0)==0 && !GsDraw_PerformanceMode())
                     Port_SettingSave("interp",1);
-                Port_SettingSave("bt4_motion_profile",1);
+                Port_SettingSave("bt4_motion_profile",2);
                 Port_SettingsWrite();
             }
             gsInterp = getenv("BT3_INTERP") != NULL ? atoi(getenv("BT3_INTERP")) : Port_Setting("interp", 1);

@@ -27,6 +27,12 @@ extern void Port_TagHashActor(s32,u32,u32,u32,u32,u32,u32,u32,u32,u32,u32);
 static s32 sTagOnlineSent,sTagOnlineLoaded,sTagOnlineAck,sTagOnlineArm,sTagOnlineStart;
 s32 TagBattle_Network(void){return TagBattle_Active()&&Port_TagNetwork();}
 u8 *TagBattle_NetPad(s32 actor){return sTagOnlinePads[actor>=0&&actor<10?actor:0];}
+/* Byte 8 is a one-frame sequence command, separate from fighter buttons and
+ * the local combat pause menu. Every peer consumes the same delivered frame. */
+s32 TagBattle_NetIntroSkip(void){
+    s32 i;for(i=0;i<TagBattle_Count();++i)if(sTagOnlinePads[i][8]&1)return 1;
+    return 0;
+}
 static void TagOnline_Reset(void){
     s32 i;extern void Port_Srand(u32),Rand_SeedByArray(u32 *,s32);extern s32 Port_Rand(void);
     u32 key[4];sTagOnlineCaptured=0;sTagOnlinePressed=0;sTagOnlinePausePressed=sTagOnlinePauseRepeat=0;sTagOnlinePausePending=0;sTagOnlineEnding=0;sTagOnlineWaitStarted=0;sTagOnlineFrame=sTagOnlineSent=sTagOnlineLoaded=sTagOnlineAck=sTagOnlineArm=sTagOnlineStart=0;
@@ -36,7 +42,7 @@ static void TagOnline_Reset(void){
     Port_Srand(Port_TagSeed());for(i=0;i<4;++i)key[i]=Port_Rand();Rand_SeedByArray(key,4);
 }
 static s32 TagOnline_Tick(void){
-    s32 phase;Port_TagPoll();phase=Port_TagPhase();
+    s32 phase,sequence;extern s32 BtlSeq_GetState(void);Port_TagPoll();phase=Port_TagPhase();sequence=BtlSeq_GetState();
     sTagOnlinePressed|=gPad[0].pressed;
     if(sTagResultActive||sTagOnlineEnding){sTagOnlinePausePressed=sTagOnlinePauseRepeat=0;sTagOnlinePausePending=0;Port_TagMenuSet(0,0);return 1;}
     if(phase==6||phase==0)return -1;
@@ -71,7 +77,7 @@ static s32 TagOnline_Tick(void){
         if(step==100){Port_TagUiCapture(4);fprintf(stderr,"tag pause fixture: START DOWN TRIANGLE START CROSS completed\n");}
         }
     }
-    if(gPad[0].gamePressed&PADG_START)sTagOnlinePausePending=1;
+    if(sequence==3 && (gPad[0].gamePressed&PADG_START))sTagOnlinePausePending=1;
     if(sTagOnlinePausePending||(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)){
         sTagOnlinePausePressed|=gPad[0].gamePressed;
         sTagOnlinePauseRepeat|=gPad[0].gameRepeat;
@@ -83,6 +89,7 @@ static s32 TagOnline_Tick(void){
          * cannot reinterpret it. Commands/double taps use shared fighter state. */
         memcpy(packet,&buttons,4);packet[4]=BtlInput_StickToByte(pad->left[0]);packet[5]=BtlInput_StickToByte(pad->left[1]);
         packet[6]=(sTagOnlinePressed&PAD_L3)!=0;packet[7]=pad->status==0||pad->status==1?pad->status:2;
+        packet[8]=sequence!=3 && (sTagOnlinePressed&PAD_START)?1:0;
         if(sTagOnlinePausePending||(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)){memset(packet,0,sizeof(packet));packet[4]=packet[5]=127;}
         if(!sTagOnlinePausePending&&!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")){
             u32 n=sTagOnlineFrame,held=0;packet[4]=packet[5]=127;
@@ -107,6 +114,8 @@ static s32 TagOnline_Tick(void){
         sTagOnlinePausePending=0;
     }
     ++sTagOnlineFrame;sTagOnlineSent=0;
+    if(TagBattle_NetIntroSkip() && sequence!=3)
+        fprintf(stderr,"tag sequence: shared START frame=%u state=%d\n",sTagOnlineFrame,sequence);
 
     /* Opt-in reproduction of the first Hit rush in a real network room.
      * Apply on a shared simulation tick, never from a client's local vblank. */

@@ -7,9 +7,9 @@
 #include <stdint.h>
 #define TT_MAX_PLAYERS 10
 #define TT_TEAM_MAX 5
-#define TT_PAD_BYTES 18
+#define TT_PAD_BYTES 18 /* bytes 0..3 fighter buttons, 4..5 stick, 6 target, 7 status, 8 sequence START */
 #define TT_INPUT_HISTORY 512
-#define TT_PROTOCOL 0x54540007u
+#define TT_PROTOCOL 0x54540008u
 #define TT_CPU_MEMBER 0x80000000u
 enum { TT_CLOSED, TT_LOBBY, TT_SELECT, TT_LOADING, TT_ARMED, TT_FIGHT, TT_ABORTED };
 enum { TT_OK, TT_BAD_PHASE, TT_BAD_MEMBER, TT_FULL, TT_NOT_OWNER,

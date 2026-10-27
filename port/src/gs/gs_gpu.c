@@ -1106,9 +1106,10 @@ static void hud_geometry_audit(void) {
     static unsigned present;
     float box[2][4] = {{1e9f,1e9f,-1e9f,-1e9f},{1e9f,1e9f,-1e9f,-1e9f}};
     unsigned count[2] = {0,0}, n, k;
+    uint64_t signature[2]={14695981039346656037ull,14695981039346656037ull};
     const char *path = getenv("BT4_RENDER_TEST") ? getenv("BT4_HUD_GEOMETRY_LOG") : NULL;
     if (!path) return;
-    if (!log) { log = fopen(path,"w"); if(log){setvbuf(log,NULL,_IONBF,0);fprintf(log,"present,tick,frame,side,vertices,x0,y0,x1,y1\n");} }
+    if (!log) { log = fopen(path,"w"); if(log){setvbuf(log,NULL,_IONBF,0);fprintf(log,"present,tick,frame,side,vertices,x0,y0,x1,y1,signature\n");} }
     if (!log) return;
     ++present;
     for(n=0;n<gsDrawCount;++n) {
@@ -1118,10 +1119,12 @@ static void hud_geometry_audit(void) {
         for(k=0;k<d->count;++k){const Vtx *v=&gsVerts[d->first+k];
             if(v->x<box[side][0])box[side][0]=v->x;if(v->y<box[side][1])box[side][1]=v->y;
             if(v->x>box[side][2])box[side][2]=v->x;if(v->y>box[side][3])box[side][3]=v->y;
+            {const unsigned char *b=(const unsigned char *)v;unsigned j;
+                for(j=0;j<sizeof(*v);++j)signature[side]=(signature[side]^b[j])*1099511628211ull;}
             ++count[side];
         }
     }
-    for(k=0;k<2;++k)if(count[k])fprintf(log,"%u,%llu,%u,%u,%u,%.5f,%.5f,%.5f,%.5f\n",present,(unsigned long long)gDrawStartNs,gGsFrame,k,count[k],box[k][0],box[k][1],box[k][2],box[k][3]);
+    for(k=0;k<2;++k)if(count[k])fprintf(log,"%u,%llu,%u,%u,%u,%.5f,%.5f,%.5f,%.5f,%016llx\n",present,(unsigned long long)gDrawStartNs,gGsFrame,k,count[k],box[k][0],box[k][1],box[k][2],box[k][3],(unsigned long long)signature[k]);
 }
 
 static void vk_frame_end(void) {

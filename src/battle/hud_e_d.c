@@ -77,6 +77,12 @@ s32 BtlPause_CheckOpen(void) {
 
 /* Sequence condition "START pressed": while a loaded replay plays only pad 0 counts, else any pad of the list. */
 s32 BtlPause_CheckStart(void) {
+#ifdef PORT
+    /* Intro/win-scene transitions are simulation state. A local START may
+     * request a shared skip, but must not advance this client on its own. */
+    extern int TagBattle_Network(void),TagBattle_NetIntroSkip(void);
+    if(TagBattle_Network())return TagBattle_NetIntroSkip();
+#endif
     BtlPause *work = BtlPause_GetWork();
     s32 i;
 

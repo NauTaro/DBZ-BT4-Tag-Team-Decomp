@@ -824,30 +824,29 @@ static void Tb_QuickUpdate(s32 live) {
 static void Tb_TagUpdate(s32 live){
     Pad *pad=&gPad[0];s32 dir;
     Ps_Prompt(3,"Change");Ps_Prompt(0,"Confirm");Ps_Prompt(2,"Back");if(!live)return;
-    Ps_Move(&sTb->tagCur,8);dir=Ps_Side();
+    Ps_Move(&sTb->tagCur,7);dir=Ps_Side();
     if(dir){
         if(sTb->tagCur==0)sTb->tagLeft=Ps_Wrap(sTb->tagLeft+dir,1,10-sTb->tagRight);
         if(sTb->tagCur==1)sTb->tagRight=Ps_Wrap(sTb->tagRight+dir,1,10-sTb->tagLeft);
         if(sTb->tagCur==2)sTb->time=Ps_Wrap(sTb->time+dir,0,4);
-        if(sTb->tagCur==3)sTb->tagDelay=Ps_Wrap(sTb->tagDelay+dir,0,12);
-        if(sTb->tagCur==4)sTb->tagCPU=!sTb->tagCPU;
-        if(sTb->tagCur==5)sTb->tagDifficulty=Ps_Wrap(sTb->tagDifficulty+dir,0,4);
+        if(sTb->tagCur==3)sTb->tagCPU=!sTb->tagCPU;
+        if(sTb->tagCur==4)sTb->tagDifficulty=Ps_Wrap(sTb->tagDifficulty+dir,0,4);
         Snd_PlaySe(1,0);
     }
     if(pad->gamePressed&PADG_TRIANGLE){Tb_SetMode(TB_HUB);return;}
     if(!(pad->gamePressed&PADG_CROSS))return;
-    if(sTb->tagCur<6){++sTb->tagCur;return;}
-    if(sTb->tagCur==7){sTb->tagJoin=1;sTb->code[0]=0;sTb->codeLen=sTb->keyCol=sTb->keyRow=0;Tb_SetMode(TB_JOIN);return;}
+    if(sTb->tagCur<5){++sTb->tagCur;return;}
+    if(sTb->tagCur==6){sTb->tagJoin=1;sTb->code[0]=0;sTb->codeLen=sTb->keyCol=sTb->keyRow=0;Tb_SetMode(TB_JOIN);return;}
     {unsigned long long content=0;s32 offline=getenv("BT4_RENDER_TEST")&&!getenv("BT4_TAG_ONLINE_TEST");
         if(!offline&&(!Tb_Vanilla()||Port_TagDataFingerprint(&content)!=1))return;
         Port_TagCPUOptions(sTb->tagCPU,sTb->tagDifficulty);
         if(!Port_TagConnect(offline?NULL:Port_TagEndpoint())){Tb_Note((char*)Port_TagError());return;}
         if(!offline)Port_TagInitialTeams(sTb->tagLeft,sTb->tagRight);
-        Port_TagOpen(offline?2:5,sTb->time,sTb->tagDelay,Port_NetNameGet(),content);
+        Port_TagOpen(offline?2:5,sTb->time,0,Port_NetNameGet(),content);
         if(offline){Port_TagTeams(sTb->tagLeft,sTb->tagRight);if(sTb->tagCPU){s32 i;for(i=1;i<Port_TagSlots();++i)Port_TagSlot(i,1,sTb->tagDifficulty);}}
     }
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_TEST_EMPTY")){s32 i=atoi(getenv("BT4_TAG_TEST_EMPTY"));Port_TagSlot(i,0,sTb->tagDifficulty);}
-    Port_SettingSave("tag_team_delay",sTb->tagDelay);Port_SettingSave("tag_team_left",sTb->tagLeft);Port_SettingSave("tag_team_right",sTb->tagRight);
+    Port_SettingSave("tag_team_delay",0);Port_SettingSave("tag_team_left",sTb->tagLeft);Port_SettingSave("tag_team_right",sTb->tagRight);
     Port_SettingSave("tag_team_attacks",sTb->tagAttacks);Port_SettingSave("tag_team_cpu",sTb->tagCPU);
     Port_SettingSave("tag_team_difficulty",sTb->tagDifficulty);Port_SettingsWrite();sTb->tagRoomCur=0;
     Tb_SetMode(TB_TAG_ROOM);
@@ -1501,17 +1500,17 @@ static void Tb_DrawCreateText(void) {
 
 static void Tb_DrawTag(void){
     s32 i;Tb_Hosts(TBO_HOSTS_ARMS_CROSSED,408,350,250);Ps_Panel(TBO_KIT_WINDOW,14,78,300,321,0x80);
-    for(i=0;i<8;++i){f32 y=84+29.0f*i;Ps_Pill(i==sTb->tagCur?TBO_KIT_SEL:TBO_KIT_BAR,22,y,292,y+23,0x80);}
+    for(i=0;i<7;++i){f32 y=84+33.0f*i;Ps_Pill(i==sTb->tagCur?TBO_KIT_SEL:TBO_KIT_BAR,22,y,292,y+23,0x80);}
 }
 static void Tb_DrawTagText(void){
     char value[48];s32 i;
-    static char *labels[8]={"Team 1","Team 2","Time Limit","Input Delay","Empty Slots","CPU Difficulty","Create Room","Join Room"};
+    static char *labels[7]={"Team 1","Team 2","Time Limit","Empty Slots","CPU Difficulty","Create Room","Join Room"};
     Ps_Text(26,65,"SIMULTANEOUS TEAM BATTLES",.47f,274,2);
-    for(i=0;i<8;++i){f32 y=84+29.0f*i;
+    for(i=0;i<7;++i){f32 y=84+33.0f*i;
         Ps_Text(36,Ps_TextTop(y+11,.56f),labels[i],.56f,126,i==sTb->tagCur?1:0);value[0]=0;
         if(i==0)sprintf(value,sTb->tagLeft==1?(char *)PortOnline_Text("%d slot"):(char *)PortOnline_Text("%d slots"),sTb->tagLeft);if(i==1)sprintf(value,sTb->tagRight==1?(char *)PortOnline_Text("%d slot"):(char *)PortOnline_Text("%d slots"),sTb->tagRight);
-        if(i==2)Ps_Copy(value,sTagTime[sTb->time],48);if(i==3)sprintf(value,(char *)PortOnline_Text("%d frames"),sTb->tagDelay);
-        if(i==4)Ps_Copy(value,sTb->tagCPU?"CPU":"Open",48);if(i==5)Ps_Copy(value,sTagDifficulty[sTb->tagDifficulty],48);
+        if(i==2)Ps_Copy(value,sTagTime[sTb->time],48);
+        if(i==3)Ps_Copy(value,sTb->tagCPU?"CPU":"Open",48);if(i==4)Ps_Copy(value,sTagDifficulty[sTb->tagDifficulty],48);
         Ps_Align(2);Ps_Text(278,Ps_TextTop(y+11,.51f),value,.51f,104,3);Ps_Align(0);
     }
 }
@@ -2858,11 +2857,10 @@ static char *Tb_Help(void) {
     case TB_HUB:
         return sTbHubSay[sTb->hubCur];
     case TB_TAG:{
-        static char *help[8]={
+        static char *help[7]={
             "Set the number of slots on Team 1. Both teams can have up to ten fighters in total.",
             "Set the number of slots on Team 2. The teams can have different numbers of fighters.",
             "Choose a time limit or play until one team is defeated.",
-            "Set the input delay in frames. Higher values allow more time for network fluctuations.",
             "Fill empty slots with CPU fighters or leave them open. You can also edit each slot in the room.",
             "Set the starting CPU difficulty. Each CPU slot can have its own difficulty in the room.",
             "Create a room and share its code. You can start with empty slots if both teams have a fighter.",
@@ -3423,7 +3421,7 @@ s32 PortTbo_Run(void) {
     sTb->hubCur = HUB_CREATE;
     sTb->hubY = Tb_HubRowY(HUB_CREATE);
     Tb_LoadChoices();
-    sTb->tagDelay=Port_Setting("tag_team_delay",6);if(sTb->tagDelay<0||sTb->tagDelay>12)sTb->tagDelay=6;
+    sTb->tagDelay=0;
     if (getenv("BT4_TAG_PREVIEW") != NULL) { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
     if (Port_TagCapacity() > 0) Tb_SetMode(TB_TAG_ROOM);
     Port_NetNameGet();
@@ -3453,7 +3451,7 @@ s32 PortTbo_Run(void) {
         else { sTb->host = 1; Tb_SetMode(TB_WAIT); }
     }
     if (!returnedTest && getenv("BT4_TAG_CREATE_TEST") && !getenv("BT4_TAG_VIDEO_TEST")) {
-        sTb->tagCPU=1; sTb->tagCur=6;
+        sTb->tagCPU=1; sTb->tagCur=5;
         sTb->tagSize=getenv("BT4_TAG_TEST_SIZE")?atoi(getenv("BT4_TAG_TEST_SIZE")):5;
         sTb->tagLeft=getenv("BT4_TAG_TEST_LEFT")?atoi(getenv("BT4_TAG_TEST_LEFT")):sTb->tagSize;
         sTb->tagRight=getenv("BT4_TAG_TEST_RIGHT")?atoi(getenv("BT4_TAG_TEST_RIGHT")):sTb->tagSize;
@@ -3472,10 +3470,10 @@ s32 PortTbo_Run(void) {
         }
     }
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_TEST")){
-        sTb->hubCur=HUB_TAG;sTb->hubY=Tb_HubRowY(HUB_TAG);sTb->tagLeft=sTb->tagRight=2;sTb->tagCPU=1;sTb->tagDifficulty=3;sTb->tagCur=6;
+        sTb->hubCur=HUB_TAG;sTb->hubY=Tb_HubRowY(HUB_TAG);sTb->tagLeft=sTb->tagRight=2;sTb->tagCPU=1;sTb->tagDifficulty=3;sTb->tagCur=5;
         if(getenv("BT4_TAG_LONG_VIDEO")){sTb->tagLeft=getenv("BT4_TAG_TEST_LEFT")?atoi(getenv("BT4_TAG_TEST_LEFT")):5;sTb->tagRight=getenv("BT4_TAG_TEST_RIGHT")?atoi(getenv("BT4_TAG_TEST_RIGHT")):5;sTb->tagAttacks=1;}
     }
-    if(!returnedTest&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_JOIN_UI_TEST")){sTb->tagJoin=1;sTb->tagCur=7;Tb_SetMode(TB_TAG);}
+    if(!returnedTest&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_JOIN_UI_TEST")){sTb->tagJoin=1;sTb->tagCur=6;Tb_SetMode(TB_TAG);}
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         s32 live;
@@ -3509,7 +3507,7 @@ s32 PortTbo_Run(void) {
             ++videoTick;
             if(sTb->mode==TB_HUB&&videoTick==100)gPad[0].gamePressed=PADG_CROSS;
             if(sTb->mode==TB_TAG&&videoTick>=60&&videoTick%18==0){
-                if(sTb->tagCur!=6)gPad[0].gameRepeat=PADG_DOWN;
+                if(sTb->tagCur!=5)gPad[0].gameRepeat=PADG_DOWN;
                 else if(videoTick>=216)gPad[0].gamePressed=PADG_CROSS;
             }
             if(sTb->mode==TB_TAG_ROOM&&videoTick==140)gPad[0].gamePressed=PADG_SQUARE;
