@@ -1099,7 +1099,33 @@ static int pipe_no_aux(int p) {
     return sPipes[p].noAux - 1;
 }
 
+/* Read-only telemetry of the HUD submitted to each actual picture. */
+static void hud_geometry_audit(void) {
+    extern uint64_t gDrawStartNs;
+    static FILE *log;
+    static unsigned present;
+    float box[2][4] = {{1e9f,1e9f,-1e9f,-1e9f},{1e9f,1e9f,-1e9f,-1e9f}};
+    unsigned count[2] = {0,0}, n, k;
+    const char *path = getenv("BT4_RENDER_TEST") ? getenv("BT4_HUD_GEOMETRY_LOG") : NULL;
+    if (!path) return;
+    if (!log) { log = fopen(path,"w"); if(log){setvbuf(log,NULL,_IONBF,0);fprintf(log,"present,tick,frame,side,vertices,x0,y0,x1,y1\n");} }
+    if (!log) return;
+    ++present;
+    for(n=0;n<gsDrawCount;++n) {
+        const GsDraw *d=&gsDraws[n];
+        int side=(d->hud==2||d->hud==6)?0:(d->hud==3||d->hud==7)?1:-1;
+        if(side<0||d->vu||d->native||d->target<0||d->target>=gsTargetCount||gsTargets[d->target].fbp!=(uint32_t)gGsMainFbp)continue;
+        for(k=0;k<d->count;++k){const Vtx *v=&gsVerts[d->first+k];
+            if(v->x<box[side][0])box[side][0]=v->x;if(v->y<box[side][1])box[side][1]=v->y;
+            if(v->x>box[side][2])box[side][2]=v->x;if(v->y>box[side][3])box[side][3]=v->y;
+            ++count[side];
+        }
+    }
+    for(k=0;k<2;++k)if(count[k])fprintf(log,"%u,%llu,%u,%u,%u,%.5f,%.5f,%.5f,%.5f\n",present,(unsigned long long)gDrawStartNs,gGsFrame,k,count[k],box[k][0],box[k][1],box[k][2],box[k][3]);
+}
+
 static void vk_frame_end(void) {
+    hud_geometry_audit();
     fx_frame();
     SDL_GPUCommandBuffer *cmd;
     SDL_GPUCopyPass *copy;

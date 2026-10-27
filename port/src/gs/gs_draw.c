@@ -1441,7 +1441,7 @@ void Port_WallMesh(const void *key, int second, int culled, const float *screen,
 /* Two draws can be merged into one call when everything they need is the same. `scissor` is compared as
    four ints (the scissor a draw has recorded). */
 static int same_state(const GsDraw *a, const GsDraw *b) {
-    return !a->native && a->vu == b->vu && a->wall == b->wall && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
+    return !a->native && a->hud == b->hud && a->vu == b->vu && a->wall == b->wall && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
            memcmp(a->mode, b->mode, sizeof(a->mode)) == 0 && a->misc[0] == b->misc[0] && a->misc[1] == b->misc[1] &&
            a->misc[2] == b->misc[2] && a->misc[3] == b->misc[3] && a->blendc == b->blendc &&
            memcmp(a->rect, b->rect, sizeof(a->rect)) == 0 && memcmp(a->orig, b->orig, sizeof(a->orig)) == 0 &&
@@ -1751,11 +1751,14 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
        art and the old shot was drawn at three quarters of the width over the new one: seen by the user.) */
     /* BT4's original HUD uses the full 512-unit page, including its masks.
        Narrowing the side panels left a large gap beside the timer. */
+    int hudPanel = sPresentationHudScope && gsAnchor >= 1 && gsAnchor <= 6;
     int bt4OriginalHud = sHudLayout == 0 && (gsAnchor == 1 || gsAnchor == 2 || gsAnchor == 5 || gsAnchor == 6);
     if (!bt4OriginalHud && gsAnchor != 9 && Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
                           (battleText && Port_PageAspectMilli() > 1340)) &&
-        !sWholeFrame && !d.tex_is_target && !tbo && (type == 6 || fst || battleText || gsAnchor == 8) &&
+        !sWholeFrame && (!d.tex_is_target || hudPanel) && !tbo && (type == 6 || fst || battleText || gsAnchor == 8) &&
         gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
+        /* HUD quads keep their layout even when their sheet comes from a render target
+           or an animated mask spans most of the page. World effects keep their own rules. */
         /* Widescreen. The 3D scene is projected for a 16:9 picture by the game itself; 2D art is laid out for
            4:3 and would come out a third too wide. Each 2D piece is narrowed to 3/4 about a fixed point:
              (not in the menus: their pages are shown whole, stretched to the width; see Port_WideFactor)
@@ -1778,7 +1781,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
         }
         if (type == 6 && !d.mode[0] && y1 - y0 >= 400.0f && !battleText) {
             pivot = -1.0f;
-        } else if (x1 - x0 >= 480.0f && gsAnchor != 5 && gsAnchor != 6 && gsAnchor != 8 && !battleText) {
+        } else if (x1 - x0 >= 480.0f && !hudPanel && gsAnchor != 5 && gsAnchor != 6 && gsAnchor != 8 && !battleText) {
             /* Other screen-wide flashes and speed lines still reach the edges. Announcement bands and streaks
                follow their word's width so the mask and additive layers stay together. */
             pivot = -1.0f;
@@ -1809,6 +1812,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             }
         }
     }
+    d.hud = sPresentationHudScope ? (uint32_t)(gsAnchor + 1) : 0;
     d.count = gsVertCount - d.first;
     if (lowres_now(d.target)) { /* into a work buffer at the PS2's resolution: its corner (target_lowres) */
         uint32_t k;
@@ -2141,7 +2145,8 @@ void GsGpu_Native(int effect) {
 
 /* A new resolution multiplier: every render target is dropped and made again at the new size when the game next
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
-static void scale_apply(void) {
+static void interp_scale_changed(void);
+static int scale_apply(void) {
     /* Tag Team uses the user's chosen resolution, as the other battle modes do. */
     /* Presentation-only quality for the original boot glyphs. Restore the
      * user's battle resolution and menu-filter preference on leaving it. */
@@ -2156,13 +2161,16 @@ static void scale_apply(void) {
     }
     if (gsPendingScale == 0 || gsPendingScale == gsScale) {
         gsPendingScale = 0;
-        return;
+        return 0;
     }
+    /* Saved pictures reference the attachments about to be retired. */
+    interp_scale_changed();
     gsScale = gsPendingScale; /* the back end's attachments and copies are rebuilt to this size */
     gsPendingScale = 0;
     sBackend->scaleChanged();
     gsTargetCount = 0;
     fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
+    return 1;
 }
 
 /* The list of menu labels is made in a thread at start when it is not there (menu_labels.c, menu_text.c). What it
@@ -3825,7 +3833,8 @@ static uint32_t interp_prims(InterpPrim *out) {
         /* Not the passes that draw one buffer into another (the glow's and the explosions' smaller copies, the
            blur): their rectangles are in the coordinates of whichever buffer they fill, and a rectangle of one pass
            blended with that of another is a square of garbage. They stay this picture's. */
-        if (d->vu != 0 || d->native != 0 || d->count % 3 != 0 || d->tex_is_target) {
+        /* Screen-space HUD geometry belongs to this tick, never to a world-space motion partner. */
+        if ((d->hud && !(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_INTERP_REFERENCE"))) || d->vu != 0 || d->native != 0 || d->count % 3 != 0 || d->tex_is_target) {
             continue;
         }
         /* Which buffer it draws into, in a way that is the same next picture: the game shows its two frame buffers
@@ -4676,6 +4685,17 @@ static int interp_steps(void) {
     return gsInterp <= 0 ? 1 : gsInterp == 1 ? 2 : gsInterp == 2 ? 4 : 8;
 }
 
+/* Changing resolution retires attachments used by every saved picture.
+ * Do not replay that picture, or pair its geometry with the next resolution. */
+static void interp_scale_changed(void) {
+    sInterpNext = 0;
+    sInterpRepeat = 0;
+    sInterpPrevCount = 0;
+    sInterpPrevPrimCount = 0;
+    sInterpPrevVertCount = 0;
+    memset(&sInterpSaved, 0, sizeof(sInterpSaved));
+}
+
 static void interp_counts_restore(void) {
     int i;
 
@@ -5093,9 +5113,10 @@ void GsGpu_FrameEnd(void) {
             sBackend->frameEnd();
             interp_cost(gpu_now() - t1);
             interp_present_log('S');
-            scale_apply();
+            /* A resize invalidates the list just saved for repeated pictures. */
+            int resized = scale_apply();
             menu_labels_apply();
-            if (repeat) {
+            if (repeat && !resized) {
                 sInterpBlendShown = gpu_now();
                 sInterpBlendTook = sInterpBlendShown - t1 < 4000000ull ? sInterpBlendShown - t1 : 4000000ull;
                 sInterpRepeat = 1;
