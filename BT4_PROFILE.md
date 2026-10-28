@@ -1,7 +1,7 @@
 # BT4 runtime and compatibility profile
 
 The Windows package targets BT4 B14 Rev2 with Spanish (LATINO) and
-English data tables. The underlying Tenkaichi3Decomp engine provenance is in
+English data tables. The underlying BT4decomp engine provenance is in
 [UPSTREAM_LOCK.json](UPSTREAM_LOCK.json). Source and runtime licenses remain
 in the repository and release package.
 
@@ -9,7 +9,7 @@ in the repository and release package.
 
 `port/setup/native.cpp` verifies and extracts the chosen compatible ISO.
 `language_install.inc` adds the alternate language when both are requested.
-`language_packages.h` pins the exact private release assets, sizes and SHA-256
+`language_packages.h` pins the exact language release assets, sizes and SHA-256
 values. Downloads use the official GitHub CLI and the user's authorization.
 No account credential is part of the package. Per-entry CRC checks and a hidden
 fight run before an alternate installation is marked complete.

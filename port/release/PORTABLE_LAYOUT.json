@@ -1,5 +1,5 @@
 {
-  "description": "Portable game layout requested on 2026-10-23. Keep development and release evidence outside the installation root.",
+  "description": "Portable BT4decomp installation layout. Development evidence stays outside the game folder.",
   "root_directories": [
     "fonts",
     "gamedata",
@@ -26,10 +26,13 @@
     "LICENSE-MIT",
     "online_name.txt",
     "SDL3.dll",
-    "Tenkaichi3Decomp.dat",
-    "Tenkaichi3Decomp.exe",
-    "Tenkaichi3Decomp.exe.mem",
-    "Install.exe"
+    "BT4decomp.dat",
+    "BT4decomp.exe",
+    "BT4decomp.exe.mem",
+    "Install.exe",
+    "BT4decomp-setup.exe",
+    "README.txt",
+    "a11y_es.txt"
   ],
   "preserve_user_content": [
     "gamedata",
@@ -41,5 +44,5 @@
   "icon_source": "port/release/icon_game.ico",
   "icon_installed_path": "fonts/icon_game.ico",
   "development_artifacts": "Keep test reports, screenshots, source archives, build outputs, backups and distribution ZIPs outside the game installation. Do not delete unknown user files automatically.",
-  "separate_installer": "Install.exe is the root entry point; implementation and GitHub authorization helper stay under tbo/setup. Optional language packages are downloaded from the existing private repository."
+  "separate_installer": "BT4decomp-setup.exe installs the game; Install.exe is an identical compatibility entry point. The GitHub authorization helper stays under tbo/setup. Language packages use this project repository."
 }

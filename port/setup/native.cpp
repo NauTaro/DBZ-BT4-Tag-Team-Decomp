@@ -1,4 +1,4 @@
-// The setup's own installer, for a release folder (Tenkaichi3Decomp, Tenkaichi3Decomp.dat and Tenkaichi3Decomp-setup together, no build tools):
+// The setup's own installer, for a release folder (BT4decomp, BT4decomp.dat and BT4decomp-setup together, no build tools):
 // reads the user's disc image directly, checks it, unpacks the game data and runs the self-test. No Python, no 7z.
 // It reports through the same event lines as install.py (@step, @note, @ok, @skip, @fail, @stopped, @done), so the
 // window (setup.cpp) shows both the same way.
@@ -44,9 +44,9 @@ const int *sVerifyCount = kVerifyCount;
 std::vector<Uint8> sPrograms[2];
 const Uint32 kRomBase = 0x100000, kRomEnd = 0x2FF180;
 #ifdef _WIN32
-const char *kGame = "Tenkaichi3Decomp.exe";
+const char *kGame = "BT4decomp.exe";
 #else
-const char *kGame = "Tenkaichi3Decomp";
+const char *kGame = "BT4decomp";
 #endif
 
 std::mutex sLock;
@@ -438,7 +438,7 @@ void step_data(Iso &iso, const std::string &root) {
 void step_tables(const std::string &root) {
     step("Native data tables");
     size_t bytes = 0;
-    Uint8 *loaded = (Uint8 *)SDL_LoadFile((root + "Tenkaichi3Decomp.dat").c_str(), &bytes);
+    Uint8 *loaded = (Uint8 *)SDL_LoadFile((root + "BT4decomp.dat").c_str(), &bytes);
     if (!loaded) throw Stop{"The matching native data table is missing."};
     std::vector<Uint8> table(loaded, loaded + bytes); SDL_free(loaded);
     Uint32 count = 0;
@@ -452,9 +452,9 @@ void step_tables(const std::string &root) {
         for (Uint32 j=0; j<record[3]; j++) hash=(hash^sPrograms[record[1]][record[2]+j])*0x100000001b3ULL;
     }
     memcpy(table.data()+8, &hash, 8);
-    std::string temporary = root + "Tenkaichi3Decomp.dat.part";
+    std::string temporary = root + "BT4decomp.dat.part";
     if (!SDL_SaveFile(temporary.c_str(), table.data(), table.size()) ||
-        !SDL_RenamePath(temporary.c_str(), (root+"Tenkaichi3Decomp.dat").c_str())) throw Stop{"Could not finalize the native data table."};
+        !SDL_RenamePath(temporary.c_str(), (root+"BT4decomp.dat").c_str())) throw Stop{"Could not finalize the native data table."};
     say("@ok Native table matches the selected disc profile");
 }
 
@@ -533,14 +533,15 @@ void step_test(const std::string &root) {
 // The European release's archive entries: the battle HUD (5 to 9, one per language: English, Spanish, German,
 // French, Italian) and the menu archives (USA 448 + k is 451 + k + 31 per language).
 std::vector<Uint32> eu_entries() {
-    static const Uint32 kUsa[] = {448, 449, 450, 451, 452, 453, 459, 460, 461, 463, 472};
     std::vector<Uint32> out;
     for (Uint32 bank = 0; bank < 5; bank++) {
         out.push_back(5 + bank);
-        for (Uint32 usa : kUsa) {
+        for (Uint32 usa = 448; usa < 479; usa++) {
             out.push_back(451 + (usa - 448) + bank * 31);
         }
     }
+    // Story dialogue: 50 episodes for each of the five European languages.
+    for (Uint32 entry = 656; entry < 906; entry++) out.push_back(entry);
     return out;
 }
 

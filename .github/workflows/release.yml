@@ -1,0 +1,65 @@
+name: BT4 release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bt4-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: port/release
+          tags: bt4-port-release:jammy
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build the Windows package
+        env:
+          BT3_BUILD_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.BT3_BUILD_KEY || '' }}
+          BT3_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: |
+          mkdir -p port/build
+          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e BT3_BUILD_KEY -e BT3_VERSION -v "$PWD":/src -w /src \
+            bt4-port-release:jammy sh port/release/inside.sh
+
+      - name: Sign and verify automatic update packages
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "UPDATE_SIGNING_KEY is required before publishing an automatic update." >&2
+            exit 1
+          fi
+          python3 port/tools/update_key.py sign port/build/BT4decomp-windows-x64.zip
+          python3 port/tools/update_key.py verify port/build/BT4decomp-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: port/build/BT4decomp-windows-x64.zip
+          if-no-files-found: error
+
+      - name: Publish signed update release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file CHANGELOG.md \
+            port/build/BT4decomp-windows-x64.zip \
+            port/build/BT4decomp-windows-x64.zip.sig

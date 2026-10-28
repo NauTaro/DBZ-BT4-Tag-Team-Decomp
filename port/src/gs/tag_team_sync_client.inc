@@ -1,7 +1,11 @@
 /* Native-only diagnostics and optional per-actor detail. No game state is changed. */
 #include "../../include/tag_team_sync.h"
 static int tag_caps_sent,tag_paced,tag_ping=-1,tag_input_sent,tag_sync_count;
-static uint32_t tag_input_epoch,tag_input_latest,tag_ping_ack,tag_sync_last_frame;
+static uint32_t tag_input_epoch,tag_input_latest,tag_input_first,tag_ping_ack,tag_sync_last_frame;
+static uint32_t tag_pending_buttons;
+static unsigned char tag_input_pad[TT_PAD_BYTES],tag_pending_l3,tag_pending_skip;
+static unsigned tag_ping_samples[8],tag_ping_count,tag_ping_cursor;
+static unsigned tag_delay_last_adjust_frame;static int tag_delay_adjusted;
 static Uint64 tag_ping_at;
 static uint32_t tag_received_epoch,tag_received_latest;
 static int tag_received_valid;
@@ -22,7 +26,33 @@ static void tag_update_catchup(void){
 }
 static unsigned tag_sync_words[TT_MAX_PLAYERS][TT_SYNC_WORDS];
 static char tag_sync_log[2048];
-int Port_TagPing(void){return tag_ping;}
+int Port_TagPing(void){return local_room||solo_cpu_fight()?0:tag_ping;}
+/* Measure arrival at the transport, before a slow render/game thread polls it.
+ * Like the duel meter, use the best recent RTT rather than game-loop backlog. */
+static void tag_ping_sample(unsigned sample){
+    unsigned i,best=sample;if(sample>=10000)return;
+    tag_ping_samples[tag_ping_cursor++%8]=sample;
+    if(tag_ping_count<8)++tag_ping_count;
+    for(i=0;i<tag_ping_count;++i)if(tag_ping_samples[i]<best)best=tag_ping_samples[i];
+    tag_ping=(int)best;
+}
+static int tag_delay_margin=1;
+static unsigned tag_delay_clean_frames;
+static void tag_delay_feedback(unsigned frame,unsigned late_mask){
+    int seat=Tt_Seat(&state,member);
+    if(!tag_paced||seat<0||!tag_input_sent||tag_input_epoch!=state.epoch||frame<tag_input_first)return;
+    if(late_mask&(1u<<seat)){
+        tag_delay_clean_frames=0;
+        /* Startup padding and a burst of old notices must not ratchet the
+         * input lead on every received packet. */
+        if(tag_delay_margin<8&&(!tag_delay_adjusted||frame-tag_delay_last_adjust_frame>=8)){
+            ++tag_delay_margin;tag_delay_last_adjust_frame=frame;tag_delay_adjusted=1;
+        }
+    }else if(++tag_delay_clean_frames>=342){
+        if(tag_delay_margin>1)--tag_delay_margin;
+        tag_delay_clean_frames=0;
+    }
+}
 void Port_TagHashActor(int actor,unsigned x,unsigned y,unsigned z,unsigned hp,unsigned ki,unsigned action,unsigned target,unsigned team,unsigned chara,unsigned costume){
     unsigned words[TT_SYNC_WORDS]={x,y,z,hp,ki,action,target,team,chara,costume};
     if(actor==0)tag_sync_count=0;

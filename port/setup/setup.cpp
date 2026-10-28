@@ -4,7 +4,7 @@
 // none of the work itself: it runs `python3 install.py --machine --iso <file>` next to it and shows the events
 // that script prints (one line each: @step, @note, @ok, @skip, @fail, @missing, @stopped, @done; see install.py).
 //
-//   build:  port/setup/build.sh   ->  ./Tenkaichi3Decomp-setup
+//   build:  port/setup/build.sh   ->  ./BT4decomp-setup
 //   test:   BT3_SETUP_ISO=<file> starts the installation at once; BT3_SETUP_SHOT=<prefix> writes the window's
 //           picture to <prefix>_<n>.ppm whenever the page or the step changes (no person needed to check it)
 #include <stdio.h>
@@ -22,7 +22,7 @@
 #include "imgui_impl_opengl3_loader.h" // glViewport, glClear for the OpenGL window (set up by ImGui_ImplOpenGL3_Init)
 #include "native.h"
 
-#define GAME "Tenkaichi3Decomp" /* the program this sets up: GAME, GAME.dat; this program is GAME-setup */
+#define GAME "BT4decomp" /* the program this sets up: GAME, GAME.dat; this program is GAME-setup */
 
 enum Page { PAGE_PICK, PAGE_RUN, PAGE_DONE, PAGE_FAILED };
 enum State { PENDING, RUNNING, OK, SKIPPED, FAILED };
@@ -30,7 +30,7 @@ struct StepRow { std::string title, detail; State state = PENDING; Uint64 start 
 struct Missing { std::string name, why, pkg; };
 
 // The steps of the two ways to install: from a source checkout (install.py does the work and needs build tools) and
-// in a release folder (Tenkaichi3Decomp and Tenkaichi3Decomp.dat next to this program: native.cpp unpacks the disc itself).
+// in a release folder (BT4decomp and BT4decomp.dat next to this program: native.cpp unpacks the disc itself).
 static const char *kSourceSteps[] = {"Requirements", "Imagen ISO", "Datos del juego", "Executable data", "Build", "Prueba del juego"};
 static const char *kReleaseSteps[] = {"Disc image", "Game data", "Native data tables", "Self-test"};
 static const struct { const char *title, *help; } kHelp[] = {
@@ -461,7 +461,7 @@ static void page_pick() {
     }
     ImGui::Dummy(ImVec2(0,12));
     ImGui::PushStyleColor(ImGuiCol_Text,kDim);ImGui::TextWrapped("%s",sInstallMask==3?
-        L("El segundo idioma se descarga desde GitHub. Requiere acceso al repositorio privado.","The second language downloads from GitHub. Access to the private repository is required."):
+        L("El segundo idioma se descarga desde GitHub. Iniciá sesión si se solicita.","The second language downloads from GitHub. Sign in if requested."):
         L("Textos y voces. Sin selector de idioma al iniciar.","Text and voices. No language selector at startup."));ImGui::PopStyleColor();
     ImGui::Dummy(ImVec2(0,12));
     ImGui::TextUnformatted(L("Tu ISO de BT4 B14 Rev2","Your BT4 B14 Rev2 ISO"));
@@ -709,7 +709,7 @@ int main(int argc, char **argv) {
     }
 #endif
     if (argc > 2 && strcmp(argv[1], "--install") == 0) {
-        // Without a window: Tenkaichi3Decomp-setup --install <disc.iso> [<European disc.iso>] (an empty first one: only
+        // Without a window: BT4decomp-setup --install <disc.iso> [<European disc.iso>] (an empty first one: only
         // the languages, for a folder set up before). A release folder only; prints the event lines.
         std::string line;
         bool ok = false;

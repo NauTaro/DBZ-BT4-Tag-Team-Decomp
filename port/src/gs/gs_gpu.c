@@ -1741,10 +1741,13 @@ static void vk_frame_end(void) {
         best = i;
     }
     sEndT[2] = gpu_now();
-    acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh);
-    /* Hidden visual tests have no swapchain picture. Compose the same UI into
-     * a private GPU target, without showing or focusing an operating-system window. */
-    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_UI_SHOT_PREFIX")&&!swap){
+    /* A swapchain texture belongs to the presentation command buffer and cannot
+     * be read back by a later command after presentation (notably on D3D12).
+     * Hidden visual captures always compose into an owned texture instead. */
+    int privatePresent = getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_UI_SHOT_PREFIX");
+    if (privatePresent) { acquired = false; swap = NULL; }
+    else acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh);
+    if(privatePresent){
         static SDL_GPUTexture *testPresent;
         int tw,th;SDL_GetWindowSizeInPixels(sWindow,&tw,&th);sw=tw;sh=th;
         if(!testPresent){SDL_GPUTextureCreateInfo ci;SDL_zero(ci);
@@ -1980,8 +1983,8 @@ static void vk_frame_end(void) {
             SDL_GPUTransferBuffer *tb;
             SDL_GPUTextureRegion src;
             SDL_GPUTextureTransferInfo dst;
-            SDL_GPUCommandBuffer *c2 = SDL_AcquireGPUCommandBuffer(sDev);
-            SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(c2);
+            SDL_GPUCommandBuffer *c2;
+            SDL_GPUCopyPass *cp;
             SDL_GPUFence *fence;
             Uint32 w = 512 * SCALE, h = 448 * SCALE, x, y;
             int videoUi=video&&getenv("BT4_TAG_VIDEO_UI")&&swap;
@@ -1995,6 +1998,11 @@ static void vk_frame_end(void) {
             ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
             ti.size = w * h * 4;
             tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
+            if (tb == NULL) { fprintf(stderr, "GPU capture failed: transfer buffer: %s\n", SDL_GetError()); goto capture_done; }
+            c2 = SDL_AcquireGPUCommandBuffer(sDev);
+            if (c2 == NULL) { fprintf(stderr, "GPU capture failed: command buffer: %s\n", SDL_GetError()); SDL_ReleaseGPUTransferBuffer(sDev, tb); goto capture_done; }
+            cp = SDL_BeginGPUCopyPass(c2);
+            if (cp == NULL) { fprintf(stderr, "GPU capture failed: copy pass: %s\n", SDL_GetError()); SDL_CancelGPUCommandBuffer(c2); SDL_ReleaseGPUTransferBuffer(sDev, tb); goto capture_done; }
             SDL_zero(src);
             src.texture = getenv("BT3_SHOT_AUX") != NULL ? sTgAux[best] : sTgCol[best];
             if(videoUi)src.texture=swap;
@@ -2006,9 +2014,14 @@ static void vk_frame_end(void) {
             SDL_DownloadFromGPUTexture(cp, &src, &dst);
             SDL_EndGPUCopyPass(cp);
             fence = SDL_SubmitGPUCommandBufferAndAcquireFence(c2);
-            SDL_WaitForGPUFences(sDev, true, &fence, 1);
+            if (fence == NULL) { fprintf(stderr, "GPU capture failed: submit: %s\n", SDL_GetError()); SDL_ReleaseGPUTransferBuffer(sDev, tb); goto capture_done; }
+            if (!SDL_WaitForGPUFences(sDev, true, &fence, 1)) {
+                fprintf(stderr, "GPU capture failed: fence wait: %s\n", SDL_GetError());
+                SDL_ReleaseGPUFence(sDev, fence); SDL_ReleaseGPUTransferBuffer(sDev, tb); goto capture_done;
+            }
             SDL_ReleaseGPUFence(sDev, fence);
             px = SDL_MapGPUTransferBuffer(sDev, tb, false);
+            if (px == NULL) { fprintf(stderr, "GPU capture failed: map: %s\n", SDL_GetError()); SDL_ReleaseGPUTransferBuffer(sDev, tb); goto capture_done; }
             snprintf(name, sizeof(name), "port/build/shots/gpu_%05u.ppm", gGsFrame);
             if (getenv("BT3_SHOT_DIR") != NULL) {
                 extern unsigned gPortVBlanks;
@@ -2057,6 +2070,7 @@ static void vk_frame_end(void) {
             SDL_UnmapGPUTransferBuffer(sDev, tb);
             SDL_ReleaseGPUTransferBuffer(sDev, tb);
         }
+capture_done: ;
     }
     for (i = 0; i < gsTargetCount; i++) {
         gsTargets[i].draws = 0;

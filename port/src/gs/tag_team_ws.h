@@ -9,6 +9,7 @@ static struct {
     volatile LONG stop,status;
     unsigned inRead,inWrite,outRead,outWrite;
     unsigned char incoming[TT_WS_RING][512],outgoing[TT_WS_RING][512];
+    Uint64 incomingAt[TT_WS_RING];
     char url[512];
 } sTagWs;
 /* Closing may race a connection handshake. Publish every OS handle under the
@@ -27,7 +28,7 @@ static DWORD WINAPI TagWs_Rx(LPVOID unused){
     parts.lpszHostName=host;parts.dwHostNameLength=256;parts.lpszUrlPath=path;parts.dwUrlPathLength=256;
     MultiByteToWideChar(CP_UTF8,0,sTagWs.url,-1,url,512);
     if(!WinHttpCrackUrl(url,0,0,&parts))goto failed;
-    if(!TagWs_Publish(&sTagWs.session,WinHttpOpen(L"BT4-Tag-Team/0.1.38.9",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0)))goto failed;
+    if(!TagWs_Publish(&sTagWs.session,WinHttpOpen(L"BT4-Tag-Team/0.1.39",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0)))goto failed;
     WinHttpSetTimeouts(sTagWs.session,5000,5000,5000,10000);
     if(!TagWs_Publish(&sTagWs.connection,WinHttpConnect(sTagWs.session,host,parts.nPort,0)))goto failed;
     request=WinHttpOpenRequest(sTagWs.connection,L"GET",path,NULL,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,parts.nScheme==INTERNET_SCHEME_HTTPS?WINHTTP_FLAG_SECURE:0);
@@ -48,6 +49,7 @@ static DWORD WINAPI TagWs_Rx(LPVOID unused){
         if(used!=512 || kind!=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE)goto failed;
         EnterCriticalSection(&sTagWs.lock);
         if(sTagWs.inWrite-sTagWs.inRead>=TT_WS_RING){LeaveCriticalSection(&sTagWs.lock);goto failed;}
+        sTagWs.incomingAt[sTagWs.inWrite%TT_WS_RING]=SDL_GetTicks();
         memcpy(sTagWs.incoming[sTagWs.inWrite++%TT_WS_RING],packet,512);LeaveCriticalSection(&sTagWs.lock);
     }
     return 0;
@@ -99,10 +101,10 @@ static int TagWs_Send(const unsigned char *packet){
     else memcpy(sTagWs.outgoing[sTagWs.outWrite++%TT_WS_RING],packet,512);
     LeaveCriticalSection(&sTagWs.lock);return ok;
 }
-static int TagWs_Read(unsigned char *packet){
+static int TagWs_Read(unsigned char *packet,Uint64 *arrived){
     int result=0;if(!sTagWs.lockReady)return 0;
     EnterCriticalSection(&sTagWs.lock);
-    if(sTagWs.inRead<sTagWs.inWrite){memcpy(packet,sTagWs.incoming[sTagWs.inRead++%TT_WS_RING],512);result=1;}
+    if(sTagWs.inRead<sTagWs.inWrite){if(arrived)*arrived=sTagWs.incomingAt[sTagWs.inRead%TT_WS_RING];memcpy(packet,sTagWs.incoming[sTagWs.inRead++%TT_WS_RING],512);result=1;}
     LeaveCriticalSection(&sTagWs.lock);
     return result?1:InterlockedCompareExchange(&sTagWs.status,0,0)<0?-1:0;
 }

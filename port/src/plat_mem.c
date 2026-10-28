@@ -380,7 +380,7 @@ static uint8_t *read_file(const char *path, size_t *size) {
 }
 
 static void data_fail(const char *what, const char *path) {
-    fprintf(stderr, "bt3: %s%s%s\n     The game's data comes from your own disc image; run the setup (Tenkaichi3Decomp-setup) to unpack it.\n", what,
+    fprintf(stderr, "bt3: %s%s%s\n     The game's data comes from your own disc image; run the setup (BT4decomp-setup) to unpack it.\n", what,
             path != NULL ? ": " : "", path != NULL ? path : "");
     exit(2);
 }
@@ -497,7 +497,16 @@ static void Port_LoadGameData(void) {
     free(src[1]);
     free(list);
     if (hash != want) {
-        data_fail("the game's programs in your game data are not the unmodified USA release (SLUS-21678)", NULL);
+        extern int Port_BuildIdentity(unsigned long long *);
+        extern const char *Port_BuildIdentitySummary(void);
+        /* Setup records this installation's table checksum in the .dat file.
+           A signed update replaces that file with the release reference. Accept
+           that difference only for an exactly verified Spanish/English BT4 base,
+           using the same program-file checks as online compatibility. */
+        if (Port_BuildIdentity(NULL) != 1) {
+            data_fail(Port_BuildIdentitySummary(), NULL);
+        }
+        fprintf(stderr, "bt4: release table checksum differs; verified BT4 B14 Rev2 base programs, reusing installed data\n");
     }
 }
 
@@ -595,7 +604,7 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
        system set to move every program, "Mandatory ASLR", moved builds that still had the table: a crash at the
        first write, before anything was printed), say so instead of crashing. */
     if ((uintptr_t)GetModuleHandleA(NULL) != 0x20000000u) {
-        static const char msg[] = "Tenkaichi3Decomp was loaded at a different address than the one it needs (0x20000000) and cannot run.\n"
+        static const char msg[] = "BT4decomp was loaded at a different address than the one it needs (0x20000000) and cannot run.\n"
                                   "If \"Force randomization for images (Mandatory ASLR)\" is switched on in Windows Security > App & browser "
                                   "control > Exploit protection, switch it off for this program.\n";
         HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
@@ -603,7 +612,7 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
         if (err != NULL && err != INVALID_HANDLE_VALUE) {
             WriteFile(err, msg, sizeof(msg) - 1, &done, NULL);
         } else {
-            MessageBoxA(NULL, msg, "Tenkaichi3Decomp", MB_OK | MB_ICONERROR);
+            MessageBoxA(NULL, msg, "BT4decomp", MB_OK | MB_ICONERROR);
         }
         ExitProcess(4);
     }

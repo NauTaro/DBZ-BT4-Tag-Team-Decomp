@@ -31,7 +31,7 @@ int Port_BuildIdentity(unsigned long long *out){
             fclose(f);if(!sCompatible)break;
         }
         fprintf(stderr,"bt4 online compatibility: family=%s protocol=%08x language=%s base-files=%u bytes=%u elapsed-ms=%.2f revision-marker=ignored status=%s\n",
-            BT4_ONLINE_COMPAT_NAME,0x54540007u,language?"en":"es",(unsigned)(i+(!sCompatible)),bytes,
+            BT4_ONLINE_COMPAT_NAME,0x54540008u,language?"en":"es",(unsigned)(i+(!sCompatible)),bytes,
             1000.0*(double)(SDL_GetPerformanceCounter()-began)/(double)SDL_GetPerformanceFrequency(),sCompatible?"compatible":sReason);
     }
     if(!sCompatible)return -1;

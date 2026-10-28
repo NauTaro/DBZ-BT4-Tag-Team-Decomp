@@ -135,7 +135,7 @@ int Port_GameProfileChoose(int english){
         CloseHandle(process.hThread);CloseHandle(process.hProcess);exit(0);
     }
 #else
-    {const char *base=SDL_GetBasePath();char exe[1800];SDL_setenv_unsafe("BT4_PROFILE_SKIP_ONCE","1",1);SDL_unsetenv_unsafe("BT3_DATA");SDL_snprintf(exe,sizeof(exe),"%sTenkaichi3Decomp",base?base:"");execl(exe,exe,(char *)NULL);}
+    {const char *base=SDL_GetBasePath();char exe[1800];SDL_setenv_unsafe("BT4_PROFILE_SKIP_ONCE","1",1);SDL_unsetenv_unsafe("BT3_DATA");SDL_snprintf(exe,sizeof(exe),"%sBT4decomp",base?base:"");execl(exe,exe,(char *)NULL);}
 #endif
     profile_env_set("BT3_DATA",sRoots[sEnglish]);profile_env_set("BT4_PROFILE_SKIP_ONCE",NULL);
     Port_SettingTextSave("game_language",previous);Port_SettingsWrite();

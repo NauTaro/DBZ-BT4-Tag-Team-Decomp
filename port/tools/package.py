@@ -3,12 +3,12 @@
 
     BT3_CC=clang64 python3 port/tools/undefined.py && BT3_CC=clang64 python3 port/tools/link.py
     port/setup/build.sh
-    python3 port/tools/package.py          -> port/build/release/ and port/build/Tenkaichi3Decomp-linux-x64.zip
+    python3 port/tools/package.py          -> port/build/release/ and port/build/BT4decomp-linux-x64.zip
     BT3_CC=win64 python3 port/tools/package.py   (after the win64 build and `port/setup/build.sh win`)
-                                           -> port/build/release-win/ and port/build/Tenkaichi3Decomp-windows-x64.zip
+                                           -> port/build/release-win/ and port/build/BT4decomp-windows-x64.zip
 
-Contents:  Tenkaichi3Decomp, Tenkaichi3Decomp.dat   the game without the data tables of the original programs (strip_data.py)
-           Tenkaichi3Decomp-setup       the setup window: reads the user's own disc image and unpacks it into gamedata/
+Contents:  BT4decomp, BT4decomp.dat   the game without the data tables of the original programs (strip_data.py)
+           BT4decomp-setup       the setup window: reads the user's own disc image and unpacks it into gamedata/
            lib/            SDL3, so that it does not have to be installed
            a11y_<code>.txt the screen reader's lines in other languages (port/lang; its own labels, no game text)
 
@@ -19,49 +19,53 @@ Contents:  Tenkaichi3Decomp, Tenkaichi3Decomp.dat   the game without the data ta
            tbo/ui/         the pictures of the Tenkaichi Budokai Online screens (port/tbo/ui), their credits in licenses/
            README.txt, licenses/
 The user needs nothing but their disc image. Nothing from the disc is in the zip."""
-import os, pathlib, re, shutil, subprocess, sys, zipfile
+import hashlib, json, os, pathlib, re, shutil, subprocess, sys, zipfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-NAME = "Tenkaichi3Decomp"  # the program's name in a release: NAME, NAME.dat, NAME-setup
+NAME = "BT4decomp"  # the program's name in a release: NAME, NAME.dat, NAME-setup
 OUT = ROOT / "port/build/release"
-ZIP = ROOT / "port/build/Tenkaichi3Decomp-linux-x64.zip"
+ZIP = ROOT / "port/build/BT4decomp-linux-x64.zip"
 
-README = """Dragon Ball Z: Budokai Tenkaichi 3 - PC port (Linux, 64-bit)
+README = """DBZ BT4 Tag Team Decomp (Linux, 64-bit)
+BT4 B14 Rev2 on BT4decomp 0.1.39.1
 
-1. Start  Tenkaichi3Decomp-setup
-2. Choose your own disc image of the USA release (SLUS-21678), an .iso file.
-   The setup checks it and unpacks the game's data next to this file. About 4 GB are needed.
-   Optional: a disc image of the European release (SLES-54945) as well, for Spanish, German, French and
-   Italian (menus, battle screen and text as that release has them). It can also be added later: start the
-   setup again and press "Add languages...".
-3. Press Play. Later, start  Tenkaichi3Decomp  itself (or the setup again, and press Play).
+Extract the complete ZIP before starting setup. Keep the setup application and
+BT4decomp together in the installation folder.
 
-In the game, F1 opens the settings: resolution, widescreen, controls and sound.
-With the European languages added, the first launch shows a language list in the game window before loading game or memory card data. Change it later with F1 > UI > Language.
-Saves are kept in saves/. A file placed in gamedata/mods/<same path as the original> replaces the original.
-Texture packs (PCSX2 naming, .dds or .png) go into textures/, stages and music from outside the disc into
-stages/ and songs/: see the note in each folder.
-F1 > UI has three font settings, all starting on "Original": "Menu font" draws menu labels, "Battle font" draws
-announcements and HUD text, and "Dialogue / UI font" draws the game's ordinary text. Their fonts and licences are
-in fonts/. To add a .ttf, put it there and list it in fonts.tsv. The third column says where it can be used:
-1 = Menu, 2 = Dialogue / UI, 4 = Battle, added up for several (3 = Menu and Dialogue / UI, 7 = all three).
-The game makes the menu and battle label list from your disc data on its first start (gamedata/game-text/, in the
-background). Menu and Battle font choices appear when the list is ready.
+1. Start  BT4decomp-setup
+2. Choose the setup language and the game language or languages.
+3. Select your own Spanish LATINO or English BT4 B14 Rev2 ISO (SLUS-21978).
+4. Complete setup, then start  BT4decomp  itself.
 
-Screen reader: with Prism's library (prism.dll, libprism.so; release 0.18.3) placed next to the program, the menus
-and the fight's gauges are spoken and shown in braille. a11y_es.txt is its Spanish; another language is a file
-a11y_<code>.txt of the same kind, and lines of your own go into a11y_<code>_own.txt, which no update replaces.
+A single-language installation starts in that language. A bilingual installation
+downloads the second language package and shows the language selector at startup.
+Setup requests GitHub authorization when access to that package requires it.
+Do not use a BT3 USA or European ISO for this BT4 build.
 
-This package contains no game data. The game's data comes from your disc and stays on your computer.
+F1 opens video, effects, audio, UI and control settings. In-game menus use the
+controls configured for the game. The pause menu can hide or restore the HUD.
 
-The port's own code is under the GNU AGPL, version 3 (licenses/tenkaichi3decomp-agpl.txt; code from before the
-change of licence also under MIT, licenses/tenkaichi3decomp-mit.txt). Its source, this release's tag included:
-https://github.com/z3xox/Tenkaichi3Decomp
+Saves are stored in saves/. Optional custom stages go in stages/ and custom music
+in songs/. A compatible stage thumbnail uses the same filename stem as its .unk
+model, with a .png extension. See each folder's README for supported files.
+
+When a newer signed release is available from this project's GitHub repository,
+the updater downloads it in the background and verifies its hash and signature.
+Installation is deferred to the main menu outside an active online session.
+Existing game data, saves, settings and custom content are preserved. Launchers
+that predate automatic updates need one manual installation of an updater build.
+
+This package contains no ISO or extracted game data. Setup reads the player's ISO.
+The exact BT4 build identity is recorded in BT4_VERSION.txt.
+
+Source and releases: https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp
+Upstream PC port: https://github.com/z3xox/Tenkaichi3Decomp
+See licenses/ for the AGPL, MIT and bundled component licenses.
 """
 
-WIN_README = README.replace("(Linux, 64-bit)", "(Windows, 64-bit)").replace("Start  Tenkaichi3Decomp-setup\n", "Start  Tenkaichi3Decomp-setup.exe\n") \
-    .replace("start  Tenkaichi3Decomp  itself", "start  Tenkaichi3Decomp.exe  itself")
+WIN_README = README.replace("(Linux, 64-bit)", "(Windows, 64-bit)").replace("Start  BT4decomp-setup\n", "Start  BT4decomp-setup.exe\n") \
+    .replace("start  BT4decomp  itself", "start  BT4decomp.exe  itself")
 
 TEXTURES_NOTE = """Texture packs go here.
 
@@ -80,7 +84,7 @@ end of the stage select, named after the file ("My_Map.unk" is shown as "My Map"
 
 Optional: a file maps.txt here, one line per stage, "file.unk|Name In The Menu", gives other names and an order.
 
-Added stages are not written to your save, and they are not offered in an online match (Dragon Net Battle).
+Added stages are not written to your save, and they are not offered in an online match (Tenkaichi Budokai Online).
 """
 
 SONGS_NOTE = """Music from outside the disc.
@@ -95,7 +99,7 @@ not listed while the .mp3 is there (it can be deleted). Anything else (ogg, m4a.
 
 Optional: a file songs.txt here, one line per song, "file|Name In The Menu", gives other names and an order.
 
-Added songs are not written to your save, and they are not offered in an online match (Dragon Net Battle).
+Added songs are not written to your save, and they are not offered in an online match (Tenkaichi Budokai Online).
 """
 
 
@@ -187,11 +191,33 @@ def bundle_sdl_dependencies(dll, out, lic, prefix):
             "libiconv source: https://ftp.gnu.org/pub/gnu/libiconv/\n"
             "MSYS2 build recipe: https://github.com/msys2/MINGW-packages/tree/master/mingw-w64-libiconv\n")
 
+def take_windows_runtime(out):
+    source = ROOT / "port/build/windows-runtime"
+    manifest = source / "manifest.json"
+    if not manifest.exists():
+        sys.exit("Windows voice and GitHub setup helpers are missing: run port/tools/prepare_windows_runtime.py before packaging")
+    entries = json.loads(manifest.read_text())["files"]
+    required = {"libdatachannel.dll", "libopus-0.dll", "libwinpthread-1.dll", "tbo/setup/gh.exe"}
+    if not required <= set(entries):
+        sys.exit("Incomplete Windows runtime dependency manifest")
+    for name, expected in entries.items():
+        path = pathlib.PurePosixPath(name)
+        if path.is_absolute() or ".." in path.parts:
+            sys.exit("Invalid Windows runtime dependency path")
+        data = (source / name).read_bytes()
+        if hashlib.sha256(data).hexdigest() != expected:
+            sys.exit("Windows runtime dependency checksum mismatch: " + name)
+        target = out / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    shutil.copy2(manifest, out / "tbo/setup/runtime-manifest.json")
+
+
 def main_win():
-    """BT3_CC=win64: bt3.exe (cross-built or built in MSYS2), Tenkaichi3Decomp-setup.exe (port/setup/build.sh win), SDL3.dll."""
+    """BT3_CC=win64: bt3.exe (cross-built or built in MSYS2), BT4decomp-setup.exe (port/setup/build.sh win), SDL3.dll."""
     import toolchain
-    out, zpath = ROOT / "port/build/release-win", ROOT / "port/build/Tenkaichi3Decomp-windows-x64.zip"
-    exe, setup = ROOT / "port/build/bt3.exe", ROOT / "port/build/Tenkaichi3Decomp-setup.exe"
+    out, zpath = ROOT / "port/build/release-win", ROOT / "port/build/BT4decomp-windows-x64.zip"
+    exe, setup = ROOT / "port/build/bt3.exe", ROOT / "port/build/BT4decomp-setup.exe"
     dll = next((p for p in [toolchain.sdl3() / "bin/SDL3.dll"] if p.exists()), None) if toolchain.sdl3() else None
     if dll is None:
         dll = next((pathlib.Path(d) / "SDL3.dll" for d in os.environ.get("PATH", "").split(os.pathsep) if (pathlib.Path(d) / "SDL3.dll").exists()), None)
@@ -205,18 +231,22 @@ def main_win():
     take_program(exe, out)
     take_lang(out)
     take_translations(out)
-    shutil.copy2(setup, out / "Tenkaichi3Decomp-setup.exe")
+    shutil.copy2(ROOT / "port/release/BT4_VERSION.txt", out / "BT4_VERSION.txt")
+    shutil.copy2(setup, out / "BT4decomp-setup.exe")
     shutil.copy2(dll, out / "SDL3.dll")
     (out / "README.txt").write_text(WIN_README.replace("\n", "\r\n"))
     lic = out / "licenses"
     lic.mkdir()
     bundle_sdl_dependencies(dll, out, lic, toolchain.PREFIX)
-    shutil.copy2(ROOT / "LICENSE", lic / "tenkaichi3decomp-agpl.txt")
-    shutil.copy2(ROOT / "LICENSE-MIT", lic / "tenkaichi3decomp-mit.txt")
+    take_windows_runtime(out)
+    shutil.copy2(ROOT / "LICENSE", lic / "bt4decomp-agpl.txt")
+    shutil.copy2(ROOT / "LICENSE-MIT", lic / "bt4decomp-mit.txt")
     shutil.copy2(ROOT / "port/third_party/imgui/LICENSE.txt", lic / "dear-imgui.txt")
     shutil.copy2(ROOT / "port/third_party/newlib_libm/COPYING.NEWLIB", lic / "newlib.txt")
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
     shutil.copy2(ROOT / "port/third_party/miniaudio/LICENSE", lic / "miniaudio.txt")
+    shutil.copy2(ROOT / "port/third_party/miniz/LICENSE", lic / "miniz.txt")
+    shutil.copy2(ROOT / "port/third_party/monocypher/LICENCE.md", lic / "monocypher.txt")  # (the update's signature check)
 
     take_fonts(out, lic)
     take_tbo_art(out, lic)
@@ -226,14 +256,16 @@ def main_win():
         (out / kind).mkdir()
         (out / kind / "README.txt").write_text(note.replace("\n", "\r\n"))
     (lic / "sdl3.txt").write_text("SDL3 (SDL3.dll) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
-    for f in (out / "Tenkaichi3Decomp.exe", out / "Tenkaichi3Decomp-setup.exe"):
+    for f in (out / "BT4decomp.exe", out / "BT4decomp-setup.exe"):
         subprocess.run([toolchain.PREFIX + "strip", "--strip-debug", str(f)], check=False)
+    # Keep existing desktop/setup entry points compatible with signed updates.
+    shutil.copy2(out / "BT4decomp-setup.exe", out / "Install.exe")
     if zpath.exists():
         zpath.unlink()
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for p in sorted(out.rglob("*")):
             if p.is_file():
-                z.write(p, "Tenkaichi3Decomp/" + str(p.relative_to(out)))
+                z.write(p, "BT4decomp/" + str(p.relative_to(out)))
     print(f"{zpath.relative_to(ROOT)}: {zpath.stat().st_size / 1e6:.1f} MB")
     for p in sorted(out.rglob("*")):
         if p.is_file():
@@ -241,7 +273,7 @@ def main_win():
 
 def main():
     exe = ROOT / "port/build/bt3_64"
-    setup = ROOT / "Tenkaichi3Decomp-setup"
+    setup = ROOT / "BT4decomp-setup"
     for need in (exe, setup, pathlib.Path(str(exe) + ".map")):
         if not need.exists():
             sys.exit(f"missing {need.relative_to(ROOT)}: build first (see the top of this file)")
@@ -250,7 +282,8 @@ def main():
     take_program(exe, OUT)
     take_lang(OUT)
     take_translations(OUT)
-    shutil.copy2(setup, OUT / "Tenkaichi3Decomp-setup")
+    shutil.copy2(ROOT / "port/release/BT4_VERSION.txt", OUT / "BT4_VERSION.txt")
+    shutil.copy2(setup, OUT / "BT4decomp-setup")
     (OUT / "lib").mkdir()
     lib = next((p for d in ("/usr/local/lib", "/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu") for p in sorted(pathlib.Path(d).glob("libSDL3.so.0"))), None)
     if lib is None:
@@ -259,12 +292,14 @@ def main():
     (OUT / "README.txt").write_text(README)
     lic = OUT / "licenses"
     lic.mkdir()
-    shutil.copy2(ROOT / "LICENSE", lic / "tenkaichi3decomp-agpl.txt")
-    shutil.copy2(ROOT / "LICENSE-MIT", lic / "tenkaichi3decomp-mit.txt")
+    shutil.copy2(ROOT / "LICENSE", lic / "bt4decomp-agpl.txt")
+    shutil.copy2(ROOT / "LICENSE-MIT", lic / "bt4decomp-mit.txt")
     shutil.copy2(ROOT / "port/third_party/imgui/LICENSE.txt", lic / "dear-imgui.txt")
     shutil.copy2(ROOT / "port/third_party/newlib_libm/COPYING.NEWLIB", lic / "newlib.txt")
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
     shutil.copy2(ROOT / "port/third_party/miniaudio/LICENSE", lic / "miniaudio.txt")
+    shutil.copy2(ROOT / "port/third_party/miniz/LICENSE", lic / "miniz.txt")
+    shutil.copy2(ROOT / "port/third_party/monocypher/LICENCE.md", lic / "monocypher.txt")  # (the update's signature check)
 
     take_fonts(OUT, lic)
     take_tbo_art(OUT, lic)
@@ -274,14 +309,14 @@ def main():
         (OUT / kind).mkdir()
         (OUT / kind / "README.txt").write_text(note)
     (lic / "sdl3.txt").write_text("SDL3 (lib/libSDL3.so.0) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
-    for f in (OUT / "Tenkaichi3Decomp", OUT / "Tenkaichi3Decomp-setup"):
+    for f in (OUT / "BT4decomp", OUT / "BT4decomp-setup"):
         subprocess.run(["strip", "--strip-debug", str(f)], check=False)  # the symbol names stay (crash reports use them)
     if ZIP.exists():
         ZIP.unlink()
     with zipfile.ZipFile(ZIP, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for p in sorted(OUT.rglob("*")):
             if p.is_file():
-                info = zipfile.ZipInfo.from_file(p, "Tenkaichi3Decomp/" + str(p.relative_to(OUT)))
+                info = zipfile.ZipInfo.from_file(p, "BT4decomp/" + str(p.relative_to(OUT)))
                 info.compress_type = zipfile.ZIP_DEFLATED
                 z.writestr(info, p.read_bytes(), compresslevel=9)
     print(f"{ZIP.relative_to(ROOT)}: {ZIP.stat().st_size / 1e6:.1f} MB")
@@ -294,7 +329,7 @@ def portable(out):
     """Says whether the release would run on other people's machines: no CPU level above the baseline demanded
     or used, and no newer C library than Ubuntu 22.04's (2.35). Build with port/release/build_linux.sh to pass."""
     bad = []
-    for f in ("Tenkaichi3Decomp", "Tenkaichi3Decomp-setup", "lib/libSDL3.so.0"):
+    for f in ("BT4decomp", "BT4decomp-setup", "lib/libSDL3.so.0"):
         note = subprocess.run(["readelf", "-n", str(out / f)], capture_output=True, text=True).stdout
         need = next((l.split(":", 1)[1].strip() for l in note.splitlines() if "ISA needed" in l), "")
         if any(v in need for v in ("x86-64-v2", "x86-64-v3", "x86-64-v4")):

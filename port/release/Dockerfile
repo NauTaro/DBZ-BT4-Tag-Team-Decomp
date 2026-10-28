@@ -28,7 +28,7 @@ RUN curl -fsSL -o /tmp/sdl.tar.gz https://github.com/libsdl-org/SDL/releases/dow
     && rm -rf /tmp/sdl.tar.gz /tmp/SDL3-${SDL_VERSION} /tmp/sdl-build
 # The shader compiler (glslangValidator), and for the Windows release: the mingw-w64 cross-compiler (the variant with
 # POSIX threads) and SDL3's development package for it
-RUN apt-get update && apt-get install -y --no-install-recommends glslang-tools mingw-w64 zip unzip \
+RUN apt-get update && apt-get install -y --no-install-recommends glslang-tools mingw-w64 libz-mingw-w64-dev zlib1g-dev zip unzip \
     && rm -rf /var/lib/apt/lists/* \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
     && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix \

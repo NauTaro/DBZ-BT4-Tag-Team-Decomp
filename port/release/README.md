@@ -1,0 +1,38 @@
+# Automatic updates
+
+The launcher checks the latest published release of `NauTaro/DBZ-BT4-Tag-Team-Decomp` after startup. It downloads the
+Windows package and its signature in the background, verifies both the archive hash and its Ed25519
+signature, then installs the verified files automatically at the offline main menu. It does not restart during a
+battle, online session, lobby, spectator session, or while the settings window is open. Player data and game data are
+preserved by the installer.
+
+## Publishing a release
+
+Update `CHANGELOG.md`, then push a version tag such as `v0.1.39.1`. The GitHub Actions workflow builds the Windows
+package, signs it, checks the signature against `port/src/update_key.h`, and publishes a release with the exact
+asset names expected by the launcher. The workflow stops if `UPDATE_SIGNING_KEY` is missing or does not match the
+compiled public key.
+
+The signing key is a one-time repository setup:
+
+1. Generate a key with `python3 port/tools/update_key.py generate --out <safe-file>`.
+2. Put the private key line in the repository Actions secret `UPDATE_SIGNING_KEY`. Keep the file offline and never
+   commit it.
+3. Commit the printed public key in `port/src/update_key.h`.
+
+The current public key was generated for this BT4 updater. The matching private key is configured in the repository Actions secret; it is never committed. Players whose installed launcher predates the updater
+or was built without this public key need one bootstrap install; later signed releases install automatically.
+
+To check an archive manually, run `python3 port/tools/update_key.py verify <archive.zip>` with its `.sig` file beside
+it. The command must report `signature good`.
+
+## Windows runtime dependencies
+
+The BT4 voice backend and bilingual setup require runtime DLLs and the GitHub CLI helper that are loaded
+dynamically and therefore are not discovered by ordinary executable import scanning. Before packaging,
+`port/tools/prepare_windows_runtime.py` restores only these dependencies from the pinned bootstrap archive,
+verifies the archive SHA-256, and includes their licenses and voice SDK source offer. No legacy game executable
+or game data is extracted. The package step checks every restored file against the dependency manifest.
+
+The fork release workflow targets Windows. The current native voice backend and bilingual setup contain Win32
+code; upstream Linux runtime sources are retained, but this workflow does not publish an unvalidated Linux build.

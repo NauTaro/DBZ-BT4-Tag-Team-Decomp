@@ -138,7 +138,7 @@ static uint64_t read64(const unsigned char*p){return Ttw_Read(p)|(uint64_t)Ttw_R
 
 #define TT_ROOMS 8
 
-typedef struct {TtChannel io;uint32_t id;int room;time_t heard;} Peer;
+typedef struct {TtChannel io;uint32_t id,ack;int room;time_t heard;} Peer;
 
 typedef struct {TtRoom state;char code[7];TtInputs inputs;} Room;
 
@@ -153,6 +153,7 @@ static void notify(int room,int only,int result){
     for(i=0;i<TT_CONNECTIONS;++i)if(peers[i].io.sock!=TT_INVALID&&(only==i||(only<0&&peers[i].room==room))){
 
         Ttw_Snapshot(packet,room>=0?&rooms[room].state:&empty,peers[i].id,result,room>=0?rooms[room].code:NULL);
+        Ttw_Write(packet+508,peers[i].ack);
 
         if(!channel_queue(&peers[i].io,packet))peers[i].io.failed=1;
 
@@ -187,6 +188,8 @@ static void command(int i){
     uint32_t epoch=Ttw_Read(b+8);TtRoom *r=p->room>=0?&rooms[p->room].state:NULL;
 
     if(Ttw_Read(b)!=TT_PROTOCOL){drop(i);return;}
+
+    p->ack=Ttw_Read(b+508);
 
     if(cmd==TTW_PING){notify(p->room,i,TT_OK);return;}
 
@@ -381,6 +384,7 @@ static char ws_endpoint[384];
 static void request(unsigned char *p);
 
 static TtInputs received;
+static int solo_cpu_fight(void);
 #include "tag_team_sync_client.inc"
 
 /* A room with one human has no remote fighter input to synchronize. Keep its
@@ -391,6 +395,8 @@ static TtInputs received;
 static int solo_cpu_fight(void){
     return state.phase==TT_FIGHT&&state.host==member&&Tt_Humans(&state)==1;
 }
+
+int Port_TagLocalBattle(void){return local_room||solo_cpu_fight();}
 
 static int configured_left,configured_right,configure_pending;
 
@@ -536,7 +542,7 @@ int Port_TagConnect(const char *server){
 
 }
 
-void Port_TagClose(void){Port_TagWaitResumed();PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
+void Port_TagClose(void){Port_TagWaitResumed();PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_adjusted=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
 
 int Port_TagReselect(void){
 
@@ -656,7 +662,7 @@ void Port_TagCommand(int command,int a,int b){
 
 void Port_TagPoll(void){
 
-    int n=0,work=0;if(ws_mode?!ws_started:client.sock==TT_INVALID)return;
+    int n=0,work=0;Uint64 arrived=0;if(ws_mode?!ws_started:client.sock==TT_INVALID)return;
 
     if(connecting){fd_set wr,er;struct timeval tv={0,0};int e=0;int len=sizeof(e);
 
@@ -676,7 +682,7 @@ void Port_TagPoll(void){
 
     if(!ws_mode&&!channel_flush(&client)){fail("TAG TEAM connection was lost.");return;}
 
-    while(work++<64&&(n=ws_mode?TagWs_Read(client.in):channel_read(&client))>0){int result;
+    while(work++<64&&(n=ws_mode?TagWs_Read(client.in,&arrived):channel_read(&client))>0){int result;
 
         last_heard=time(NULL);
 
@@ -700,6 +706,8 @@ void Port_TagPoll(void){
             /* A consumed authoritative frame is idempotent, including the
              * server echo used by one-human CPU rooms. */
             if((int32_t)(frame-received.next)<0)continue;
+
+            if(tag_paced&&Ttw_Read(client.in+492)==0x32535442u)tag_delay_feedback(frame,Ttw_Read(client.in+496));
 
             if(tag_paced&&(int32_t)(frame-received.next)>=TT_INPUT_HISTORY){
                 fprintf(stderr,"tag local backlog exceeded: next=%u incoming=%u capacity=%d\n",received.next,frame,TT_INPUT_HISTORY);
@@ -740,8 +748,8 @@ void Port_TagPoll(void){
         tag_update_catchup();
         {unsigned ack=Ttw_Read(client.in+508),slot=ack%128;
             if(ack&&ack!=tag_ping_ack&&request_history[slot].serial==ack&&request_history[slot].command==TTW_PING){
-                Uint64 sample=SDL_GetTicks()-request_history[slot].at;tag_ping_ack=ack;
-                if(sample<10000)tag_ping=tag_ping<0?(int)sample:(tag_ping*3+(int)sample)/4;
+                Uint64 at=ws_mode?arrived:SDL_GetTicks();tag_ping_ack=ack;
+                if(at>=request_history[slot].at)tag_ping_sample((unsigned)(at-request_history[slot].at));
             }
         }
 
@@ -881,13 +889,22 @@ int Port_TagAttacks(void){return 1;}
 unsigned Port_TagSeed(void){return state.seed;}
 
 int Port_TagDelay(void){
-    int lead=0;
-    /* Only the transport horizon remains: measured round trip plus queued
-     * authoritative history. No manual delay or fixed three-frame margin. */
-    if(tag_paced){lead=tag_ping>0?(tag_ping*342+9999)/10000:1;}
+    int lead=1,full=1,margin=0,total;
+    if(local_room||solo_cpu_fight()||!tag_paced)return state.delay;
+    /* Use estimated one-way relay time, not the full RTT. The Worker reports
+     * late seats in each authoritative frame; that feedback raises this margin
+     * only when this player's input actually misses a deadline. */
+    if(tag_paced&&tag_ping>0){
+        lead=(tag_ping*342+19999)/20000;
+        full=(tag_ping*342+9999)/10000;
+        if(lead<1)lead=1;
+        margin=tag_delay_margin;
+        if(margin>full-lead)margin=full-lead;
+    }
     /* New input belongs to the live server timeline even while this client
      * consumes old authoritative history after a local stall. */
-    return (lead>120?120:lead)+tag_backlog();
+    total=lead+margin+tag_backlog();
+    return total>120?120:total;
 }
 
 int Port_TagAllLoaded(void){int i;for(i=0;i<Tt_Count(&state);++i)if(!state.players[i].loaded)return 0;return Tt_Count(&state)>0;}
@@ -949,15 +966,6 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
     unsigned char packet[TT_WIRE_BYTES];
 
     if(state.phase!=TT_FIGHT||!pad||(ws_mode?!ws_started:client.sock==TT_INVALID))return 0;
-    if(tag_paced){
-        if(tag_input_epoch!=state.epoch){tag_input_sent=0;tag_input_epoch=state.epoch;}
-        if(tag_input_sent&&frame<=tag_input_latest)return 1;
-        tag_input_latest=frame;tag_input_sent=1;
-    }
-
-    Ttw_Request(packet,TTW_INPUT,state.epoch);Ttw_Write(packet+12,frame);memcpy(packet+16,pad,TT_PAD_BYTES);
-
-    request(packet);
     if(solo_cpu_fight()){
         unsigned f;int i,seat=Tt_Seat(&state,member);
         const unsigned char neutral[TT_PAD_BYTES]={0,0,0,0,127,127};
@@ -971,6 +979,37 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
         for(i=0;i<Tt_Count(&state);++i)
             if(Tt_InputPut(&received,state.epoch,i,frame,i==seat?pad:neutral)!=TT_OK){fail("Invalid CPU practice input frame.");return 0;}
     }
+    if(solo_cpu_fight())return 1;
+    if(tag_paced){
+        uint32_t next;
+        if(tag_input_epoch!=state.epoch){
+            tag_input_sent=0;tag_input_epoch=state.epoch;
+            tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_delay_adjusted=0;
+        }
+        if(tag_input_sent&&frame<=tag_input_latest){
+            /* A shrinking lead cannot replace an immutable submitted frame.
+             * Retain short taps for the next writable frame instead. */
+            tag_pending_buttons|=Ttw_Read(pad);tag_pending_l3|=pad[6];tag_pending_skip|=pad[8];return 1;
+        }
+        next=tag_input_sent?tag_input_latest+1:frame;
+        if(!tag_input_sent)tag_input_first=frame;
+        /* A larger lead must not leave holes for the server to replace with
+         * neutral input. Preserve held controls but never repeat one-shot commands. */
+        for(;next<=frame;++next){
+            Ttw_Request(packet,TTW_INPUT,state.epoch);Ttw_Write(packet+12,next);
+            if(next<frame){memcpy(packet+16,tag_input_pad,TT_PAD_BYTES);packet[22]=packet[24]=0;}
+            else{
+                memcpy(packet+16,pad,TT_PAD_BYTES);Ttw_Write(packet+16,Ttw_Read(pad)|tag_pending_buttons);
+                packet[22]|=tag_pending_l3;packet[24]|=tag_pending_skip;
+            }
+            request(packet);if(state.phase!=TT_FIGHT)return 0;
+        }
+        memcpy(tag_input_pad,pad,TT_PAD_BYTES);
+        tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;
+        tag_input_latest=frame;tag_input_sent=1;return 1;
+    }
+    Ttw_Request(packet,TTW_INPUT,state.epoch);Ttw_Write(packet+12,frame);memcpy(packet+16,pad,TT_PAD_BYTES);
+    request(packet);
     return state.phase==TT_FIGHT;
 
 }
@@ -1006,4 +1045,3 @@ int Port_TagCancelSelect(void){
 }
 
 #endif
-
