@@ -12,12 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libdrm-dev libgbm-dev libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libvulkan-dev libudev-dev libdbus-1-dev \
         libibus-1.0-dev libusb-1.0-0-dev \
     && rm -rf /var/lib/apt/lists/*
-# clang / LLVM 22 (the version ptr32.py and irfix.py are written against), with its Python bindings
+# clang / LLVM 23 (the version ptr32.py and irfix.py are written against), with its Python bindings
 RUN curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /usr/share/keyrings/llvm.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-22 main" > /etc/apt/sources.list.d/llvm.list \
-    && apt-get update && apt-get install -y --no-install-recommends clang-22 llvm-22 libclang-22-dev python3-clang-22 \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-23 main" > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update && apt-get install -y --no-install-recommends clang-23 llvm-23 libclang-23-dev python3-clang-23 \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/clang-22 /usr/local/bin/clang && ln -s /usr/bin/llc-22 /usr/local/bin/llc
+    && ln -s /usr/bin/clang-23 /usr/local/bin/clang && ln -s /usr/bin/llc-23 /usr/local/bin/llc
 # SDL3 from source, for any x86-64 CPU; this is also the copy the release carries in lib/
 ARG SDL_VERSION=3.4.12
 RUN curl -fsSL -o /tmp/sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL3-${SDL_VERSION}.tar.gz \

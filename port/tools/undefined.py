@@ -140,6 +140,8 @@ def main():
     bad = [(f, e) for o, f, e, _ in res if o is None]
     for f, e in bad:
         print("FAILED", f.name, next((l for l in e.splitlines() if "rror" in l or l.startswith("ptr32")), e.strip()[:150])[:200])
+        for detail in e.splitlines()[:8]:
+            print("  " + detail)
     objs = [str(o) for o, _, _, _ in res if o]
     if BITS64:
         # The game's data tables, assembled for this target: with their values (gen_data.py's sources, made from the
