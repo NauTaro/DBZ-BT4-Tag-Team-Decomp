@@ -1,3 +1,5 @@
+> Experimental Ideas branch for BT4decomp 0.1.39.1. Includes the free-camera preview. The stable Windows package is published from `main`.
+
 <div align="center">
   <h1>DBZ BT4 Tag Team Decomp</h1>
   <p><strong>Dragon Ball Z: Budokai Tenkaichi 4 B14 Rev2 on a native Windows runtime</strong></p>

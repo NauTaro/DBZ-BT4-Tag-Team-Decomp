@@ -515,6 +515,20 @@ s32 BtlScene_IsEffectStopped(s32 objId, s32 kind) {
  * - An inline helper for the first switch (five shapes): 39 to 50. */
 s32 BtlScene_IsEffectHidden(s32 objId, s32 kind) {
     s32 result = 0;
+#ifdef PORT
+    {extern s32 PortSpectator_Mode(void),BtlChars_SpectatorHiddenByCut(s32);
+     if(PortSpectator_Mode() && kind==0){
+        /* Priority cuts hide ordinary ki effects for the fighter cameras.
+         * An independent observer still sees those live effects. Genuine
+         * vanish/stream-out state remains authoritative. */
+        s32 hidden=BtlCharApi_IsHidden(objId) && !BtlChars_SpectatorHiddenByCut(objId);
+        s32 changing=BtlCharApi_IsChanging(objId),result=changing || (hidden && BtlCharApi_AnyFrozen());
+        if(!result && (BtlCharApi_AnyCamPriority()||BtlCharApi_IsInRushSequence(0)||BtlCharApi_IsInRushSequence(1))){
+            extern void PortSpectator_NoteEffect(s32);PortSpectator_NoteEffect(objId);
+        }
+        return result;
+     }}
+#endif
     if(TagBattle_Active() && kind==0)return BtlCharApi_IsHidden(objId)||BtlCharApi_IsChanging(objId);
 
     if (BtlCharApi_IsHidden(objId)) {

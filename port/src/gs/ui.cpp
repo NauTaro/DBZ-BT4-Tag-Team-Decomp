@@ -618,7 +618,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
             sForceTab = -1;
             gPortNetMenuRequest = 1;
         }
-        if (sForceTab == 8) { // testing: the exit question
+        if (sForceTab == 10) { // testing: the exit question; 8 is the spectator tab
             sForceTab = -1;
             sQuit = true;
             PortQuit_Request();
@@ -1341,6 +1341,27 @@ static bool tab(const char *label, int index) {
         sTab = index;
     }
     return on;
+}
+
+static void spectator_tab(void) {
+    const bool en=Port_GameProfileEnglish()!=0;
+    auto tr=[&](const char *es,const char *eng){return en?eng:es;};
+    ImGui::TextWrapped(tr("Vista previa local de cámara. La conexión de espectadores online sigue en desarrollo.","Local camera preview. Online spectator connections are still in development."));
+    const bool allowed=PortSpectator_CanPreview()!=0;
+    if(!allowed)ImGui::TextWrapped(tr("La cámara libre está bloqueada para los jugadores de una partida online.","Free camera is locked for players in an online match."));
+    ImGui::BeginDisabled(!allowed);
+    int mode=PortSpectator_Mode();
+    if(ImGui::RadioButton(tr("Cámara del juego","Game camera"),mode==0))PortSpectator_SetMode(0);
+    if(ImGui::RadioButton(tr("Cámara libre","Free camera"),mode==1))PortSpectator_SetMode(1);
+    if(ImGui::RadioButton(tr("Seguir luchador","Follow fighter"),mode==2))PortSpectator_SetMode(2);
+    if(ImGui::RadioButton(tr("Vista general del combate","Fight overview"),mode==3))PortSpectator_SetMode(3);
+    if(mode==2){int actor=PortSpectator_Target()+1;if(ImGui::SliderInt(tr("Luchador","Fighter"),&actor,1,PortSpectator_Count()))PortSpectator_SetTarget(actor-1);}
+    int speed=PortSpectator_Speed();if(ImGui::SliderInt(tr("Velocidad de cámara","Camera speed"),&speed,25,400,"%d%%"))PortSpectator_SetSpeed(speed);
+    if(ImGui::Button(tr("Restablecer cámara","Reset camera")))PortSpectator_ResetCamera();
+    ImGui::EndDisabled();
+    ImGui::Separator();
+    bool hidden=PortHud_Hidden()!=0;if(ImGui::Checkbox(tr("Ocultar HUD","Hide HUD"),&hidden))PortHud_SetHidden(hidden);
+    ImGui::TextWrapped(tr("Cierra F1 para mover la cámara. WASD: mover; Q/E: bajar/subir; flechas: girar; Shift: acelerar; +/-: zoom. Mando: sticks y L1/R1.","Close F1 to move the camera. WASD: move; Q/E: descend/ascend; arrows: turn; Shift: accelerate; +/-: zoom. Controller: sticks and L1/R1."));
 }
 
 static void video_tab(PortVideo &v) {
@@ -2288,7 +2309,7 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 7 : 1)) % 8;
+        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 8 : 1)) % 9;
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -2355,6 +2376,7 @@ static void build(void) {
             if (tab("Cheats", 5)) { cheats_tab(); ImGui::EndTabItem(); }
             if (tab("Misc", 6)) { misc_tab(); ImGui::EndTabItem(); }
             if (tab("Online", 7)) { online_tab(); ImGui::EndTabItem(); }
+            if (tab(Port_GameProfileEnglish()?"Spectator":"Espectador", 8)) { spectator_tab(); ImGui::EndTabItem(); }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();

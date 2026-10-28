@@ -15,4 +15,4 @@ void PortHud_SetHidden(int hidden){
     if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"presentation HUD: hidden=%d\n",sHudHidden);
 }
 void PortHud_Toggle(void){PortHud_SetHidden(!PortHud_Hidden());}
-
+#include "spectator_camera.inc"

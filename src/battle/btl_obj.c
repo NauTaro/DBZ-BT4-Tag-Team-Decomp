@@ -34,6 +34,10 @@ extern s32 Bt4_ModelFile(s32, s32, s32);
 #include "sys/dma.h"
 #include "sys/file.h"
 #include "sys/heap.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern f32 sqrtf(f32 x);
@@ -825,6 +829,21 @@ void BtlObj_UpdateView(BtlObj *obj) {
 
     memset(view, 0, sizeof(BtlObjView));
     view->flags = state->flags;
+#ifdef PORT
+    {
+        extern s32 PortSpectator_Mode(void),BtlChars_SpectatorHiddenByCut(s32);
+        if(obj->type==BTL_OBJ_TYPE_CHARA && PortSpectator_Mode() &&
+           !(view->flags&BTL_OBJ_FLAG_VISIBLE) && BtlChars_SpectatorHiddenByCut(obj->id)){
+            /* Restore this draw record only. The simulation still sees the
+             * original camera flags; camera frustum culling below still runs. */
+            view->flags|=BTL_OBJ_FLAG_VISIBLE;
+            if(getenv("BT4_RENDER_TEST") && getenv("BT4_SPECTATOR_VISIBILITY_TRACE")){
+                static s32 shown;
+                if(shown++<24)fprintf(stderr,"spectator visibility: object=%d source-visible=0 view-visible=1 camera-cut-only=1\n",obj->id);
+            }
+        }
+    }
+#endif
     BtlObj_CalcViewDist(state, view);
     if (view->flags & BTL_OBJ_FLAG_VISIBLE) {
         if (BtlObj_IsOffscreen(obj)) {

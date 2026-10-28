@@ -7,3 +7,4 @@
 - Filled input scheduling gaps and retained synchronized presentation skipping.
 - Added signed automatic updates from this repository, applied at the main menu.
 - Preserved BT4 HUD, custom-stage, data-validation and GPU readback fixes.
+- Retained the experimental Spectator tab beside Online in Ideas.

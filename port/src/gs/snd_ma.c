@@ -103,6 +103,7 @@ static void engine_stop(void) {
 }
 /* The engine, made the first time a native stream starts (so a run without one never touches a device here). */
 static int engine(void) {
+    if(getenv("BT4_SILENT_CAPTURE")){sEngineState=-1;return 0;}
     if (sEngineState == 0) {
         if (ma_engine_init(NULL, &sEngine) == MA_SUCCESS) {
             sEngineState = 1;

@@ -544,6 +544,16 @@ void CharSel_Init(s32 section) {
 
     gCharSel->nameText = MPACK_AT(gCharSel->res, 43);
     gCharSel->formText = MPACK_AT(gCharSel->res, 44);
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_DUMP_SELECTION_TEXT")) {
+        s32 part;const char *prefix=getenv("BT4_DUMP_SELECTION_TEXT");
+        for(part=43;part<=44;++part){
+            char path[1200];u32 a=((u32*)gCharSel->res)[part]&~3,b=((u32*)gCharSel->res)[part+1]&~3;
+            if(b>a && b-a<1048576){FILE *fp;sprintf(path,"%s-%d.bin",prefix,part);fp=fopen(path,"wb");if(fp){fwrite((u8*)gCharSel->res+a,1,b-a,fp);fclose(fp);}}
+        }
+        fprintf(stderr,"selection text dumped\n");exit(0);
+    }
+#endif
     gCharSel->chipPack = (u32 *)MPACK_AT(gCharSel->res, 45);
     for (i = 0; i < 250; i++) {
         CS_RES(gCharSel->chipPack, i + 1);
@@ -1692,7 +1702,7 @@ void CharSel_Input(s32 *running) {
                 Snd_PlaySe(1, 0);
             } else {
                     u32 pressed = gPad[i].gamePressed;
-    
+
                     if (CS_N == 0 ? (pressed & 2) : (pressed & 1)) {
                     /* towards the middle of the screen: look at the item set */
                     if (CS_SIDE->customPlate <= 0) {

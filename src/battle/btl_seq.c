@@ -1032,6 +1032,11 @@ s32 BtlSeqWinTalk_Setup(BtlSeqTalkCtx *ctx) {
 
 /* State 5 enter: prepares the winner scene and hides HUD parts; mode 1 can be told to wait for the skip instead. */
 s32 BtlSeqWinTalk_Enter(BtlSeqTalkCtx *ctx) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_SPECTATOR_RECORD_TEST")){
+        fprintf(stderr,"spectator recording stop: after-KO\n");exit(0);
+    }
+#endif
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
     ScrXfade_RequestCapture();
     ScrXfade_Start(1, 1.0f);
@@ -1139,6 +1144,11 @@ s32 BtlSeqWinTalk_Skip(BtlSeqTalkCtx *ctx) {
 
 /* State 0 enter: restarts the step counter and holds the fighters. */
 s32 BtlSeqStageIntro_Enter(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_SPECTATOR_RECORD_TEST")){
+        extern void PortHud_SetHidden(s32);PortHud_SetHidden(1);
+    }
+#endif
     ctx->step = 0;
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
     return 1;
@@ -1359,6 +1369,12 @@ s32 BtlSeqFight_PreUpdate(BtlSeqWaitCtx *ctx) {
 /* State 3 update: opens / runs the pause menu, then checks for the end of the battle (-> 4, or 6 without a finish scene). */
 s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
 #ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_SPECTATOR_RECORD_TEST")) {
+        static s32 recordSteps;
+        if((++recordSteps%150)==0)fprintf(stderr,"spectator recording combat: step=%d hp0=%d hp1=%d\n",recordSteps,BtlCharApi_GetHp(0),BtlCharApi_GetHp(1));
+    }
+#endif
+#ifdef PORT
     if(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_MENU_TEST")) {
         static s32 step;
         extern s32 PortHud_Hidden(void);
@@ -1460,6 +1476,12 @@ s32 BtlSeqFight_Exit(BtlSeqWaitCtx *ctx) {
 
 /* State 2 enter: holds the fighters, starts the 0.8 s wait and shows the HUD. */
 s32 BtlSeqReady_Enter(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_SPECTATOR_RECORD_TEST")){
+        extern s32 PortSpectator_SetMode(s32);extern void PortHud_SetHidden(s32);
+        PortSpectator_SetMode(0);PortHud_SetHidden(1);
+    }
+#endif
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
     ctx->step = 0;
     Ramp_Start(&ctx->timer, 0.8f, 0.0f, 1.0f);
@@ -1496,6 +1518,13 @@ s32 BtlSeqReady_Update(BtlSeqWaitCtx *ctx) {
 /* State 2 exit: announcement 1. */
 s32 BtlSeqReady_Exit(BtlSeqWaitCtx *ctx) {
     HudNotice_Show(1);
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_SPECTATOR_RECORD_TEST")){
+        extern s32 PortSpectator_SetMode(s32);extern void PortHud_SetHidden(s32),BtlCam_ApplySpectatorNow(void);
+        PortSpectator_SetMode(3);PortHud_SetHidden(1);BtlCam_ApplySpectatorNow();
+        fprintf(stderr,"spectator recording cue: fight-announcement camera=independent HUD=hidden\n");
+    }
+#endif
     return 1;
 }
 
@@ -1578,6 +1607,13 @@ s32 BtlSeqEnd_Exit(BtlSeqWaitCtx *ctx) {
 
 /* State 4 enter: holds the fighters, starts the 3.5 s wait and shows the announcement for the finish reason. */
 s32 BtlSeqFinish_Enter(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_SPECTATOR_RECORD_TEST")){
+        extern void PortHud_SetHidden(s32);
+        PortHud_SetHidden(1);
+        fprintf(stderr,"spectator recording finished: winner=%d reason=%x hp0=%d hp1=%d\n",BattleResult_GetWinnerSide(),BattleResult_GetReason(),BtlCharApi_GetHp(0),BtlCharApi_GetHp(1));
+    }
+#endif
     BtlSeqTimer *timer;
 
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;

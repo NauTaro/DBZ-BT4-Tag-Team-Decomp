@@ -217,6 +217,9 @@ static int device(void) {
         sTried = 1;
         /* BT3_SOUND=1: sound without a window too (tests, with SDL_AUDIO_DRIVER=dummy for silence) */
         if ((GsGpu_Enabled() || getenv("BT3_SOUND") != NULL) && getenv("BT3_NOSOUND") == NULL && SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+            if(getenv("BT4_SILENT_CAPTURE") && strcmp(SDL_GetCurrentAudioDriver(),"dummy")!=0){
+                fprintf(stderr,"silent capture: physical output refused\n");return 0;
+            }
             sDevice = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
             if (sDevice == 0) {
                 fprintf(stderr, "bt3: no sound device: %s\n", SDL_GetError());

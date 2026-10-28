@@ -345,6 +345,9 @@ void BtlCam_Reset(void) {
     BtlCam_InitViews();
     gBtlCam->cur = &gBtlCam->views[0];
     DemoCam_Reset();
+#ifdef PORT
+    { extern void PortSpectator_ResetCamera(void);PortSpectator_ResetCamera(); }
+#endif
 }
 
 /* Allocates the camera block and the demo camera, and initialises the battle views. */
@@ -516,6 +519,83 @@ void BtlCam_ApplyView(s32 scissor) {
 extern int Port_NetView(void); /* port/src/gs/net.c: the local player's view (0 or 1), or -1 */
 #endif
 /* Decides whether one full-screen view replaces the per-player views this frame; returns 1 if so. */
+#ifdef PORT
+/* Preview camera owns a separate view. The fighters' camera state is preserved. */
+static void Spectator_ApplyCamera(void) {
+    extern s32 PortSpectator_Mode(void);
+    extern s32 PortSpectator_Camera(f32*,f32*,f32*,s32,f32*,f32*);
+    extern void PortSpectator_SetCutOwner(s32);
+    extern s32 PortSpectator_GetLook(f32*),BtlChars_SpectatorCutOwner(void);
+    extern void PortSpectator_GetAnchor(f32*),PortSpectator_ResolveEye(f32*);
+    extern void PortSpectator_StageAvoid(f32*,s32,f32*,f32*);
+    extern f32 atan2f(f32,f32),sqrtf(f32);
+    extern void BtlCharApi_GetBasePos(s32,Vec4*);
+    static View view;
+    Vec4 targets[10],bodies[10],effects[16],pos,rot,basePos={0,0,0,1},baseRot={0,0,0,1},look;
+    s32 i,count,owner,effectCount,bodyCount=0,phase=0;
+    f32 zoom;
+    if(!PortSpectator_Mode() || !gBtlCam || !gBtlCam->cur)return;
+    count=TagBattle_Active()?TagBattle_Count():2;
+    if(count<1 || count>10)return;
+    for(i=0;i<count;++i){
+        extern void BtlCharApi_GetPos(s32,Vec4*);extern f32 BtlCharApi_GetHeight(s32);
+        f32 h=BtlCharApi_GetHeight(BattleSide_GetObjId(i));
+        if(h<6)h=6;if(h>160)h=160;
+        BtlCharApi_GetPos(BattleSide_GetObjId(i),&targets[i]);
+        {extern s32 BtlCharApi_IsHidden(s32),BtlChars_SpectatorHiddenByCut(s32);
+         s32 shown=!BtlCharApi_IsHidden(BattleSide_GetObjId(i))||BtlChars_SpectatorHiddenByCut(BattleSide_GetObjId(i));
+         bodies[bodyCount]=targets[i];bodies[bodyCount].y-=h*.5f;bodies[bodyCount].w=h*(shown?.55f:-.55f);++bodyCount;}
+        if(BtlCharApi_HasCamPriority(BattleSide_GetObjId(i)))phase=1;
+    }
+    owner=BtlChars_SpectatorCutOwner();PortSpectator_SetCutOwner(owner);
+    {extern s32 EftHit_SpectatorPoints(f32*,s32);
+     extern void PortSpectator_SetScene(f32*,s32,f32*,s32,s32,f32,f32);
+     View *layout=&gBtlCam->layouts[0];
+     effectCount=EftHit_SpectatorPoints((f32*)effects,16);if(effectCount)phase=2;
+     PortSpectator_SetScene((f32*)bodies,bodyCount,(f32*)effects,effectCount,phase,
+        layout->screenDist*layout->aspectX*layout->unk258/256,
+        layout->screenDist*layout->aspectY*layout->unk258/224);}
+    if(PortSpectator_Mode()!=3){basePos=gBtlCam->cur->pos;baseRot=gBtlCam->cur->rot;}
+    if(!PortSpectator_Camera((f32*)&basePos,(f32*)&baseRot,(f32*)targets,count,(f32*)&pos,(f32*)&rot))return;
+    if(PortSpectator_GetLook((f32*)&look)){
+        Vec4 safe,anchor,trial;
+        PortSpectator_GetAnchor((f32*)&anchor);
+        /* Trace from a real fighter rather than a look-ahead point that may
+         * lie inside a rock. Prefer a clear elevated shot to a wall close-up. */
+        if(PortSpectator_Mode()!=3 && BtlCam_TraceStage(&safe,&pos,&anchor,NULL,NULL)){
+            s32 clear=0;
+            for(i=0;i<4;++i){
+                trial=pos;trial.y-=24.0f*(1<<i);
+                if(!BtlCam_TraceStage(&safe,&trial,&anchor,NULL,NULL)){pos=trial;clear=1;break;}
+            }
+            if(!clear)BtlCam_TraceStage(&pos,&pos,&anchor,NULL,NULL);
+            PortSpectator_ResolveEye((f32*)&pos);
+            if(getenv("BT4_RENDER_TEST")&&getenv("BT4_SPECTATOR_VISIBILITY_TRACE")){
+                static s32 obstacles;if(obstacles++<20)fprintf(stderr,"spectator camera obstacle: elevated-clear=%d\n",clear);
+            }
+        }
+        PortSpectator_StageAvoid((f32*)targets,count,(f32*)&look,(f32*)&pos);
+        if(PortSpectator_Mode()==3){
+            extern s32 PortSpectator_FilterPose(f32*,f32*,f32*);
+            if(!PortSpectator_FilterPose((f32*)&pos,(f32*)&look,(f32*)&rot))return;
+        }else{f32 dx=look.x-pos.x,dy=look.y-pos.y,dz=look.z-pos.z;
+        rot.y=atan2f(dx,dz);rot.x=-atan2f(dy,sqrtf(dx*dx+dz*dz));}
+    }
+    view=gBtlCam->layouts[0];zoom=rot.w;rot.w=1;
+    view.screenDist*=zoom;View_BuildProjection(&view);
+    View_SetTransform(&view.world2view,&view.world2view2,&pos,&rot);
+    View_UpdateMatrices(&view,&pos);gBtlCamView=&view;View_Apply(&view,1);
+}
+void BtlCam_ApplySpectatorNow(void){
+    extern void BtlObj_UpdateVisibility(s32),BtlObj_FinishVisibility(s32);
+    extern s32 PortSpectator_Mode(void);
+    if(!PortSpectator_Mode())return;
+    Spectator_ApplyCamera();
+    /* The fight announcement is issued after the ordinary camera/visibility
+     * pass. Refresh that pass for the transition's very first rendered frame. */
+    BtlObj_UpdateVisibility(0);BtlObj_FinishVisibility(0);
+}
+#endif
 s32 BtlCam_UpdateOverride(void) {
     s32 ret = 0;
     s32 idx;
@@ -560,6 +640,9 @@ s32 BtlCam_UpdateOverride(void) {
             gBtlCam->cur->rot.y+=phase*1.57079632679f;
             BtlCam_BuildView(gBtlCam->cur,1);
         }
+#ifdef PORT
+        Spectator_ApplyCamera();
+#endif
         return 1;
     }
 
@@ -592,6 +675,9 @@ s32 BtlCam_UpdateOverride(void) {
         DemoCam_Update();
         ret = 1;
     }
+#ifdef PORT
+    if(PortSpectator_Mode()){Spectator_ApplyCamera();ret=1;}
+#endif
     return ret;
 }
 

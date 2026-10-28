@@ -3797,10 +3797,10 @@ static char *Tb_Help(void) {
         return help[sTb->tagCur];}
     case TB_TAG_ROOM:
         if(sTb->tagChatTyping)return "Type your message with the keyboard. ENTER sends it and ESC closes the chat.";
-        if(!Port_TagHost())return "SELECT copies the room code. The host arranges the teams and starts character selection.";
-        if(sTb->tagMoving>=0)return "Choose a destination with X. TRIANGLE cancels. SELECT copies the room code.";
-        if(Port_TagCPU(sTb->tagRoomCur))return "L1/R1: Change difficulty.";
-        return "Arrange the teams and choose your fighters.";
+        if(!Port_TagHost())return "Share the code to invite friends. The host arranges the teams and starts character selection.";
+        if(sTb->tagMoving>=0)return "Choose a destination slot and confirm to move or swap the player. TRIANGLE cancels.";
+        if(Port_TagCPU(sTb->tagRoomCur))return "X toggles a CPU in this slot. L1/R1 changes its difficulty. SQUARE starts character selection.";
+        return "Select a player with X, then choose a destination slot. Empty slots can hold CPU fighters. SQUARE starts selection.";
     case TB_CREATE:
         return sTb->crCur==CR_ADDR?"Host a lobby by address. Share your address and port with the other players.":"Open a lobby and share its code. Set the match rules inside the lobby.";
     case TB_ADDR:

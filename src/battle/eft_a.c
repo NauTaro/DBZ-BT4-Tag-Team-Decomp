@@ -172,6 +172,23 @@ EftHitList *EftHit_GetList(void) {
     return gEftHitList;
 }
 
+#ifdef PORT
+/* Read-only framing samples. They do not change projectile lifetimes, hit
+ * detection, ownership or task state. Only live records of this frame count. */
+s32 EftHit_SpectatorPoints(f32 *out,s32 maximum) {
+    s32 i,j,n=0;
+    if(!gEftHitList||maximum<1)return 0;
+    for(i=0;i<gEftHitList->count && i<EFT_HIT_MAX && n<maximum;++i){
+        EftHitRec *r=&gEftHitList->rec[i];
+        if(!r->task || (r->task->flags&0x3F))continue;
+        for(j=0;j<3;++j)if(r->pos.v[j]!=r->pos.v[j] || r->pos.v[j]>100000 || r->pos.v[j]<-100000)break;
+        if(j!=3)continue;
+        for(j=0;j<3;++j)out[n*4+j]=r->pos.v[j];out[n*4+3]=r->type==EFT_HIT_TECH?8:3;++n;
+    }
+    return n;
+}
+#endif
+
 /* Returns the flags of the task that owns record idx (0 when there is none). */
 s32 EftHit_GetTaskFlags(u32 idx) {
     EftHitList *list = gEftHitList;
@@ -1624,7 +1641,7 @@ void EftGfx_DrawPolyAvgZ(EftGfxVert *verts, s32 arg1, s32 arg2, s32 arg3, s32 fl
     s32 count = 3;
     s32 i;
     s32 z;
-    
+
     plane = EftGfx_GetClipPlanes();
     for (i = 0; i < 5; i++) {
         count = ClipPoly_ClipPlane(verts, plane, count);
@@ -1659,7 +1676,7 @@ void EftGfx_DrawPolyFixedZ(EftGfxVert *verts, s32 arg1, s32 arg2, s32 arg3, s32 
     EftVec *plane;
     s32 count = 3;
     s32 i;
-    
+
     plane = EftGfx_GetClipPlanes();
     for (i = 0; i < 5; i++) {
         count = ClipPoly_ClipPlane(verts, plane, count);
@@ -1696,7 +1713,7 @@ void EftGfx_DrawPolyAvgZFront(EftGfxVert *verts, s32 arg1, s32 arg2, s32 arg3, s
     s32 count = 3;
     s32 i;
     s32 z;
-    
+
     plane = EftGfx_GetClipPlanes();
     for (i = 0; i < 5; i++) {
         count = ClipPoly_ClipPlane(verts, plane, count);
@@ -1734,7 +1751,7 @@ void EftGfx_DrawPolyScaledZ(EftGfxVert *verts, s32 arg1, s32 arg2, s32 arg3, s32
     s32 count = 3;
     s32 i;
     s32 z;
-    
+
     plane = EftGfx_GetClipPlanes();
     for (i = 0; i < 5; i++) {
         count = ClipPoly_ClipPlane(verts, plane, count);

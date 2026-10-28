@@ -240,6 +240,14 @@ int __wrap_Progress_Main(int arg) {
             *(int GAME_PTR)(setup + 0xC0 + 0x270 + 0x208) = 0;
         }
         printf("bt3: attract-demo battle\n");
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_SPECTATOR_RECORD_TEST")){
+            extern void BattleSetup_Clear(void),BattleSetup_SetRule(int,int,int,int,int,int,int),BattleSetup_SetSide(int,int,int,int,int,int,int,void*),BattleSetup_SetMember(int,int,int,int,int,int,float,void*),BattleSetup_Finish(void);
+            Battle_ClearWork();BattleSetup_Clear();BattleSetup_SetRule(0,0,54,0,4,1,0);
+            BattleSetup_SetSide(0,2,0,1,1,1,0,NULL);BattleSetup_SetSide(1,2,0,1,1,1,0,NULL);
+            BattleSetup_SetMember(0,0,5,0,0,29,100.0f,NULL);BattleSetup_SetMember(1,0,37,0,0,29,100.0f,NULL);
+            BattleSetup_Finish();
+            fprintf(stderr,"spectator recording: Goku (End) SSJ2=5 Vegeta Majin=37 stage=1 Rocky-Area-Noon CPU-vs-CPU level=29 time-limit=none\n");
+        }
         /* BT3_CHARA=<id> (and BT3_COSTUME=<n>, BT3_VARIANT=1 for the damaged model): side 0's fighter of the demo
            battle, for looking at one character's model without going through the menus */
         extern struct { int chara, costume, variant; } GAME_PTR BattleSide_GetMember(int side, int index);
@@ -780,13 +788,6 @@ void Port_Trace(unsigned vblanks) {
             printf("bt3: end of battle: gBtlSeq %p clock %08x %08x %08x %08x hp %d %d; heap dumped\n", (void *)gBtlSeq,
                    clock[0], clock[1], clock[2], clock[3], BtlCharApi_GetHp(0), BtlCharApi_GetHp(1));
             exit(0);
-        }
-    }
-    if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAUNT_AUDIT") && gBtlSeq && gBtlSeq->state==3){
-        extern unsigned char GAME_PTR BtlChar_Get(int);
-        static int lastAction[2]={-1,-1};int i;
-        for(i=0;i<2;++i){unsigned char GAME_PTR chr=BtlChar_Get(i);int action=*(int GAME_PTR)(chr+0x948);
-            if(action!=lastAction[i]){lastAction[i]=action;fprintf(stderr,"BT4 action audit: vb=%u actor=%d action=%X animation=%X\n",vblanks,i,action,*(int GAME_PTR)(chr+0x974));}
         }
     }
     if ((sBattles != 0 || sFromMenu) && gBtlSeq != NULL && getenv("BT3_TRACE_SEQ") != NULL) { /* when the battle sequence changes state */

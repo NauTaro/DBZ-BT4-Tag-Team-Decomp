@@ -710,6 +710,27 @@ void BtlChars_UpdateObjFlag2(void) {
     }
 }
 
+/* A preparation cut can hide every fighter except its owner (flag 0x12A).
+ * Spectator drawing may undo only that camera-specific exclusion. Genuine
+ * vanish/teleport flags 0x30 and 0xB remain authoritative. This function does
+ * not write the fighter, object or battle state. */
+s32 BtlChars_SpectatorCutOwner(void) {
+    s32 i;
+    for(i=0;i<BtlChar_GetCount();++i)if(BtlChar_TestFlag(BtlChar_Get(i),0x12A))return i;
+    return -1;
+}
+s32 BtlChars_SpectatorHiddenByCut(s32 objId) {
+    s32 i,owner=BtlChars_SpectatorCutOwner(),actor=-1;
+    BtlMgrChr *chr;
+    for(i=0;i<BtlChar_GetCount();++i){
+        chr=BtlChar_Get(i);
+        if(chr->objId==objId)actor=i;
+    }
+    if(owner<0 || actor<0 || actor==owner)return 0;
+    chr=BtlChar_Get(actor);
+    return !BtlChar_TestFlag(chr,0x30) && !BtlChar_TestFlag(chr,0xB);
+}
+
 /* Clears bit 1 of every fighter object's flags. */
 void BtlChars_ClearObjFlag2(void) {
     s32 i;
