@@ -212,7 +212,10 @@ def main():
         stage = src.suffix[1:]
         name = "k" + src.stem.capitalize() + stage.capitalize() + "Spv"
         spv = gen / (src.name + ".spv")
-        if shutil.which("glslc") is None and spv.exists() and spv.stat().st_mtime >= src.stat().st_mtime:
+        import shader_spirv
+        if WIN and shader_spirv.prepare(ROOT, gen, src):
+            pass
+        elif shutil.which("glslc") is None and spv.exists() and spv.stat().st_mtime >= src.stat().st_mtime:
             pass  # no shader compiler here (the release container): the compiled shader that was put in place is current
         else:
             if shutil.which("glslc") is not None:

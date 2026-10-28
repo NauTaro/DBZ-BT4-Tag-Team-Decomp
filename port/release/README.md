@@ -36,3 +36,9 @@ or game data is extracted. The package step checks every restored file against t
 
 The fork release workflow targets Windows. The current native voice backend and bilingual setup contain Win32
 code; upstream Linux runtime sources are retained, but this workflow does not publish an unvalidated Linux build.
+
+## Windows shader reproducibility
+
+Windows builds use the verified SPIR-V in `port/src/gs/generated/spirv`. Its normalized source hashes and bytecode hashes must match the manifest; the existing DXIL and SM3 checks remain enabled. This avoids compiler-version differences between generated SPIR-V and the checked-in DirectX binaries.
+
+After editing GLSL, set `BT3_REGENERATE_SPIRV=1` during shader generation, regenerate DXIL and SM3 with their build tools, and refresh the SPIR-V cache and manifest together. Do not bypass the source or bytecode checks.
