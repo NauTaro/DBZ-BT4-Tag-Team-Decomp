@@ -8,7 +8,7 @@ set -e
 export BT3_SKELETON=1
 run() { # the build of one variant; a compile failure must stop the release (undefined.py only reports it)
     python3 port/tools/undefined.py > port/build/compile_$BT3_CC.txt 2>&1 || { tail -5 port/build/compile_$BT3_CC.txt; exit 1; }
-    if grep -q "^FAILED" port/build/compile_$BT3_CC.txt; then grep "^FAILED" port/build/compile_$BT3_CC.txt | head -20; exit 1; fi
+    if grep -q "^FAILED" port/build/compile_$BT3_CC.txt; then grep -A8 "^FAILED" port/build/compile_$BT3_CC.txt | head -80; exit 1; fi
     python3 port/tools/link.py > port/build/link_$BT3_CC.txt 2>&1 || { cat port/build/link_$BT3_CC.txt; exit 1; }
     cat port/build/link_$BT3_CC.txt
 }
@@ -19,6 +19,8 @@ if [ -n "$BT3_BUILD_KEY" ]; then echo "build key: given"; else echo "build key: 
 echo "version: ${BT3_VERSION:-dev}"
 echo "== Windows"
 export BT3_CC=win64
+clang --version | head -1
+llc --version | head -1
 run
 sh port/setup/build.sh win
 python3 port/tools/prepare_windows_runtime.py
