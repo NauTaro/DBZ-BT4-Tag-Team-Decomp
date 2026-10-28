@@ -2400,7 +2400,8 @@ int GsGpu_Init(void) {
     const char *api = getenv("BT3_GPU_API");
     GsBackend *sb;
 
-    gsScale = getenv("BT3_SCALE") != NULL ? atoi(getenv("BT3_SCALE")) : Port_Setting("scale", 2);
+    /* First launch uses native target size; higher scales multiply the render workload. */
+    gsScale = getenv("BT3_SCALE") != NULL ? atoi(getenv("BT3_SCALE")) : Port_Setting("scale", 1);
     gsScale = gsScale < 1 ? 1 : gsScale > 8 ? 8 : gsScale;
     gsPendingScale = 0;
     gsVerts = malloc(MAX_VERTS * sizeof(Vtx));

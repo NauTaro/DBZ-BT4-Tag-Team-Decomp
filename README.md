@@ -48,6 +48,8 @@ separate thread by default. OpenGL and smaller CPU configurations retain the
 single-thread path. Resolution remains configurable; updating does not force
 Tag Team to a particular scale.
 
+A first launch uses 1x internal resolution to limit the initial GPU workload. Saved resolution and motion preferences are preserved when updating; users can change the scale in F1 > Video.
+
 ## Installation
 
 Download the [Windows package](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/bt4-r26-rc1)
