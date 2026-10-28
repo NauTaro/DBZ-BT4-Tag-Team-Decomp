@@ -1,0 +1,46 @@
+{
+  "gs.vert": {
+    "source_sha256": "2823d430a36db73f5aa4dd6b6bbc34eb3ccf5438937820573a0eabc27dd72f2a",
+    "spv_sha256": "90128f47106627bfb227b81a481179f2745f59d34b1027000bf1e182f76e95fb"
+  },
+  "gs.frag": {
+    "source_sha256": "7a6f641fce29184b924d56b70da011a5a8eeef2d5a39c08218d825b998a177e1",
+    "spv_sha256": "7a983d05752cb2ccc807ead5dfba827355b8a9d0c783d61019e837f7931178b7"
+  },
+  "gsnz.frag": {
+    "source_sha256": "196b8648f5347d7f5d7040e0a695ac386e62ff56b5d2ae3d1f961bc02e8b4b3a",
+    "spv_sha256": "0487951e8ac6bf14f7d9843b613a3fe688721e38cbca51f22e5e9844b00ea910"
+  },
+  "gswb.frag": {
+    "source_sha256": "f9005e88ef13a8821d2c13568db0eb20c34584eff1953170549c15bc8d96c69c",
+    "spv_sha256": "7fbf9ee7212eb56f4944bcc1a731d7431798144fd69e135d4f4cc1ecef94930c"
+  },
+  "vu0.vert": {
+    "source_sha256": "6c1597fbc55f2f3ee40fc1b5d428d63ecd608e839c0329fa47d5c88e6675c6c3",
+    "spv_sha256": "ad3c44aafba33537d0fc1b37f981e7fb18aee28f928f09e46b3883f9337a9dec"
+  },
+  "vu4.vert": {
+    "source_sha256": "e6a76cfcae39d10b10a039c88700b17d69b374fca1ab124903729ea1627c8a7a",
+    "spv_sha256": "ebfad4ef4e3ad7aaa02733ef88d4a2eb48f57d9f6775ce392f31ab95a14401ab"
+  },
+  "vu6.vert": {
+    "source_sha256": "ede902d15fedbaf21f0b5804481ecbe87262172ac7629198e94967a00c9f7058",
+    "spv_sha256": "b1ba44b470eec68d2359b230a58b0fa0d10b023c6b6cabdd177c124090fe3539"
+  },
+  "fx.vert": {
+    "source_sha256": "793c060e4086765c9a98de91eb3647113f896153d34fb952190ce846dc7c8b1b",
+    "spv_sha256": "a968c60d2b6bbb96a6b5f8282b9e4b52f74e015de6f49ba5f2a8598bce1d6ca1"
+  },
+  "outline.frag": {
+    "source_sha256": "7cc526bb6f2689e5e5f070d20b0e75cddc3148a6d87941707ec06879771d756d",
+    "spv_sha256": "f309bdfbf779da02549d496dab3b45556c18e0d16b2be74359f47d17f2f99425"
+  },
+  "alphakey.frag": {
+    "source_sha256": "d5bbdb44c879bf72a205cbc26707db44e3ae6de7ffbe97b4e9ed56dfd8427bc2",
+    "spv_sha256": "221ad6437b80ff3ef3dbfe53d3670842c993f58ae703a3c17e1aab47757ace9f"
+  },
+  "dclut.frag": {
+    "source_sha256": "1d28c6df9af61c003fd293d26aeedbc775a0cecaf8e53f12a37956d748e7d2df",
+    "spv_sha256": "99d584df3317bc1b8f9a3fef72499e240c9b0781bb8098a6143b103c2d215e5c"
+  }
+}

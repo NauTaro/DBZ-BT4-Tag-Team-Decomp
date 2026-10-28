@@ -8,3 +8,4 @@
 - Added signed automatic updates from this repository, applied at the main menu.
 - Preserved BT4 HUD, custom-stage, data-validation and GPU readback fixes.
 - Retained the experimental Spectator tab beside Online in Ideas.
+- Made Windows shader builds reproducible with verified shader bytecode.
