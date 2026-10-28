@@ -1,60 +1,61 @@
 <div align="center">
   <h1>DBZ BT4 Tag Team Decomp</h1>
-  <p>A native Windows port of BT4 B14 Rev2 with simultaneous battles of up to five fighters per team.</p>
-  <img src="docs/presentation/bt4-intro-hq.gif" width="960" alt="DBZ BT4 animated presentation artwork">
+  <p><strong>A native Windows PC port of Dragon Ball Z: Budokai Tenkaichi 4 (B14 Rev2)</strong></p>
+  <p>Built on the <a href="https://github.com/z3xox/Tenkaichi3Decomp">Tenkaichi3Decomp</a> codebase, with online Tag Team battles, spectator lobbies, proximity voice chat, bilingual setup, and a configurable GPU renderer.</p>
+  <p>
+    <img src="https://img.shields.io/badge/platform-Windows-1f6feb?style=flat-square" alt="Windows">
+    <img src="https://img.shields.io/badge/upstream-v0.1.38.9-7c3aed?style=flat-square" alt="Upstream version 0.1.38.9">
+    <img src="https://img.shields.io/badge/languages-English%20%7C%20Espa%C3%B1ol-f0883e?style=flat-square" alt="English and Spanish">
+  </p>
+  <img src="docs/presentation/bt4-intro-hq.gif" width="900" alt="DBZ BT4 presentation artwork">
   <p><strong>BT4 B14 Rev2 · R26 RC1</strong></p>
-  <p><a href="#gameplay">Gameplay</a> · <a href="#installation">Installation</a> · <a href="#languages">Languages</a> · <a href="#support-and-contact">Support &amp; contact</a></p>
+  <p><a href="#features">Features</a> · <a href="#installation">Installation</a> · <a href="#languages">Languages</a> · <a href="#development-and-feedback">Development &amp; feedback</a></p>
 </div>
 
-## Gameplay
+## Project
 
-Up to ten fighters share the arena in Tag Team, with human players and CPU
-fighters on either team. Online rooms use a shareable code. During a match,
-the HUD displays ally health, enemy targets and a radar.
+This project adapts the decompiled game code for a native Windows runtime. It is built on Tenkaichi3Decomp v0.1.38.9 and is not a console emulator. A compatible Spanish or English BT4 B14 Rev2 ISO is required during setup; game disc data is not included in this repository.
 
-Quick Match supports automatic nearby matching or a chosen region. Room codes
-remain available for arranged matches.
+## Features
 
-Built-in proximity voice chat works across both teams. Volume decreases with
-distance and fades to silence outside the hearing range.
+### Online battles and Tag Team
 
-During combat, open the pause menu and select **Hide HUD**, directly below
-**Look at Skill List**. Select **Show HUD** to restore it. The Spanish labels
-are **Ocultar HUD** and **Mostrar HUD**. This hides health bars, damage and
-technique labels, radar, player names and battle overlays on your own screen.
-The same control is available under **F1 → Video**, including modes without a
-standard pause menu. Online opponents keep their own HUD setting.
+Play online 1v1 or in simultaneous Tag Team battles with up to five fighters per team. Room codes support arranged matches, while Quick Match searches for an opponent automatically. Teams can include human players and CPU fighters.
 
-The Windows runtime is based on
-[Tenkaichi3Decomp](https://github.com/z3xox/Tenkaichi3Decomp), which compiles the
-original game code for PC.
+The Tag Team HUD tracks allies, enemy targets and arena positions. Both supported game languages use the same online gameplay profile, so Spanish and English players can join the same compatible rooms.
+
+### Spectator lobbies
+
+Hosts can allow up to six spectators to join by room code or direct address. Spectators run a synchronized copy of the match and can switch between Player 1, Player 2 and split-screen views without occupying a fighter slot.
 
 <p align="center">
-  <img src="docs/presentation/tag-team-battle.jpg" width="960" alt="Tag Team battle showing ally health bars, enemy targets and radar">
-  <br><em>A 5v5 match with the Tag Team HUD.</em>
+  <img src="docs/presentation/tag-team-gameplay-preview.gif" width="720" alt="Animated in-game battle preview">
+  <br><em>In-game battle preview.</em>
 </p>
 
-## Video and performance
+### Proximity voice chat
 
-Smooth motion defaults to 60 displayed pictures per second. Combat retains
-the original 30-step simulation; online Tag Team runs that simulation at
-114% speed. Extra pictures are rendered between steps, without changing
-movement speed, hit timing or network inputs. F1 > Video offers an explicit
-30-picture option and higher presentation rates. The renderer reduces extra
-pictures when the graphics workload cannot fit the frame budget.
+Voice chat works across both teams. Volume fades with distance and reaches silence outside the hearing range. The Audio settings include microphone and output device selection, push-to-talk or voice activation, an activation threshold, microphone level, voice volume and a microphone indicator.
 
-On supported systems with more than two logical CPU cores, rendering uses a
-separate thread by default. OpenGL and smaller CPU configurations retain the
-single-thread path. Resolution remains configurable; updating does not force
-Tag Team to a particular scale.
+<p align="center">
+  <img src="docs/presentation/voice-chat-settings.png" width="612" alt="In-game Audio settings for microphone, voice activation and proximity voice chat">
+</p>
 
-A first launch uses 1x internal resolution to limit the initial GPU workload. Saved resolution and motion preferences are preserved when updating; users can change the scale in F1 > Video.
+### Rendering and frame pacing
+
+The Windows SDL3 GPU renderer supports Vulkan and Direct3D 12, with OpenGL available as a fallback. Video settings include internal render scale, aspect ratio, effects and smooth-motion presentation.
+
+Smooth motion can display additional pictures between the game's original 30 simulation steps. It changes presentation cadence without changing combat timing or network inputs. A new installation starts at 1x internal resolution; saved resolution and motion preferences are retained when updating.
+
+### HUD and custom stages
+
+Hide or restore the combat HUD from the pause menu or Video settings. The toggle affects the local display, including health bars, damage and technique labels, names, radar and battle overlays.
+
+Install a custom stage by placing its compatible `.unk` model in the `stages` folder. Add a PNG with the same filename stem for its thumbnail and preview. See the [custom stage guide](docs/port/adding_stages.md) for supported images and installation examples.
 
 ## Installation
 
-Download the [Windows package](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/bt4-r26-rc1)
-and extract the entire ZIP into the folder where you want to keep the game.
-`Install.exe` and `Tenkaichi3Decomp.exe` must be in the same folder.
+Download the [Windows package](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/bt4-r26-rc1) and extract the complete ZIP into the folder where you want to keep the game. Keep `Install.exe` and `Tenkaichi3Decomp.exe` together.
 
 1. Open `Install.exe`.
 2. Choose the installer language and the game language or languages.
@@ -63,84 +64,30 @@ and extract the entire ZIP into the folder where you want to keep the game.
 
 ### Updating an existing installation
 
-Close the game, extract the new ZIP over your existing installation, and
-replace the files when prompted. Keep `gamedata`, `saves`,
-`bt3_settings.txt` and `online_name.txt`.
+Close the game, extract the new ZIP over the existing installation, and replace files when prompted. Keep `gamedata`, `saves`, `bt3_settings.txt` and `online_name.txt`.
 
-Updates reuse the installed game data. You do not need to extract the ISO
-again.
+Updates reuse the installed game data. The ISO does not need to be extracted again.
 
 ## Languages
 
-The installer interface is available in Spanish and English. Game language
-selection covers both text and voices.
+The installer interface is available in Spanish and English. Game language selection covers both text and voices.
 
 | Installation | Result |
 | --- | --- |
 | Spanish | Installs from the Spanish ISO and starts directly in Spanish. |
 | English | Installs from the English ISO and starts directly in English. |
-| Spanish and English | Installs the selected ISO and downloads the other language package from this repository. The game shows a language selector at startup. |
+| Spanish and English | Installs the selected ISO and downloads the other language package from this repository. A language selector appears at startup. |
 
-For a two-language installation, setup displays an **Installing language pack**
-progress indicator. The repository is private: authorize a GitHub account
-with read access when setup requests it. Existing installed language files
-can be reused.
+For a two-language installation, setup displays an **Installing language pack** progress indicator. The repository is private; authorize a GitHub account with read access when setup requests it. Existing installed language files can be reused.
 
-Spanish and English use the same supported BT4 gameplay profile for online
-play. Compatibility checks use that profile rather than the displayed
-revision label.
+## Development and feedback
 
-<p align="center">
-  <img src="docs/presentation/installer-en.png" width="960" alt="Installer language and game language selection">
-</p>
+The [contribution guide](CONTRIBUTING.md) describes the source layout, build tools and validation requirements. The [documentation index](docs/README.md) links to runtime, customization and original game architecture references.
 
-## Custom maps
-
-Place a compatible `.unk` stage model in the `stages` folder beside the
-executable. Add a PNG with the same filename stem to provide its thumbnail
-and preview. Custom maps appear at the end of the offline map selector.
-
-See the [custom stage guide](docs/port/adding_stages.md) for image limits,
-display names and installation examples.
-
-<p align="center">
-  <img src="docs/presentation/map-selector.png" width="960" alt="Kaio Planet selected in the native map menu">
-</p>
-
-## Development
-
-The [contribution guide](CONTRIBUTING.md) describes the source layout, build
-tools and validation requirements. The [documentation index](docs/README.md)
-links to runtime, customization and original game architecture references.
-
-## Support and contact
-
-Contributions support development:
-
-<p align="center">
-  <a href="https://www.paypal.com/paypalme/NauTaro">
-    <img src="https://img.shields.io/badge/Support_with-PayPal-0070BA?style=for-the-badge&amp;logo=paypal&amp;logoColor=white" alt="Support development through PayPal">
-  </a>
-  <br><a href="https://www.paypal.com/paypalme/NauTaro">PayPal: @NauTaro</a>
-</p>
-
-For questions or feedback:
-
-- **Discord:** `@nautaro`
-- **Email:** [mellamannau22@gmail.com](mailto:mellamannau22@gmail.com)
-
-For bugs, use the [issue form](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/issues/new/choose)
-and include reproduction steps and the relevant log.
+For a useful bug report, include the game revision, the selected renderer, graphics scale, game mode, reproduction steps and the relevant `bt3_log.txt` or `bt3_crash.txt`. Use the [issue forms](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/issues/new/choose).
 
 ## Credits and licenses
 
-The original decompilation and PC port are by the **Tenkaichi3Decomp
-contributors**. This project is based on upstream `v0.1.38.9`; the exact
-source revision is recorded in [UPSTREAM_LOCK.json](UPSTREAM_LOCK.json).
-The [upstream README](README_UPSTREAM.md) is retained for attribution and
-reference.
+The original decompilation and PC port are by the **Tenkaichi3Decomp contributors**. This project is based on upstream `v0.1.38.9`; its exact source revision is recorded in [UPSTREAM_LOCK.json](UPSTREAM_LOCK.json). The [upstream README](README_UPSTREAM.md) is retained for attribution and reference.
 
-BT4 content, artwork and icons remain the property of their respective
-authors. See the [presentation credits](docs/presentation/CREDITS.md),
-[AGPL license](LICENSE), [MIT license](LICENSE-MIT) and third-party library
-notices.
+BT4 content, artwork and icons remain the property of their respective authors. See the [presentation credits](docs/presentation/CREDITS.md), [AGPL license](LICENSE), [MIT license](LICENSE-MIT) and third-party library notices.
