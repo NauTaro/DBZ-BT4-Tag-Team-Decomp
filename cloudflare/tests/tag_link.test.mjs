@@ -341,3 +341,33 @@ test('malformed binary size and message flooding close only the offending link',
     const ws=f.link.get(103),p=f.session.tagLink.peers.get(ws);p.messages=240;p.window=Date.now();
     f.session.tagLink.message(ws,'{}');assert.equal(ws.closed,true);assert.equal(f.link.get(101).closed,false);f.clean();
 });
+
+
+test('connection maintenance expires only missing traffic and releases the final room',()=>{
+    const f=fixture(),now=Date.now();
+    const first=f.game.get(101),second=f.game.get(102),third=f.game.get(103);
+    f.session.peers.get(first).lastMessage=now-120001;
+    f.session.peers.get(second).lastMessage=now;
+    f.session.peers.get(third).lastMessage=now-100000;
+    f.session.reapConnections();
+    assert.equal(first.closed,true);assert.equal(f.session.peers.size,2);
+    assert.equal(second.closed,false);assert.equal(third.closed,false);
+    f.session.close(second);f.session.close(third);
+    assert.equal(f.session.peers.size,0);assert.equal(f.session.clockTimer,null);
+    assert.equal(f.session.leaseTimer,null);assert.equal(f.session.tagLink.peers.size,0);
+});
+
+test('room abort closes voice and auxiliary sockets as well as game sockets',()=>{
+    const f=fixture();const voice=new Socket();
+    f.session.voice.peers.set(voice,{id:101});
+    f.session.abort('Room expired');
+    assert.equal(voice.closed,true);assert.equal(f.session.voice.peers.size,0);
+    assert.equal(f.session.tagLink.peers.size,0);assert.equal(f.session.peers.size,0);
+    assert.equal(f.session.clockTimer,null);assert.equal(f.session.leaseTimer,null);
+});
+
+test('unjoined handshakes expire earlier without disconnecting active members',()=>{
+    const f=fixture(),ws=f.game.get(102),peer=f.session.peers.get(ws);
+    peer.joined=false;peer.lastMessage=Date.now()-15001;
+    f.session.reapConnections();assert.equal(ws.closed,true);assert.equal(f.session.peers.size,2);
+});

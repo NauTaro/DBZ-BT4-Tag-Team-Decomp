@@ -20,6 +20,7 @@ export function createSessionClass(module) {
             this.ctx=ctx;this.env=env;this.kernel=new SessionKernel(module);this.peers=new Map();this.serial=100;this.code='';this.born=Date.now();this.voice=new VoiceHub(id=>this.voiceMember(id),false,env);
             this.syncSerial=0;this.syncKind=0;this.clockTimer=null;this.paced=false;this.clockNext=0;
             this.tagLink=new TagLinkHub(this,env);
+            this.leaseTimer=null;
         }
         voiceMember(id){
             const peer=[...this.peers.values()].find(p=>p.id===id);if(!peer?.joined)return null;
@@ -45,7 +46,8 @@ export function createSessionClass(module) {
             this.code=new URL(request.url).pathname.split('/').pop();
             const [client,server]=Object.values(new WebSocketPair());
             const id=++this.serial;server.accept();
-            this.peers.set(server,{id,joined:false,window:Date.now(),messages:0,chats:0,ack:0});
+            this.peers.set(server,{id,joined:false,window:Date.now(),messages:0,chats:0,ack:0,lastMessage:Date.now()});
+            this.watchConnections();
             server.addEventListener('message',event=>this.message(server,event.data));
             server.addEventListener('close',()=>{try{server.close(1000,'');}catch{}this.close(server);});
             server.addEventListener('error',()=>this.close(server));
@@ -59,6 +61,7 @@ export function createSessionClass(module) {
         }
         message(ws,data){
             const peer=this.peers.get(ws);if(!peer)return;
+            peer.lastMessage=Date.now();
             if(Date.now()-this.born>3*3600000){this.abort('Room expired');return;}
             if(!(data instanceof ArrayBuffer)||data.byteLength!==512){ws.close(1008,'Invalid packet');return;}
             const now=Date.now();if(now-peer.window>=1000){peer.window=now;peer.messages=0;peer.chats=0;}
@@ -175,14 +178,36 @@ export function createSessionClass(module) {
         }
         sendFrame(packet){for(const [ws]of this.peers){try{ws.send(packet);}catch{this.close(ws);}}}
         frames(){let packet;while((packet=this.kernel.take()))this.sendFrame(packet);}
+        watchConnections(){
+            if(this.leaseTimer!==null||!this.peers.size)return;
+            this.leaseTimer=setTimeout(()=>{this.leaseTimer=null;this.reapConnections();this.watchConnections();},30000);
+        }
+        reapConnections(){
+            const now=Date.now();
+            if(now-this.born>3*3600000){this.abort('Room expired');return;}
+            // The existing clients send a heartbeat at least once per second.
+            // Only missing traffic expires a connection; gameplay never waits
+            // for this maintenance task. A quiet but connected lobby is kept.
+            for(const [ws,p]of this.peers)if(Number.isFinite(p.lastMessage)&&now-p.lastMessage>(p.joined?120000:15000))this.close(ws);
+        }
         close(ws){
             const peer=this.peers.get(ws);if(!peer)return;this.peers.delete(ws);
+            try{ws.close(1000,'');}catch{}
             this.voice.drop(peer.id);
+            if(!this.peers.size){
+                this.stopClock();this.tagLink.shutdown();
+                if(this.leaseTimer!==null)clearTimeout(this.leaseTimer);this.leaseTimer=null;
+            }
             if(peer.joined){
                 if(this.tagLink.active&&peer.id===this.tagLink.host){this.abortTagLink('Host disconnected');return;}
                 this.kernel.api.Kernel_Leave(peer.id);this.broadcast();
             }
         }
-        abort(why){this.stopClock();this.tagLink.shutdown();for(const [ws]of this.peers)ws.close(1011,why);this.peers.clear();}
+        abort(why){
+            this.stopClock();if(this.leaseTimer!==null)clearTimeout(this.leaseTimer);this.leaseTimer=null;
+            this.tagLink.shutdown();
+            for(const [ws]of this.voice.peers)this.voice.close(ws);
+            for(const [ws]of this.peers){try{ws.close(1011,why);}catch{}}this.peers.clear();
+        }
     };
 }
