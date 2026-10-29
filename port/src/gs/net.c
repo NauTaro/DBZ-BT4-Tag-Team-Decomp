@@ -398,6 +398,8 @@ static int fw_drops(const struct sockaddr_in *from) {
 }
 
 static void net_send(const void *buf, int n, const struct sockaddr_in *to) {
+    if(Lobby_RouteSend(buf,n,to))return;
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_LOBBY_TEST_NO_DIRECT")&&NetIo_SessionMode()!=0&&Lobby_Active()&&!Lobby_IsMember(to))return;
     fw_sent(to);
     sStatOut++;
     sStatBytes += n;
@@ -461,9 +463,7 @@ static const char *fp_quick_refusal(char *out, size_t size) {
     if (Port_DataFingerprint(NULL) == 1 && Port_DataFingerprintOriginal() == 1) {
         return "";
     }
-    snprintf(out, size, "Quick match needs the original disc's data, and your game data are not the disc's%s%s%s. With friends "
-             "(a room code, a lobby or an address) you can play when both have the same data.",
-             m != NULL ? " (" : "", m != NULL ? m + 10 : "", m != NULL ? ")" : "");
+    snprintf(out, size, "Quick match requires compatible BT4 B14 Rev2 data. Check your installation and try again.");
     return out;
 }
 
@@ -521,7 +521,7 @@ static int net_recv(uint8_t *pkt, int size, struct sockaddr_in *from) {
             }
             Relay_SawDirect(from);
             sStatIn++;
-            return n;
+            n=Lobby_RouteRecv(pkt,n,from);if(n<=0)continue;return n;
         }
         if (kind == 0) {
             sStatOther++;
@@ -530,7 +530,7 @@ static int net_recv(uint8_t *pkt, int size, struct sockaddr_in *from) {
             sStatIn++;
             sStatInVia++;
             memmove(pkt, data, (size_t)len);
-            return len;
+            n=Lobby_RouteRecv(pkt,len,from);if(n<=0)continue;return n;
         }
     }
 }
@@ -1564,7 +1564,7 @@ static void spec_tick(unsigned tick);
 
 /* Takes in what has arrived. Returns 1 if anything did. */
 static int receive(void) {
-    uint8_t pkt[2048];
+    uint8_t pkt[4096];
     struct sockaddr_in from;
     socklen_t fromLen = sizeof(from);
     int got = 0, n;

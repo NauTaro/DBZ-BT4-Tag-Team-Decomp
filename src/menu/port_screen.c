@@ -649,7 +649,10 @@ s32 PortScreen_Main(void) {
         s32 back=TagBattle_TakeReturn();
         /* Returning nonzero here starts a battle. Leave the menu dispatcher
            running and open the online hub after a room exit instead. */
-        if(back==2)Port_TagClose();}
+        if(back==2)Port_TagClose();
+        if(back==1 || (Port_TagPhase()==2 && Port_TagResultChoice()==1)) {
+            if(TeamSel_TagRun(2)){result=3;gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;break;}
+        }}
         Bgm_Play(0x816 + 2);
         do {
             result = PortTbo_Run();
