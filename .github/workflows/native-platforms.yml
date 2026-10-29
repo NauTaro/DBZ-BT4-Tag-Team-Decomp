@@ -1,6 +1,20 @@
 name: Native Linux and macOS packages
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Launcher tag embedded in the release packages
+        required: true
+        type: string
+      platform:
+        description: Native platform to build
+        required: false
+        default: all
+        type: string
+    secrets:
+      BT3_BUILD_KEY:
+        required: false
   workflow_dispatch:
     inputs:
       version:

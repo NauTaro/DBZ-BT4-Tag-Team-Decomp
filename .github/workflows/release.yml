@@ -16,8 +16,36 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    outputs:
+      title: ${{ steps.version.outputs.title }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the release identity
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          source = pathlib.Path('port/include/bt4_version.h').read_text()
+          def value(name):
+              return re.search(r'^#define ' + name + r' "([^"]+)"$', source, re.M)[1]
+          canonical = value('BT4_CANONICAL_VERSION')
+          bridge = value('BT4_LEGACY_BRIDGE_VERSION')
+          revision = int(re.search(r'^#define BT4_REVISION (\d+)$', source, re.M)[1])
+          upstream = value('BT4_UPSTREAM_VERSION')
+          assert canonical == upstream + '-R' + str(revision), 'Canonical revision is inconsistent'
+          assert value('BT4_DISPLAY_VERSION') == upstream + ' R' + str(revision), 'Display revision is inconsistent'
+          tag = os.environ['RELEASE_TAG'].removeprefix('v')
+          assert tag == canonical or (revision == 2 and tag == bridge), 'Tag and BT4 revision disagree'
+          title = 'BT4decomp ' + value('BT4_DISPLAY_VERSION')
+          marker = pathlib.Path('port/release/BT4_VERSION.txt').read_text().splitlines()[0]
+          assert marker.endswith(title), 'Package marker and BT4 version disagree'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('title=' + title + '\n')
+          PY
 
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
@@ -37,8 +65,40 @@ jobs:
           docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e BT3_BUILD_KEY -e BT3_VERSION -v "$PWD":/src -w /src \
             bt4-port-release:jammy sh port/release/inside.sh
 
-      - name: Sign and verify automatic update packages
-        if: startsWith(github.ref, 'refs/tags/v')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: port/build/BT4decomp-windows-x64.zip
+          if-no-files-found: error
+
+  native:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/native-platforms.yml
+    with:
+      version: ${{ github.ref_name }}
+      platform: all
+    secrets: inherit
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, native]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: BT4decomp-linux-x64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: BT4decomp-macos-arm64
+          path: release-assets
+      - name: Sign and verify every automatic update package
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
@@ -46,20 +106,33 @@ jobs:
             echo "UPDATE_SIGNING_KEY is required before publishing an automatic update." >&2
             exit 1
           fi
-          python3 port/tools/update_key.py sign port/build/BT4decomp-windows-x64.zip
-          python3 port/tools/update_key.py verify port/build/BT4decomp-windows-x64.zip
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
-          path: port/build/BT4decomp-windows-x64.zip
-          if-no-files-found: error
-
-      - name: Publish signed update release
-        if: startsWith(github.ref, 'refs/tags/v')
+          for platform in windows-x64 linux-x64 macos-arm64; do
+            archive="release-assets/BT4decomp-${platform}.zip"
+            test -s "$archive"
+            python3 port/tools/update_key.py sign "$archive"
+            python3 port/tools/update_key.py verify "$archive"
+          done
+      - name: Publish the complete signed release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TITLE: ${{ needs.build.outputs.title }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file CHANGELOG.md \
-            port/build/BT4decomp-windows-x64.zip \
-            port/build/BT4decomp-windows-x64.zip.sig
+          gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "$RELEASE_TITLE" --notes-file CHANGELOG.md \
+            release-assets/BT4decomp-windows-x64.zip \
+            release-assets/BT4decomp-windows-x64.zip.sig \
+            release-assets/BT4decomp-linux-x64.zip \
+            release-assets/BT4decomp-linux-x64.zip.sig \
+            release-assets/BT4decomp-macos-arm64.zip \
+            release-assets/BT4decomp-macos-arm64.zip.sig
+          gh release view "${GITHUB_REF_NAME}" --json assets,isDraft > release-assets/uploaded.json
+          python3 - <<'PY'
+          import json
+          release = json.load(open('release-assets/uploaded.json'))
+          expected = {'BT4decomp-' + platform + '.zip' + suffix
+                      for platform in ('windows-x64', 'linux-x64', 'macos-arm64')
+                      for suffix in ('', '.sig')}
+          assert release['isDraft'], 'Release must stay private while assets are checked'
+          assert {asset['name'] for asset in release['assets']} == expected, 'Incomplete release assets'
+          assert all(asset['size'] > 0 for asset in release['assets']), 'Empty release asset'
+          PY
+          gh release edit "${GITHUB_REF_NAME}" --draft=false --latest

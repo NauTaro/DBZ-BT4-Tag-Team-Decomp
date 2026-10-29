@@ -1,17 +1,34 @@
 # Automatic updates
 
 The launcher checks the latest published release of `NauTaro/DBZ-BT4-Tag-Team-Decomp` after startup. It downloads the
-Windows package and its signature in the background, verifies both the archive hash and its Ed25519
+package for its platform and the corresponding signature in the background, verifies both the archive hash and its Ed25519
 signature, then installs the verified files automatically at the offline main menu. It does not restart during a
 battle, online session, lobby, spectator session, or while the settings window is open. Player data and game data are
 preserved by the installer.
 
 ## Publishing a release
 
-Update `CHANGELOG.md`, then push a version tag such as `v0.1.39.1`. The GitHub Actions workflow builds the Windows
-package, signs it, checks the signature against `port/src/update_key.h`, and publishes a release with the exact
-asset names expected by the launcher. The workflow stops if `UPDATE_SIGNING_KEY` is missing or does not match the
-compiled public key.
+BT4 changes increment the revision, not the upstream engine version. Update `port/include/bt4_version.h`,
+the build identities, `port/release/BT4_VERSION.txt`, package text and `CHANGELOG.md` together. After the R2 migration,
+push canonical tags such as `v0.1.39.1-R3` and `v0.1.39.1-R4`. A new upstream adaptation starts its own revision
+series, for example `v0.1.39.2-R1`. The numeric tag `v0.1.39.3` is reserved for the approved R2 migration bridge;
+it is not an upstream version. The workflow checks the tag against the declared revision before publishing.
+
+The release workflow builds Windows x64 and calls `native-platforms.yml` for Linux x86-64 and macOS Apple Silicon.
+Publication depends on all three builds. It signs and verifies each ZIP against `port/src/update_key.h`, uploads
+all six files to a draft release, checks that the asset set is complete, then publishes the release with the human
+title from `BT4_DISPLAY_VERSION`. Missing artifacts, a missing signing key, or a key mismatch stop publication.
+An interrupted upload leaves a draft rather than a public release with missing platform files.
+
+The updater expects these filenames, each with an adjacent `.sig` file:
+
+- `BT4decomp-windows-x64.zip`
+- `BT4decomp-linux-x64.zip`
+- `BT4decomp-macos-arm64.zip`
+
+Dispatching the release workflow on a branch builds a Windows artifact without publishing. The native workflow
+can also be dispatched independently for test builds; set its version input to the intended tag. These test
+artifacts do not become an automatic update until a complete signed release is published.
 
 The signing key is a one-time repository setup:
 
@@ -34,8 +51,9 @@ dynamically and therefore are not discovered by ordinary executable import scann
 verifies the archive SHA-256, and includes their licenses and voice SDK source offer. No legacy game executable
 or game data is extracted. The package step checks every restored file against the dependency manifest.
 
-The fork release workflow targets Windows. The current native voice backend and bilingual setup contain Win32
-code; upstream Linux runtime sources are retained, but this workflow does not publish an unvalidated Linux build.
+Linux and macOS packages use the native TLS transport and SDL audio backend, with bundled libcurl, SDL and Opus
+dependencies. Their build, transport and package checks are in `port/release/inside_native.sh`. Actual gameplay
+coverage and platform requirements are documented in [native platform setup](../../docs/port/native_platforms.md).
 
 ## Windows shader reproducibility
 
