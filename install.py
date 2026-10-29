@@ -102,8 +102,8 @@ def main():
    env['BT3_CURL']=os.environ.get('BT3_CURL','/opt/homebrew/opt/curl')
    env['CPPFLAGS']=(env.get('CPPFLAGS','')+' -I'+env['BT3_CURL']+'/include').strip()
   marker=(ROOT/'port/release/BT4_VERSION.txt').read_text(encoding='utf8')
-  match=re.search(r'BT4decomp\s+(\d+(?:\.\d+){1,3})',marker)
-  if match:env['BT3_VERSION']=match[1]
+  match=re.search(r'BT4decomp\s+(\d+(?:\.\d+){1,3})(?: R(\d+))?',marker)
+  if match:env['BT3_VERSION']=match[1]+('-R'+match[2] if match[2] else '')
   exe=ROOT/'port/build'/('bt3_mac' if MAC else 'bt3_64')
   if args.force or args.rebuild or not exe.exists():
    print('Building the native runtime...',flush=True)

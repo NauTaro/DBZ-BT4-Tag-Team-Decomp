@@ -25,10 +25,11 @@ RUN curl -fsSL -o /tmp/sdl.tar.gz https://github.com/libsdl-org/SDL/releases/dow
     && cmake -S /tmp/SDL3-${SDL_VERSION} -B /tmp/sdl-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
              -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF \
     && cmake --build /tmp/sdl-build && cmake --install /tmp/sdl-build && ldconfig \
+    && mkdir -p /usr/local/share/licenses/SDL3 && cp /tmp/SDL3-${SDL_VERSION}/LICENSE.txt /usr/local/share/licenses/SDL3/LICENSE.txt \
     && rm -rf /tmp/sdl.tar.gz /tmp/SDL3-${SDL_VERSION} /tmp/sdl-build
 # The shader compiler (glslangValidator), and for the Windows release: the mingw-w64 cross-compiler (the variant with
 # POSIX threads) and SDL3's development package for it
-RUN apt-get update && apt-get install -y --no-install-recommends glslang-tools mingw-w64 libz-mingw-w64-dev zlib1g-dev zip unzip patchelf \
+RUN apt-get update && apt-get install -y --no-install-recommends glslang-tools mingw-w64 libz-mingw-w64-dev zlib1g-dev zip unzip patchelf file \
     && rm -rf /var/lib/apt/lists/* \
     && update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix \
     && update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix \
@@ -46,5 +47,6 @@ RUN curl -fsSL -o /tmp/curl.tar.xz https://curl.se/download/curl-${CURL_VERSION}
          --without-libpsl --without-libidn2 --without-libssh2 --without-brotli --without-zstd \
          --disable-static --disable-ldap --disable-ldaps \
     && make -j2 && make install && ldconfig \
+    && mkdir -p /usr/local/share/licenses/curl && cp /tmp/curl-${CURL_VERSION}/COPYING /usr/local/share/licenses/curl/COPYING \
     && rm -rf /tmp/curl.tar.xz /tmp/curl-${CURL_VERSION}
 WORKDIR /src

@@ -90,6 +90,30 @@ def main(p,mac=False):
     (out/'README.txt').write_text(readme,encoding='utf8')
     sources=libraries_mac(out) if mac else libraries_linux(out)
     (licenses/'native-libraries.json').write_text(json.dumps(sources,indent=2))
+    notices=licenses/'native';notices.mkdir()
+    if mac:
+        # Homebrew retains the installed source recipe, receipt and upstream
+        # notices in each keg. Include them with every redistributed library.
+        seen=set()
+        for source in sources.values():
+            path=pathlib.Path(source)
+            if '/Cellar/' not in source:continue
+            cellar=path.parts.index('Cellar');keg=pathlib.Path(*path.parts[:cellar+3])
+            if keg in seen:continue
+            seen.add(keg);dest=notices/keg.parent.name;dest.mkdir(exist_ok=True)
+            for file in [*keg.glob('*'),*keg.glob('.brew/*.rb'),*keg.glob('share/doc/*/*'),*keg.glob('share/licenses/*/*')]:
+                if file.is_file() and (re.search(r'COPYING|LICENSE|LICENCE|COPYRIGHT|NOTICE|INSTALL_RECEIPT',file.name,re.I) or file.suffix=='.rb'):
+                    shutil.copy2(file,dest/file.name)
+    else:
+        for source in sources.values():
+            found=subprocess.run(['dpkg-query','-S',source],capture_output=True,text=True)
+            if found.returncode==0:
+                package=found.stdout.split(': ',1)[0].split(':',1)[0]
+                file=pathlib.Path('/usr/share/doc')/package/'copyright'
+                if file.is_file():shutil.copy2(file,notices/(package+'-copyright.txt'))
+        for kind in ['SDL3','curl']:
+            source=pathlib.Path('/usr/local/share/licenses')/kind
+            if source.is_dir():shutil.copytree(source,notices/kind,dirs_exist_ok=True)
     # Public CA certificates, never private account material.
     ca=next((pathlib.Path(x) for x in ['/etc/ssl/certs/ca-certificates.crt','/opt/homebrew/etc/ca-certificates/cert.pem','/etc/ssl/cert.pem'] if pathlib.Path(x).is_file()),None)
     if ca:shutil.copy2(ca,out/'lib/cacert.pem')
