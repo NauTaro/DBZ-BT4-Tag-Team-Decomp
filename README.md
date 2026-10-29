@@ -77,6 +77,10 @@ Launchers built before the signed updater was introduced need one initial packag
 
 See the [contribution guide](CONTRIBUTING.md) for the source layout, build tools, and validation process. The [documentation index](docs/README.md) links to runtime and customization references.
 
+## BUY ME A CIGARRETTE!! ;)
+
+https://ko-fi.com/nautaro
+
 For a useful bug report, include the launcher version, game mode, renderer, render scale, reproduction steps, and the relevant `bt3_log.txt` or `bt3_crash.txt`. Submit reports through the [issue forms](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/issues/new/choose).
 
 ## Credits and licenses
