@@ -32,6 +32,14 @@ all connected clients, the server commits input at 34.2 simulation steps/second
 late packets do not rewrite committed history. The Tag Team FPS meter reports
 measured ping. Rendering uses the selected resolution scale.
 
+Network-delay feedback applies only to inputs the client actually submitted.
+Frames missed during a local stall cannot increase that player's network margin.
+Tag Team currently routes multiplayer input through the room's Cloudflare Durable
+Object; a nearby network edge does not establish that the room authority is nearby.
+Cloudflare's [location documentation](https://developers.cloudflare.com/durable-objects/reference/data-location/)
+currently places South American Durable Object requests in eastern North America.
+The transport changes below do not remove that geographic round trip.
+
 ## Maps and presentation
 
 BT4 owns native stage IDs 0 through 98. Offline custom stages append at 99,
@@ -66,3 +74,5 @@ compatibility with every router, modification or remote PC.
 ## BT4 0.1.39.1 R2 validation
 
 Windows native tests used four clients in one Tag Team room with 170 ms simulated RTT and a shared presentation skip: 900 common frames had matching hashes. An asymmetric slow-link pair also reached 900 matching frames. A public 1 vs 1 lobby forced through TURN reached combat. Character-viewer captures reproduced the sunken model and showed the restored BT4 pose with alternate costumes. The isolated Windows transport worker benchmark reduced p95 queue-to-send dispatch from 16.0641 ms to 0.0749 ms; this measures local scheduling with a send stub, not Internet latency or game FPS. Native Linux and Apple Silicon builds exercise the production WebSocket transports with fragmentation, invalid frames, voice and certificate-rejection fixtures. Actual gameplay on remote Linux and Mac hardware remains a community validation step.
+
+The input-feedback regression reproduces 100 late-frame notices for inputs never submitted: the old margin rose from 1 to 8; the corrected margin stays at 1. This is a scheduling test, not a network RTT measurement. The BT3_NET_LOSS, BT3_NET_LAG and BT3_NET_LATENCY diagnostic variables require BT4_RENDER_TEST=1.

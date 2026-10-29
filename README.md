@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/languages-English%20%7C%20Espa%C3%B1ol-f0883e?style=flat-square" alt="English and Spanish">
   </p>
   <img src="docs/presentation/bt4-intro-hq.gif" width="900" alt="DBZ BT4 presentation artwork">
-  <p><strong>BT4 B14 Rev2 · · Launcher 0.1.39.1 R2</strong></p>
+  <p><strong>BT4 B14 Rev2 &middot; Launcher 0.1.39.1 R2</strong></p>
   <p><a href="#online-play">Online play</a> · <a href="#graphics-and-frame-pacing">Graphics</a> · <a href="#installation">Installation</a> · <a href="#automatic-updates">Automatic updates</a></p>
 </div>
 
@@ -24,7 +24,7 @@ The current integration is based on Tenkaichi3Decomp v0.1.39.1. The launcher bui
 
 Play online 1 vs 1 or in simultaneous Tag Team battles. Tag Team supports up to five fighter slots per team, with human players and CPU fighters. Private rooms use shareable codes; Quick Match searches for an opponent automatically.
 
-The two modes use different network paths. 1 vs 1 uses the upstream peer rollback path. Tag Team sends inputs through the BT4 relay and follows a server-paced frame schedule. Its input lead starts from estimated one-way relay time and adjusts when the server reports late frames. Tag Team's ping is the round-trip time to the relay, so it is not directly comparable to 1 vs 1 peer ping. Actual delay still depends on route quality and packet timing. A single human playing against CPU consumes inputs locally without relay pacing; its overlay does not show relay RTT as opponent ping.
+The two modes use different network paths. 1 vs 1 uses the upstream peer rollback path. Tag Team sends inputs through the BT4 relay and follows a server-paced frame schedule. Its input lead starts from estimated one-way relay time and adjusts only for submitted inputs that miss their server deadline. Tag Team's ping is the round-trip time to the relay, so it is not directly comparable to 1 vs 1 peer ping. Actual delay still depends on route quality and packet timing. A single human playing against CPU consumes inputs locally without relay pacing; its overlay does not show relay RTT as opponent ping.
 
 ### Lobbies and tournaments
 

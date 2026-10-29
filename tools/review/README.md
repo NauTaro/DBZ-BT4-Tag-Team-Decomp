@@ -26,3 +26,17 @@ player data or settings as part of a source build.
 The installer binds native data tables to its verified ISO during installation.
 Do not ship raw generated data tables without the matching verified program
 fingerprint. See the PC port guide and current private release for distribution.
+
+## Synthetic packet impairment
+
+`BT3_NET_LOSS` (percent), `BT3_NET_LAG` (milliseconds per simulation step),
+and `BT3_NET_LATENCY` (milliseconds of outbound packet queuing) are diagnostic
+controls. They take effect only when `BT4_RENDER_TEST=1` is explicitly present.
+Without that exact marker, all three impairment values are zero, including when
+the launcher inherits diagnostic variables from a shell. Test runners should
+set the marker in their child process environment and use disposable data paths.
+
+These controls are separate from the lobby's configurable input delay, rollback
+limit and synchronization pacing. Their guard does not change those settings or
+the measured network round-trip time. `test_network_diagnostics.py` compiles the
+production value selector and checks normal and test process environments.

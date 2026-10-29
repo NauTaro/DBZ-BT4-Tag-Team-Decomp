@@ -15,6 +15,7 @@
  *                                   1, pad 2; written by BT3_PAD_TABLE=<file> during an ordinary run), not from
  *                                   the keyboard or a controller
  *   BT3_NET_LOSS=<percent>, BT3_NET_LAG=<ms>   testing: drop that share of the packets sent / hold each one back
+ *                                   requires BT4_RENDER_TEST=1; ignored in normal launches
  *   BT3_VIEW=0|1                    testing: show that player's view full screen in a two-player battle (what a
  *                                   connected copy does with its own player's)
  *
@@ -333,8 +334,17 @@ static int sBalance;  /* (mine - theirs), smoothed, in 1/16 blank */
 static unsigned sSlowed;
 extern unsigned gPortPaceShiftNs;
 
-/* BT3_NET_LATENCY=<ms>: testing, a line that takes that long one way. What is sent waits in a queue. */
+/* BT3_NET_LATENCY=<ms>: with BT4_RENDER_TEST=1, simulate that much one-way delay. */
 static int sLatencyMs;
+static void net_test_line(void) {
+    const char *test = getenv("BT4_RENDER_TEST");
+    int enabled = test != NULL && strcmp(test, "1") == 0;
+    /* Reset all three on every session, including a normal launch that inherited
+     * diagnostic variables from a test shell. Input-delay settings are separate. */
+    sLoss = enabled && getenv("BT3_NET_LOSS") != NULL ? atoi(getenv("BT3_NET_LOSS")) : 0;
+    sLagMs = enabled && getenv("BT3_NET_LAG") != NULL ? atoi(getenv("BT3_NET_LAG")) : 0;
+    sLatencyMs = enabled && getenv("BT3_NET_LATENCY") != NULL ? atoi(getenv("BT3_NET_LATENCY")) : 0;
+}
 static struct { uint64_t due; int n; uint8_t data[IN_HEAD + 16 * PAD]; } sQueue[256];
 static unsigned sQueueHead, sQueueTail;
 
@@ -1969,9 +1979,7 @@ static void net_start(int role, const char *host, const char *join) {
     sInPkts = sWaitNotes = 0;
     sInLastNs = sInGapNs = sSecWaitMaxNs = 0;
     sSecWaitWhy = 0;
-    sLoss = getenv("BT3_NET_LOSS") != NULL ? atoi(getenv("BT3_NET_LOSS")) : 0;
-    sLagMs = getenv("BT3_NET_LAG") != NULL ? atoi(getenv("BT3_NET_LAG")) : 0;
-    sLatencyMs = getenv("BT3_NET_LATENCY") != NULL ? atoi(getenv("BT3_NET_LATENCY")) : 0;
+    net_test_line();
     sQueueHead = sQueueTail = 0; /* (what the test line held back from a session before is not this one's: a lobby's
                                     next match goes on with the same socket, perhaps to another player) */
     /* BT3_NET_ROLLBACK=<n>: the game does not wait for the other player's input; it goes on with a guess (what
