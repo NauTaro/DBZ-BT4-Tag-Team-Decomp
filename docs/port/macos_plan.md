@@ -1,7 +1,8 @@
-# macOS architecture reference
+# Apple Silicon runtime architecture
 
-The inherited upstream runtime includes an experimental native Apple Silicon
-variant, selected with `BT3_CC=mac64`. DBZ BT4 Tag Team release packages target Windows.
+BT4decomp includes a native Apple Silicon build, selected with `BT3_CC=mac64`.
+The arm64 package targets macOS 15 or later. Installation instructions and
+download handling are in [native platform setup](native_platforms.md).
 
 ## Memory model
 
@@ -20,5 +21,7 @@ The macOS variant uses Homebrew LLVM and the macOS SDK. `BT3_LLVM` selects an
 alternate LLVM binary directory; `port/tools/toolchain.py` defines compiler and
 linker options. The runtime uses SDL3 with Metal and CoreAudio.
 
-Platform work should be validated with native builds, game-state comparisons
-and rollback checks before claiming cross-platform compatibility.
+The native workflow builds the runtime, tests transport, audio and updates,
+and checks the relocated package. Gameplay on individual Mac hardware still
+requires validation; a successful build alone does not establish compatibility
+with every graphics device or remote opponent.

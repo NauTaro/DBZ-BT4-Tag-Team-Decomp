@@ -1,6 +1,6 @@
 # PC port
 
-DBZ BT4 Tag Team Decomp runs the game natively on Windows. The runtime adapts
+BT4decomp runs the game natively on Windows x64, Linux x86-64 and Apple Silicon. The runtime adapts
 the original game code for host memory, deterministic arithmetic, rendering,
 audio, input and online play.
 
@@ -11,7 +11,7 @@ audio, input and online play.
 | Game logic | `src/`, `include/` |
 | Platform compatibility | `port/include/port_compat.h`, `port/src/` |
 | Rendering and interface | `port/src/gs/` |
-| Windows installer | `port/setup/` |
+| Native installer | `port/setup/` |
 | Compiler and source conversion tools | `port/tools/` |
 | Runtime libraries and notices | `port/voice-runtime/`, `port/third_party/` |
 | Tag Team service | `cloudflare/` |
@@ -32,8 +32,9 @@ The BT4 build helpers are documented in [tools/review/README.md](../../tools/rev
 They require the external toolchain and generated build inputs described there.
 Game data and the external toolchain are not included in the source archive.
 
-`install.py` contains the inherited upstream setup workflow for original BT3 data.
-For a BT4 installation, use the Windows package and a compatible **BT4 B14 Rev2 ISO**.
+`install.py` validates compatible BT4 disc profiles and builds the native runtime
+before extraction. Use a compatible **BT4 B14 Rev2 ISO**. Prebuilt packages and
+platform-specific dependencies are described in [native platform setup](native_platforms.md).
 See the [BT4 profile](../../BT4_PROFILE.md) for runtime and protocol identity.
 
 ## Development checks
@@ -55,6 +56,8 @@ The [decompilation guide](../decomp_guide.md) describes original-binary comparis
 - [Menus](menus.md)
 - [Fonts](menu_font.md)
 - [Translations](translations.md)
-- [Inherited macOS architecture](macos_plan.md)
+- [Native platform installation](native_platforms.md)
+- [Apple Silicon architecture](macos_plan.md)
 
-The upstream source includes other platform variants; the BT4 package targets Windows.
+Release packages target Windows x64, Linux x86-64 and macOS arm64. See the
+native platform guide for minimum OS versions and the scope of validation.

@@ -8,6 +8,7 @@ For installation, updates and language selection, start with the
 | Guide | Scope |
 | --- | --- |
 | [Custom stages](port/adding_stages.md) | Map installation, thumbnails and display names |
+| [Native platforms](port/native_platforms.md) | Windows, Linux and Apple Silicon installation and requirements |
 | [Custom music](port/adding_songs.md) | Supported formats, track names and importing |
 | [Menu fonts](port/menu_font.md) | Font configuration and text rendering |
 | [Translations](port/translations.md) | Text catalogs and translation loading |

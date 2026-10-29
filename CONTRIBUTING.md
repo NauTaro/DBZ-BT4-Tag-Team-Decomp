@@ -6,7 +6,7 @@
 | --- | --- |
 | `src/`, `include/` | Decompiled game code and headers |
 | `port/src/`, `port/include/` | Native runtime, rendering, networking and voice |
-| `port/setup/` | Windows installer |
+| `port/setup/` | Native installer and language installation |
 | `port/release/` | Package identity, icons and portable layout |
 | `tools/review/` | Build helpers and package layout checks |
 | `cloudflare/` | Tag Team room and voice services |
@@ -29,6 +29,12 @@ Run the portable layout checks from the repository root with Python 3.12:
 
 ```sh
 python -m unittest discover -s tools/review/tests -v
+```
+
+Run the server negotiation, recovery and voice lifecycle checks with Node.js:
+
+```sh
+node --test cloudflare/tests/tag_link.test.mjs cloudflare/tests/voice_hibernation.test.mjs
 ```
 
 These checks do not require game data. Test gameplay, networking, audio and

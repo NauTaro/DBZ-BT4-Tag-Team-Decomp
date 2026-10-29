@@ -1,6 +1,6 @@
 # BT4 runtime and compatibility profile
 
-The Windows package targets BT4 B14 Rev2 with Spanish (LATINO) and
+The native packages target BT4 B14 Rev2 with Spanish (LATINO) and
 English data tables. The underlying BT4decomp engine provenance is in
 [UPSTREAM_LOCK.json](UPSTREAM_LOCK.json). Source and runtime licenses remain
 in the repository and release package.
@@ -27,7 +27,7 @@ the full roster or establish compatibility with other BT4 modifications.
 
 Tag Team includes up to ten actor identities and gameplay state in detailed
 sync samples. The Worker and client share the room kernel. When supported by
-all connected clients, the server commits input at 34.2 simulation steps/second
+all connected clients, the selected coordinator commits input at 34.2 simulation steps/second
 (114% of the original 30 Hz simulation). Missing input is neutral for that seat;
 late packets do not rewrite committed history. The Tag Team FPS meter reports
 measured ping. Rendering uses the selected resolution scale.
@@ -63,9 +63,9 @@ language installation and six profile-selection combinations were checked.
 These tests used local clients. They did not reproduce the reported four-PC
 disconnection and do not cover every story event or roster combination.
 
-## Launcher 0.1.39.1 R1 validation
+## Lobby and menu validation
 
-This hotfix retains upstream 0.1.39.1. Lobby protocol 4 adds a per-match relay
+Lobby protocol 4 provides a per-match relay
 through the lobby owner when the assigned fighters cannot connect directly.
 Forwarding checks the current match generation, assigned seats, member ID,
 source address and recipient. Direct connections remain the first choice.
@@ -79,13 +79,13 @@ tests covered the default and rebound Back key; menu captures covered English
 and Spanish. A damaged base program was rejected. These checks do not establish
 compatibility with every router, modification or remote PC.
 
-## BT4 0.1.39.1 R2 validation
+## Transport and platform validation
 
 Windows native tests used four clients in one Tag Team room with 170 ms simulated RTT and a shared presentation skip: 900 common frames had matching hashes. An asymmetric slow-link pair also reached 900 matching frames. A public 1 vs 1 lobby forced through TURN reached combat. Character-viewer captures reproduced the sunken model and showed the restored BT4 pose with alternate costumes. The isolated Windows transport worker benchmark reduced p95 queue-to-send dispatch from 16.0641 ms to 0.0749 ms; this measures local scheduling with a send stub, not Internet latency or game FPS. Native Linux and Apple Silicon builds exercise the production WebSocket transports with fragmentation, invalid frames, voice and certificate-rejection fixtures. Actual gameplay on remote Linux and Mac hardware remains a community validation step.
 
 The input-feedback regression reproduces 100 late-frame notices for inputs never submitted: the old margin rose from 1 to 8; the corrected margin stays at 1. This is a scheduling test, not a network RTT measurement. The BT3_NET_LOSS, BT3_NET_LAG and BT3_NET_LATENCY diagnostic variables require BT4_RENDER_TEST=1.
 
-## BT4 0.1.39.1 R3 validation
+## Native Tag Team coordinator validation
 
 The native and WebAssembly kernels produced 14,000 byte-identical frames across
 seven input, loss, reordering, duplicate and disconnection scenarios. A disconnected

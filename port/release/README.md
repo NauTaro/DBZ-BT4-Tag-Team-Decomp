@@ -51,8 +51,8 @@ dynamically and therefore are not discovered by ordinary executable import scann
 verifies the archive SHA-256, and includes their licenses and voice SDK source offer. No legacy game executable
 or game data is extracted. The package step checks every restored file against the dependency manifest.
 
-Linux and macOS packages use the native TLS transport and SDL audio backend, with bundled libcurl, SDL and Opus
-dependencies. Their build, transport and package checks are in `port/release/inside_native.sh`. Actual gameplay
+Linux and macOS package builds use native TLS, SDL audio and a pinned RTC SDK with media and SCTP,
+with bundled libcurl, SDL, Opus and SDK dependencies. Their build, transport and package checks are in `port/release/inside_native.sh`. Actual gameplay
 coverage and platform requirements are documented in [native platform setup](../../docs/port/native_platforms.md).
 
 ## Windows shader reproducibility
