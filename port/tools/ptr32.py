@@ -76,7 +76,7 @@ def parse(data, args):
     tu = ci.Index.create().parse("in.i", args=args + ["-Wno-error=return-type", "-Wno-error=return-mismatch"], unsaved_files=[("in.i", data.decode("latin-1"))])
     errs = [d for d in tu.diagnostics if d.severity >= 3]
     if errs:
-        raise RuntimeError(f"{errs[0].spelling} (line {errs[0].location.line})")
+        raise RuntimeError(str(errs[0]) + "; context: " + data[max(0,errs[0].location.offset-100):errs[0].location.offset+160].decode("latin-1").replace("\n"," "))
     return tu
 
 def game_test(data):

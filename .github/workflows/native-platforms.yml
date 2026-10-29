@@ -9,15 +9,23 @@ on:
         default: "0.1.39.3"
         type: string
 
+      platform:
+        description: Native platform to build
+        required: true
+        default: all
+        type: choice
+        options: [all, linux, macos]
+
 permissions:
   contents: read
 
 concurrency:
-  group: native-platforms-${{ github.ref }}
+  group: native-platforms-${{ github.ref }}-${{ inputs.platform }}
   cancel-in-progress: true
 
 jobs:
   linux:
+    if: inputs.platform != 'macos'
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -53,6 +61,7 @@ jobs:
           retention-days: 14
 
   macos:
+    if: inputs.platform != 'linux'
     runs-on: macos-15
     timeout-minutes: 60
     steps:
