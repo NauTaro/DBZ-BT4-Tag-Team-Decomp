@@ -375,6 +375,17 @@ static TtChannel client={TT_INVALID};static TtRoom state;static uint32_t member;
 static char room_code[7],error[128];static time_t last_ping,last_heard;static int connecting;
 
 #include "tag_team_ws.h"
+#include "tag_team_direct.h"
+#include "update_sign.h"
+static int tag_direct_supported,tag_direct_ticket,tag_direct_route;
+static Uint64 tag_direct_ticket_at;
+void Port_TagIncomingWake(void){
+#ifdef _WIN32
+    if(sTagWs.receiveWake)SetEvent(sTagWs.receiveWake);
+#else
+    if(sTagWs.lock){SDL_LockMutex(sTagWs.lock);if(sTagWs.receiveReady)SDL_SignalCondition(sTagWs.receiveReady);SDL_UnlockMutex(sTagWs.lock);}
+#endif
+}
 #include "voice.h"
 static int voice_ticket;static Uint64 voice_ticket_at;
 
@@ -513,11 +524,11 @@ static void tag_transport_report(const char *why){
     snprintf(path,sizeof(path),"%s/tag-transport-%lld-%u.txt",folder,(long long)time(NULL),(unsigned)getpid());
 #endif
     f=fopen(path,"a");if(!f)return;
-    fprintf(f,"reason=%s\nphase=%d epoch=%u paced=%d ping_ms=%d next=%u latest=%u backlog=%d rx_queue=%u tx_queue=%u seconds_since_reply=%lld\n",
-        why,state.phase,state.epoch,tag_paced,tag_ping,received.next,tag_received_latest,tag_backlog(),rx,tx,(long long)(time(NULL)-last_heard));
+    fprintf(f,"reason=%s\nphase=%d epoch=%u paced=%d ping_ms=%d relay_ping_ms=%d direct_route=%d next=%u latest=%u backlog=%d rx_queue=%u tx_queue=%u seconds_since_reply=%lld\n",
+        why,state.phase,state.epoch,tag_paced,Port_TagPing(),tag_ping,tag_direct_route,received.next,tag_received_latest,tag_backlog(),rx,tx,(long long)(time(NULL)-last_heard));
     fclose(f);
 }
-static void fail(const char *why){tag_transport_report(why);SDL_SetAtomicInt(&tag_catchup,0);PortVoice_Leave(2);if(ws_mode)TagWs_Close();channel_close(&client);state.phase=TT_ABORTED;snprintf(error,sizeof(error),"%s",why);}
+static void fail(const char *why){tag_transport_report(why);SDL_SetAtomicInt(&tag_catchup,0);TagDirect_Close();tag_direct_route=0;PortVoice_Leave(2);if(ws_mode)TagWs_Close();channel_close(&client);state.phase=TT_ABORTED;snprintf(error,sizeof(error),"%s",why);}
 
 int Port_TagConnect(const char *server){
 
@@ -559,7 +570,7 @@ int Port_TagConnect(const char *server){
 
 }
 
-void Port_TagClose(void){Port_TagWaitResumed();PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_adjusted=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
+void Port_TagClose(void){Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_adjusted=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
 
 int Port_TagReselect(void){
 
@@ -578,6 +589,7 @@ int Port_TagReselect(void){
 static unsigned request_serial;
 static struct {unsigned serial,command,epoch;Uint64 at;} request_history[128];
 static void request(unsigned char *p){
+    if(ws_mode&&tag_direct_route&&Ttw_Read(p+4)==TTW_INPUT){if(!TagDirect_Send(p))fail("The TAG TEAM coordinator connection was lost.");return;}
     unsigned serial=++request_serial,slot=serial%128;
     request_history[slot].serial=serial;request_history[slot].command=Ttw_Read(p+4);request_history[slot].epoch=Ttw_Read(p+8);
     request_history[slot].at=SDL_GetTicks();
@@ -682,9 +694,16 @@ void Port_TagCommand(int command,int a,int b){
 
 }
 
+static int tag_read_packet(unsigned char *packet,Uint64 *at,int *direct){
+    int n;*direct=0;if(!ws_mode)return channel_read(&client);
+    n=TagWs_Read(packet,at);if(n)return n;
+    if(tag_direct_route&&state.phase==TT_FIGHT&&TagDirect_Read(packet,(uint64_t*)at)){*direct=1;return 1;}
+    return 0;
+}
 void Port_TagPoll(void){
 
-    int n=0,work=0;Uint64 arrived=0;if(ws_mode?!ws_started:client.sock==TT_INVALID)return;
+    int n=0,work=0,direct=0;Uint64 arrived=0;if(ws_mode?!ws_started:client.sock==TT_INVALID)return;
+    if(tag_direct_route&&TagDirect_Active()<0){fail("This client fell too far behind the TAG TEAM coordinator.");return;}
 
     if(connecting){fd_set wr,er;struct timeval tv={0,0};int e=0;int len=sizeof(e);
 
@@ -704,16 +723,19 @@ void Port_TagPoll(void){
 
     if(!ws_mode&&!channel_flush(&client)){fail("TAG TEAM connection was lost.");return;}
 
-    while(work++<64&&(n=ws_mode?TagWs_Read(client.in,&arrived):channel_read(&client))>0){int result;
+    while(work++<64&&(n=tag_read_packet(client.in,&arrived,&direct))>0){int result;
 
-        last_heard=time(NULL);
+        if(!direct)last_heard=time(NULL);
 
         if(Ttw_Read(client.in)==TT_PROTOCOL&&Ttw_Read(client.in+4)==TT_SYNC_NOTICE){tag_sync_notice(client.in);continue;}
         if(Ttw_Read(client.in)==TT_PROTOCOL&&Ttw_Read(client.in+4)==TT_CAPS_NOTICE){
             tag_paced=(Ttw_Read(client.in+12)&TT_CAP_PACED_INPUT)&&Ttw_Read(client.in+16)==TT_TAG_SPEED_PERCENT;
-            fprintf(stderr,"tag transport: paced-input=%d speed=%u ping-ms=%d\n",tag_paced,Ttw_Read(client.in+16),tag_ping);continue;
+            tag_direct_supported=(Ttw_Read(client.in+44)&TT_CAP_DIRECT_INPUT)!=0;
+            tag_direct_route=tag_direct_supported&&Ttw_Read(client.in+24)==1&&Ttw_Read(client.in+40)==state.epoch;
+            fprintf(stderr,"tag transport: paced-input=%d speed=%u relay-ping-ms=%d direct=%d\n",tag_paced,Ttw_Read(client.in+16),tag_ping,tag_direct_route);continue;
         }
         if(Ttw_Read(client.in)==TT_PROTOCOL&&Ttw_Read(client.in+4)==TTW_FRAME){
+            if(tag_direct_route&&!direct)continue;
 
             uint32_t epoch=Ttw_Read(client.in+8),frame=Ttw_Read(client.in+12);int seat;
 
@@ -740,12 +762,18 @@ void Port_TagPoll(void){
 
                 if(Tt_InputPut(&received,epoch,seat,frame,client.in+16+seat*TT_PAD_BYTES)!=TT_OK){fail("Invalid TAG TEAM input frame.");return;}
 
-            tag_received_epoch=epoch;tag_received_latest=frame;tag_received_valid=1;tag_update_catchup();
+            if(!tag_received_valid||tag_received_epoch!=epoch||(int32_t)(frame-tag_received_latest)>0)tag_received_latest=frame;
+            tag_received_epoch=epoch;tag_received_valid=1;tag_update_catchup();
 
             continue;
 
         }
 
+        if(Ttw_Read(client.in)==TT_PROTOCOL&&Ttw_Read(client.in+4)==105){
+            char cap[65];unsigned char raw[32];memcpy(cap,client.in+16,64);cap[64]=0;
+            if(tag_direct_supported&&Upd_HexBytes(cap,raw,32)&&Port_TagSeat()>=0){tag_direct_ticket=1;TagDirect_Session(ws_endpoint,room_code,cap,member);TagDirect_RelayPing(tag_ping);}
+            continue;
+        }
         if(Ttw_Read(client.in)==TT_PROTOCOL&&Ttw_Read(client.in+4)==102){
             char cap[65];int i,ok=1;memcpy(cap,client.in+16,64);cap[64]=0;
             for(i=0;i<64;++i)if(!((cap[i]>='0'&&cap[i]<='9')||(cap[i]>='a'&&cap[i]<='f')))ok=0;
@@ -767,11 +795,13 @@ void Port_TagPoll(void){
         }
 
         if(!Ttw_Decode(client.in,&state,&member,&result,room_code)){fail("Incompatible TAG TEAM server.");return;}
+        TagDirect_State(client.in);
+        if(state.phase!=TT_FIGHT&&state.phase!=TT_ARMED)tag_direct_route=0;
         tag_update_catchup();
         {unsigned ack=Ttw_Read(client.in+508),slot=ack%128;
             if(ack&&ack!=tag_ping_ack&&request_history[slot].serial==ack&&request_history[slot].command==TTW_PING){
                 Uint64 at=ws_mode?arrived:SDL_GetTicks();tag_ping_ack=ack;
-                if(at>=request_history[slot].at)tag_ping_sample((unsigned)(at-request_history[slot].at));
+                if(at>=request_history[slot].at){tag_ping_sample((unsigned)(at-request_history[slot].at));TagDirect_RelayPing(tag_ping);}
             }
         }
 
@@ -796,7 +826,10 @@ void Port_TagPoll(void){
     }
 
     if(ws_mode&&Port_TagSeat()>=0&&!tag_caps_sent){
-        unsigned char b[512];Ttw_Request(b,TT_CAPS_COMMAND,state.epoch);Ttw_Write(b+12,TT_CAP_PACED_INPUT|TT_CAP_DETAILED_SYNC);request(b);tag_caps_sent=1;
+        unsigned char b[512];Ttw_Request(b,TT_CAPS_COMMAND,state.epoch);Ttw_Write(b+12,TT_CAP_PACED_INPUT|TT_CAP_DETAILED_SYNC|(TagDirect_Available()?TT_CAP_DIRECT_INPUT:0));request(b);tag_caps_sent=1;
+    }
+    if(ws_mode&&tag_direct_supported&&!tag_direct_ticket&&Port_TagSeat()>=0&&TagDirect_Available()&&SDL_GetTicks()-tag_direct_ticket_at>=1000){
+        unsigned char b[512];Ttw_Request(b,23,state.epoch);request(b);tag_direct_ticket_at=SDL_GetTicks();
     }
     if(ws_mode&&!voice_ticket&&Port_TagSeat()>=0&&SDL_GetTicks()-voice_ticket_at>=1500){
         unsigned char b[512];Ttw_Request(b,TTW_VOICE_TICKET,state.epoch);request(b);voice_ticket_at=SDL_GetTicks();
@@ -809,7 +842,18 @@ void Port_TagPoll(void){
 
 }
 
-void Port_TagYield(void){if(ws_mode)TagWs_Wait(4);else SDL_Delay(4);}
+void Port_TagYield(void){
+    if(!ws_mode){SDL_Delay(4);return;}
+#ifdef _WIN32
+    if(!(tag_direct_route&&state.phase==TT_FIGHT&&TagDirect_Pending()))TagWs_Wait(4);
+#else
+    if(!sTagWs.lock){SDL_Delay(4);return;}
+    SDL_LockMutex(sTagWs.lock);
+    if(sTagWs.inRead==sTagWs.inWrite&&!(tag_direct_route&&state.phase==TT_FIGHT&&TagDirect_Pending())&&SDL_GetAtomicInt(&sTagWs.status)>=0)
+        SDL_WaitConditionTimeout(sTagWs.receiveReady,sTagWs.lock,4);
+    SDL_UnlockMutex(sTagWs.lock);
+#endif
+}
 
 static int tag_wait_banner;
 static uint64_t tag_wait_started;
@@ -911,14 +955,15 @@ int Port_TagAttacks(void){return 1;}
 unsigned Port_TagSeed(void){return state.seed;}
 
 int Port_TagDelay(void){
-    int lead=1,full=1,margin=0,total;
+    int lead=1,full=1,margin=0,total,ping=Port_TagPing();
     if(local_room||solo_cpu_fight()||!tag_paced)return state.delay;
+    if(tag_direct_route&&member==state.host)return tag_backlog();
     /* Use estimated one-way relay time, not the full RTT. The Worker reports
      * late seats in each authoritative frame; that feedback raises this margin
      * only when this player's input actually misses a deadline. */
-    if(tag_paced&&tag_ping>0){
-        lead=(tag_ping*342+19999)/20000;
-        full=(tag_ping*342+9999)/10000;
+    if(tag_paced&&ping>0){
+        lead=(ping*342+19999)/20000;
+        full=(ping*342+9999)/10000;
         if(lead<1)lead=1;
         margin=tag_delay_margin;
         if(margin>full-lead)margin=full-lead;

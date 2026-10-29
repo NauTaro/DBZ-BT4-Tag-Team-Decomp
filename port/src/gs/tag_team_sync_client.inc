@@ -26,7 +26,7 @@ static void tag_update_catchup(void){
 }
 static unsigned tag_sync_words[TT_MAX_PLAYERS][TT_SYNC_WORDS];
 static char tag_sync_log[2048];
-int Port_TagPing(void){return local_room||solo_cpu_fight()?0:tag_ping;}
+int Port_TagPing(void){return local_room||solo_cpu_fight()?0:tag_direct_route?TagDirect_Ping():tag_ping;}
 /* Measure arrival at the transport, before a slow render/game thread polls it.
  * Like the duel meter, use the best recent RTT rather than game-loop backlog. */
 static void tag_ping_sample(unsigned sample){

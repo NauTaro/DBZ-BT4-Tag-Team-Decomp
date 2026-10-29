@@ -1421,26 +1421,34 @@ static void video_tab(PortVideo &v) {
                               "not slower). It helps where the graphics chip is the slow part. On by default.");
         {
             bool late = Port_LateInput() != 0;
-            if (ImGui::Checkbox("Low input lag (experimental)", &late)) { Port_LateInputSet(late); }
-            ImGui::SetItemTooltip("The game reads the controller, computes, and then waits before the picture is shown:\n"
+            if (ImGui::Checkbox(english ? "Low input lag" : "Reducir latencia de entrada", &late)) { Port_LateInputSet(late); }
+            ImGui::SetItemTooltip(english ? "The game reads the controller, computes, and then waits before the picture is shown:\n"
                                   "about 33 ms in a fight. With this on the wait comes first, so the picture follows\n"
                                   "your press by the few milliseconds the machine needs. The game itself is unchanged.\n"
                                   "With Smooth motion as well: its in-between picture then follows your press at once and\n"
                                   "the full one a refresh later. Not used online. Off by default: on a machine that\n"
-                                  "cannot keep up it may stutter where the original order would not.");
+                                  "cannot keep up it may stutter where the original order would not." :
+                                  "Lee el mando despu\u00e9s de la espera de cada fotograma para reducir la latencia local.\n"
+                                  "No cambia el combate ni se aplica en l\u00ednea. Con movimiento fluido, la imagen intermedia\n"
+                                  "responde primero y la imagen completa aparece en el siguiente refresco.\n"
+                                  "Est\u00e1 desactivado por defecto: puede producir tirones si el equipo no mantiene el ritmo.");
         }
         {
             extern int Port_Setting(const char *name, int def);
             extern void Port_SettingSave(const char *name, int value);
             bool thr = Port_Setting("render_thread", 1) != 0;
-            if (ImGui::Checkbox("Render on a second processor core (experimental, after a restart)", &thr)) {
+            if (ImGui::Checkbox(english ? "Render on a second processor core (restart required)" :
+                                         "Renderizar en otro n\u00facleo (requiere reiniciar)", &thr)) {
                 Port_SettingSave("render_thread", thr ? 1 : 0);
                 Port_SettingsWrite(); /* (kept outside the window's own values: written here, or it was lost at the end) */
             }
-            ImGui::SetItemTooltip("The picture is prepared and shown on a core of its own while the game computes the next\n"
+            ImGui::SetItemTooltip(english ? "The picture is prepared and shown on a core of its own while the game computes the next\n"
                                   "moment: faster where the processor is the slow part (older or low-power machines).\n"
                                   "The same picture and the same game. Takes effect when the game is started again.\n"
-                                  "Not with the OpenGL renderer, and not on machines with two cores or fewer.");
+                                  "Not with the OpenGL renderer, and not on machines with two cores or fewer." :
+                                  "Prepara y presenta la imagen en otro n\u00facleo mientras se calcula el siguiente momento.\n"
+                                  "Puede mejorar el rendimiento cuando el procesador es el l\u00edmite. Se aplica al reiniciar.\n"
+                                  "No se utiliza con OpenGL ni en equipos con dos n\u00facleos o menos.");
         }
     }
     SDL_DisplayID *displays = SDL_GetDisplays(&count);
@@ -1500,10 +1508,14 @@ static void video_tab(PortVideo &v) {
             Port_SettingsWrite();
         }
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip("Experimental. The game computes a fight 30 times a second. With this, more pictures are\n"
+        ImGui::SetItemTooltip(english ? "The game computes a fight 30 times a second. With this, more pictures are\n"
                               "drawn between each two. The fight itself does not change, and neither does online play.\n"
                               "The newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\n"
-                              "Choose what your screen can show. F9 switches it off and on.");
+                              "Choose what your screen can show. F9 switches it off and on." :
+                              "A\u00f1ade im\u00e1genes intermedias al combate, que se calcula 30 veces por segundo.\n"
+                              "No cambia la simulaci\u00f3n ni las partidas en l\u00ednea. Retrasa la imagen m\u00e1s reciente:\n"
+                              "17 ms a 60, 25 ms a 120 y 29 ms a 240 im\u00e1genes por segundo.\n"
+                              "Elige una frecuencia compatible con tu pantalla. F9 activa o desactiva esta opci\u00f3n.");
     }
     {
         // The size of these windows, the chat and the notices: larger with a taller picture by itself (sUiScale)

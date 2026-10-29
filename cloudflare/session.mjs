@@ -1,4 +1,5 @@
 import {VoiceHub} from './voice.mjs';
+import {TagLinkHub} from './tag_link.mjs';
 // One serialized Durable Object per match. C kernel owns room authority and barriers.
 export class SessionKernel {
     constructor(module) {
@@ -18,6 +19,7 @@ export function createSessionClass(module) {
         constructor(ctx,env) {
             this.ctx=ctx;this.env=env;this.kernel=new SessionKernel(module);this.peers=new Map();this.serial=100;this.code='';this.born=Date.now();this.voice=new VoiceHub(id=>this.voiceMember(id),false,env);
             this.syncSerial=0;this.syncKind=0;this.clockTimer=null;this.paced=false;this.clockNext=0;
+            this.tagLink=new TagLinkHub(this,env);
         }
         voiceMember(id){
             const peer=[...this.peers.values()].find(p=>p.id===id);if(!peer?.joined)return null;
@@ -27,6 +29,12 @@ export function createSessionClass(module) {
         }
         async fetch(request) {
             if(request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return new Response('WebSocket required',{status:426});
+            if(new URL(request.url).pathname.startsWith('/v4/taglink/')){
+                const token=request.headers.get('Authorization')?.replace(/^Bearer /,'');
+                if(!/^[a-f0-9]{64}$/.test(token||''))return new Response('Invalid game link membership',{status:403});
+                const peer=[...this.peers.values()].find(p=>p.joined&&(p.features&4)&&p.linkToken===token);
+                return peer?this.tagLink.accept(request,peer.id):new Response('Invalid game link membership',{status:403});
+            }
             if(new URL(request.url).pathname.startsWith('/v3/voice/tag/')){
                 const token=request.headers.get('Authorization')?.replace(/^Bearer /,'');
                 const peer=[...this.peers.values()].find(p=>p.voiceToken&&p.voiceToken===token);
@@ -46,6 +54,7 @@ export function createSessionClass(module) {
         }
         broadcast(result=0,only=null){
             this.voice.refresh();
+            this.tagLink.refresh();
             for(const [ws,p] of this.peers)if(!only||ws===only){try{const packet=this.kernel.snapshot(p.id,result,this.code);new DataView(packet).setUint32(508,p.ack,true);ws.send(packet);}catch{this.close(ws);}}
         }
         message(ws,data){
@@ -58,7 +67,14 @@ export function createSessionClass(module) {
             peer.ack=view.getUint32(508,true);
             if(cmd===22){
                 if(view.getUint32(0,true)!==0x54540008||this.kernel.api.Kernel_Seat(peer.id)<0)return;
-                peer.features=view.getUint32(12,true)&3;this.sendCapabilities(ws,peer);return;
+                peer.features=view.getUint32(12,true)&7;this.tagLink.refresh();this.sendCapabilities(ws,peer);return;
+            }
+            if(cmd===23){
+                if(view.getUint32(0,true)!==0x54540008||!peer.joined||!(peer.features&4)||this.kernel.api.Kernel_Seat(peer.id)<0)return;
+                if(peer.linkAt&&now-peer.linkAt<1000)return;peer.linkAt=now;
+                if(!peer.linkToken)peer.linkToken=[...crypto.getRandomValues(new Uint8Array(32))].map(b=>b.toString(16).padStart(2,'0')).join('');
+                const packet=new Uint8Array(512),out=new DataView(packet.buffer);out.setUint32(0,0x54540008,true);out.setUint32(4,105,true);
+                packet.set(new TextEncoder().encode(peer.linkToken),16);ws.send(packet.buffer);return;
             }
             if(cmd===20){
                 if(this.kernel.api.Kernel_Seat(peer.id)<0)return;
@@ -75,6 +91,10 @@ export function createSessionClass(module) {
                 for(const [other] of this.peers){try{other.send(packet.buffer);}catch{this.close(other);}}return;
             }
             let result;
+            // After COMMIT the native host is the sole input/frame authority.
+            // Regular WSS remains available for room control, hashes and results.
+            if(cmd===11&&this.tagLink.active)return;
+            if(cmd===9&&this.tagLink.tryStart(ws,data,peer.id))return;
             try{result=this.kernel.command(peer.id,data);}catch{this.abort('Invalid session state');return;}
             if(cmd===17){peer.detailedSync=view.getUint32(24,true)===0x32535442;this.syncDiagnostics();}
             if(result){this.broadcast(result,this.kernel.api.Kernel_Phase()===6?null:ws);return;}
@@ -92,10 +112,33 @@ export function createSessionClass(module) {
             const packet=new ArrayBuffer(512),v=new DataView(packet);
             v.setUint32(0,0x54540008,true);v.setUint32(4,104,true);
             v.setUint32(12,this.paced?1:0,true);v.setUint32(16,114,true);v.setUint32(20,34200,true);
+            v.setUint32(44,4,true); // Server supports the independent native-host game link.
+            if(this.tagLink.active){
+                v.setUint32(24,1,true);v.setUint32(28,this.tagLink.host,true);
+                v.setUint32(32,parseInt(this.tagLink.generation.slice(8),16),true);
+                v.setUint32(36,parseInt(this.tagLink.generation.slice(0,8),16),true);v.setUint32(40,this.tagLink.epoch,true);
+            }
             try{ws.send(packet);}catch{this.close(ws);}
+        }
+        commitTagLinkStart(pending){
+            if(!this.tagLink.validPending(pending))return false;
+            let result;try{result=this.kernel.command(pending.id,pending.packet);}catch{return false;}
+            if(result){this.broadcast(result,pending.ws);return false;}
+            this.stopClock();this.paced=true;this.kernel.api.Kernel_Pacing(1);
+            this.tagLink.activate(pending);
+            for(const [ws,p]of this.peers)this.sendCapabilities(ws,p);
+            this.broadcast();return true;
+        }
+        tagLinkEnded(){
+            this.stopClock();this.paced=false;this.kernel.api.Kernel_Pacing(0);
+            for(const [ws,p]of this.peers)this.sendCapabilities(ws,p);
+        }
+        abortTagLink(reason){
+            this.stopClock();this.kernel.api.Kernel_Abort();this.tagLink.stopActive(reason);this.broadcast();
         }
         startClock(){
             this.stopClock();
+            if(this.tagLink.active)return;
             const players=[...this.peers.values()].filter(p=>p.joined);
             this.paced=players.length>1&&players.every(p=>(p.features&1)!==0);
             this.kernel.api.Kernel_Pacing(this.paced?1:0);
@@ -105,6 +148,7 @@ export function createSessionClass(module) {
         stopClock(){if(this.clockTimer!==null)clearTimeout(this.clockTimer);this.clockTimer=null;}
         clockTick(){
             this.clockTimer=null;
+            if(this.tagLink.active)return;
             if(!this.paced||this.kernel.api.Kernel_Phase()!==5)return;
             const now=Date.now(),step=1000/34.2;let burst=0;
             while(now>=this.clockNext&&burst++<4){
@@ -134,8 +178,11 @@ export function createSessionClass(module) {
         close(ws){
             const peer=this.peers.get(ws);if(!peer)return;this.peers.delete(ws);
             this.voice.drop(peer.id);
-            if(peer.joined){this.kernel.api.Kernel_Leave(peer.id);this.broadcast();}
+            if(peer.joined){
+                if(this.tagLink.active&&peer.id===this.tagLink.host){this.abortTagLink('Host disconnected');return;}
+                this.kernel.api.Kernel_Leave(peer.id);this.broadcast();
+            }
         }
-        abort(why){this.stopClock();for(const [ws]of this.peers)ws.close(1011,why);this.peers.clear();}
+        abort(why){this.stopClock();this.tagLink.shutdown();for(const [ws]of this.peers)ws.close(1011,why);this.peers.clear();}
     };
 }

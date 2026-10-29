@@ -8,8 +8,8 @@ def libraries_linux(out):
     search=['/usr/local/lib','/usr/lib/x86_64-linux-gnu','/usr/lib64','/usr/lib']
     def find(name):
         return next((pathlib.Path(d)/name for d in search if (pathlib.Path(d)/name).exists()),None)
-    seeds=[find(name) for name in ('libSDL3.so.0','libcurl.so.4','libopus.so.0')]
-    if any(p is None for p in seeds):raise RuntimeError('SDL3, WebSocket-enabled libcurl and Opus are required')
+    seeds=[find(name) for name in ('libSDL3.so.0','libcurl.so.4','libopus.so.0','libdatachannel.so')]
+    if any(p is None for p in seeds):raise RuntimeError('SDL3, WebSocket-enabled libcurl, Opus and the RTC SCTP SDK are required')
     queue=[out/'BT4decomp',out/'BT4decomp-setup',*seeds];done=set();sources={}
     core=re.compile(r'^(?:ld-linux|lib(?:c|m|pthread|dl|rt|resolv|gcc_s|stdc\+\+)\.so)')
     while queue:
@@ -33,7 +33,8 @@ def libraries_mac(out):
     seeds=[]
     for env,default,name in [('BT3_SDL3','/opt/homebrew/opt/sdl3','libSDL3.0.dylib'),
                               ('BT3_CURL','/opt/homebrew/opt/curl','libcurl.4.dylib'),
-                              ('BT3_OPUS','/opt/homebrew/opt/opus','libopus.0.dylib')]:
+                              ('BT3_OPUS','/opt/homebrew/opt/opus','libopus.0.dylib'),
+                              ('BT3_RTC','/usr/local','libdatachannel.dylib')]:
         source=pathlib.Path(os.environ.get(env,default))/'lib'/name
         if not source.exists():raise RuntimeError('Missing native library: '+str(source))
         seeds.append(source)
@@ -85,12 +86,15 @@ def main(p,mac=False):
     for name,note in [('textures',p.TEXTURES_NOTE),('stages',p.STAGES_NOTE),('songs',p.SONGS_NOTE)]:
         (out/name/'README.txt').write_text(note,encoding='utf8')
     readme=p.README.replace('(Linux, 64-bit)','(macOS, Apple Silicon arm64)' if mac else '(Linux, x86-64)')
-    readme+='\nNative voice uses the TLS Opus relay. Direct WebRTC voice is available when a compatible libdatachannel is installed.\n'
+    readme+='\nThe native package includes RTC media and SCTP DataChannels. TLS WebSocket transport remains available for relay connections.\n'
     if mac:readme+='This macOS package requires macOS 15 or later on Apple Silicon. It is ad-hoc signed, not notarized. Allow the downloaded application in macOS Privacy & Security if Gatekeeper blocks it. Intel Macs are not supported by this arm64 build.\n'
     (out/'README.txt').write_text(readme,encoding='utf8')
     sources=libraries_mac(out) if mac else libraries_linux(out)
     (licenses/'native-libraries.json').write_text(json.dumps(sources,indent=2))
     notices=licenses/'native';notices.mkdir()
+    rtc_notices=pathlib.Path(os.environ.get('BT3_RTC','/usr/local'))/'share/licenses/BT4-RTC'
+    if not (rtc_notices/'SOURCES.json').is_file():raise RuntimeError('Pinned RTC source and license notices are missing')
+    shutil.copytree(rtc_notices,notices/'BT4-RTC',dirs_exist_ok=True)
     if mac:
         # Homebrew retains the installed source recipe, receipt and upstream
         # notices in each keg. Include them with every redistributed library.

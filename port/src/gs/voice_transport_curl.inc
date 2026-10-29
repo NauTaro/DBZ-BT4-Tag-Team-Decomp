@@ -16,6 +16,8 @@ class VoiceWs {
     Bt4CurlWs wire = {};
     std::string url, cap, name;
     int seat;
+    bool orderedFrames;
+    void (*notify)(void*);void *notifyContext;
     static int entry(void *p) { return static_cast<VoiceWs *>(p)->run(); }
     int run() {
         std::string encoded;
@@ -45,7 +47,7 @@ class VoiceWs {
                 std::lock_guard<std::mutex> g(lock);
                 while (!out.empty()) {
                     pending = std::move(out.front()); out.pop_front();
-                    if (pending.binary && SDL_GetTicks() - pending.at > 160) continue;
+                    if (!orderedFrames && pending.binary && SDL_GetTicks() - pending.at > 160) continue;
                     have = true; offset = 0; break;
                 }
             }
@@ -69,10 +71,16 @@ class VoiceWs {
                 received.insert(received.end(), bytes, bytes + count);
                 if (meta->bytesleft == 0 && !(meta->flags & CURLWS_CONT)) {
                     std::lock_guard<std::mutex> g(lock);
-                    if (in.size() >= 64) in.pop_front();
+                    if (in.size() >= (orderedFrames?2048u:64u)) {if(orderedFrames){status=-1;break;}in.pop_front();}
                     in.push_back({std::move(received), binary, SDL_GetTicks()}); received.clear();
+                    if(notify)notify(notifyContext);
                 }
             }
+            // A completed send is not a reason to sleep with more packets
+            // already queued. Backpressure still waits for socket readiness.
+            bool queued;
+            {std::lock_guard<std::mutex> g(lock);queued=!out.empty();}
+            if(status==1&&!have&&queued)continue;
             if (status == 1 && !Bt4CurlWs_Wait(&wire, have, 20)) status = -1;
         }
         { std::lock_guard<std::mutex> g(lock); Bt4CurlWs_Close(&wire); }
@@ -81,7 +89,7 @@ class VoiceWs {
     }
 public:
     std::atomic<int> status{0};
-    VoiceWs(const std::string &u, const std::string &c, int s, const std::string &n) : url(u), cap(c), name(n), seat(s) {
+    VoiceWs(const std::string &u, const std::string &c, int s, const std::string &n,bool game=false,void (*wake)(void*)=nullptr,void *context=nullptr) : url(u), cap(c), name(n), seat(s), orderedFrames(game),notify(wake),notifyContext(context) {
         worker = SDL_CreateThread(entry, "BT4 voice TLS", this);
         if (!worker) status = -1;
     }
@@ -98,11 +106,11 @@ public:
     void send(const void *data, size_t size, bool binary) {
         if (status < 0 || size > 16384 || !size) return;
         std::lock_guard<std::mutex> g(lock);
-        if (binary) {
+        if (binary&&!orderedFrames) {
             unsigned count = 0; for (const auto &message : out) if (message.binary) ++count;
             if (count >= 8) for (auto i = out.begin(); i != out.end(); ++i) if (i->binary) { out.erase(i); break; }
         }
-        if (out.size() >= 64) return;
+        if (out.size() >= (orderedFrames?2048u:64u)) {if(orderedFrames)status=-1;return;}
         const auto *bytes = static_cast<const unsigned char *>(data);
         out.push_back({std::vector<unsigned char>(bytes, bytes + size), binary, SDL_GetTicks()});
         Bt4CurlWs_Wake(&wire);
