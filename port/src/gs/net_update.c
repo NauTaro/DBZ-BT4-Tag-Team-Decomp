@@ -49,7 +49,8 @@
 #endif
 #include "net_update.h"
 #include "update_sign.h"
-#include "port_version.h" /* (generated: PORT_VERSION) */
+#include "port_version.h" /* internal bridge/canonical update identifier */
+#include "../../include/bt4_version.h"
 #include "../port_release.h"
 #include "../update_key.h"
 
@@ -68,6 +69,9 @@ int UpdCrypto_Check(const uint8_t sig[64], const uint8_t pub[32], const uint8_t 
 #ifdef _WIN32
 #define ASSET UPDATE_ASSET_BASE "-windows-x64.zip"
 #define GAME_EXE GAME ".exe"
+#elif defined(__APPLE__) && defined(__aarch64__)
+#define ASSET UPDATE_ASSET_BASE "-macos-arm64.zip"
+#define GAME_EXE GAME
 #else
 #define ASSET UPDATE_ASSET_BASE "-linux-x64.zip"
 #define GAME_EXE GAME
@@ -95,7 +99,7 @@ static struct {
 } sU;
 
 const char *Update_Version(void) {
-    return PORT_VERSION;
+    return BT4_DISPLAY_VERSION;
 }
 
 static void lock(void) {
@@ -670,10 +674,6 @@ static int SDLCALL check_thread(void *arg) {
     js_asset(json, ASSET, &zip);
     js_asset(json, ASSET ".sig", &sig);
     can = 1;
-#ifdef __APPLE__
-    can = 0;
-    SDL_strlcpy(cannot, "There is no release for macOS: build the new version from its source.", sizeof(cannot));
-#endif
     if (can && !key_set(key)) {
         can = 0;
         SDL_strlcpy(cannot, "This build has no update key: it cannot install updates itself. Download the release by hand.", sizeof(cannot));
@@ -828,13 +828,13 @@ void Update_Download(void) {
 
 void Update_Status(UpdateStatus *out) {
     memset(out, 0, sizeof(*out));
-    out->current = PORT_VERSION;
+    out->current = BT4_DISPLAY_VERSION;
     out->state = SDL_GetAtomicInt(&sU.state);
     if (out->state < UPD_AVAILABLE) {
         return;
     }
     lock();
-    SDL_strlcpy(out->latest, sU.latest, sizeof(out->latest));
+    UpdateVer_Display(sU.latest,out->latest,sizeof(out->latest));
     SDL_strlcpy(out->page, sU.page, sizeof(out->page));
     SDL_strlcpy(out->why, sU.why, sizeof(out->why));
     SDL_strlcpy(out->cannot, sU.cannot, sizeof(out->cannot));
@@ -1344,6 +1344,7 @@ int Update_LastResult(const char **version) {
                 result = 1;
                 SDL_strlcpy(ver, data + 3, sizeof(ver));
                 ver[strcspn(ver, "\r\n ")] = '\0';
+                { char label[32];UpdateVer_Display(ver,label,sizeof(label));SDL_strlcpy(ver,label,sizeof(ver)); }
                 fprintf(stderr, "bt3: update: updated to %s (this is %s)\n", ver, PORT_VERSION);
             }
             SDL_free(data);

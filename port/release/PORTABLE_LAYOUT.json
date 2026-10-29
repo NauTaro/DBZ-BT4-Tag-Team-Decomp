@@ -10,7 +10,8 @@
     "stages",
     "tbo",
     "textures",
-    "translations"
+    "translations",
+    "lib"
   ],
   "root_files": [
     "bt3_crash.txt",
@@ -32,7 +33,10 @@
     "Install.exe",
     "BT4decomp-setup.exe",
     "README.txt",
-    "a11y_es.txt"
+    "a11y_es.txt",
+    "BT4decomp",
+    "BT4decomp.mem",
+    "BT4decomp-setup"
   ],
   "preserve_user_content": [
     "gamedata",

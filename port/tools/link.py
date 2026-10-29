@@ -37,7 +37,7 @@ def link_mac(objs, extra):
     sdl = os.environ.get("BT3_SDL3", "/opt/homebrew/opt/sdl3")
     cmd = ["clang", "-arch", "arm64", "-mmacosx-version-min=11.0", "-w", "-o", str(EXE)] + extra + objs + \
           [f"-L{sdl}/lib", "-lSDL3", "-lc++", f"-Wl,-rpath,{sdl}/lib", "-Wl,-rpath,@executable_path/lib",
-           "-Wl,-e,___wrap_main", "-Wl,-export_dynamic", f"-Wl,-map,{EXE}.map"]
+           f"-L{os.environ.get('BT3_CURL', '/opt/homebrew/opt/curl')}/lib", "-lcurl", "-Wl,-headerpad_max_install_names", "-Wl,-e,___wrap_main", "-Wl,-export_dynamic", f"-Wl,-map,{EXE}.map"]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode:
         return r
@@ -77,7 +77,7 @@ def link(objs, extra):
     base64 = ["-Wl,-Ttext-segment=0x20000000", "-Wl,--wrap=main"] if VARIANT == "clang64" else []
     # -rpath $ORIGIN/lib: a release folder carries its own SDL3 in lib/
     return subprocess.run(["gcc", m, "-no-pie", "-w", "-o", str(EXE)] + extra + objs +
-                          ["-static-libstdc++", "-static-libgcc", "-Wl,-Bstatic", "-lstdc++", "-Wl,-Bdynamic", "-lm", "-lpthread", "-lSDL3", "-rdynamic",
+                          ["-static-libstdc++", "-static-libgcc", "-Wl,-Bstatic", "-lstdc++", "-Wl,-Bdynamic", "-lm", "-lpthread", "-lSDL3", "-lcurl", "-rdynamic",
                            "-Wl,-rpath,$ORIGIN/lib"] + common + base64, capture_output=True, text=True)
 
 def main():
