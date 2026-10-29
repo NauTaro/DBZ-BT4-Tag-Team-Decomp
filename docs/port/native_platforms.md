@@ -1,7 +1,7 @@
 # Native platform setup
 
 BT4decomp packages target Windows x64, Linux x86-64 (glibc 2.35 or later),
-and macOS Apple Silicon arm64. Intel macOS and ARM Linux are not supported by
+and macOS 15 or later on Apple Silicon arm64. Intel macOS and ARM Linux are not supported by
 these packages. macOS binaries are ad-hoc signed and are not notarized.
 
 Extract the complete package. On Linux or macOS, run `./BT4decomp-setup`, select

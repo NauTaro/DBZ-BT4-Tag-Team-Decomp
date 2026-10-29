@@ -1344,6 +1344,7 @@ int Update_LastResult(const char **version) {
                 result = 1;
                 SDL_strlcpy(ver, data + 3, sizeof(ver));
                 ver[strcspn(ver, "\r\n ")] = '\0';
+                { char label[32];UpdateVer_Display(ver,label,sizeof(label));SDL_strlcpy(ver,label,sizeof(ver)); }
                 fprintf(stderr, "bt3: update: updated to %s (this is %s)\n", ver, PORT_VERSION);
             }
             SDL_free(data);

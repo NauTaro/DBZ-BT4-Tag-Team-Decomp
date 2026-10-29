@@ -86,4 +86,13 @@ def main():
                         '-keyout',str(out/'key.pem'),'-out',str(out/'cert.pem')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=True)
         context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);context.load_cert_chain(out/'cert.pem',out/'key.pem')
         fixture(tag,'tls-reject',context)
+        audio=out/'audio-probe'
+        subprocess.run(['c++','-std=c++17','-O2',str(Path(__file__).parent/'audio_probe.cpp'),'-o',str(audio),*flags],env=env,check=True)
+        subprocess.run([str(audio)],env=dict(env,SDL_AUDIO_DRIVER='dummy'),timeout=5,check=True)
+        print(json.dumps(dict(case='sdl-audio-dummy',passed=True,physical_audio=False)),flush=True)
+        update=out/'update-probe'
+        subprocess.run(['cc','-std=c99','-O2',str(ROOT/'port/tests/update/test_update.c'),
+            *[str(ROOT/'port/src/gs'/name) for name in ['update_sign.c','update_crypto.c','update_monocypher.c']],
+            '-o',str(update),*flags],env=env,check=True)
+        subprocess.run([str(update)],check=True,timeout=15)
 if __name__=='__main__':main()

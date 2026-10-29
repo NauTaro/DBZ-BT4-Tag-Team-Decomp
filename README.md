@@ -50,7 +50,7 @@ Custom stages use the `stages` folder. Place the compatible stage model there an
 
 ## Installation
 
-Packages are available for Windows x64, Linux x86-64 and macOS Apple Silicon (arm64). Intel Macs and Linux ARM devices are not targets of these builds.
+Packages are available for Windows x64, Linux x86-64 and macOS 15+ on Apple Silicon (arm64). Intel Macs and Linux ARM devices are not targets of these builds.
 
 Download the package for your system from [Releases](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) and extract the complete ZIP into the folder where the game will live. Keep the setup application and game executable together.
 

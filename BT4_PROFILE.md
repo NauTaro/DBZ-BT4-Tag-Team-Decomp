@@ -62,3 +62,7 @@ result-to-character-selection transition and entered a second fight. Keyboard
 tests covered the default and rebound Back key; menu captures covered English
 and Spanish. A damaged base program was rejected. These checks do not establish
 compatibility with every router, modification or remote PC.
+
+## BT4 0.1.39.1 R2 validation
+
+Windows native tests used four clients in one Tag Team room with 170 ms simulated RTT and a shared presentation skip: 900 common frames had matching hashes. An asymmetric slow-link pair also reached 900 matching frames. A public 1 vs 1 lobby forced through TURN reached combat. Character-viewer captures reproduced the sunken model and showed the restored BT4 pose with alternate costumes. The isolated Windows transport worker benchmark reduced p95 queue-to-send dispatch from 16.0641 ms to 0.0749 ms; this measures local scheduling with a send stub, not Internet latency or game FPS. Native Linux and Apple Silicon builds exercise the production WebSocket transports with fragmentation, invalid frames, voice and certificate-rejection fixtures. Actual gameplay on remote Linux and Mac hardware remains a community validation step.
