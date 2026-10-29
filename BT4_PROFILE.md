@@ -22,7 +22,7 @@ startup selector. Text and voices switch together.
 
 The compatibility family is `BT4-B14-Rev2-sim2`. The base-data check reads the
 three verified program resources once per process, independently of the
-displayed revision label. The check covers those resources; it does not audit
+displayed revision label. 1 vs 1, lobbies, spectators and Tag Team share this identity. The check covers those resources; it does not audit
 the full roster or establish compatibility with other BT4 modifications.
 
 Tag Team includes up to ten actor identities and gameplay state in detailed
@@ -46,3 +46,19 @@ also passed. Both private language downloads, both directions of alternate
 language installation and six profile-selection combinations were checked.
 These tests used local clients. They did not reproduce the reported four-PC
 disconnection and do not cover every story event or roster combination.
+
+## Launcher 0.1.39.2 validation
+
+This hotfix retains upstream 0.1.39.1. Lobby protocol 4 adds a per-match relay
+through the lobby owner when the assigned fighters cannot connect directly.
+Forwarding checks the current match generation, assigned seats, member ID,
+source address and recipient. Direct connections remain the first choice.
+
+Native local tests reached combat in a public 1 vs 1 lobby forced through TURN,
+and in a five-entrant tournament with the owner spectating and direct traffic
+between fighters blocked. The equivalent tournament without the fallback
+reproduced the connection failure. Two native Tag Team clients completed the
+result-to-character-selection transition and entered a second fight. Keyboard
+tests covered the default and rebound Back key; menu captures covered English
+and Spanish. A damaged base program was rejected. These checks do not establish
+compatibility with every router, modification or remote PC.

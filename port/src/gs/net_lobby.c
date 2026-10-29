@@ -92,7 +92,7 @@
 #define MAGIC 0x4E335442u
 enum { T_HELLO = 1, T_HELLO_ACK = 2, T_SPEC_HELLO = 20, T_SPEC_NO = 22, SPEC_NO_VERSION = 1 };
 enum { T_L_HELLO = 30, T_L_NO, T_L_STATE, T_L_ALIVE, T_L_GO, T_L_BACK, T_L_LEAVE, T_L_CLOSE, T_L_CHAT, T_L_SAID, T_L_INVITE, T_L_TOKEN };
-enum { LOBBY_VERSION = 3, /* 2: STATE carries the member's nonce (its greeting's), which a member connecting asks for; 3: tournaments (the bracket in STATE, results in ALIVE, the rejoin token in HELLO, TOKEN) */ FP_MARK = 0x46505231, LOBBY_CAP = 0x4C4F4231 /* "1BOL": a game's 1v1 greeting says it knows lobbies */ };
+enum { LOBBY_VERSION = 4, /* BT4: match packets through the owner for non-owner pairs. */ /* 2: STATE carries the member's nonce (its greeting's), which a member connecting asks for; 3: tournaments (the bracket in STATE, results in ALIVE, the rejoin token in HELLO, TOKEN) */ FP_MARK = 0x46505231, LOBBY_CAP = 0x4C4F4231 /* "1BOL": a game's 1v1 greeting says it knows lobbies */ };
 enum { LNO_VERSION = 1, LNO_DATA = 2, LNO_FULL = 3 };
 enum { CLOSE_CLOSED = 1, CLOSE_KICKED = 2 };
 #define NOTE 96
@@ -222,6 +222,9 @@ static struct {
     uint64_t otherNs;          /* the owner: when someone of another version last tried to join (said once a minute) */
     uint32_t nonce, seqSeen, goGen, inGen, backGen;
     char self[64];
+    uint32_t routePeerId;
+    int routeViaOwner;
+    struct sockaddr_in routePeer;
     /* both */
     int leaving, closing, closedBy; /* closedBy: the owner closed it / removed this member (CLOSE) */
     int wantReady;             /* a member: READY asked for, until the owner's word says it (-1 none) */
@@ -783,7 +786,7 @@ static void go_for(int k, int *role, struct sockaddr_in *t, struct sockaddr_in *
 }
 
 static void go_send(int k) {
-    uint8_t p[60];
+    uint8_t p[64];
     int role;
     struct sockaddr_in t, alt, kn, kn2;
     go_for(k, &role, &t, &alt, &kn, &kn2);
@@ -798,6 +801,7 @@ static void go_send(int k) {
     addr_put(p, 9, &alt);
     addr_put(p, 11, &kn);
     addr_put(p, 13, &kn2);
+    put(p,15,sL.slot[0]>0&&sL.slot[1]>0&&role<3?sL.m[sL.slot[role==1?1:0]].id:0);
     send_to(p, (int)sizeof(p), &sL.m[k].addr);
     sL.m[k].goSentNs = now_ns();
 }
@@ -1889,7 +1893,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
                 sL.wantReady = -1;
             }
         }
-    } else if (type == T_L_GO && n >= 60) {
+    } else if (type == T_L_GO && n >= 64) {
         uint32_t gen = get(pkt, 2);
         struct sockaddr_in t, alt, kn, kn2;
         int role = (int)get(pkt, 3);
@@ -1903,6 +1907,9 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         if (t.sin_port == 0) {
             t = sL.owner; /* (the owner's address, as this member knows it) */
         }
+        sL.routePeerId=role<3?get(pkt,15):0;
+        sL.routePeer=role==1?kn:t;
+        sL.routeViaOwner=0;sL.goNs=now_ns();
         sL.goGen = gen;
         sL.inGen = gen;
         fprintf(stderr, "bt3: lobby: match %u: %s\n", (unsigned)gen, role == 1 ? "hosting it (player 1)" : role == 2 ? "joining it (player 2)" : "watching it");
@@ -2243,8 +2250,7 @@ static void timers(void) {
                 if (sTok.has && strcmp(sTok.code, sJoinCode) == 0) {
                     tok_forget("its lobby does not answer");
                 }
-                member_closed("The lobby's owner did not answer. A firewall on the owner's PC may be blocking the game: "
-                              "allow BT4decomp through it (Windows Firewall: allow an app), then try again.");
+                member_closed("Could not reach the lobby. Check that its owner is still connected, then try joining again.");
                 return;
             }
         } else {
@@ -2725,7 +2731,7 @@ void Lobby_Tick(void) {
 }
 
 void Lobby_Pump(void) {
-    uint8_t pkt[2048];
+    uint8_t pkt[4096];
     struct sockaddr_in from;
     int n;
     tok_load();
@@ -2852,3 +2858,6 @@ int Lobby_SessionEnded(void) {
     view_update(1);
     return 1;
 }
+
+
+#include "net_lobby_route.inc"

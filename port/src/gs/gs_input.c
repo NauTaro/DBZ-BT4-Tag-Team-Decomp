@@ -337,6 +337,13 @@ int PortInput_TboEvent(const SDL_Event *ev) {
     }
     if (ev->type == SDL_EVENT_KEY_DOWN) {
         SDL_Scancode sc = ev->key.scancode;
+        /* Back means the configured Triangle key even while a keypad takes
+         * text. Send the keypad's cancel command, not a held gameplay button. */
+        pthread_once(&sLoadOnce, load);
+        if (sKeys[0][7] > 0 && sc == sKeys[0][7] && !(ev->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI | SDL_KMOD_ALT))) {
+            if (!ev->key.repeat) tbo_push(27);
+            return 1;
+        }
         if (sc == SDL_SCANCODE_V && (ev->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) && !ev->key.repeat) {
             /* Ctrl+V (Cmd+V): the clipboard's text, as if typed (a room code copied from a message); only its
                plain characters, and no more than the keypad can hold */

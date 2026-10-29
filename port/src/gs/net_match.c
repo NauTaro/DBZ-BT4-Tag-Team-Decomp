@@ -915,8 +915,10 @@ joined:
     if (key[0] != '\0' && sM.code[0] != '\0') {
         MatchStatus st;
         int round, w, known;
+        char knownAddr[MATCH_ADDRS][64];
         SDL_LockMutex(sM.lock);
         known = sM.st.peerCount;
+        SDL_memcpy(knownAddr,sM.st.peerAddr,sizeof(knownAddr));
         SDL_UnlockMutex(sM.lock);
         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
         for (round = 0; round < 11 && !STOPPED(); round++) {
@@ -930,7 +932,7 @@ joined:
                 break; /* (the host has given the room up: it is connected, or gone) */
             }
             SDL_memset(&st, 0, sizeof(st));
-            if (json_peer(answer, &st) && SDL_strstr(answer, "relay=") != NULL && st.peerCount != known && !STOPPED()) {
+            if (json_peer(answer, &st) && SDL_strstr(answer, "relay=") != NULL && (st.peerCount != known || SDL_memcmp(st.peerAddr,knownAddr,sizeof(knownAddr))!=0) && !STOPPED()) {
                 SDL_LockMutex(sM.lock);
                 SDL_memcpy(sM.st.peerAddr, st.peerAddr, sizeof(st.peerAddr));
                 sM.st.peerCount = st.peerCount;

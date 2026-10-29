@@ -1,11 +1,6 @@
-# BT4decomp 0.1.39.1
+# BT4decomp 0.1.39.2
 
-- Integrated upstream 0.1.39.1 texture filtering and Apple Silicon layout fixes.
-- Added online lobbies, tournaments and joining by address from 0.1.39.
-- Restored the original Tag Team menu design in English and Spanish.
-- Removed relay input waits in CPU-only Tag Team and corrected ping sampling.
-- Filled input scheduling gaps and retained synchronized presentation skipping.
-- Added signed automatic updates from this repository, applied at the main menu.
-- Preserved BT4 HUD, custom-stage, data-validation and GPU readback fixes.
-- Retained the experimental Spectator tab beside Online in Ideas.
-- Made Windows shader builds reproducible with verified shader bytecode.
+- Fixed BT4 data validation for 1 vs 1, lobbies and spectators.
+- Added an owner relay fallback when tournament fighters cannot connect directly.
+- Restored native Tag Team results with rematch, character selection and online-menu actions.
+- Completed online menu translations and corrected room-code layout, profile spacing and keyboard Back.

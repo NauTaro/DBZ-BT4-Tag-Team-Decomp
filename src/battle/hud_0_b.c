@@ -232,6 +232,7 @@ u16 *BtlMenu_GetText(s32 n) {
 /* Text of a menu item. */
 u16 *BtlMenu_GetItemText(s32 n) {
 #ifdef PORT
+    if(n>=0x7110&&n<=0x7113){extern u16 *TagBattle_ResultText(s32);return TagBattle_ResultText(n);}
     if (n==0x7100) {
         extern int PortHud_Hidden(void),Port_GameProfileEnglish(void);
         static u16 line[32];
@@ -524,14 +525,14 @@ void BtlMenu_Draw(u64 **pkt, BtlMenu *menu) {
                     }
                     text = menu->items[i].text[pad];
 #ifdef PORT
-                    if (text == 0x6FFF) { /* a header row in letters (a spectator's own pause menu, port/src/spec_menu.c:
+                    if (text == 0x6FFF || text == 0x7110) { /* a header row in letters (a spectator's own pause menu, port/src/spec_menu.c:
                                              its note where the battle's menus have their title picture) */
                         extern u16 *PortSpecMenu_Text(s32 k);
 
                         Font_PushCursor();
                         Font_SetHome(0x100, ty + 0xE);
                         Font_SetColorRGBA(0xFF, 0xB0, 0x40, 0x80);
-                        Font_Print(PortSpecMenu_Text(7));
+                        Font_Print(text==0x7110?BtlMenu_GetItemText(text):PortSpecMenu_Text(7));
                         Font_PopCursor();
                         continue;
                     }

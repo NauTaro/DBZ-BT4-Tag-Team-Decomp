@@ -627,6 +627,9 @@ static s32 Tb_Vanilla(s32 quick) {
         Tb_Note((char *)off);
         return 0;
     }
+    if (state < 0) {
+        sTb->blockBack=sTb->mode;Snd_PlaySe(1,2);Tb_SetMode(TB_BLOCK);return 0;
+    }
     if (state != 1) {
         Tb_Note("CHECKING YOUR GAME DATA AGAINST THE DISC... TRY AGAIN IN A MOMENT");
         return 0;
@@ -1809,7 +1812,7 @@ static void Tb_DrawJoin(void) {
 
         Ps_Pill(c == sTb->codeLen ? TBO_KIT_SEL : TBO_KIT_BAR, x, 68.0f, x + 44.0f, 104.0f, 0x80);
     }
-    Ps_Panel(TBO_KIT_WINDOW, 14.0f, 112.0f, 352.0f, 324.0f, 0x80);
+    Ps_Panel(TBO_KIT_WINDOW, 14.0f, 112.0f, 352.0f, sTb->tagJoin?324.0f:348.0f, 0x80);
 }
 
 static void Tb_DrawJoinText(void) {
@@ -1821,7 +1824,7 @@ static void Tb_DrawJoinText(void) {
         f32 x = 56.0f + 50.0f * (f32)c;
 
         one[0] = c < sTb->codeLen ? sTb->code[c] : (c == sTb->codeLen && (sTb->frames / 16) & 1 ? '_' : ' ');
-        Ps_Text(x, 81.0f, one, 1.0f, 0.0f, c < sTb->codeLen ? 3 : 0); /* (what is typed: a value) */
+        Ps_TextRaw(x, Ps_TextTop(86.0f, 1.0f), one, 1.0f, 36.0f, c < sTb->codeLen ? 3 : 0); /* (what is typed: a value) */
     }
     Ps_Align(0);
     Tb_Keypad(24.0f, 138.0f, KEY_ROWS, sTbKeys, sTb->tagJoin?sTagJoinBtn:sTbJoinBtn, sTb->tagJoin ? 3 : 4, 34.0f);
@@ -2085,7 +2088,7 @@ static void Tb_DrawProfileText(void) {
 
         Ps_Text(36.0f, Ps_TextTop(y + 13.0f, 0.66f), label[i], 0.66f, 110.0f, i == sTb->prCur ? 1 : 0);
         Ps_Align(2);
-        Ps_TextRaw(266.0f, Ps_TextTop(y + 13.0f, 0.54f), value[i], 0.54f, 140.0f, 3);
+        Ps_TextRaw(252.0f, Ps_TextTop(y + 13.0f, 0.54f), value[i], 0.54f, 126.0f, 3);
         Ps_Align(0);
     }
 }
@@ -3008,7 +3011,7 @@ static void Tb_DrawLobbyText(void) {
         Ps_Text(37.0f, Ps_TextTop(mid, 0.5f), tag, 0.5f, 0.0f, on ? 1 : 4);
         Ps_Align(0);
         if (v->taken[i]) {
-            Ps_Text(54.0f, Ps_TextTop(mid, 0.6f), v->name[i], 0.6f, v->isOwner[i] || i == v->me ? 102.0f : 140.0f, on ? 1 : i == v->me ? 3 : 0);
+            Ps_TextRaw(54.0f, Ps_TextTop(mid, 0.6f), v->name[i], 0.6f, v->isOwner[i] || i == v->me ? 102.0f : 140.0f, on ? 1 : i == v->me ? 3 : 0);
             if (v->isOwner[i] || i == v->me) {
                 Ps_Align(1);
                 Ps_Text(180.0f, Ps_TextTop(mid, 0.34f), v->isOwner[i] ? "OWNER" : "YOU", 0.34f, 36.0f, 0);
@@ -3162,7 +3165,7 @@ static void Tb_DrawLobbyWin(void) {
             Ps_Heading(x0 + 16.0f, y0 + 6.0f, v->owner ? "Close the Lobby?" : "Leave the Lobby?", 0.9f, x1 - x0 - 32.0f, 0x80);
             Ps_Msg(x0 + 16.0f, y0 + 36.0f, v->owner ? "Everyone in it goes back to the menus." : "You go back to the online menu.", TB_MSG_NOTE, 0x80);
         } else {
-            Ps_Text(x0 + 16.0f, y0 + 8.0f, v->name[sTb->lbPopPlace], 0.6f, x1 - x0 - 32.0f, 3);
+            Ps_TextRaw(x0 + 16.0f, y0 + 8.0f, v->name[sTb->lbPopPlace], 0.6f, x1 - x0 - 32.0f, 3);
         }
         for (i = 0; i < count; i++) {
             f32 y = y0 + top + 28.0f * (f32)i;
@@ -4367,6 +4370,12 @@ s32 PortTbo_Run(void) {
         else if (which[0] == 'q' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_QUICK);
         else if (which[0] == 'h') { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
         else { sTb->host = 1; Tb_SetMode(TB_WAIT); }
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_UI_TEST_CODE")&&sTb->mode==TB_JOIN) {
+        if(getenv("BT4_UI_TEST_JOIN_NORMAL"))sTb->tagJoin=0;
+        const char *code=getenv("BT4_UI_TEST_CODE");s32 i;
+        for(i=0;code[i]&&i<CODE_LEN;++i)sTb->code[i]=code[i];
+        sTb->code[i]=0;sTb->codeLen=i;
     }
     if (!returnedTest && getenv("BT4_TAG_CREATE_TEST") && !getenv("BT4_TAG_VIDEO_TEST")) {
         sTb->tagCPU=1; sTb->tagCur=5;

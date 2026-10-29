@@ -633,6 +633,11 @@ void Port_TagCommand(int command,int a,int b){
 
         int rc=TT_BAD_PHASE;
 
+        if(command==TTW_RESULT && a==1){
+            int i;state.result_choice=1;++state.epoch;++state.revision;state.phase=TT_SELECT;
+            for(i=0;i<Tt_Count(&state);++i){state.players[i].confirmed=0;state.players[i].chara=-1;state.players[i].ended=state.players[i].loaded=state.players[i].armed=0;}
+            rc=TT_OK;
+        }
         if(command==TTW_SELECT)rc=Tt_BeginSelect(&state,member,state.epoch);
 
         if(command==TTW_CANCEL_SELECT)rc=Tt_CancelSelect(&state,member,state.epoch);
