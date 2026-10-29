@@ -27,7 +27,7 @@ def variant(cmd):
         soft = "-msoft-float" in cmd
         cc = llvm("clang++" if cmd[0] == "g++" else "clang") if soft else ("clang++" if cmd[0] == "g++" else "clang")
         target = CLANG_TARGET if soft else ["-arch", "arm64", "-mmacosx-version-min=11.0", f"-I{os.environ.get('BT3_SDL3', '/opt/homebrew/opt/sdl3')}/include"]
-        return [cc] + target + [a for a in cmd[1:] if a not in MAC_DROP] + (["-fms-extensions"] + MAC_FLAGS if soft else [])
+        return [cc] + target + [f"-I{os.environ.get('BT3_CURL', '/opt/homebrew/opt/curl')}/include"] + [a for a in cmd[1:] if a not in MAC_DROP] + (["-fms-extensions"] + MAC_FLAGS if soft else [])
     if BITS64:
         cmd = ["-m64" if a == "-m32" else a for a in cmd if a != "-malign-double"]
     if WIN:

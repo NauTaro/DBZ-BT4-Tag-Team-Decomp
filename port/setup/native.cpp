@@ -25,6 +25,7 @@
 #include "../src/plat_verify_tab.h"
 #include "../src/plat_verify_tab_eng.h"
 #include "../include/bt4_build_identity.h"
+#include "../src/gs/update_sign.h"
 #include <SDL3/SDL.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -641,6 +642,7 @@ void work(std::string root, std::string path, std::string eu) {
         sStep=0;sSteps=(path.empty()?0:4)+(sInstallMask==3?2:0);
         if(!path.empty()){
             Iso iso;step_disc(iso,path);check_cancel();
+            if(sInstallMask==0)sInstallMask=sEnglish?2:1;
             if(sInstallMask!=3&&sInstallMask!=(sEnglish?2:1))throw Stop{"LANGUAGE_ISO_MISMATCH"};
             select_data_root(root);step_data(iso,root);check_cancel();step_tables(root);check_cancel();step_test(root);
             const char *profile=sEnglish?"BT4 B14 Rev2 ENG; SLUS_219.78; native profile 7\n":"BT4 B14 Rev2 LATINO; SLUS_219.78; native profile 7\n";
@@ -672,7 +674,7 @@ void Native_Start(const std::string &root, const std::string &iso, const std::st
     if (sThread.joinable()) {
         sThread.join();
     }
-    sInstallMask=mask>=1&&mask<=3?mask:1;
+    sInstallMask=mask>=0&&mask<=3?mask:1;
     sCancel = false;
     sRunning = true;
     sThread = std::thread(work, root, iso, eu);

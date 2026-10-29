@@ -68,6 +68,9 @@ int UpdCrypto_Check(const uint8_t sig[64], const uint8_t pub[32], const uint8_t 
 #ifdef _WIN32
 #define ASSET UPDATE_ASSET_BASE "-windows-x64.zip"
 #define GAME_EXE GAME ".exe"
+#elif defined(__APPLE__) && defined(__aarch64__)
+#define ASSET UPDATE_ASSET_BASE "-macos-arm64.zip"
+#define GAME_EXE GAME
 #else
 #define ASSET UPDATE_ASSET_BASE "-linux-x64.zip"
 #define GAME_EXE GAME
@@ -670,10 +673,6 @@ static int SDLCALL check_thread(void *arg) {
     js_asset(json, ASSET, &zip);
     js_asset(json, ASSET ".sig", &sig);
     can = 1;
-#ifdef __APPLE__
-    can = 0;
-    SDL_strlcpy(cannot, "There is no release for macOS: build the new version from its source.", sizeof(cannot));
-#endif
     if (can && !key_set(key)) {
         can = 0;
         SDL_strlcpy(cannot, "This build has no update key: it cannot install updates itself. Download the release by hand.", sizeof(cannot));

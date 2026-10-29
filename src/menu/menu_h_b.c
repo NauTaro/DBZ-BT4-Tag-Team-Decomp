@@ -185,6 +185,26 @@ s32 CharRef_Run(s32 section) {
         Snd_Update();
         ColorFade_Update();
 #ifdef PORT
+        if (getenv("BT4_RENDER_TEST") && getenv("BT4_CHARREF_MODEL_TEST")) {
+            static s32 probe, visible;
+            extern void Port_TagUiCapture(int index);
+            if (++probe == 90) {
+                s32 chara = atoi(getenv("BT4_CHARREF_MODEL_TEST"));
+                s32 costume = getenv("BT4_CHARREF_COSTUME_TEST") ? atoi(getenv("BT4_CHARREF_COSTUME_TEST")) : 0;
+                ChrView_Show(chara, costume, 0);
+                gCharRef->state = CHARREF_ST_VIEW_WAIT;
+            }
+            if (ChrView_IsVisible()) {
+                gCharRef->state = CHARREF_ST_VIEW;
+                if (++visible == 60 || visible == 90) {
+                    Port_TagUiCapture(visible == 60 ? 1 : 2);
+                    printf("model viewer probe: chara=%s costume=%d visible=%d\n",
+                            getenv("BT4_CHARREF_MODEL_TEST"), getenv("BT4_CHARREF_COSTUME_TEST") ? atoi(getenv("BT4_CHARREF_COSTUME_TEST")) : 0, visible);
+                }
+            }
+        }
+#endif
+#ifdef PORT
         /* The model viewer is a 3D scene, not a page composed for 4:3: in a picture wider than 4:3 it is shown as a
            fight is, with the wider view, and not stretched like the menus around it. */
         Port_MenuScene3D(gCharRef->state == CHARREF_ST_VIEW);

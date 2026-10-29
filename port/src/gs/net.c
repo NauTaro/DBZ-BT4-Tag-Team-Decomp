@@ -535,6 +535,24 @@ static int net_recv(uint8_t *pkt, int size, struct sockaddr_in *from) {
     }
 }
 
+/* Wait for a packet rather than sleeping through its arrival. A short upper
+ * bound still services retransmits and the optional synthetic-lag queue. */
+static void net_idle_wait(void) {
+    fd_set read;struct timeval timeout;uint64_t ns=1000000ull,now=SDL_GetTicksNS();
+    if(sQueueHead!=sQueueTail) {
+        uint64_t due=sQueue[sQueueHead%256].due;
+        if(due<=now)return;
+        if(due-now<ns)ns=due-now;
+    }
+    if(sSock<0){SDL_DelayNS(ns);return;}
+#ifndef _WIN32
+    if(sSock>=FD_SETSIZE){SDL_DelayNS(ns);return;}
+#endif
+    FD_ZERO(&read);FD_SET(sSock,&read);
+    timeout.tv_sec=0;timeout.tv_usec=(long)((ns+999)/1000);
+    select(sSock+1,&read,NULL,NULL,&timeout);
+}
+
 static void queue_flush(void) {
     uint64_t now = SDL_GetTicksNS();
     while (sQueueHead != sQueueTail && sQueue[sQueueHead % 256].due <= now) {
@@ -2444,7 +2462,7 @@ static void roll_tick(unsigned tick) {
                     last = now;
                 }
                 if (!receive()) {
-                    SDL_DelayNS(200000);
+                    net_idle_wait();
                 }
                 if (sGone) {
                     gone(tick);
@@ -2661,7 +2679,7 @@ static void meet(unsigned tick) {
             break;
         }
         if (!receive()) {
-            SDL_DelayNS(200000);
+            net_idle_wait();
         }
         if (sGone) {
             gone(tick);
@@ -2890,7 +2908,7 @@ void Port_NetBeginTick(unsigned tick) {
                 last = now;
             }
             if (!receive()) {
-                SDL_DelayNS(200000);
+                net_idle_wait();
             }
             if (sGone) {
                 gone(tick);

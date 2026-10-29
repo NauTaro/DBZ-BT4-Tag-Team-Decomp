@@ -43,6 +43,7 @@ static void nonblock(TtSocket s){u_long one=1;ioctlsocket(s,FIONBIO,&one);}
 #include <sys/socket.h>
 
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 
 #include <unistd.h>
 
@@ -63,6 +64,8 @@ static int would_block(void){return errno==EAGAIN||errno==EWOULDBLOCK||errno==EI
 static void nonblock(TtSocket s){fcntl(s,F_SETFL,O_NONBLOCK);}
 
 #endif
+
+static void no_delay(TtSocket s){int one=1;setsockopt(s,IPPROTO_TCP,TCP_NODELAY,(const char*)&one,sizeof(one));}
 
 #include "../tag_team.c"
 
@@ -343,7 +346,7 @@ int main(int argc,char **argv){
 
             if(i==TT_CONNECTIONS)closesocket(accepted);else{memset(&peers[i],0,sizeof(Peer));
 
-                peers[i].io.sock=accepted;peers[i].id=++serial;peers[i].room=-1;peers[i].heard=time(NULL);nonblock(accepted);notify(-1,i,TT_OK);}}
+                peers[i].io.sock=accepted;peers[i].id=++serial;peers[i].room=-1;peers[i].heard=time(NULL);nonblock(accepted);no_delay(accepted);notify(-1,i,TT_OK);}}
 
         for(i=0;i<TT_CONNECTIONS;++i)if(peers[i].io.sock!=TT_INVALID){
 
@@ -375,7 +378,17 @@ static char room_code[7],error[128];static time_t last_ping,last_heard;static in
 #include "voice.h"
 static int voice_ticket;static Uint64 voice_ticket_at;
 
+#ifdef _WIN32
 BOOLEAN WINAPI SystemFunction036(PVOID,ULONG);
+#endif
+static int tag_random(void *out,unsigned size){
+#ifdef _WIN32
+    return SystemFunction036(out,size)!=0;
+#else
+    FILE *f=fopen("/dev/urandom","rb");int ok;if(!f)return 0;
+    ok=fread(out,1,size,f)==size;fclose(f);return ok;
+#endif
+}
 
 static int cpu_fill,cpu_difficulty=2,local_room,ws_mode,ws_started;
 
@@ -492,9 +505,13 @@ void Port_TagCPUOptions(int fill,int difficulty){cpu_fill=fill==1;cpu_difficulty
 static void tag_transport_report(const char *why){
     char path[2048],folder[1800];const char *base=SDL_GetBasePath();FILE *f;
     unsigned rx=0,tx=0;
-    if(sTagWs.lockReady){EnterCriticalSection(&sTagWs.lock);rx=sTagWs.inWrite-sTagWs.inRead;tx=sTagWs.outWrite-sTagWs.outRead;LeaveCriticalSection(&sTagWs.lock);}
+    TagWs_QueueCounts(&rx,&tx);
     snprintf(folder,sizeof(folder),"%stbo/logs",base?base:"");SDL_CreateDirectory(folder);
+    #ifdef _WIN32
     snprintf(path,sizeof(path),"%s/tag-transport-%lld-%u.txt",folder,(long long)time(NULL),(unsigned)GetCurrentProcessId());
+#else
+    snprintf(path,sizeof(path),"%s/tag-transport-%lld-%u.txt",folder,(long long)time(NULL),(unsigned)getpid());
+#endif
     f=fopen(path,"a");if(!f)return;
     fprintf(f,"reason=%s\nphase=%d epoch=%u paced=%d ping_ms=%d next=%u latest=%u backlog=%d rx_queue=%u tx_queue=%u seconds_since_reply=%lld\n",
         why,state.phase,state.epoch,tag_paced,tag_ping,received.next,tag_received_latest,tag_backlog(),rx,tx,(long long)(time(NULL)-last_heard));
@@ -534,7 +551,7 @@ int Port_TagConnect(const char *server){
 
     client.sock=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);if(client.sock==TT_INVALID){fail("Cannot open TAG TEAM connection.");return 0;}
 
-    nonblock(client.sock);connecting=1;last_ping=last_heard=time(NULL);
+    nonblock(client.sock);no_delay(client.sock);connecting=1;last_ping=last_heard=time(NULL);
 
     if(connect(client.sock,(struct sockaddr*)&a,sizeof(a))<0&&!would_block()){fail("TAG TEAM server is unavailable.");return 0;}
 
@@ -601,7 +618,7 @@ void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content
 
         unsigned char random[6];int i;
 
-        if(!SystemFunction036(random,sizeof(random))){fail("Cannot create a secure room code.");return;}
+        if(!tag_random(random,sizeof(random))){fail("Cannot create a secure room code.");return;}
 
         for(i=0;i<6;++i)room_code[i]=alphabet[random[i]&31];room_code[6]=0;
 
@@ -792,7 +809,7 @@ void Port_TagPoll(void){
 
 }
 
-void Port_TagYield(void){SDL_Delay(4);}
+void Port_TagYield(void){if(ws_mode)TagWs_Wait(4);else SDL_Delay(4);}
 
 static int tag_wait_banner;
 static uint64_t tag_wait_started;
@@ -823,7 +840,7 @@ void Port_TagWait(int phase,int menu,int cursor,int show){
 
     if(text){Port_UiBanner(text,0);tag_wait_banner=1;}else Port_TagWaitClear();
 
-    Gs_HoldFrame();SDL_Delay(4);
+    Gs_HoldFrame();Port_TagYield();
 
 }
 

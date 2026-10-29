@@ -28,7 +28,7 @@ OUT = ROOT / "port/build/release"
 ZIP = ROOT / "port/build/BT4decomp-linux-x64.zip"
 
 README = """DBZ BT4 Tag Team Decomp (Linux, 64-bit)
-BT4 B14 Rev2 on BT4decomp 0.1.39.2
+BT4 B14 Rev2 on BT4decomp 0.1.39.3
 
 Extract the complete ZIP before starting setup. Keep the setup application and
 BT4decomp together in the installation folder.
@@ -345,7 +345,9 @@ def portable(out):
             bad.append(f"{f}: needs glibc {vers[-1][0]}.{vers[-1][1]}")
     print("portable: yes (baseline x86-64, glibc <= 2.35)" if not bad else "NOT PORTABLE:\n  " + "\n  ".join(bad))
 
-if os.environ.get("BT3_CC") == "win64":
-    main_win()
-else:
-    main()
+if __name__ == "__main__":
+    if os.environ.get("BT3_CC") == "win64":
+        main_win()
+    else:
+        import package_native
+        package_native.main(sys.modules[__name__], mac=os.environ.get("BT3_CC")=="mac64")

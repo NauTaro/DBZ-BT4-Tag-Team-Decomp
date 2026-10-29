@@ -1,14 +1,14 @@
 <div align="center">
   <h1>DBZ BT4 Tag Team Decomp</h1>
-  <p><strong>Dragon Ball Z: Budokai Tenkaichi 4 B14 Rev2 on a native Windows runtime</strong></p>
+  <p><strong>Dragon Ball Z: Budokai Tenkaichi 4 B14 Rev2 on a native PC runtime</strong></p>
   <p>BT4 gameplay and content on the <a href="https://github.com/z3xox/Tenkaichi3Decomp">Tenkaichi3Decomp v0.1.39.1</a> PC port, with online Tag Team, spectator rooms, proximity voice chat, and Spanish or English installation.</p>
   <p>
-    <img src="https://img.shields.io/badge/platform-Windows%20x64-1f6feb?style=flat-square" alt="Windows x64">
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-1f6feb?style=flat-square" alt="Windows, Linux and macOS">
     <img src="https://img.shields.io/badge/upstream-v0.1.39.1-7c3aed?style=flat-square" alt="Tenkaichi3Decomp v0.1.39.1">
     <img src="https://img.shields.io/badge/languages-English%20%7C%20Espa%C3%B1ol-f0883e?style=flat-square" alt="English and Spanish">
   </p>
   <img src="docs/presentation/bt4-intro-hq.gif" width="900" alt="DBZ BT4 presentation artwork">
-  <p><strong>BT4 B14 Rev2 · R26 RC1 · Launcher 0.1.39.2</strong></p>
+  <p><strong>BT4 B14 Rev2 · R26 RC1 · Launcher 0.1.39.3</strong></p>
   <p><a href="#online-play">Online play</a> · <a href="#graphics-and-frame-pacing">Graphics</a> · <a href="#installation">Installation</a> · <a href="#automatic-updates">Automatic updates</a></p>
 </div>
 
@@ -16,7 +16,7 @@
 
 BT4decomp adapts the BT4 B14 Rev2 game data and gameplay for the native PC runtime developed by the Tenkaichi3Decomp contributors. It is not a console emulator. The repository does not contain game disc data; setup reads a compatible ISO supplied by the player.
 
-The current integration is based on Tenkaichi3Decomp v0.1.39.1. The launcher build identifies itself as `BT4-v0.1.39.2-r26-rc1`.
+The current integration is based on Tenkaichi3Decomp v0.1.39.1. The launcher build identifies itself as `BT4-v0.1.39.3-r26-rc1`.
 
 ## Online play
 
@@ -34,7 +34,7 @@ Open an online lobby or host by address. Tournaments support two to eight entran
 
 Spectator rooms let viewers join by code or address without taking a fighter slot. The spectator camera can follow either side or show a split view.
 
-Proximity voice chat supports both teams. The client adjusts voice volume by in-game distance; microphone, output device, voice activation, threshold, and volume controls are available in Audio settings.
+Proximity voice chat supports both teams. Windows can use direct WebRTC media; the native Linux and macOS packages use the TLS Opus relay unless a compatible libdatachannel library is installed. The client adjusts voice volume by in-game distance; microphone, output device, voice activation, threshold, and volume controls are available in Audio settings.
 
 ## Graphics and frame pacing
 
@@ -50,12 +50,16 @@ Custom stages use the `stages` folder. Place the compatible stage model there an
 
 ## Installation
 
-Download the Windows package from [Releases](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) and extract the complete ZIP into the folder where the game will live. Keep the setup application and game executable together.
+Packages are available for Windows x64, Linux x86-64 and macOS Apple Silicon (arm64). Intel Macs and Linux ARM devices are not targets of these builds.
 
-1. Run `BT4decomp-setup.exe` (or `Install.exe`).
+Download the package for your system from [Releases](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) and extract the complete ZIP into the folder where the game will live. Keep the setup application and game executable together.
+
+1. Run `BT4decomp-setup.exe` on Windows, or `./BT4decomp-setup` on Linux and macOS.
 2. Choose the setup language and the game language or languages.
 3. Select a compatible Spanish or English BT4 B14 Rev2 ISO and finish setup.
-4. Start `BT4decomp.exe`.
+4. Start `BT4decomp.exe` on Windows, or `./BT4decomp` on Linux and macOS.
+
+For source builds on Linux or Apple Silicon, run `python3 install.py --iso /path/to/BT4.iso`. The script verifies the BT4 disc profile, builds the native runtime with blank data tables, and delegates extraction to the same setup application. See [native platform setup](docs/port/native_platforms.md) for dependencies and macOS download handling.
 
 The setup interface is available in English and Spanish. A single-language installation starts directly in that language. A bilingual installation downloads the second language package during setup; that package is hosted in this repository. Setup requests GitHub authorization when required for access.
 

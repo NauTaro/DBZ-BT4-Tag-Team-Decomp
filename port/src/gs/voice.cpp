@@ -1,20 +1,29 @@
 // Native voice stays outside the PS2 heap, rollback, game clock and input barrier.
-#include <windows.h>
-#include <wincrypt.h>
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <math.h>
 #include <algorithm>
+#include <string>
+#include "update_sign.h"
+#include "voice_platform.inc"
 #include "voice.h"
 #include "spatial_audio.h"
 #include "../../third_party/voice/rtc/rtc.h"
 #include "../../third_party/voice/opus/opus.h"
 #define JSON_NOEXCEPTION
 #include "../../third_party/voice/json.hpp"
+#ifdef _WIN32
 #include "voice_transport.inc"
+#else
+#include "voice_transport_curl.inc"
+#endif
 using VJson=nlohmann::json;
+#ifdef _WIN32
 #include "voice_audio.inc"
-extern "C" {int Port_Setting(const char *,int);void Port_SettingSave(const char *,int);void Port_SettingsWrite(void);void Port_SettingText(const char *,const char *,char *,int);void Port_SettingTextSave(const char *,const char *);SDL_AudioDeviceID Port_AudioPeekDevice(void);BOOLEAN WINAPI SystemFunction036(PVOID,ULONG);}
+#else
+#include "voice_audio_sdl.inc"
+#endif
+extern "C" {int Port_Setting(const char *,int);void Port_SettingSave(const char *,int);void Port_SettingsWrite(void);void Port_SettingText(const char *,const char *,char *,int);void Port_SettingTextSave(const char *,const char *);SDL_AudioDeviceID Port_AudioPeekDevice(void);}
 static struct {
     std::mutex lock;SDL_Thread *thread=nullptr;std::atomic<bool> quit{false},pttKey{false},pttPad{false};
     PortVoiceOptions options={};PortVoiceState state={};bool initialized=false;
@@ -31,7 +40,7 @@ static bool fixture(){return getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_TEST_F
 static void logVoice(const char *s){if(getenv("BT4_RENDER_TEST")){fprintf(stderr,"bt4 voice: %s\n",s);fflush(stderr);}}
 static void post(const VJson &j){std::shared_ptr<VoiceWs> ws;{std::lock_guard<std::mutex>g(signalingLock);ws=signaling;}if(ws)ws->text(j.dump());}
 struct VoiceRtcApi {
-    HMODULE module=nullptr;bool ready=false;
+    VoiceModule module=nullptr;bool ready=false;
 #define VF(n) decltype(&n) n=nullptr;
     VF(rtcCreatePeerConnection) VF(rtcClosePeerConnection) VF(rtcDeletePeerConnection)
     VF(rtcSetUserPointer) VF(rtcSetLocalDescriptionCallback) VF(rtcSetLocalCandidateCallback)
@@ -39,8 +48,8 @@ struct VoiceRtcApi {
     VF(rtcSetStateChangeCallback) VF(rtcAddTrackEx) VF(rtcSetMessageCallback) VF(rtcSendMessage) VF(rtcIsOpen)
 #undef VF
     bool load(){
-        if(module)return ready;module=LoadLibraryExW(L"libdatachannel.dll",nullptr,LOAD_LIBRARY_SEARCH_APPLICATION_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32);if(!module)return false;
-#define VF(n) n=reinterpret_cast<decltype(n)>(GetProcAddress(module,#n));if(!n)return false;
+        if(module)return ready;module=voiceLibrary("libdatachannel.dll","libdatachannel.so","libdatachannel.dylib");if(!module)return false;
+#define VF(n) n=reinterpret_cast<decltype(n)>(voiceFunction(module,#n));if(!n)return false;
         VF(rtcCreatePeerConnection) VF(rtcClosePeerConnection) VF(rtcDeletePeerConnection)
         VF(rtcSetUserPointer) VF(rtcSetLocalDescriptionCallback) VF(rtcSetLocalCandidateCallback)
         VF(rtcSetRemoteDescription) VF(rtcSetLocalDescription) VF(rtcAddRemoteCandidate)
@@ -50,13 +59,13 @@ struct VoiceRtcApi {
     }
 } rtc;
 static struct VoiceOpusApi {
-    HMODULE module=nullptr;bool ready=false;
+    VoiceModule module=nullptr;bool ready=false;
 #define VF(n) decltype(&n) n=nullptr;
     VF(opus_encoder_create) VF(opus_encoder_destroy) VF(opus_encoder_ctl) VF(opus_encode)
     VF(opus_decoder_create) VF(opus_decoder_destroy) VF(opus_decode)
 #undef VF
-    bool load(){if(module)return ready;module=LoadLibraryExW(L"libopus-0.dll",nullptr,LOAD_LIBRARY_SEARCH_APPLICATION_DIR|LOAD_LIBRARY_SEARCH_SYSTEM32);if(!module)return false;
-#define VF(n) n=reinterpret_cast<decltype(n)>(GetProcAddress(module,#n));if(!n)return false;
+    bool load(){if(module)return ready;module=voiceLibrary("libopus-0.dll","libopus.so.0","libopus.0.dylib");if(!module)return false;
+#define VF(n) n=reinterpret_cast<decltype(n)>(voiceFunction(module,#n));if(!n)return false;
         VF(opus_encoder_create) VF(opus_encoder_destroy) VF(opus_encoder_ctl) VF(opus_encode)
         VF(opus_decoder_create) VF(opus_decoder_destroy) VF(opus_decode)
 #undef VF
@@ -205,7 +214,7 @@ static int voiceThread(void *){
             opus.opus_encoder_ctl(encoder,OPUS_SET_BITRATE(24000));opus.opus_encoder_ctl(encoder,OPUS_SET_COMPLEXITY(4));opus.opus_encoder_ctl(encoder,OPUS_SET_PACKET_LOSS_PERC(5));
             if(!fixture())capture.open(inName);
             playback.open(outName);
-            if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"bt4 voice devices: backend=winmm capture=%d playback=%d\n",(bool)capture,(bool)playback);
+            if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"bt4 voice devices: backend=host-audio capture=%d playback=%d\n",(bool)capture,(bool)playback);
             {std::lock_guard<std::mutex>g(v.lock);v.state.capture=(bool)capture||(!samples.empty()&&inName!="@none");}
             tick=SDL_GetTicks();
         }
@@ -320,14 +329,10 @@ extern "C" void PortVoice_World(int mode,int listener,int count,const float *pos
     v.worldMode=mode;v.listener=listener;v.worldCount=count;memcpy(v.positions,positions,count*4*sizeof(float));v.worldAt=SDL_GetTicks();
 }
 extern "C" void PortVoice_DeviceName(int recording,char *out,int size){init();std::lock_guard<std::mutex>g(v.lock);SDL_strlcpy(out,(recording?v.inputName:v.outputName).c_str(),size);}
-extern "C" int PortVoice_NewKey(unsigned char out[32]){return SystemFunction036(out,32)!=0;}
+extern "C" int PortVoice_NewKey(unsigned char out[32]){return voiceRandom(out);}
 extern "C" void PortVoice_DuelKey(const unsigned char key[32],int seat,const char *name){
     char cap[65],room[65];for(int i=0;i<32;++i)snprintf(cap+i*2,3,"%02x",key[i]);
-    HCRYPTPROV provider=0;HCRYPTHASH hash=0;unsigned char digest[32];DWORD size=32;
-    if(!CryptAcquireContext(&provider,nullptr,nullptr,PROV_RSA_AES,CRYPT_VERIFYCONTEXT|CRYPT_SILENT))return;
-    bool ok=CryptCreateHash(provider,CALG_SHA_256,0,0,&hash)&&CryptHashData(hash,(const BYTE*)cap,64,0)&&CryptGetHashParam(hash,HP_HASHVAL,digest,&size,0);
-    if(hash)CryptDestroyHash(hash);CryptReleaseContext(provider,0);if(!ok)return;
-    for(int i=0;i<32;++i)snprintf(room+i*2,3,"%02x",digest[i]);
+    UpdSha256_Hex(cap,64,room);
     const char *root=getenv("BT4_VOICE_SERVER");if(!root)root="https://bt4-tag-team.mellamannau22.workers.dev";PortVoice_Session(1,root,room,cap,seat,name);
 }
 extern "C" void PortVoice_Shutdown(void){if(!v.initialized)return;v.quit=true;if(v.thread){SDL_WaitThread(v.thread,nullptr);v.thread=nullptr;}}

@@ -719,7 +719,13 @@ int main(int argc, char **argv) {
             fprintf(stderr, GAME "-setup --install works in a release folder (" GAME " and " GAME ".dat next to it).\nIn a source checkout: python3 install.py --iso <file>\n");
             return 2;
         }
-        Native_Start(sRoot, argv[2], argc > 3 ? argv[3] : "");
+        int mask=0; // headless installation defaults to the selected ISO's language
+        for(int i=3;i<argc;i++)if(!strcmp(argv[i],"--language")&&i+1<argc){
+            const char *language=argv[++i];
+            mask=!strcmp(language,"es")?1:!strcmp(language,"en")?2:!strcmp(language,"both")?3:-1;
+        }
+        if(mask<0){fprintf(stderr,"--language must be es, en or both.\n");return 2;}
+        Native_Start(sRoot, argv[2], "", mask);
         for (bool last = false; !last;) {
             last = !Native_Running(); // one more round after the worker has ended: nothing is left behind
             while (Native_Poll(line)) {
