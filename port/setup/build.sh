@@ -31,7 +31,9 @@ fi
 mkdir -p $O
 for f in $I/imgui.cpp $I/imgui_draw.cpp $I/imgui_tables.cpp $I/imgui_widgets.cpp $I/imgui_impl_sdl3.cpp $I/imgui_impl_sdlgpu3.cpp $I/imgui_impl_opengl3.cpp port/setup/native.cpp port/setup/setup.cpp; do
     o=$O/$(basename "$f" .cpp).o
-    if [ ! -f "$o" ] || [ "$f" -nt "$o" ] || [ port/setup/native.h -nt "$o" ]; then
+    if [ ! -f "$o" ] || [ "$f" -nt "$o" ] || [ port/setup/native.h -nt "$o" ] ||
+       [ port/setup/progress.h -nt "$o" ] || [ port/setup/private_packages.inc -nt "$o" ] ||
+       [ port/setup/language_install.inc -nt "$o" ]; then
         $CXX -std=c++17 -O2 -w -I$I $SDL -c "$f" -o "$o" || exit 1
     fi
 done

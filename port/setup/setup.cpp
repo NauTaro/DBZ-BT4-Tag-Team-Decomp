@@ -21,12 +21,13 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_opengl3_loader.h" // glViewport, glClear for the OpenGL window (set up by ImGui_ImplOpenGL3_Init)
 #include "native.h"
+#include "progress.h"
 
 #define GAME "BT4decomp" /* the program this sets up: GAME, GAME.dat; this program is GAME-setup */
 
 enum Page { PAGE_PICK, PAGE_RUN, PAGE_DONE, PAGE_FAILED };
 enum State { PENDING, RUNNING, OK, SKIPPED, FAILED };
-struct StepRow { std::string title, detail; State state = PENDING; Uint64 start = 0, end = 0; };
+struct StepRow { std::string title, detail; State state = PENDING; Uint64 start = 0, end = 0; SetupProgress progress; };
 struct Missing { std::string name, why, pkg; };
 
 // The steps of the two ways to install: from a source checkout (install.py does the work and needs build tools) and
@@ -45,7 +46,7 @@ static const struct { const char *title, *help; } kHelp[] = {
 static bool sRelease;
 static bool sUiEnglish=false,sPackage=false;
 static int sInstallMask=1,sPackagePercent=0;
-static std::string sGithubCode;
+static std::string sGithubCode, sActivity;
 static const char *L(const char *es,const char *en){return sUiEnglish?en:es;}
 
 
@@ -154,7 +155,7 @@ static void reset_rows() {
         titles.push_back("English language");titles.push_back("English self-test");
     }
     if(sRelease&&sInstallMask==3){titles.push_back("Language package");titles.push_back("Self-test");}
-    sPackage=false;sPackagePercent=0;sGithubCode.clear();
+    sPackage=false;sPackagePercent=0;sGithubCode.clear();sActivity.clear();
     sRows.assign(titles.size(), StepRow());
     for (size_t i = 0; i < titles.size(); i++) {
         sRows[i].title = titles[i];
@@ -250,11 +251,34 @@ static void event(const std::string &line) {
     std::string text = sp == std::string::npos ? "" : unescape(line.substr(sp + 1));
     StepRow *cur = current();
 
-    if(kind=="package"){sPackage=true;sPackagePercent=atoi(text.c_str());sGithubCode.clear();return;}
+    if(kind=="activity"){sActivity=text;return;}
+    if(cur && kind=="progress"){cur->progress.read(text.c_str());return;}
+    if(cur && kind=="files"){
+        unsigned done=0,total=0;
+        if(sscanf(text.c_str(),"%u %u",&done,&total)==2 && total && done<=total){
+            cur->progress.files=done;cur->progress.totalFiles=total;
+        }
+        return;
+    }
+    if(kind=="package"){
+        sPackage=true;sPackagePercent=std::max(0,std::min(100,atoi(text.c_str())));sGithubCode.clear();
+        if(cur)cur->progress.fraction=std::max(cur->progress.fraction,sPackagePercent/100.0);
+        return;
+    }
     if(kind=="github"){sGithubCode=text;return;}
     if (kind == "step") {
         int i = atoi(text.c_str());
+        int count=0,titleAt=0;
+        if(sscanf(text.c_str(),"%d %d %n",&i,&count,&titleAt)==2 &&
+           i>=1 && i<=count && count<=32 && titleAt>0){
+            // A language-only run, or a cached optional pack, has fewer steps
+            // than a full ISO install. Follow the worker's actual step list.
+            sRows.resize(count);
+            sRows[i-1].title=text.substr(titleAt);
+        }
         if (i >= 1 && i <= (int)sRows.size()) {
+            sPackage=false;sPackagePercent=0;sActivity.clear();
+            sRows[i - 1].progress=SetupProgress();
             sRows[i - 1].state = RUNNING;
             sRows[i - 1].start = SDL_GetTicks();
             sRows[i - 1].detail.clear();
@@ -539,11 +563,36 @@ static void page_run() {
         }
     }else{
         heading(sPackage?L("Instalando paquete de idioma","Installing language pack"):L("Instalando BT4","Installing BT4"),"");
-        int done=0;for(auto &r:sRows)done+=r.state==OK||r.state==SKIPPED;
-        int pct=sPackage?sPackagePercent:done*100/(int)(sRows.empty()?1:sRows.size());
-        if(pct<0)pct=0;if(pct>100)pct=100;
-        ImGui::PushFont(NULL,44);ImGui::Text("%d%%",pct);ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0,18));ImGui::ProgressBar(pct/100.f,ImVec2(-FLT_MIN,16),"");
+        double done=0,total=0;
+        for(auto &r:sRows){
+            double weight=SetupStepWeight(r.title.c_str());total+=weight;
+            done+=weight*((r.state==OK||r.state==SKIPPED)?1:r.progress.fraction);
+        }
+        double pct=SetupPercent(done,total,!sLauncher.empty());
+        ImGui::PushFont(NULL,44);ImGui::Text("%.1f%%",pct);ImGui::PopFont();
+        ImGui::Dummy(ImVec2(0,18));ImGui::ProgressBar((float)(pct/100),ImVec2(-FLT_MIN,16),"");
+        ImGui::Dummy(ImVec2(0,18));
+        StepRow *row=current();const char *task=L("Preparando instalación","Preparing installation");
+        if(sActivity=="finalize")task=L("Guardando la instalación","Saving installation");
+        else if(sActivity=="extract")task=L("Extrayendo y verificando archivos","Extracting and verifying files");
+        else if(sActivity=="download")task=L("Descargando paquete de idioma","Downloading language pack");
+        else if(sActivity=="verify-package")task=L("Verificando la descarga","Verifying download");
+        else if(sActivity=="unpack")task=L("Extrayendo paquete de idioma","Extracting language pack");
+        else if(row){
+            if(row->title=="Disc image"||row->title=="Imagen ISO")task=L("Verificando ISO de BT4","Verifying BT4 ISO");
+            else if(row->title=="Native data tables"||row->title=="Executable data")task=L("Preparando datos del juego","Preparing game data");
+            else if(row->title=="Self-test"||row->title=="Prueba del juego")task=L("Comprobando que el juego funcione","Checking the game installation");
+            else if(row->title=="Build")task=L("Compilando el juego","Building the game");
+            else if(row->title=="Game data"||row->title=="Datos del juego")task=L("Extrayendo archivos del juego","Extracting game files");
+        }
+        const char spinner[]="|/-\\";
+        ImGui::Text("%c  %s",spinner[(SDL_GetTicks()/150)%4],task);
+        if(row && row->progress.totalFiles){
+            ImGui::Text(L("%u de %u archivos verificados","%u of %u files verified"),row->progress.files,row->progress.totalFiles);
+            if(row->progress.totalBytes)ImGui::TextDisabled("%.1f / %.1f MiB",row->progress.bytes/1048576.0,row->progress.totalBytes/1048576.0);
+        }
+        Uint64 elapsed=sRunStart?(SDL_GetTicks()-sRunStart)/1000:0;
+        ImGui::TextDisabled(L("Tiempo transcurrido: %02u:%02u","Elapsed time: %02u:%02u"),(unsigned)(elapsed/60),(unsigned)(elapsed%60));
     }
     bottom_row(1);
     if(big_button(L("Cancelar","Cancel"),false)){Native_Cancel();sError="INSTALL_CANCELLED";}
@@ -558,7 +607,7 @@ static void page_done() {
 }
 
 static const char *error_text(){
-    if(sError=="GITHUB_HELPER_MISSING")return L("Falta un archivo del instalador. Extraé el ZIP completo en una carpeta y abrí Install.exe.","An installer file is missing. Extract the entire ZIP into a folder and open Install.exe.");
+    if(sError=="GITHUB_HELPER_MISSING")return L("Falta un archivo del instalador. Extraé el ZIP completo en una carpeta y abrí BT4decomp-setup.exe.","An installer file is missing. Extract the entire ZIP into a folder and open BT4decomp-setup.exe.");
     if(sError=="LANGUAGE_ISO_MISMATCH")return L("La ISO no corresponde al idioma elegido. Elegí la ISO latina o inglesa correcta.","The ISO does not match the selected language. Choose the matching Spanish or English ISO.");
     if(sError=="GITHUB_ACCESS_REQUIRED")return L("Esta cuenta no tiene acceso a los paquetes privados de BT4. Usá una cuenta autorizada en GitHub.","This account cannot access the private BT4 packages. Use an authorized GitHub account.");
     if(sError=="GITHUB_LOGIN_FAILED")return L("No se completó el acceso a GitHub. Podés volver a intentarlo.","GitHub sign-in did not complete. You can try again.");
@@ -847,7 +896,15 @@ int main(int argc, char **argv) {
     if(getenv("BT4_RENDER_TEST")){
         if(getenv("BT4_SETUP_UI_LANGUAGE"))sUiEnglish=!strcmp(getenv("BT4_SETUP_UI_LANGUAGE"),"en");
         if(getenv("BT4_SETUP_UI_MASK"))sInstallMask=atoi(getenv("BT4_SETUP_UI_MASK"));
-        if(getenv("BT4_SETUP_PROGRESS_PREVIEW")){sPage=PAGE_RUN;sPackage=true;sPackagePercent=atoi(getenv("BT4_SETUP_PROGRESS_PREVIEW"));}
+        if(getenv("BT4_SETUP_PROGRESS_PREVIEW")){
+            // Render-only fixture: feed the same events as the worker, never
+            // extract or launch a game and never show a desktop window.
+            sRelease=true;reset_rows();sPage=PAGE_RUN;sRunStart=SDL_GetTicks();
+            event("@step 1 4 Disc image");event("@ok verified");
+            event("@step 2 4 Game data");event("@activity extract");
+            unsigned pct=(unsigned)std::max(0,std::min(100,atoi(getenv("BT4_SETUP_PROGRESS_PREVIEW"))));
+            event("@progress "+std::to_string(pct*40000000ULL)+" 4000000000 "+std::to_string(pct*250)+" 25000");
+        }
     }
     while (!sQuit) {
         SDL_Event ev;

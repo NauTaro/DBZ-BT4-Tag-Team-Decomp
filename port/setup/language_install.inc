@@ -62,6 +62,7 @@ static void install_language(const std::string &root,bool english) {
         SDL_CreateDirectory((target+"disc/BIN").c_str());
         SDL_CreateDirectory((target+"disc/DATA").c_str());
         SDL_CloseIO(pack);pack=NULL;
+        say("@activity unpack");
         std::atomic<int> next(0),completed(0);std::atomic<bool> failed(false);
         std::mutex workerLock;std::string firstError;int last=-1;
         auto worker=[&](){
@@ -112,7 +113,8 @@ static void install_language(const std::string &root,bool english) {
             }
             int done=completed.fetch_add(1)+1,pct=done*100/total;
             {std::lock_guard<std::mutex> lock(workerLock);
-            if(pct>last){last=pct;say("@package "+std::to_string(75+done*24/total));}}
+            if(pct>last){last=pct;say("@package "+std::to_string(65+done*35/total));
+                say("@files "+std::to_string(done)+" "+std::to_string(total));}}
         }
         }catch(const Stop &error){std::lock_guard<std::mutex> lock(workerLock);if(firstError.empty())firstError=error.why;failed=true;
         }catch(...){std::lock_guard<std::mutex> lock(workerLock);if(firstError.empty())firstError="Could not finish installing English. Check free space and run Install.exe again.";failed=true;}

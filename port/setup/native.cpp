@@ -21,6 +21,7 @@
 #include <thread>
 #include <vector>
 #include <algorithm>
+#include <functional>
 #include <zlib.h>
 #include "../src/plat_verify_tab.h"
 #include "../src/plat_verify_tab_eng.h"
@@ -295,17 +296,34 @@ void step_disc(Iso &iso, const std::string &path) {
 }
 
 
-Uint32 file_crc(const std::string &path, Uint64 size, std::vector<Uint8> &buf) {
+using ByteCallback = std::function<void(Uint64)>;
+// Throttled structured events keep rendering responsive without queuing one
+// message per small file. The forced final event follows CRC and atomic rename.
+struct ExtractionProgress {
+    Uint64 completed=0,total=0,last=0; int files=0,count=0;
+    void emit(Uint64 partial=0,bool force=false) {
+        Uint64 now=SDL_GetTicks();
+        if(!force && now-last<100)return;
+        last=now; char line[160];
+        snprintf(line,sizeof(line),"@progress %llu %llu %d %d",
+                 (unsigned long long)(completed+partial),(unsigned long long)total,files,count);
+        say(line);
+    }
+};
+Uint32 file_crc(const std::string &path, Uint64 size, std::vector<Uint8> &buf,
+                const ByteCallback &progress={}) {
     SDL_IOStream *f = SDL_IOFromFile(path.c_str(), "rb");
     if (!f) return ~0u;
     if (SDL_GetIOSize(f) != (Sint64)size) { SDL_CloseIO(f); return ~0u; }
-    Uint32 crc = 0;
+    struct Close { SDL_IOStream *file; ~Close(){SDL_CloseIO(file);} } close{f};
+    Uint32 crc = 0; Uint64 read=0;
     while (size) {
         size_t n = size < buf.size() ? (size_t)size : buf.size();
-        if (SDL_ReadIO(f, buf.data(), n) != n) { SDL_CloseIO(f); return ~0u; }
-        crc = SDL_crc32(crc, buf.data(), n); size -= n; check_cancel();
+        if (SDL_ReadIO(f, buf.data(), n) != n) return ~0u;
+        crc = SDL_crc32(crc, buf.data(), n); size -= n; read+=n;
+        if(progress)progress(read);check_cancel();
     }
-    SDL_CloseIO(f); return crc;
+    return crc;
 }
 
 // Link only after the source matches the selected disc's size and CRC.
@@ -342,13 +360,14 @@ void select_data_root(const std::string &root) {
 }
 
 void checked_out(Iso &iso, Uint64 off, Uint64 size, const std::string &path,
-                 unsigned expectedSize, unsigned expectedCrc, std::vector<Uint8> &buf) {
+                 unsigned expectedSize, unsigned expectedCrc, std::vector<Uint8> &buf,
+                 const ByteCallback &progress={}) {
     if (size != expectedSize) throw Stop{"Tamano incompatible en " + path};
-    if (file_crc(path, size, buf) == expectedCrc) return;
+    if (file_crc(path, size, buf, progress) == expectedCrc) return;
     std::string temp = path + ".part";
     if(!sDedupeRoot.empty() && path.compare(0,sDataRoot.size(),sDataRoot)==0) {
         std::string shared=sDedupeRoot+path.substr(sDataRoot.size());
-        if(file_crc(shared,expectedSize,buf)==expectedCrc) {
+        if(file_crc(shared,expectedSize,buf,progress)==expectedCrc) {
             SDL_RemovePath(temp.c_str());
             if(share_file(shared,temp)) {
                 if(!SDL_RenamePath(temp.c_str(),path.c_str()))throw Stop{"Could not finalize the shared language asset."};
@@ -365,7 +384,7 @@ void checked_out(Iso &iso, Uint64 off, Uint64 size, const std::string &path,
             iso.read(off, buf.data(), n);
             crc = SDL_crc32(crc, buf.data(), n);
             if (SDL_WriteIO(f, buf.data(), n) != n) throw Stop{"No se pudo guardar " + temp};
-            off += n; size -= n; check_cancel();
+            off += n; size -= n; if(progress)progress(expectedSize-size);check_cancel();
         }
     } catch (...) { SDL_CloseIO(f); throw; }
     if (!SDL_CloseIO(f)) throw Stop{"No se pudo cerrar " + temp};
@@ -384,16 +403,20 @@ void step_data(Iso &iso, const std::string &root) {
     if (hash.hex() != indexHash) throw Stop{"DBZ4.BIN does not match the selected BT4 B14 Rev2 profile."};
     std::string data = sDataRoot.empty() ? root + "gamedata/" : sDataRoot;
     SDL_CreateDirectory(data.c_str());
-    int entry = 0, percent = -1, files = 0;
-    const int countAll = sVerifyCount[0]+sVerifyCount[1]+sVerifyCount[2]+sVerifyCount[3]+sizeof(kVerifyLoose)/sizeof(kVerifyLoose[0]);
-    auto progress = [&]() {
-        files++;
-        int now = files*100/countAll;
-        if (now != percent) {
-            char line[128]; snprintf(line,sizeof(line),"@note %d%% - %d / %d archivos verificados",now,files,countAll);
-            say(line); percent = now;
-        }
-        check_cancel();
+    int entry = 0;
+    ExtractionProgress progress;
+    progress.count=sVerifyCount[0]+sVerifyCount[1]+sVerifyCount[2]+sVerifyCount[3]+sizeof(kVerifyLoose)/sizeof(kVerifyLoose[0]);
+    for(int i=0;i<progress.count;++i)progress.total+=sVerify[i][0];
+    say("@activity extract");progress.emit(0,true);
+    auto extract = [&](Uint64 offset,Uint64 bytes,const std::string &path) {
+        Uint64 high=0;
+        checked_out(iso,offset,bytes,path,sVerify[entry][0],sVerify[entry][1],buf,[&](Uint64 done){
+            // A failed cached CRC may require a rewrite. Keep the display
+            // monotonic, but credit the final byte only after verification.
+            high=std::max(high,std::min(done,bytes?bytes-1:0));progress.emit(high);
+        });
+        progress.completed+=bytes;++progress.files;
+        progress.emit(0,progress.files==progress.count);check_cancel();
     };
     for (int part=0; part<4; part++) {
         char upperName[64], lowerName[32];
@@ -419,8 +442,8 @@ void step_data(Iso &iso, const std::string &root) {
                 bytes=afs->size-offset;
             }
             char name[32]; snprintf(name,sizeof(name),"%05u.bin",i);
-            checked_out(iso,afs->offset+offset,bytes,dir+name,sVerify[entry][0],sVerify[entry][1],buf);
-            offset+=(Uint64)sectors*2048; progress();
+            extract(afs->offset+offset,bytes,dir+name);
+            offset+=(Uint64)sectors*2048;
         }
     }
     for (const char *loose:kVerifyLoose) {
@@ -428,10 +451,10 @@ void step_data(Iso &iso, const std::string &root) {
         if (!f) throw Stop{"Falta " + std::string(loose+5)};
         std::string path=data+loose;
         SDL_CreateDirectory(path.substr(0,path.rfind('/')).c_str());
-        checked_out(iso,f->offset,f->size,path,sVerify[entry][0],sVerify[entry][1],buf);
-        entry++; progress();
+        extract(f->offset,f->size,path);
+        entry++;
     }
-    say("@ok " + std::to_string(files) + " BT4 files extracted and verified with CRC-32");
+    say("@ok " + std::to_string(progress.files) + " BT4 files extracted and verified with CRC-32");
 }
 
 // Recompute only the small native-table fingerprint, using the strictly verified
@@ -653,6 +676,7 @@ void work(std::string root, std::string path, std::string eu) {
             if(!installed_language(root,!base))install_language(root,!base);
             else {step("Language package");say("@package 100");say("@skip verified language is installed");}
         }else if(!installed_language(root,sInstallMask==2))throw Stop{"ISO_REQUIRED"};
+        say("@activity finalize");
         SDL_CreateDirectory((root+"tbo").c_str());
         std::string options=std::to_string(sInstallMask)+"\n";
         if(!SDL_SaveFile((root+"tbo/languages.ini").c_str(),options.data(),options.size()))throw Stop{"INSTALL_STATE_FAILED"};

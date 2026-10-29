@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/presentation/cover.jpg" width="960" alt="Dragon Ball Z Budokai Tenkaichi 4 Tag Team artwork">
+  <img src="docs/presentation/tag-team-gameplay-preview.gif" width="800" alt="BT4 gameplay: Goku and Jiren">
   <h1>BT4decomp</h1>
   <p><strong>Budokai Tenkaichi 4 B14 Rev2. Native desktop runtime. Simultaneous team battles.</strong></p>
   <p>Online Tag Team, tournaments, spectator rooms and proximity voice, built on Tenkaichi3Decomp.</p>
@@ -26,11 +26,6 @@ BT4decomp adapts **BT4 B14 Rev2** for Windows, Linux and Apple Silicon. It runs 
 | **Spectators** | Join without occupying a fighter slot; follow either side or use a split view. |
 
 Menus and setup support **English and Spanish**. Combat HUD visibility can be toggled locally, including health bars, damage indicators, technique labels, names and radar.
-
-<div align="center">
-  <img src="docs/presentation/tag-team-gameplay-preview.gif" width="400" alt="Supplied BT4 gameplay clip showing Goku and Jiren">
-  <p><sub>BT4 gameplay clip supplied by the project maintainer.</sub></p>
-</div>
 
 ## Voice and presentation
 
