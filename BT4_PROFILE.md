@@ -98,7 +98,9 @@ An auxiliary TLS outage lasting 18.4 seconds preserved the same native host whil
 RTC continued. The relay resumed from retained history and reached 1,800 common
 frames with matching gameplay hashes; the Durable Object frame clock stayed off.
 A public staging-room test also reached 900 matching frames without injected delay.
-Both processes ran on this PC: its 0-1 ms direct RTT is not a measurement between
-remote households. Native Linux and macOS packages also exercise the shipped SCTP
+A separate public test forced TURN on both peers and selected relay candidates
+on both ends: it reached 900 matching common frames with 7-8 ms active-path RTT,
+versus 125-127 ms for the original room route. Both processes ran on this PC;
+these values do not measure a connection between remote households. Native Linux and macOS packages also exercise the shipped SCTP
 SDK with 512-byte unordered messages and the original TLS, voice and audio probes.
 Actual gameplay between remote Linux and Mac systems requires community validation.
