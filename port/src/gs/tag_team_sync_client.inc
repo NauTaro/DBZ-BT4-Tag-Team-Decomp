@@ -40,7 +40,10 @@ static int tag_delay_margin=1;
 static unsigned tag_delay_clean_frames;
 static void tag_delay_feedback(unsigned frame,unsigned late_mask){
     int seat=Tt_Seat(&state,member);
-    if(!tag_paced||seat<0||!tag_input_sent||tag_input_epoch!=state.epoch||frame<tag_input_first)return;
+    if(!tag_paced||seat<0||!tag_input_sent||tag_input_epoch!=state.epoch||frame<tag_input_first||frame>tag_input_latest)return;
+    /* A stalled game thread may not have sampled these authoritative frames
+     * at all. Their missing input is not evidence of a late network packet;
+     * backlog compensation already schedules the next input on the live clock. */
     if(late_mask&(1u<<seat)){
         tag_delay_clean_frames=0;
         /* Startup padding and a burst of old notices must not ratchet the
