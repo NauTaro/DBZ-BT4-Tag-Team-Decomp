@@ -30,4 +30,4 @@ jobs:
       - name: Test portable layout checker without game data
         run: python -m unittest discover -s tools/review/tests -v
       - name: Test authenticated Tag Team negotiation and recovery
-        run: node --test cloudflare/tests/tag_link.test.mjs
+        run: node --test cloudflare/tests/tag_link.test.mjs cloudflare/tests/voice_hibernation.test.mjs
