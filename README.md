@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/languages-English%20%7C%20Espa%C3%B1ol-f0883e?style=flat-square" alt="English and Spanish">
   </p>
   <img src="docs/presentation/bt4-intro-hq.gif" width="900" alt="DBZ BT4 presentation artwork">
-  <p><strong>BT4 B14 Rev2 &middot; Launcher 0.1.39.1 R2</strong></p>
+  <p><strong>BT4 B14 Rev2 &middot; Launcher 0.1.39.1 R3</strong></p>
   <p><a href="#online-play">Online play</a> · <a href="#graphics-and-frame-pacing">Graphics</a> · <a href="#installation">Installation</a> · <a href="#automatic-updates">Automatic updates</a></p>
 </div>
 
@@ -16,7 +16,7 @@
 
 BT4decomp adapts the BT4 B14 Rev2 game data and gameplay for the native PC runtime developed by the Tenkaichi3Decomp contributors. It is not a console emulator. The repository does not contain game disc data; setup reads a compatible ISO supplied by the player.
 
-The current integration is based on Tenkaichi3Decomp v0.1.39.1. The launcher build identifies itself as `BT4-v0.1.39.1-R2`.
+The current integration is based on Tenkaichi3Decomp v0.1.39.1. The launcher build identifies itself as `BT4-v0.1.39.1-R3`.
 
 ## Online play
 
@@ -24,7 +24,7 @@ The current integration is based on Tenkaichi3Decomp v0.1.39.1. The launcher bui
 
 Play online 1 vs 1 or in simultaneous Tag Team battles. Tag Team supports up to five fighter slots per team, with human players and CPU fighters. Private rooms use shareable codes; Quick Match searches for an opponent automatically.
 
-The two modes use different network paths. 1 vs 1 uses the upstream peer rollback path. Tag Team sends inputs through the BT4 relay and follows a server-paced frame schedule. Its input lead starts from estimated one-way relay time and adjusts only for submitted inputs that miss their server deadline. Tag Team's ping is the round-trip time to the relay, so it is not directly comparable to 1 vs 1 peer ping. Actual delay still depends on route quality and packet timing. A single human playing against CPU consumes inputs locally without relay pacing; its overlay does not show relay RTT as opponent ping.
+1 vs 1 uses the upstream peer rollback path. Tag Team negotiates a voice-independent WebRTC game connection before each round. When every participant confirms a faster peer route, one native network thread on the host coordinates inputs at 114% speed. ICE can select a direct or TURN path. Authenticated TLS carries copies of the same host's frames as a backup; it does not run a second battle clock. If preparation fails or a participant uses an earlier compatible client, the room keeps server coordination. The ping meter measures the active route, and a single human playing against CPU consumes inputs locally. Actual latency depends on the participating networks. If the native coordinator leaves, the current round ends; live coordinator migration is not implemented.
 
 ### Lobbies and tournaments
 

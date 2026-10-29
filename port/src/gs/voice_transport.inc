@@ -12,6 +12,8 @@ class VoiceWs {
     std::mutex lock;std::deque<VoiceWsMessage> in,out;
     SDL_Thread *rx=nullptr,*tx=nullptr;std::atomic<bool> stop{false};
     std::string url,cap,name;int seat=0;
+    bool orderedFrames=false;void (*notify)(void*)=nullptr;void *notifyContext=nullptr;
+    HANDLE sendWake=nullptr;
     std::atomic<HINTERNET> session{nullptr},connection{nullptr},request{nullptr},ws{nullptr};
     bool adopt(std::atomic<HINTERNET> &slot,HINTERNET handle){if(!handle)return false;slot=handle;if(stop){if(auto h=slot.exchange(nullptr))WinHttpCloseHandle(h);return false;}return true;}
     static void closeHandle(std::atomic<HINTERNET> &slot){if(auto h=slot.exchange(nullptr))WinHttpCloseHandle(h);}
@@ -31,7 +33,7 @@ class VoiceWs {
         if(!WinHttpSetOption(request,WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET,nullptr,0)||!WinHttpSendRequest(request,wh,(DWORD)-1,WINHTTP_NO_REQUEST_DATA,0,0,0)||!WinHttpReceiveResponse(request,nullptr))return fail();
         DWORD code=0,size=sizeof(code);WinHttpQueryHeaders(request,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,WINHTTP_HEADER_NAME_BY_INDEX,&code,&size,WINHTTP_NO_HEADER_INDEX);
         if(code!=101)return fail();
-        if(!adopt(ws,WinHttpWebSocketCompleteUpgrade(request,0)))return fail();status=1;
+        if(!adopt(ws,WinHttpWebSocketCompleteUpgrade(request,0)))return fail();status=1;if(sendWake)SetEvent(sendWake);
         while(!stop){
             unsigned char data[16385];DWORD got=0;unsigned used=0;WINHTTP_WEB_SOCKET_BUFFER_TYPE kind;
             do{
@@ -39,9 +41,10 @@ class VoiceWs {
                 if(kind==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE||used>16384)return fail();
             }while(kind==WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE||kind==WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE);
             if(kind!=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE&&kind!=WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)return fail();
-            std::lock_guard<std::mutex> g(lock);
-            if(in.size()>=64)in.pop_front();
-            in.push_back({std::vector<unsigned char>(data,data+used),kind==WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE,SDL_GetTicks()});
+            {std::lock_guard<std::mutex> g(lock);
+                if(in.size()>=(orderedFrames?2048u:64u)){if(orderedFrames)return fail();in.pop_front();}
+                in.push_back({std::vector<unsigned char>(data,data+used),kind==WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE,SDL_GetTicks()});}
+            if(notify)notify(notifyContext);
         }return 0;
     }
     int fail(){if(!stop)status=-1;return 0;}
@@ -49,20 +52,20 @@ class VoiceWs {
         while(!stop){
             if(status<0)break;VoiceWsMessage msg;bool have=false;
             if(status==1){std::lock_guard<std::mutex> g(lock);if(!out.empty()){msg=std::move(out.front());out.pop_front();have=true;}}
-            if(have){if(msg.binary&&SDL_GetTicks()-msg.at>160)continue;
+            if(have){if(!orderedFrames&&msg.binary&&SDL_GetTicks()-msg.at>160)continue;
                 if(WinHttpWebSocketSend(ws,msg.binary?WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE:WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,msg.bytes.data(),(DWORD)msg.bytes.size())!=NO_ERROR)return fail();
-            }else SDL_Delay(2);
+            }else if(sendWake)WaitForSingleObject(sendWake,1000);else SDL_Delay(2);
         }return 0;
     }
 public:
     std::atomic<int> status{0};
-    VoiceWs(const std::string &u,const std::string &c,int s,const std::string &n):url(u),cap(c),name(n),seat(s){rx=SDL_CreateThread(receiveThread,"BT4 voice TLS receive",this);tx=SDL_CreateThread(sendThread,"BT4 voice TLS send",this);if(!rx||!tx)status=-1;}
-    ~VoiceWs(){stop=true;closeHandle(ws);closeHandle(request);if(tx)SDL_WaitThread(tx,nullptr);if(rx)SDL_WaitThread(rx,nullptr);closeHandle(ws);closeHandle(request);closeHandle(connection);closeHandle(session);}
+    VoiceWs(const std::string &u,const std::string &c,int s,const std::string &n,bool game=false,void (*wake)(void*)=nullptr,void *context=nullptr):url(u),cap(c),name(n),seat(s),orderedFrames(game),notify(wake),notifyContext(context){if(game){sendWake=CreateEventW(nullptr,FALSE,FALSE,nullptr);if(!sendWake){status=-1;return;}}rx=SDL_CreateThread(receiveThread,"BT4 TLS receive",this);tx=SDL_CreateThread(sendThread,"BT4 TLS send",this);if(!rx||!tx)status=-1;}
+    ~VoiceWs(){stop=true;if(sendWake)SetEvent(sendWake);closeHandle(ws);closeHandle(request);if(tx)SDL_WaitThread(tx,nullptr);if(rx)SDL_WaitThread(rx,nullptr);closeHandle(ws);closeHandle(request);closeHandle(connection);closeHandle(session);if(sendWake)CloseHandle(sendWake);}
     bool read(VoiceWsMessage &m){std::lock_guard<std::mutex>g(lock);if(in.empty())return false;m=std::move(in.front());in.pop_front();return true;}
     void send(const void *data,size_t size,bool binary){
         if(status<0||size>16384)return;std::lock_guard<std::mutex>g(lock);
-        if(binary){size_t audio=0;for(const auto &m:out)if(m.binary)++audio;if(audio>=8){for(auto it=out.begin();it!=out.end();++it)if(it->binary){out.erase(it);break;}}}
-        if(out.size()>=64)return;const auto *p=static_cast<const unsigned char*>(data);out.push_back({std::vector<unsigned char>(p,p+size),binary,SDL_GetTicks()});
+        if(binary&&!orderedFrames){size_t audio=0;for(const auto &m:out)if(m.binary)++audio;if(audio>=8){for(auto it=out.begin();it!=out.end();++it)if(it->binary){out.erase(it);break;}}}
+        if(out.size()>=(orderedFrames?2048u:64u)){if(orderedFrames)status=-1;return;}const auto *p=static_cast<const unsigned char*>(data);out.push_back({std::vector<unsigned char>(p,p+size),binary,SDL_GetTicks()});if(sendWake)SetEvent(sendWake);
     }
     void text(const std::string &s){send(s.data(),s.size(),false);}
 };

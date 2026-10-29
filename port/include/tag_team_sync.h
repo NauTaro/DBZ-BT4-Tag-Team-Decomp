@@ -11,6 +11,7 @@
 #define TT_CAPS_NOTICE 104
 #define TT_CAP_PACED_INPUT 1u
 #define TT_CAP_DETAILED_SYNC 2u
+#define TT_CAP_DIRECT_INPUT 4u
 #define TT_TAG_SPEED_PERCENT 114
 #define TT_TAG_STEPS_PER_SECOND 34.2 /* 30 simulation steps, two vblanks each, at 114% */
 enum { TT_SYNC_EQUAL,TT_SYNC_ROUNDING,TT_SYNC_DIFFERENT };

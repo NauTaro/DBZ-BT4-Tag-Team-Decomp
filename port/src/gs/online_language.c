@@ -436,6 +436,8 @@ static const char *const kText[][2]={
 {"Cannot create a secure room code.","No se pudo generar un c\u00f3digo de sala seguro."},
 {"TAG TEAM connection timed out.","Se agot\u00f3 el tiempo de conexi\u00f3n de Tag Team."},
 {"TAG TEAM connection was lost.","Se perdi\u00f3 la conexi\u00f3n de Tag Team."},
+{"The TAG TEAM coordinator connection was lost.","Se perdi\u00f3 la conexi\u00f3n con el coordinador de Tag Team."},
+{"This client fell too far behind the TAG TEAM coordinator.","Este equipo no pudo mantener el ritmo del combate de Tag Team."},
 {"Stale TAG TEAM battle input.","Se recibieron controles de una partida anterior."},
 {"Invalid TAG TEAM input frame.","Se recibi\u00f3 un fotograma de controles no v\u00e1lido."},
 {"Incompatible TAG TEAM server.","El servidor Tag Team no es compatible."},

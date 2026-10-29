@@ -20,7 +20,7 @@ on:
       version:
         description: Launcher version embedded in the test packages
         required: true
-        default: "0.1.39.3"
+        default: "0.1.39.1-R3"
         type: string
 
       platform:
@@ -82,11 +82,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install native arm64 build dependencies
         run: |
-          brew install llvm sdl3 shaderc spirv-cross curl pkgconf opus
+          brew install llvm sdl3 shaderc spirv-cross curl pkgconf opus openssl@3 cmake ninja
           python3 -m venv --system-site-packages .venv
           .venv/bin/python -m pip install --quiet libclang==18.1.1
           echo "BT3_CURL=$(brew --prefix curl)" >> "$GITHUB_ENV"
           echo "BT3_SDL3=$(brew --prefix sdl3)" >> "$GITHUB_ENV"
+      - name: Build pinned RTC media and SCTP SDK
+        run: |
+          python3 port/release/build_rtc.py --prefix "$PWD/port/build/native-rtc" \
+            --work "$RUNNER_TEMP/bt4-native-rtc" --openssl-prefix "$(brew --prefix openssl@3)" --jobs 2
+          echo "BT3_RTC=$PWD/port/build/native-rtc" >> "$GITHUB_ENV"
       - name: Build native Apple Silicon package
         env:
           BT3_VERSION: ${{ inputs.version }}

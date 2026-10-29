@@ -2,6 +2,7 @@
 #include "../port/include/tag_team_wire.h"
 #include <string.h>
 #include <stdarg.h>
+#ifndef TT_KERNEL_NATIVE
 void *memset(void *p,int c,unsigned long n){unsigned char *d=p;while(n--)*d++=(unsigned char)c;return p;}
 void *memcpy(void *p,const void *s,unsigned long n){unsigned char*d=p;const unsigned char*b=s;while(n--)*d++=*b++;return p;}
 int memcmp(const void *a,const void *b,unsigned long n){const unsigned char*x=a,*y=b;while(n--){if(*x!=*y)return *x-*y;++x;++y;}return 0;}
@@ -16,6 +17,7 @@ int snprintf(char *dst,unsigned long cap,const char *fmt,...){
         while(*s){if(n+1<cap)dst[n]=*s;++n;++s;}}
     if(cap)dst[n<cap?n:cap-1]=0;va_end(a);return n;
 }
+#endif
 static TtRoom room;static TtInputs frames;
 static unsigned char input[TT_WIRE_BYTES],output[TT_WIRE_BYTES];
 /* A centred quantised stick is 127,127. Zero would steer a late player's fighter. */
@@ -38,12 +40,28 @@ void Kernel_Leave(unsigned member){
     /* Keep the shared fighter and feed it neutral input until this round ends.
      * A vanished connection must not abort the remaining players' battle. */
     inactive_mask|=1u<<seat;room.players[seat].ended=1;++room.revision;
+    /* Input sampled before a disconnect must not become a future movement.
+     * Only pending seats are cleared; committed history is immutable. */
+    for(i=0;i<TT_INPUT_HISTORY;++i)frames.ring[i].mask&=~(1u<<seat);
+    last_pad_valid&=~(1u<<seat);
     if(member==room.host){
         for(i=0;i<Tt_Count(&room);++i)if(!room.players[i].cpu&&!(inactive_mask&(1u<<i))){room.host=room.players[i].member;break;}
         if(i==Tt_Count(&room))room.phase=TT_ABORTED;
     }
 }
 void Kernel_Pacing(int on){paced_input=on!=0;}
+void Kernel_Abort(void){if(room.phase!=TT_ABORTED){room.phase=TT_ABORTED;++room.revision;}}
+/* A direct coordinator may only start at the existing armed barrier. The wire
+ * snapshot cannot reconstruct a running match's input history. */
+int Kernel_ImportArmed(const unsigned char *packet){
+    TtRoom next;unsigned member;int result,i;char code[7];
+    if(!packet||!Ttw_Decode(packet,&next,&member,&result,code)||result||next.phase!=TT_ARMED||Tt_Humans(&next)<2)return 0;
+    if(next.delay!=0||next.load_digest!=Tt_LoadDigest(&next))return 0;
+    for(i=0;i<Tt_Count(&next);++i)if(!next.players[i].member||!next.players[i].confirmed||!next.players[i].loaded||!next.players[i].armed)return 0;
+    room=next;Tt_InputsReset(&frames,room.epoch,Tt_Count(&room));
+    memset(last_pad,0,sizeof(last_pad));memset(last_pad_frame,0,sizeof(last_pad_frame));
+    last_pad_valid=inactive_mask=last_late_mask=0;paced_input=1;sync_reset();return 1;
+}
 unsigned Kernel_PendingFrame(void){return frames.next;}
 unsigned Kernel_DeadlineFrame(void){
     int i;if(room.phase!=TT_FIGHT)return 0;last_late_mask=0;
@@ -92,6 +110,7 @@ int Kernel_Command(unsigned member){
     case 19:return Tt_MovePlayer(&room,member,epoch,a,b);
     case TTW_INPUT:
         if(room.phase!=TT_FIGHT)return TT_BAD_PHASE;
+        {int seat=Tt_Seat(&room,member);if(seat<0||(inactive_mask&(1u<<seat)))return TT_BAD_MEMBER;}
         rc=Tt_InputPut(&frames,epoch,Tt_Seat(&room,member),a,input+16);
         if(paced_input&&epoch==room.epoch&&(unsigned)a<frames.next)return TT_OK;
         if(!rc){int i;for(i=0;i<Tt_Count(&room);++i)if(room.players[i].cpu||(inactive_mask&(1u<<i)))Tt_InputPut(&frames,epoch,i,a,neutral);}

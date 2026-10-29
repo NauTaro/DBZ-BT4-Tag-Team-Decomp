@@ -49,4 +49,9 @@ RUN curl -fsSL -o /tmp/curl.tar.xz https://curl.se/download/curl-${CURL_VERSION}
     && make -j2 && make install && ldconfig \
     && mkdir -p /usr/local/share/licenses/curl && cp /tmp/curl-${CURL_VERSION}/COPYING /usr/local/share/licenses/curl/COPYING \
     && rm -rf /tmp/curl.tar.xz /tmp/curl-${CURL_VERSION}
+# The RTC C API needs SCTP DataChannels as well as media. Use the same release
+# and exact submodule sources as the Windows runtime, without floating git refs.
+COPY build_rtc.py rtc-sources.lock.json /tmp/bt4-rtc-build/
+RUN python3 /tmp/bt4-rtc-build/build_rtc.py --prefix /usr/local --jobs 2 \
+    && ldconfig && rm -rf /tmp/bt4-native-rtc /tmp/bt4-rtc-build
 WORKDIR /src

@@ -34,11 +34,19 @@ measured ping. Rendering uses the selected resolution scale.
 
 Network-delay feedback applies only to inputs the client actually submitted.
 Frames missed during a local stall cannot increase that player's network margin.
-Tag Team currently routes multiplayer input through the room's Cloudflare Durable
-Object; a nearby network edge does not establish that the room authority is nearby.
-Cloudflare's [location documentation](https://developers.cloudflare.com/durable-objects/reference/data-location/)
-currently places South American Durable Object requests in eastern North America.
-The transport changes below do not remove that geographic round trip.
+R3 establishes an independent WebRTC data channel to the room host before combat.
+When every human validates this connection and the same armed snapshot, one native
+host runs the shared room kernel at 34.2 simulation steps/second. Authenticated TLS
+carries duplicates of that timeline; it does not create a second simulation clock.
+The coordinator has no network hop for its own input. Remote players measure the
+active path. CPU-only rooms do not acquire network latency.
+
+If preparation fails or a participant uses an older client, the room retains its
+Cloudflare Durable Object authority. Direct connections can use TURN where NAT
+requires it. A nearby edge does not establish that the original room authority is
+nearby: see Cloudflare's [location documentation](https://developers.cloudflare.com/durable-objects/reference/data-location/).
+Losing the active coordinator ends the round; live coordinator migration is not
+implemented. Network conditions and geographic routes still affect remote players.
 
 ## Maps and presentation
 
@@ -76,3 +84,21 @@ compatibility with every router, modification or remote PC.
 Windows native tests used four clients in one Tag Team room with 170 ms simulated RTT and a shared presentation skip: 900 common frames had matching hashes. An asymmetric slow-link pair also reached 900 matching frames. A public 1 vs 1 lobby forced through TURN reached combat. Character-viewer captures reproduced the sunken model and showed the restored BT4 pose with alternate costumes. The isolated Windows transport worker benchmark reduced p95 queue-to-send dispatch from 16.0641 ms to 0.0749 ms; this measures local scheduling with a send stub, not Internet latency or game FPS. Native Linux and Apple Silicon builds exercise the production WebSocket transports with fragmentation, invalid frames, voice and certificate-rejection fixtures. Actual gameplay on remote Linux and Mac hardware remains a community validation step.
 
 The input-feedback regression reproduces 100 late-frame notices for inputs never submitted: the old margin rose from 1 to 8; the corrected margin stays at 1. This is a scheduling test, not a network RTT measurement. The BT3_NET_LOSS, BT3_NET_LAG and BT3_NET_LATENCY diagnostic variables require BT4_RENDER_TEST=1.
+
+## BT4 0.1.39.1 R3 validation
+
+The native and WebAssembly kernels produced 14,000 byte-identical frames across
+seven input, loss, reordering, duplicate and disconnection scenarios. A disconnected
+seat now clears its queued future input. Two and four real native game processes
+in one controlled room reached 900 matching common frames, including a shared
+presentation skip. Rematch negotiated a new epoch and entered the second fight.
+An incomplete prepare handshake retained the original room authority.
+
+An auxiliary TLS outage lasting 18.4 seconds preserved the same native host while
+RTC continued. The relay resumed from retained history and reached 1,800 common
+frames with matching gameplay hashes; the Durable Object frame clock stayed off.
+A public staging-room test also reached 900 matching frames without injected delay.
+Both processes ran on this PC: its 0-1 ms direct RTT is not a measurement between
+remote households. Native Linux and macOS packages also exercise the shipped SCTP
+SDK with 512-byte unordered messages and the original TLS, voice and audio probes.
+Actual gameplay between remote Linux and Mac systems requires community validation.
