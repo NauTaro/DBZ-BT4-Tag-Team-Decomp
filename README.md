@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/presentation/tag-team-gameplay-preview.gif" width="800" alt="BT4 gameplay: Goku and Jiren">
+  <img src="docs/presentation/bt4-intro-hq.gif" width="800" alt="Dragon Ball Z Budokai Tenkaichi 4 Tag Team opening animation">
   <h1>BT4decomp</h1>
   <p><strong>Budokai Tenkaichi 4 B14 Rev2. Native desktop runtime. Simultaneous team battles.</strong></p>
   <p>Online Tag Team, tournaments, spectator rooms and proximity voice, built on Tenkaichi3Decomp.</p>

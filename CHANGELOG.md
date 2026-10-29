@@ -5,4 +5,4 @@
 - Cleared pending input when a player disconnects and removed queued-send waits on Linux and macOS.
 - Refined English and Spanish video settings labels and help.
 - Showed extraction progress, file counts and current installation tasks in English and Spanish.
-- Used the gameplay GIF as the repository cover and refreshed native platform documentation.
+- Restored the BT4 Tag Team opening animation as the repository cover and refreshed native platform documentation.

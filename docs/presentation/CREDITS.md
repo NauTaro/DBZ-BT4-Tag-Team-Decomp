@@ -5,9 +5,9 @@ gameplay screenshots.
 
 | Asset | Description |
 | --- | --- |
-| `cover.jpg` | BT4 Tag Team cover artwork used in the repository header |
+| `cover.jpg` | Supplied BT4 Tag Team cover artwork |
 | `icon.png` | Supplied game icon |
-| `bt4-intro-hq.gif` | Animated adaptation of the supplied artwork |
+| `bt4-intro-hq.gif` | BT4 Tag Team opening animation used in the repository header |
 | `tag-team-battle.jpg` | Tag Team gameplay screenshot |
 | `tag-team-gameplay-preview.gif` | Supplied gameplay clip showing Goku and Jiren |
 | `voice-chat-settings.png` | Supplied microphone and proximity voice settings screenshot |
