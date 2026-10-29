@@ -41,7 +41,7 @@ static void logVoice(const char *s){if(getenv("BT4_RENDER_TEST")){fprintf(stderr
 static void post(const VJson &j){std::shared_ptr<VoiceWs> ws;{std::lock_guard<std::mutex>g(signalingLock);ws=signaling;}if(ws)ws->text(j.dump());}
 struct VoiceRtcApi {
     VoiceModule module=nullptr;bool ready=false;
-#define VF(n) decltype(&n) n=nullptr;
+#define VF(n) decltype(&::n) n=nullptr;
     VF(rtcCreatePeerConnection) VF(rtcClosePeerConnection) VF(rtcDeletePeerConnection)
     VF(rtcSetUserPointer) VF(rtcSetLocalDescriptionCallback) VF(rtcSetLocalCandidateCallback)
     VF(rtcSetRemoteDescription) VF(rtcSetLocalDescription) VF(rtcAddRemoteCandidate)
@@ -60,7 +60,7 @@ struct VoiceRtcApi {
 } rtc;
 static struct VoiceOpusApi {
     VoiceModule module=nullptr;bool ready=false;
-#define VF(n) decltype(&n) n=nullptr;
+#define VF(n) decltype(&::n) n=nullptr;
     VF(opus_encoder_create) VF(opus_encoder_destroy) VF(opus_encoder_ctl) VF(opus_encode)
     VF(opus_decoder_create) VF(opus_decoder_destroy) VF(opus_decode)
 #undef VF

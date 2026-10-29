@@ -47,7 +47,7 @@ language installation and six profile-selection combinations were checked.
 These tests used local clients. They did not reproduce the reported four-PC
 disconnection and do not cover every story event or roster combination.
 
-## Launcher 0.1.39.2 validation
+## Launcher 0.1.39.1 R1 validation
 
 This hotfix retains upstream 0.1.39.1. Lobby protocol 4 adds a per-match relay
 through the lobby owner when the assigned fighters cannot connect directly.

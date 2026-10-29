@@ -49,7 +49,8 @@
 #endif
 #include "net_update.h"
 #include "update_sign.h"
-#include "port_version.h" /* (generated: PORT_VERSION) */
+#include "port_version.h" /* internal bridge/canonical update identifier */
+#include "../../include/bt4_version.h"
 #include "../port_release.h"
 #include "../update_key.h"
 
@@ -98,7 +99,7 @@ static struct {
 } sU;
 
 const char *Update_Version(void) {
-    return PORT_VERSION;
+    return BT4_DISPLAY_VERSION;
 }
 
 static void lock(void) {
@@ -827,13 +828,13 @@ void Update_Download(void) {
 
 void Update_Status(UpdateStatus *out) {
     memset(out, 0, sizeof(*out));
-    out->current = PORT_VERSION;
+    out->current = BT4_DISPLAY_VERSION;
     out->state = SDL_GetAtomicInt(&sU.state);
     if (out->state < UPD_AVAILABLE) {
         return;
     }
     lock();
-    SDL_strlcpy(out->latest, sU.latest, sizeof(out->latest));
+    UpdateVer_Display(sU.latest,out->latest,sizeof(out->latest));
     SDL_strlcpy(out->page, sU.page, sizeof(out->page));
     SDL_strlcpy(out->why, sU.why, sizeof(out->why));
     SDL_strlcpy(out->cannot, sU.cannot, sizeof(out->cannot));

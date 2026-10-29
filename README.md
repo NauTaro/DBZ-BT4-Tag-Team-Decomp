@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/badge/languages-English%20%7C%20Espa%C3%B1ol-f0883e?style=flat-square" alt="English and Spanish">
   </p>
   <img src="docs/presentation/bt4-intro-hq.gif" width="900" alt="DBZ BT4 presentation artwork">
-  <p><strong>BT4 B14 Rev2 · R26 RC1 · Launcher 0.1.39.3</strong></p>
+  <p><strong>BT4 B14 Rev2 · · Launcher 0.1.39.1 R2</strong></p>
   <p><a href="#online-play">Online play</a> · <a href="#graphics-and-frame-pacing">Graphics</a> · <a href="#installation">Installation</a> · <a href="#automatic-updates">Automatic updates</a></p>
 </div>
 
@@ -16,7 +16,7 @@
 
 BT4decomp adapts the BT4 B14 Rev2 game data and gameplay for the native PC runtime developed by the Tenkaichi3Decomp contributors. It is not a console emulator. The repository does not contain game disc data; setup reads a compatible ISO supplied by the player.
 
-The current integration is based on Tenkaichi3Decomp v0.1.39.1. The launcher build identifies itself as `BT4-v0.1.39.3-r26-rc1`.
+The current integration is based on Tenkaichi3Decomp v0.1.39.1. The launcher build identifies itself as `BT4-v0.1.39.1-R2`.
 
 ## Online play
 
@@ -28,7 +28,7 @@ The two modes use different network paths. 1 vs 1 uses the upstream peer rollbac
 
 ### Lobbies and tournaments
 
-Open an online lobby or host by address. Tournaments support two to eight entrants, automatic byes, a live bracket and the upstream rejoin window. The lobby, bracket and Tag Team menus are available in English and Spanish. If the two assigned fighters cannot establish a direct connection, match packets fall back through the lobby owner after two seconds. All lobby members must use launcher 0.1.39.2 or later with the same lobby protocol.
+Open an online lobby or host by address. Tournaments support two to eight entrants, automatic byes, a live bracket and the upstream rejoin window. The lobby, bracket and Tag Team menus are available in English and Spanish. If the two assigned fighters cannot establish a direct connection, match packets fall back through the lobby owner after two seconds. All lobby members must use launcher 0.1.39.1 R1 or later with the same lobby protocol.
 
 ### Spectators and proximity voice
 
@@ -62,6 +62,10 @@ Download the package for your system from [Releases](https://github.com/NauTaro/
 For source builds on Linux or Apple Silicon, run `python3 install.py --iso /path/to/BT4.iso`. The script verifies the BT4 disc profile, builds the native runtime with blank data tables, and delegates extraction to the same setup application. See [native platform setup](docs/port/native_platforms.md) for dependencies and macOS download handling.
 
 The setup interface is available in English and Spanish. A single-language installation starts directly in that language. A bilingual installation downloads the second language package during setup; that package is hosted in this repository. Setup requests GitHub authorization when required for access.
+
+## Versioning
+
+The engine version follows Tenkaichi3Decomp. BT4 changes have a separate revision: `0.1.39.1 R1`, `R2`, `R3`, and so on. Only an upstream adaptation changes the engine version. R2 uses one numeric migration tag internally so existing launchers can install it automatically; subsequent tags use `v0.1.39.1-R3`, `v0.1.39.1-R4`, etc.
 
 ## Automatic updates
 

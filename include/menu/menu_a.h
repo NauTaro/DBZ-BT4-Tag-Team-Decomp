@@ -84,7 +84,7 @@ typedef struct MenuProgress {
 
 /* ---- Main executable ---- */
 
-extern s32 sprintf(char *, const char *, ...);
+extern s32 (sprintf)(char *, const char *, ...);
 extern void *memset(void *, s32, u32);
 extern void *File_LoadSync(s32 id, void *buf, s32 unused);
 extern void *Heap_Alloc(s32 size, u32 align, s32 fromTail, s32 heap);
