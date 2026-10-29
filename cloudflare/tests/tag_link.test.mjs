@@ -1,9 +1,11 @@
-import test from 'node:test';
+import test, {afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createSessionClass} from '../session.mjs';
 
 const PROTOCOL=0x54540008,MAGIC=0x314b4c54;
+const liveFixtures=new Set();
+afterEach(()=>{for(const f of liveFixtures)f.clean();liveFixtures.clear();});
 class Socket {
     constructor(){this.messages=[];this.closed=false;this.listeners=new Map();}
     accept(){}
@@ -68,13 +70,18 @@ function fixture(ids=[101,102,103]) {
     async function prepare(){
         for(const id of ids)ready(id);
         session.message(game.get(101),request(9));
-        await new Promise(resolve=>setImmediate(resolve));
+        // WebCrypto completes on a worker, not necessarily by the next event
+        // loop turn on a loaded CI runner. Await the protocol event we assert.
+        const deadline=Date.now()+1000;
+        while(!session.tagLink.pending?.digest&&Date.now()<deadline)
+            await new Promise(resolve=>setTimeout(resolve,2));
         const pending=session.tagLink.pending;assert.ok(pending?.digest);return pending;
     }
     async function commit(){const pending=await prepare();for(const id of ids)json(id,'prepared',{digest:pending.digest});assert.ok(session.tagLink.active);return pending;}
     function clear(){for(const ws of [...game.values(),...link.values()])ws.clear();}
     function clean(){session.stopClock();session.tagLink.failPending('test-completed',false);}
-    return {session,state,game,link,ready,json,binary,prepare,commit,clear,clean};
+    const f={session,state,game,link,ready,json,binary,prepare,commit,clear,clean};
+    liveFixtures.add(f);return f;
 }
 
 test('game tickets are separate, feature-gated and checked against current membership',async()=>{
@@ -189,7 +196,7 @@ test('stale readiness falls back while renewed readiness can negotiate',async()=
     assert.equal(stale.state.start,1);assert.equal(stale.session.tagLink.active,false);assert.ok(stale.session.clockTimer);stale.clean();
     const fresh=fixture();for(const id of [101,102,103])fresh.ready(id);
     fresh.session.tagLink.peers.get(fresh.link.get(102)).ready.at=Date.now()-2500;fresh.ready(102);
-    fresh.session.message(fresh.game.get(101),request(9));await new Promise(resolve=>setImmediate(resolve));
+    await fresh.prepare();
     assert.ok(fresh.session.tagLink.pending?.digest);assert.equal(fresh.state.start,0);assert.equal(fresh.session.clockTimer,null);fresh.clean();
 });
 
