@@ -2618,8 +2618,8 @@ renderer_ready:
         extern int gsInterp; gsInterp = 0;
         gsFxOff |= 1u | 2u | 32u; /* outline, glare, camera blur; keep attack effects */
         gsGlowPercent = 15; gsGlarePercent = 0; gsSharpBlur = 0;
-        sTexPackOn = 0; if (sMenuHD > 2) sMenuHD = 2;
-        fprintf(stderr,"bt4: DX9 Performance: scale=1 outline=off glare=off camera-blur=off texture-pack=off\n");
+        if (sMenuHD > 2) sMenuHD = 2;
+        fprintf(stderr,"bt4: DX9 Performance: scale=1 outline=off glare=off camera-blur=off texture-pack=%s\n",sTexPackOn?"on":"off");
     }
     gPortMusicPercent = Port_Setting("music", 100);
     gPortSePercent = Port_Setting("effects", 100);

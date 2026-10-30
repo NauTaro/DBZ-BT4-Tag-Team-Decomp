@@ -1,6 +1,5 @@
-# v0.1.39.2 R3 Hotfix
+# 0.1.39.2 R5
 
-- Added a restart confirmation before applying a downloaded update, with an option to defer.
-- Added a separate F1 menu-language preference for Spanish, English and Portuguese.
-- Keep packet waits out of the rendering backlog and service waiting screens on the renderer's own thread.
-- Capture rollback status with each submitted frame and discard obsolete effect buffers after an online session.
+- Load PNG/DDS texture packs directly from ZIP files, including large PCSX2 packs.
+- Restore custom-song playback through BT4 file IDs and executable-relative content folders.
+- Keep music at its original tempo when speed following is disabled, including tracks without loop metadata.

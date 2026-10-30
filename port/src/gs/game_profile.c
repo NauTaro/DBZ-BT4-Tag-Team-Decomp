@@ -67,6 +67,8 @@ static int base_language(const char *root){
 void Port_GameProfileInit(void){
     const char *override=getenv("BT3_DATA"),*base=SDL_GetBasePath();char root[1600],saved[16];int installed,i;
     sExternal=override&&override[0];sSkip=getenv("BT4_PROFILE_SKIP_ONCE")!=NULL;
+    /* Language data can live elsewhere. Custom content stays by the program. */
+    if(base&&!getenv("BT4_CONTENT_ROOT"))profile_env_set("BT4_CONTENT_ROOT",base);
     profile_env_set("BT4_PROFILE_SKIP_ONCE",NULL);
     SDL_snprintf(root,sizeof(root),"%s",sExternal?override:"gamedata");
     installed=base_language(root);

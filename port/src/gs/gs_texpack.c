@@ -31,12 +31,25 @@
 #include "../../third_party/xxhash/xxhash.h"
 #include "gs_internal.h"
 #include "gs_texpack.h"
+/* The updater already links miniz's read-only API. Supply bounded SDL I/O
+   here so multi-gigabyte packs need neither a RAM copy nor disk extraction. */
+#define MINIZ_NO_ARCHIVE_WRITING_APIS
+#define MINIZ_NO_STDIO
+#define MINIZ_NO_TIME
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+#include "../../third_party/miniz/miniz.h"
+
+typedef struct ZipPack { mz_zip_archive zip; SDL_IOStream *io; } ZipPack;
+static ZipPack sZip[32];
+static int sZipCount;
 
 typedef struct Entry {
     uint64_t tex, clut;
     uint32_t bits;
     int pal;
     char *path;
+    int archive;      /* -1 for a loose file, otherwise an index into sZip */
+    mz_uint member;
     int state;        /* 0 not in memory, 1 waiting for the reader, 2 in memory (img), 3 unreadable */
     unsigned used;    /* when TexPack_Get last asked for it */
     size_t held;      /* the bytes img holds */
@@ -75,7 +88,7 @@ static int find(uint64_t tex, uint64_t clut, uint32_t bits, int pal) {
 }
 
 /* "1dd4c76113969303-56e3d4469d2ad392-00005e54.dds" */
-static void add(const char *dir, const char *name) {
+static void add(const char *dir, const char *name, int archive, mz_uint member) {
     size_t n = strlen(name);
     char part[3][20];
     int parts = 0, len = 0;
@@ -108,6 +121,8 @@ static void add(const char *dir, const char *name) {
     e.clut = e.pal ? strtoull(part[1], NULL, 16) : 0;
     e.bits = (uint32_t)strtoul(part[parts - 1], NULL, 16);
     e.state = 0;
+    e.archive = archive;
+    e.member = member;
     e.used = 0;
     e.held = 0;
     memset(&e.img, 0, sizeof(e.img));
@@ -121,6 +136,32 @@ static void add(const char *dir, const char *name) {
     sEntries[sCount++] = e;
 }
 
+static size_t zip_read(void *opaque,mz_uint64 offset,void *buffer,size_t bytes){
+    SDL_IOStream *io=opaque;
+    if(offset>INT64_MAX||SDL_SeekIO(io,(Sint64)offset,SDL_IO_SEEK_SET)!=(Sint64)offset)return 0;
+    return SDL_ReadIO(io,buffer,bytes);
+}
+static void add_zip(const char *path){
+    ZipPack *pack;Sint64 bytes;mz_uint i,count;uint32_t before=sCount;
+    if(sZipCount==(int)(sizeof(sZip)/sizeof(sZip[0])))return;
+    pack=&sZip[sZipCount];pack->io=SDL_IOFromFile(path,"rb");if(!pack->io)return;
+    bytes=SDL_GetIOSize(pack->io);pack->zip.m_pRead=zip_read;pack->zip.m_pIO_opaque=pack->io;
+    if(bytes<=0||!mz_zip_reader_init(&pack->zip,(mz_uint64)bytes,0)){
+        SDL_CloseIO(pack->io);memset(pack,0,sizeof(*pack));return;
+    }
+    count=mz_zip_reader_get_num_files(&pack->zip);
+    for(i=0;i<count;i++){
+        mz_zip_archive_file_stat st;const char *name,*base;char *dir;size_t prefix;
+        if(!mz_zip_reader_file_stat(&pack->zip,i,&st)||st.m_is_directory||st.m_is_encrypted||st.m_uncomp_size>(128u<<20))continue;
+        name=st.m_filename;base=strrchr(name,'/');base=base?base+1:name;
+        prefix=strlen(path)+2+(size_t)(base-name);dir=malloc(prefix+1);if(!dir)continue;
+        SDL_snprintf(dir,prefix+1,"%s!/%.*s",path,(int)(base-name),name);
+        add(dir,base,sZipCount,i);free(dir);
+    }
+    fprintf(stderr,"bt4: ZIP texture pack: %u textures in %s (read on demand)\n",sCount-before,path);
+    sZipCount++;
+}
+
 static SDL_EnumerationResult SDLCALL walk(void *userdata, const char *dir, const char *name) {
     size_t n = strlen(dir) + strlen(name) + 2;
     char *path = malloc(n);
@@ -132,14 +173,22 @@ static SDL_EnumerationResult SDLCALL walk(void *userdata, const char *dir, const
         strcat(path, "/");
         SDL_EnumerateDirectory(path, walk, NULL);
     } else {
-        add(dir, name);
+        size_t len=strlen(name);
+        if(len>4&&SDL_strcasecmp(name+len-4,".zip")==0)add_zip(path);
+        else add(dir, name, -1, 0);
     }
     free(path);
     return SDL_ENUM_CONTINUE;
 }
 
 void TexPack_Init(void) {
-    const char *root = getenv("BT3_TEXTURES") != NULL ? getenv("BT3_TEXTURES") : "textures";
+    char nextToProgram[2048];
+    const char *root = getenv("BT3_TEXTURES");
+    if(root==NULL){
+        const char *base=SDL_GetBasePath();SDL_PathInfo at;
+        SDL_snprintf(nextToProgram,sizeof(nextToProgram),"%stextures",base?base:"");
+        root=SDL_GetPathInfo(nextToProgram,&at)&&at.type==SDL_PATHTYPE_DIRECTORY?nextToProgram:"textures";
+    }
     size_t n = strlen(root);
     char *dir = malloc(n + 2);
     uint32_t i, dup = 0;
@@ -262,8 +311,9 @@ int TexPack_Lookup(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32
 
 /* A PNG: decoded by SDL, and its smaller copies (mip levels) made here, each the average of 2 x 2 pixels of the one
    before. */
-static int load_png(const char *path, TexPackImage *img) {
-    SDL_Surface *png = SDL_LoadPNG(path), *rgba;
+static int load_png(const char *path,const void *source,size_t size,TexPackImage *img) {
+    SDL_IOStream *io=source?SDL_IOFromConstMem(source,size):NULL;
+    SDL_Surface *png = source?(io?SDL_LoadPNG_IO(io,true):NULL):SDL_LoadPNG(path), *rgba;
     uint32_t w, h, total = 0, lw, lh, at = 0, x, y, c;
     int level, levels = 0;
     uint8_t *f;
@@ -287,6 +337,7 @@ static int load_png(const char *path, TexPackImage *img) {
         }
     }
     f = SDL_malloc(total);
+    if (f == NULL) { SDL_DestroySurface(rgba); return 0; }
     for (y = 0; y < h; y++) {
         memcpy(f + y * w * 4, (const uint8_t *)rgba->pixels + y * (uint32_t)rgba->pitch, w * 4);
     }
@@ -321,16 +372,24 @@ static int load_png(const char *path, TexPackImage *img) {
     return 1;
 }
 
-static int load(const char *path, TexPackImage *img) {
+static int load(const Entry *entry, TexPackImage *img) {
+    const char *path=entry->path;void *zipped=NULL;
     size_t size = 0;
     uint8_t *f;
     uint32_t w, h, mips, flags, fourcc, bpp, blk, at = 128, level;
 
     memset(img, 0, sizeof(*img));
-    if (strlen(path) > 4 && SDL_strcasecmp(path + strlen(path) - 4, ".png") == 0) {
-        return load_png(path, img);
+    if(entry->archive>=0){
+        mz_zip_archive_file_stat st;
+        mz_zip_archive *zip=&sZip[entry->archive].zip;
+        if(!mz_zip_reader_file_stat(zip,entry->member,&st)||st.m_uncomp_size>(128u<<20))return 0;
+        size=(size_t)st.m_uncomp_size;zipped=SDL_malloc(size);if(!zipped)return 0;
+        if(!mz_zip_reader_extract_to_mem(zip,entry->member,zipped,size,0)){SDL_free(zipped);return 0;}
     }
-    f = SDL_LoadFile(path, &size);
+    if (strlen(path) > 4 && SDL_strcasecmp(path + strlen(path) - 4, ".png") == 0) {
+        int ok=load_png(path,zipped,size,img);SDL_free(zipped);return ok;
+    }
+    f = zipped?zipped:SDL_LoadFile(path, &size);
     if (f == NULL || size < 128 || memcmp(f, "DDS ", 4) != 0) {
         SDL_free(f);
         return 0;
@@ -434,7 +493,7 @@ static int SDLCALL reader(void *unused) {
         }
         id = sQueue[sTail++ & (QUEUE - 1)];
         SDL_UnlockMutex(sLock);
-        ok = load(sEntries[id].path, &img);
+        ok = load(&sEntries[id], &img);
         SDL_LockMutex(sLock);
         store(id, ok, &img);
         SDL_UnlockMutex(sLock);
@@ -492,7 +551,7 @@ int TexPack_Get(int id, TexPackImage *img) {
     e->used = ++sTick;
     if (e->state == 0 && sSync) {
         TexPackImage read;
-        int ok = load(e->path, &read);
+        int ok = load(e, &read);
         store((uint32_t)id, ok, &read);
     } else if (e->state == 0 && sHead - sTail < QUEUE) {
         sQueue[sHead++ & (QUEUE - 1)] = (uint32_t)id;

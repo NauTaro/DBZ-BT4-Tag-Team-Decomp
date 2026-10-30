@@ -69,6 +69,9 @@ WIN_README = README.replace("(Linux, 64-bit)", "(Windows, 64-bit)").replace("Sta
 
 TEXTURES_NOTE = """Texture packs go here.
 
+Copy a texture pack ZIP into this folder, or add its extracted PNG/DDS files. ZIP packs are read directly:
+no extraction or second copy is needed. Restart the game after adding or removing a pack.
+
 Put a pack's replacement textures into this folder, in subfolders or not: the game looks through all of it when it
 starts. The files have to be named the way the PCSX2 emulator names texture replacements for this game
 (for example 1dd4c76113969303-56e3d4469d2ad392-00005e54.dds), so a pack made for PCSX2 can be copied in as it is.

@@ -22,6 +22,7 @@ cat "port/build/link_$BT3_CC.txt"
 "$PYTHON" port/tests/native_transport/run.py
 "$PYTHON" port/tests/native_transport_queue/run.py
 "$PYTHON" port/tests/native_rtc/run.py
+"$PYTHON" port/tests/custom_content/run.py
 sh port/setup/build.sh "$1"
 "$PYTHON" port/tools/package.py
 "$PYTHON" port/tools/verify_native_package.py "$1"

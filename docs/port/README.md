@@ -53,6 +53,7 @@ The [decompilation guide](../decomp_guide.md) describes original-binary comparis
 
 - [Stages](adding_stages.md)
 - [Music](adding_songs.md)
+- [Texture packs](texture_packs.md)
 - [Menus](menus.md)
 - [Fonts](menu_font.md)
 - [Translations](translations.md)

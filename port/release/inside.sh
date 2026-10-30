@@ -13,6 +13,7 @@ run() { # the build of one variant; a compile failure must stop the release (und
     cat port/build/link_$BT3_CC.txt
 }
 mkdir -p port/build
+python3 port/tests/custom_content/run.py
 # the build key (port/tools/buildkey.py reads it from the environment; it is never printed)
 if [ -n "$BT3_BUILD_KEY" ]; then echo "build key: given"; else echo "build key: none (the programs do not sign their matchmaking requests)"; fi
 # the full release number (undefined.py writes it into the program for the automatic update): the tag's, else "dev"

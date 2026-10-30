@@ -47,3 +47,8 @@ Added tracks loop during battles. Native streams receive a default gain of 1.5;
 Menu labels use generated strips, the game's lettering where available, or
 plain text fallback. Added resources are subject to the runtime's online
 compatibility rules and may be unavailable during network sessions.
+
+Custom tracks use reserved BT4 file IDs, independently of the installed Spanish
+or English data. With **F1 > Audio > Music follows game speed** disabled,
+music retains its original tempo at 114%, including ADX tracks without loop
+metadata. The F1 language setting does not change audio timing.

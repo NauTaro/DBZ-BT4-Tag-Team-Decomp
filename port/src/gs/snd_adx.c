@@ -441,7 +441,9 @@ static void SDLCALL feed(void *user, SDL_AudioStream *stream, int additional, in
     (void)total;
     while (additional > 0 && p->stat == ADXT_STAT_PLAYING && !p->paused) {
         int speed = Port_SpeedMilli();
-        if (p->loop && p - sPlayers <= 1 && gPortMusicFollows <= 0) {
+        /* BT4 also restarts music from its scripts, without ADX loop points.
+           The setting belongs to the music channel, not the file's loop bit. */
+        if (p - sPlayers <= 1 && gPortMusicFollows <= 0) {
             speed = 1000;
         }
         if (speed != 1000) {
@@ -477,10 +479,9 @@ static void SDLCALL feed(void *user, SDL_AudioStream *stream, int additional, in
      voices  the two voice players and the two fighters' effect banks (slots 4 and 5)
      effects the rest: the two effect players, the common banks */
 int gPortMusicPercent = 100, gPortSePercent = 100, gPortVoicePercent = 100, gPortStagePercent = 100;
-/* "Music follows game speed" (Audio tab, setting music_follows_speed, off by default). Off: music and a stage's
-   background that loop are played as they are at any game speed: the game never waits for the end of a loop, so
-   nothing has to fit, and the songs are heard untouched. What plays once (a jingle, a spoken line) is always
-   fitted to the speed, because the game counts its length in vertical blanks. */
+/* "Music follows game speed" (Audio tab, setting music_follows_speed, off by default). Off: both music channels
+   retain their original tempo, including BT4 tracks restarted by a script instead of ADX loop metadata.
+   Voices, streamed effects and movies retain their simulation timing. */
 int gPortMusicFollows = -1; /* (-1: not read from the settings yet) */
 
 extern float PortA11y_StreamGain(const void *player); /* a11y.c: the voices are lower in the menus */
