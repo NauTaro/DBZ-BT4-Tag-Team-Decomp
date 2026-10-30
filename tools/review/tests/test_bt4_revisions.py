@@ -4,7 +4,8 @@ import os,shutil,subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[3]
 class RevisionTests(unittest.TestCase):
     def test_release_order_and_legacy_migration(self):
-        cc=shutil.which('cc') or shutil.which('gcc')
+        bundled_cc=ROOT.parent.parent/'build-tools/ucrt64/bin/gcc.exe'
+        cc=os.environ.get('CC') or shutil.which('cc') or shutil.which('gcc') or (str(bundled_cc) if bundled_cc.exists() else None)
         if not cc:self.skipTest('A C compiler is required')
         source=(ROOT/'port/src/gs/update_sign.c').read_text(encoding='utf8')
         functions=source[source.index('static int version_parts'):source.index('/* ---- SHA-256')]
@@ -19,6 +20,8 @@ int main(void){
  assert(UpdateVer_Compare("0.1.39.3","v0.1.39.2-R3")==-1);
  assert(UpdateVer_Compare("0.1.39.1-R3","v0.1.39.2-R3")==-1);
  assert(UpdateVer_Compare("0.1.39.2-R3","v0.1.39.2-R3")==0);
+ assert(UpdateVer_Compare("0.1.39.2-R3","v0.1.39.2-R4")==-1);
+ assert(UpdateVer_Compare("0.1.39.2-R4","v0.1.39.2-R4")==0);
  assert(UpdateVer_Compare("0.1.39.1-R99","v0.1.39.2-R1")==-1);
  assert(UpdateVer_Compare("0.1.39.1-R99","v0.1.40-R1")==-1);
  assert(UpdateVer_Compare("dev","0.1.39.1-R1")==-2);
@@ -34,7 +37,9 @@ int main(void){
         with tempfile.TemporaryDirectory() as d:
             src=Path(d)/'revision.c';exe=Path(d)/('revision.exe' if os.name=='nt' else 'revision')
             src.write_text(code,encoding='utf8');flags={'creationflags':0x08000000} if os.name=='nt' else {}
-            p=subprocess.run([cc,'-std=c99',str(src),'-o',str(exe)],capture_output=True,text=True,timeout=30,**flags)
+            env=dict(os.environ)
+            if Path(cc).exists():env['PATH']=str(Path(cc).parent)+os.pathsep+env.get('PATH','')
+            p=subprocess.run([cc,'-std=c99',str(src),'-o',str(exe)],capture_output=True,text=True,timeout=30,env=env,**flags)
             self.assertEqual(p.returncode,0,p.stderr)
-            p=subprocess.run([str(exe)],capture_output=True,text=True,timeout=15,**flags);self.assertEqual(p.returncode,0,p.stdout+p.stderr)
+            p=subprocess.run([str(exe)],capture_output=True,text=True,timeout=15,env=env,**flags);self.assertEqual(p.returncode,0,p.stdout+p.stderr)
 if __name__=='__main__':unittest.main()

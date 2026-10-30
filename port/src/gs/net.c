@@ -708,6 +708,7 @@ static int sSecWaitWhy;
 uint64_t gPortNetWaitNs;
 
 typedef struct { uint64_t t0; unsigned pkts; } WaitMark;
+extern void Gs_NetworkWait(int waiting);
 
 static WaitMark wait_begin(uint64_t t0) {
     WaitMark w;
@@ -722,7 +723,14 @@ static void wait_end(WaitMark w, unsigned tick) {
     unsigned got = sInPkts - w.pkts;
     int why;
 
+    Gs_NetworkWait(0);
     gPortNetWaitNs += took;
+    /* Packet waits are not rendering work. Keep their elapsed time out of the
+       graphics backlog, as Tag Team does when its authoritative queue resumes. */
+    {
+        extern void Port_PaceNetworkResume(unsigned long long waited);
+        Port_PaceNetworkResume(took);
+    }
     if (now > sInLastNs && now - sInLastNs > gap) {
         gap = now - sInLastNs;
     }
@@ -2379,6 +2387,7 @@ static void sample_local(unsigned tick) {
 #define QUIET_NS 6000000000ull /* this long without the input the game is waiting for: the other player is gone */
 
 static void ended(const char *why, unsigned tick) {
+    Gs_NetworkWait(0);
     fprintf(stderr, "bt3: net: %s (blank %u)\n", why, tick);
     Port_UiNotice(why);
     sSpecNoticed = 1;
@@ -2472,6 +2481,7 @@ static void roll_tick(unsigned tick) {
                 if (!receive()) {
                     net_idle_wait();
                 }
+                if (SDL_GetTicksNS() - t0 >= 33000000ull) Gs_NetworkWait(1);
                 if (sGone) {
                     gone(tick);
                 }
@@ -2918,6 +2928,7 @@ void Port_NetBeginTick(unsigned tick) {
             if (!receive()) {
                 net_idle_wait();
             }
+            if (SDL_GetTicksNS() - t0 >= 33000000ull) Gs_NetworkWait(1);
             if (sGone) {
                 gone(tick);
             }

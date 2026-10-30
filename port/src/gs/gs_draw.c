@@ -1306,6 +1306,13 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
             if (gsTargets[src].stale) {
                 /* The buffer was meant to hold a copy or a step of an effect that was dropped; what it holds now
                    is whatever was drawn there before (seen as blocks of noise over the picture). */
+                /* This copy did not run either. Do not let a later effect read
+                   its destination's previous contents as a valid new image. */
+                if (gsTargets[d->target].fbp != (uint32_t)gGsMainFbp) {
+                    gsTargets[d->target].stale = 1;
+                    gsTargets[d->target].cleared = 1;
+                    gsTargets[d->target].gen = gGsPageGen[gsTargets[d->target].fbp & 511];
+                }
                 gsSkipped++;
                 return 0;
             }
@@ -1481,7 +1488,7 @@ void Port_WallMesh(const void *key, int second, int culled, const float *screen,
     WallMesh *m;
     int i;
 
-    if (GS_NO_PICTURE || gsInterp <= 0 || Port_TagBattleRenderActive() || quadCount <= 0 || quadCount > 15) {
+    if (gPortResim || gsSkipFrame || gsInterp <= 0 || Port_TagBattleRenderActive() || quadCount <= 0 || quadCount > 15) {
         return;
     }
     if (getenv("BT3_INTERP_WALLLOG") != NULL && atoi(getenv("BT3_INTERP_WALLLOG")) > 2) {
@@ -1607,16 +1614,20 @@ int GsDraw_DateRegion(uint32_t k, int *rx, int *ry, int *rw, int *rh) {
     return 1;
 }
 
-/* Gs_StateBack (gs_core.c) moved every page's upload generation on by `delta`, so that nothing decoded from the
-   pages in between is taken for them. The buffers the game draws into keep their standing: one that was drawn
-   since the last upload over it still is. */
+static void interp_forget(void);
+/* Restoring CPU-side GS memory does not restore GPU attachments. Invalidate
+   their old contents, including the cinematic snapshot, before the next scene
+   can sample them. Bumping their generations would incorrectly bless pictures
+   left by the online match as belonging to the restored scene. */
 void GsGpu_PagesMoved(uint32_t delta) {
     int i;
+    (void)delta;
     for (i = 0; i < gsTargetCount; i++) {
-        if (gsTargets[i].gen != 0) { /* (0: its page was never uploaded to, and stays 0) */
-            gsTargets[i].gen += delta;
-        }
+        gsTargets[i].cleared = gsTargets[i].stale = gsTargets[i].draws = 0;
+        gsTargets[i].gen = 0;
     }
+    gsDrawCount = gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = 0;
+    interp_forget();
 }
 
 static int sPresentationHudScope;
@@ -2159,10 +2170,10 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
 #define SNAP_FBP 0x1FF
 int GsGpu_Snapshot(uint32_t fbp) {
     int src = GsDraw_TargetGet(fbp, 0), dst;
-    if (src < 0 || !gsTargets[src].cleared) {
+    if (src < 0 || !gsTargets[src].cleared || gsTargets[src].stale) {
         src = gGsMainFbp >= 0 ? GsDraw_TargetGet((uint32_t)gGsMainFbp, 0) : -1;
     }
-    if (sBackend == NULL || sBackend->targetCopy == NULL || src < 0 || !gsTargets[src].cleared) {
+    if (sBackend == NULL || sBackend->targetCopy == NULL || src < 0 || !gsTargets[src].cleared || gsTargets[src].stale) {
         return 0;
     }
     dst = GsDraw_TargetGet(SNAP_FBP, 1);
@@ -2180,10 +2191,10 @@ int GsGpu_Snapshot(uint32_t fbp) {
    for its cross-fade: Gs_StoreImage in gs_core.c). The buffer asked for, or else the frame's own. */
 int GsGpu_ReadFrame(uint32_t fbp, uint8_t *rgba) {
     int t = GsDraw_TargetGet(fbp, 0);
-    if (t < 0 || !gsTargets[t].cleared) {
+    if (t < 0 || !gsTargets[t].cleared || gsTargets[t].stale) {
         t = gGsMainFbp >= 0 ? GsDraw_TargetGet((uint32_t)gGsMainFbp, 0) : -1;
     }
-    if (sBackend == NULL || sBackend->targetRead == NULL || t < 0 || !gsTargets[t].cleared) {
+    if (sBackend == NULL || sBackend->targetRead == NULL || t < 0 || !gsTargets[t].cleared || gsTargets[t].stale) {
         return 0;
     }
     return sBackend->targetRead(t, rgba);
@@ -4855,6 +4866,12 @@ static void interp_counts_restore(void) {
    in-between picture, its faults included, then stood for that long. sInterpCostNs: what showing one picture
    takes, smoothed; sInterpCap: the most pictures a 33 ms tick may have now (8, 4, 2 or 1). */
 static uint64_t sInterpCostNs;
+static void interp_forget(void) {
+    sInterpNext = sInterpPrevCount = sInterpPrevPrimCount = sInterpPrevVertCount = 0;
+    sInterpHaveCam = sInterpHaveD = sInterpHaveDt = sInterpRoots = 0;
+    sInterpViewCount = 0;
+    sInterpViewLoaded = -1;
+}
 static int sInterpCap = 8;
 
 static void interp_cost(uint64_t ns) {
@@ -5123,7 +5140,7 @@ void GsGpu_FrameEnd(void) {
         }
     }
     sInGlowChain = 0; /* (a chain is always within one frame) */
-    if (gPortResim) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
+    if (gGsResim) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
         return;
     }
     if (gsSkipFrame) {

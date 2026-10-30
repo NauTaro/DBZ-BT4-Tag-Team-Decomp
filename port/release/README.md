@@ -1,24 +1,26 @@
 # Automatic updates
 
 The launcher checks the latest published release of `NauTaro/DBZ-BT4-Tag-Team-Decomp` after startup. It downloads the
-package for its platform and the corresponding signature in the background, verifies both the archive hash and its Ed25519
-signature, then installs the verified files automatically at the offline main menu. It does not restart during a
-battle, online session, lobby, spectator session, or while the settings window is open. Player data and game data are
-preserved by the installer.
+package for its platform and the corresponding signature in the background, then verifies the archive hash and its Ed25519
+signature. When the verified update is ready, the game shows a restart prompt at the offline main menu. The player can
+apply it immediately or choose Later; the game does not close or restart before that confirmation. It does not restart
+during a battle, online session, lobby, spectator session, or while the settings window is open. Player data and game data
+are preserved by the installer.
 
 ## Publishing a release
 
 BT4 changes increment the revision, not the upstream engine version. Update `port/include/bt4_version.h`,
 the build identities, `port/release/BT4_VERSION.txt`, package text and `CHANGELOG.md` together. After the R2 migration,
-push canonical tags such as `v0.1.39.2-R3` and `v0.1.39.2-R4`. A new upstream adaptation starts its own revision
+push canonical tags such as `v0.1.39.2-R3` and `v0.1.39.2-R4`. A release can use a human title such as
+`v0.1.39.2 R3 Hotfix` while keeping the next monotonic updater tag (`R4`). A new upstream adaptation starts its own revision
 series, for example `v0.1.39.2-R1`. The numeric tag `v0.1.39.3` is reserved for the approved R2 migration bridge;
 it is not an upstream version. The workflow checks the tag against the declared revision before publishing.
 
 The release workflow builds Windows x64 and calls `native-platforms.yml` for Linux x86-64 and macOS Apple Silicon.
-Publication depends on all three builds. It signs and verifies each ZIP against `port/src/update_key.h`, uploads
-all six files to a draft release, checks that the asset set is complete, then publishes the release with the human
-title from `BT4_DISPLAY_VERSION`. Missing artifacts, a missing signing key, or a key mismatch stop publication.
-An interrupted upload leaves a draft rather than a public release with missing platform files.
+After all three builds pass, it signs and verifies each ZIP against `port/src/update_key.h`, uploads all six files to a
+draft release, and checks that the asset set is complete. The release remains a draft until it is explicitly published
+after gameplay validation. Missing artifacts, a missing signing key, or a key mismatch stop the workflow. An interrupted
+upload leaves a draft rather than a public release with missing platform files.
 
 The updater expects these filenames, each with an adjacent `.sig` file:
 
@@ -38,7 +40,8 @@ The signing key is a one-time repository setup:
 3. Commit the printed public key in `port/src/update_key.h`.
 
 The current public key was generated for this BT4 updater. The matching private key is configured in the repository Actions secret; it is never committed. Players whose installed launcher predates the updater
-or was built without this public key need one bootstrap install; later signed releases install automatically.
+or was built without this public key need one bootstrap install; later signed releases download automatically and install
+only after the player confirms the restart prompt.
 
 To check an archive manually, run `python3 port/tools/update_key.py verify <archive.zip>` with its `.sig` file beside
 it. The command must report `signature good`.

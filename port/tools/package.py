@@ -28,7 +28,7 @@ OUT = ROOT / "port/build/release"
 ZIP = ROOT / "port/build/BT4decomp-linux-x64.zip"
 
 README = """DBZ BT4 Tag Team Decomp (Linux, 64-bit)
-BT4 B14 Rev2 on BT4decomp 0.1.39.1 R3
+BT4 B14 Rev2 on BT4decomp v0.1.39.2 R3 Hotfix
 
 Extract the complete ZIP before starting setup. Keep the setup application and
 BT4decomp together in the installation folder.

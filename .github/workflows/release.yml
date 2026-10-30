@@ -33,14 +33,15 @@ jobs:
           def value(name):
               return re.search(r'^#define ' + name + r' "([^"]+)"$', source, re.M)[1]
           canonical = value('BT4_CANONICAL_VERSION')
+          release_title = value('BT4_RELEASE_TITLE')
           bridge = value('BT4_LEGACY_BRIDGE_VERSION')
           revision = int(re.search(r'^#define BT4_REVISION (\d+)$', source, re.M)[1])
           upstream = value('BT4_UPSTREAM_VERSION')
           assert canonical == upstream + '-R' + str(revision), 'Canonical revision is inconsistent'
-          assert value('BT4_DISPLAY_VERSION') == upstream + ' R' + str(revision), 'Display revision is inconsistent'
+          assert value('BT4_DISPLAY_VERSION') == release_title, 'Display version and release title disagree'
           tag = os.environ['RELEASE_TAG'].removeprefix('v')
           assert tag == canonical or (revision == 2 and tag == bridge), 'Tag and BT4 revision disagree'
-          title = 'BT4decomp ' + value('BT4_DISPLAY_VERSION')
+          title = release_title
           marker = pathlib.Path('port/release/BT4_VERSION.txt').read_text().splitlines()[0]
           assert marker.endswith(title), 'Package marker and BT4 version disagree'
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:

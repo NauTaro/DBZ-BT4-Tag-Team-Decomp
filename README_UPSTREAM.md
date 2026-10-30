@@ -1,4 +1,4 @@
-Upstream reference: Tenkaichi3Decomp v0.1.39.1. BT4-specific instructions are in [README.md](README.md).
+Upstream reference: Tenkaichi3Decomp v0.1.39.2. BT4-specific instructions are in [README.md](README.md).
 
 # Tenkaichi3Decomp
 

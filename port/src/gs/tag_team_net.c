@@ -859,6 +859,8 @@ static int tag_wait_banner;
 static uint64_t tag_wait_started;
 
 void Port_TagWaitResumed(void){
+    extern void Gs_NetworkWait(int);
+    Gs_NetworkWait(0);
     if(tag_wait_started){
         extern void Port_PaceNetworkResume(unsigned long long);
         extern uint64_t gPortNetWaitNs;
@@ -873,7 +875,7 @@ void Port_TagWaitClear(void){extern void Port_UiBanner(const char *,int);if(tag_
 
 void Port_TagWait(int phase,int menu,int cursor,int show){
 
-    extern void Gs_HoldFrame(void),Port_UiBanner(const char *,int);
+    extern void Gs_NetworkWait(int),Port_UiBanner(const char *,int);
 
     const char *text=NULL;
     if(!tag_wait_started)tag_wait_started=SDL_GetTicksNS();
@@ -884,7 +886,7 @@ void Port_TagWait(int phase,int menu,int cursor,int show){
 
     if(text){Port_UiBanner(text,0);tag_wait_banner=1;}else Port_TagWaitClear();
 
-    Gs_HoldFrame();Port_TagYield();
+    Gs_NetworkWait(1);Port_TagYield();
 
 }
 

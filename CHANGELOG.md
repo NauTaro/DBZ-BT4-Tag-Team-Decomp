@@ -1,10 +1,6 @@
-# BT4decomp 0.1.39.2 R3
+# v0.1.39.2 R3 Hotfix
 
-- Integrated Tenkaichi3Decomp 0.1.39.2: optional widescreen menus and macOS startup fixes.
-- Repaired Evolution Z character customization resources and corrected the Spanish story unlock title.
-- Added automatic peer connections for Tag Team, with one native host clock and authenticated TLS backup.
-- Allowed idle voice connections to hibernate and cleaned up abandoned room, voice and transport connections.
-- Cleared pending input when a player disconnects and removed queued-send waits on Linux and macOS.
-- Refined English and Spanish video settings labels and help.
-- Showed extraction progress, file counts and current installation tasks in English and Spanish.
-- Restored the BT4 Tag Team opening animation as the repository cover and refreshed native platform documentation.
+- Added a restart confirmation before applying a downloaded update, with an option to defer.
+- Added a separate F1 menu-language preference for Spanish, English and Portuguese.
+- Keep packet waits out of the rendering backlog and service waiting screens on the renderer's own thread.
+- Capture rollback status with each submitted frame and discard obsolete effect buffers after an online session.
