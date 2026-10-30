@@ -116,7 +116,7 @@ void Gs_HoldFrame(void) {
         ++audited;
     }
 }
-extern uint32_t *Bt4MenuHD_Upscale(const uint32_t *, int, int, int);
+extern int Bt4MenuHD_Request(const uint32_t *, int, int, int, uint64_t, uint32_t **);
 static int sMenuHD = 4;
 static int sBootQualityScale = -1, sBootQualityHD;
 extern int Port_GameProfileMenuActive(void);
@@ -256,7 +256,9 @@ static int menu_piece_moving(const Vtx *v, const Vtx *last, float x0, float x1, 
     return m->moved != 0 && gGsFrame - m->moved <= 1; /* (as soon as it stops it is cut: parked off the screen) */
 }
 
+static void menu_hd_trim(uint64_t incoming);
 void GsGpu_ListStart(void) {
+    menu_hd_trim(0);
     sMenuFree = 0;
     gDrawStartNs = SDL_GetTicksNS(); /* (gs_gpu.c's clock, where it is compared) */
     gDrawTexNs = gDrawPipeNs = gDrawUpBytes = gDrawImgNs = gDrawLookNs = gDrawVuNs = gDrawXferNs = 0;
@@ -274,6 +276,7 @@ static uint64_t gpu_now(void) {
 typedef struct Tex {
     uint64_t tex0, texa;
     uint64_t hdKey; /* decoded RGBA identity; GS uploads can move identical artwork between pages */
+    int hdPending; /* enlargement factor while the original is being shown */
     uint32_t gen;
     GsTex tex;
     unsigned last; /* frame last used */
@@ -543,7 +546,7 @@ static void menu_hd_trim(uint64_t incoming) {
     }
     if (bytes <= 192ull * 1024 * 1024) { return; }
     for (i = 0; i < (uint32_t)gsTexCount; ++i) {
-        if (bytes > 192ull * 1024 * 1024 && sTex[i].replaced == 4 && sTex[i].last < gGsFrame) {
+        if (bytes > 192ull * 1024 * 1024 && sTex[i].replaced == 4 && sTex[i].last + 4 < gGsFrame) {
             bytes -= (uint64_t)sTex[i].rw * sTex[i].rh * 4;
             sBackend->texDestroy(sTex[i].tex);
             changed = 1;
@@ -637,6 +640,27 @@ static void pack_arrived(Tex *c) {
     c->amax = c->packAlpha;
     c->pack = -1;
     gGpuTexReplaced++;
+}
+
+static void menu_hd_arrived(Tex *c) {
+    static struct { GsTex tex; unsigned frame; } old[256];
+    static unsigned head, tail;
+    uint32_t *pixels = NULL, w = c->ow * c->hdPending, h = c->oh * c->hdPending;
+    TexPackImage upload;
+    GsTex tex;
+    int ready;
+    while (tail != head && old[tail & 255].frame + 4 <= gGsFrame) sBackend->texDestroy(old[tail++ & 255].tex);
+    ready = Bt4MenuHD_Request(NULL, c->ow, c->oh, c->hdPending, c->hdKey, NULL);
+    if (ready < 0) { c->hdPending = 0; return; }
+    if (!ready || head - tail == 256 || sBackend->texSlotsLeft() < 1) return;
+    memset(&upload, 0, sizeof(upload)); upload.levels = 1; upload.bytes[0] = w * h * 4;
+    if (!pack_budget_take(&upload)) return;
+    if (Bt4MenuHD_Request(NULL, c->ow, c->oh, c->hdPending, c->hdKey, &pixels) != 1) return;
+    tex = sBackend->texCreate(w, h, GS_TEXFMT_RGBA8, 1);
+    if (!tex) { free(pixels); return; }
+    sBackend->texUpload(tex, 0, w, h, GS_TEXFMT_RGBA8, pixels, w * h * 4);
+    old[head & 255].tex = c->tex; old[head++ & 255].frame = gGsFrame;
+    c->tex = tex; c->rw = w; c->rh = h; c->replaced = 4; c->hdPending = 0;
 }
 
 /* Decoding a texture's rows: a large one is shared among worker threads (and the caller), which only read GS memory
@@ -744,7 +768,7 @@ static GsTex texture_get(int ctx, int menuHd) {
     uint64_t tex_t0;
     TexPackImage pack;
     uint32_t packMaxAlpha = 255, rw = tw, rh = th;
-    int replaced = 0, menuText = 0, sharedText = 0, battleText = 0, hdArt = 0, packWait = -1;
+    int replaced = 0, menuText = 0, sharedText = 0, battleText = 0, hdPending = 0, packWait = -1;
     uint64_t hdKey = 0;
 
     if (tw > 1024) { tw = 1024; }
@@ -776,6 +800,7 @@ static GsTex texture_get(int ctx, int menuHd) {
         }
     }
     if (sLast != NULL && sLast->tex0 == t0 && sLast->texa == texa && sLast->gen == gen) {
+        if (sLast->hdPending && sLast->last != gGsFrame) menu_hd_arrived(sLast);
         if (sLast->pack >= 0 && sLast->last != gGsFrame) {
             pack_arrived(sLast);
         }
@@ -787,6 +812,7 @@ static GsTex texture_get(int ctx, int menuHd) {
         while (sTexBucket[h] != 0) {
             Tex *c = &sTex[sTexBucket[h] - 1];
             if (c->tex0 == t0 && c->texa == texa && c->gen == gen) {
+                if (c->hdPending && c->last != gGsFrame) menu_hd_arrived(c);
                 if (c->pack >= 0 && c->last != gGsFrame) {
                     pack_arrived(c);
                 }
@@ -910,19 +936,8 @@ static GsTex texture_get(int ctx, int menuHd) {
                 return cached->tex;
             }
         }
-        uint32_t *hd = Bt4MenuHD_Upscale(px, (int)tw, (int)th, sMenuHD);
-        if (hd != NULL) {
-            free(px);
-            px = hd;
-            rw = tw * (uint32_t)sMenuHD;
-            rh = th * (uint32_t)sMenuHD;
-            hdArt = 1;
-            if (getenv("BT4_HD_LOG") != NULL) {
-                fprintf(stderr, "bt4: menu HD %ux%u -> %ux%u, %.2f ms\n", tw, th, rw, rh, (double)(gpu_now() - tex_t0) / 1e6);
-            }
-        }
+        if (Bt4MenuHD_Request(px, (int)tw, (int)th, sMenuHD, hdKey, NULL) >= 0) hdPending = sMenuHD;
     }
-    if (hdArt) { menu_hd_trim((uint64_t)rw * rh * 4); }
     gGpuTexNs += gpu_now() - tex_t0;
     gDrawTexNs += gpu_now() - tex_t0;
     gDrawNewTex++;
@@ -958,11 +973,12 @@ static GsTex texture_get(int ctx, int menuHd) {
     gGpuNewTexPixels += rw * rh;
     sLast = t;
     t->tex0 = t0;
-    t->hdKey = hdArt ? hdKey : 0;
+    t->hdKey = hdPending ? hdKey : 0;
+    t->hdPending = hdPending;
     t->texa = texa;
     t->gen = gen;
     t->last = gGsFrame;
-    t->replaced = replaced ? 1 : sharedText ? 3 : menuText ? 2 : hdArt ? 4 : 0;
+    t->replaced = replaced ? 1 : sharedText ? 3 : menuText ? 2 : 0;
     t->battleText = battleText;
     t->ow = tw;
     t->oh = th;
@@ -1221,6 +1237,11 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     float tw = (float)(1u << ((t0 >> 26) & 15)), th = (float)(1u << ((t0 >> 30) & 15));
 
     *us = *vs = 1.0f;
+    if (tme && TexPack_SkipDraw((uint32_t)t0 & 0x3FFF, (uint32_t)(t0 >> 14) & 63,
+                              (uint32_t)(t0 >> 20) & 63, (uint32_t)tw, (uint32_t)th)) {
+        gsSkipped++;
+        return 0;
+    }
     /* Passes that only make sense on the PS2's memory layout are not drawn here: they belong to full-screen
        effects that get native versions (see docs/port/README.md). Dropped:
          - drawing through a 16-bit view of the frame buffer (the "channel shuffle" between halves of a pixel),

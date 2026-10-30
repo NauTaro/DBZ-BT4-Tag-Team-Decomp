@@ -70,6 +70,46 @@ static size_t sHeldBytes, sBudget;
 static unsigned sTick;
 static int sSync = -1;
 
+/* Hit's Time Skip backdrop, identified from its original GS blocks in BT4.
+   Do not sample this effect, including from HD packs. Its palette and GS
+   address vary during the cut, so neither belongs to the content identity. */
+#define HIT_TIME_SKIP_TEXTURE UINT64_C(0xc3b168f19eccae01)
+static int excluded(uint64_t hash, uint32_t psm, uint32_t w, uint32_t h) {
+    return hash == HIT_TIME_SKIP_TEXTURE && psm == 0x14 && w == 512 && h == 512;
+}
+
+int TexPack_SkipDraw(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32_t th) {
+    typedef struct SkipCache { uint32_t tbp, tbw, gen; int valid, skip; } SkipCache;
+    static SkipCache cache[16];
+    static unsigned next;
+    uint32_t gen = 2166136261u, x, y, i;
+    XXH3_state_t hash;
+    SkipCache *entry;
+    if (psm != 0x14 || tw != 512 || th != 512) return 0;
+    /* Include every page touched by the swizzled blocks. The cached result
+       must change when the same GS address is reused in a later battle. */
+    for (y = 0; y < th; y += 128) {
+        for (x = 0; x < tw; x += 128) {
+            const uint8_t *block = Gs_BlockPtr(tbp, tbw, psm, x, y);
+            uint32_t page = (uint32_t)(block - Gs_BlockPtr(0, 1, 0, 0, 0)) / 8192;
+            gen = (gen ^ Gs_PageHash(page)) * 16777619u;
+        }
+    }
+    for (i = 0; i < 16; ++i) {
+        entry = &cache[i];
+        if (entry->valid && entry->tbp == tbp && entry->tbw == tbw && entry->gen == gen) return entry->skip;
+    }
+    XXH3_64bits_reset(&hash);
+    for (y = 0; y < th; y += 16) {
+        for (x = 0; x < tw; x += 32) XXH3_64bits_update(&hash, Gs_BlockPtr(tbp, tbw, psm, x, y), 256);
+    }
+    entry = &cache[next++ & 15];
+    entry->valid = 1; entry->tbp = tbp; entry->tbw = tbw; entry->gen = gen;
+    entry->skip = excluded(XXH3_64bits_digest(&hash), psm, tw, th);
+    if (entry->skip && getenv("BT3_TEX_LOG")) fprintf(stderr, "bt4: omitted Hit Time Skip backdrop\n");
+    return entry->skip;
+}
+
 static uint32_t bucket_of(uint64_t tex, uint64_t clut, uint32_t bits) {
     uint64_t h = (tex ^ (clut * 0x9E3779B97F4A7C15ull) ^ bits) * 0x9FB21C651E98DF25ull;
     return (uint32_t)(h >> 40);
@@ -120,6 +160,7 @@ static void add(const char *dir, const char *name, int archive, mz_uint member) 
     e.pal = parts == 3;
     e.clut = e.pal ? strtoull(part[1], NULL, 16) : 0;
     e.bits = (uint32_t)strtoul(part[parts - 1], NULL, 16);
+    if (excluded(e.tex, e.bits & 63, 1u << ((e.bits >> 6) & 15), 1u << ((e.bits >> 10) & 15))) return;
     e.state = 0;
     e.archive = archive;
     e.member = member;

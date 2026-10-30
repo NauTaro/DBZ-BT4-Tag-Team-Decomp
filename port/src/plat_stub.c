@@ -58,7 +58,11 @@ int sceGsExecStoreImage(void *si, void *dst) {
     Gs_StoreImage((unsigned)sStoreBp, (unsigned)sStoreW, (unsigned)sStoreH, (unsigned char *)dst);
     return 0;
 }
-int sceGsSyncPath() { return 0; }
+int sceGsSyncPath(int mode, int timeout) {
+    extern int Gs_SyncPath(int poll); /* gs_core.c owns the render thread */
+    (void)timeout;
+    return Gs_SyncPath(mode != 0);
+}
 void *sceGsSyncVCallback(int (*handler)(int)) { void *old = (void *)sVsyncHandler; sVsyncHandler = handler; return old; }
 /* One vertical blank: runs the game's VBlank handler, as the interrupt would. */
 extern void Port_Trace(unsigned vblanks);

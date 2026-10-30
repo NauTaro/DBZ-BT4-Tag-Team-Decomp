@@ -145,6 +145,11 @@ extern void Gsc_Update(void);
 extern void BtlScript_Update(void);
 /* Puts every battle subsystem back to the start of a match (first start and rematch) and fades in over 1 s. */
 s32 Battle_Restart(void) {
+#ifdef PORT
+    /* The preceding frame can still reference models and effect buffers that
+       the reload/reset below is about to release. */
+    sceGsSyncPath(0, 0);
+#endif
     Snd_StopBankAndResume(0x3C);
     TagBattle_ResetPairs();
     if(TagBattle_Network())TagOnline_Reset();
@@ -180,6 +185,9 @@ s32 Battle_Init(void) {
 
 /* Stores the result and destroys every battle subsystem. */
 s32 Battle_Term(void) {
+#ifdef PORT
+    sceGsSyncPath(0, 0);
+#endif
     {extern void Port_TagBattleRenderSet(s32);Port_TagBattleRenderSet(0);}
     BattleResult_Finish();
     Adx_StopAll();

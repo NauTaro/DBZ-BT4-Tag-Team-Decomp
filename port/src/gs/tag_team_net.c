@@ -795,6 +795,13 @@ void Port_TagPoll(void){
         }
 
         if(!Ttw_Decode(client.in,&state,&member,&result,room_code)){fail("Incompatible TAG TEAM server.");return;}
+        if(received.epoch!=state.epoch){
+            /* A result choice starts a new epoch before its first input arrives.
+             * Buffered inputs from the preceding fight must not advance the
+             * new simulation while the direct route is reconnecting. */
+            Tt_InputsReset(&received,state.epoch,Tt_Count(&state));
+            tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);
+        }
         TagDirect_State(client.in);
         if(state.phase!=TT_FIGHT&&state.phase!=TT_ARMED)tag_direct_route=0;
         tag_update_catchup();
@@ -1084,7 +1091,7 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
 }
 
 int Port_TagTakeFrame(unsigned char out[TT_MAX_PLAYERS][TT_PAD_BYTES]){
-    int ok=state.phase==TT_FIGHT&&Tt_InputTake(&received,out)==TT_OK;
+    int ok=state.phase==TT_FIGHT&&received.epoch==state.epoch&&Tt_InputTake(&received,out)==TT_OK;
     tag_update_catchup();return ok;
 
 }

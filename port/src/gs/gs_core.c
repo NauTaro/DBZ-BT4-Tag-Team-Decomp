@@ -914,7 +914,9 @@ static void reg_write(uint32_t addr, uint64_t d) {
     }
 }
 
+static int render_register(uint32_t addr, uint64_t data);
 void Gs_RegWrite(uint32_t addr, uint64_t d) {
+    if (render_register(addr, d)) return;
     reg_write(addr, d);
 }
 
@@ -1172,14 +1174,18 @@ static pthread_t sThread;
 static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t sWake = PTHREAD_COND_INITIALIZER, sDone = PTHREAD_COND_INITIALIZER;
 static int sThreaded;
-static int sJob;            /* 0 none, 1 start the GPU back end, 2 run a list, 3 hold/present the last frame */
+static int sJob;            /* 0 none, 1 init, 2 DMA list, 3 held frame, 4 register, 5 GIF channel */
 static uint32_t sJobTadr;
+static uint32_t sJobReg, sJobGifQwc;
+static uint64_t sJobRegData;
+static int sJobGifChain;
 static int sJobTte, sJobResim, sInitResult;
 static int sStopping; /* the program is ending: the render thread leaves its loop (render_stop) */
 static int sNetworkWaiting; /* atomic: present the completed picture while simulation needs network input */
 static int sListDone; /* the list being run has been drawn and its first picture shown (Smooth motion's others may follow) */
 static void run_chain(uint32_t tadr, int tte);
 static void run_frozen(void);
+void Port_GsGifChannel(uint32_t addr, uint32_t qwc, int chain);
 static void walk_chain(uint32_t tadr, int tte, void (*block)(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte));
 static void freeze_block(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte);
 static size_t sFrozenUsed; /* (the copy of a frame's list for the render thread: freeze_block) */
@@ -1281,6 +1287,14 @@ static void *render_thread(void *arg) {
         }
         if (sJob == 1) {
             sInitResult = GsGpu_Init();
+        } else if (sJob == 4) {
+            reg_write(sJobReg, sJobRegData);
+        } else if (sJob == 5) {
+            uint32_t addr = sJobTadr, qwc = sJobGifQwc;
+            int chain = sJobGifChain;
+            pthread_mutex_unlock(&sLock);
+            Port_GsGifChannel(addr, qwc, chain);
+            pthread_mutex_lock(&sLock);
         } else {
             uint32_t tadr = sJobTadr;
             int tte = sJobTte;
@@ -1380,6 +1394,43 @@ void Gs_RenderIdle(void) {
     }
 }
 
+/* Sony's path wait is used before freeing a scene's DMA-referenced buffers.
+   A nonblocking poll reports work in flight; a wait drains it. Neither one
+   advances the simulation or changes the pacing of ordinary frames. */
+int Gs_SyncPath(int poll) {
+    int busy;
+    if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
+    pthread_mutex_lock(&sLock);
+    if (!poll) while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    busy = sJob != 0;
+    pthread_mutex_unlock(&sLock);
+    return busy;
+}
+
+/* Immediate Sony calls can draw too, including the clear during a scene
+   change. Keep those calls on the context's owning thread, just like DMA. */
+static int render_register(uint32_t addr, uint64_t data) {
+    if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
+    pthread_mutex_lock(&sLock);
+    while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    sJobReg = addr; sJobRegData = data; sJob = 4;
+    pthread_cond_signal(&sWake);
+    while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    pthread_mutex_unlock(&sLock);
+    return 1;
+}
+
+static int render_gif(uint32_t addr, uint32_t qwc, int chain) {
+    if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
+    pthread_mutex_lock(&sLock);
+    while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    sJobTadr = addr; sJobGifQwc = qwc; sJobGifChain = chain; sJob = 5;
+    pthread_cond_signal(&sWake);
+    while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    pthread_mutex_unlock(&sLock);
+    return 1;
+}
+
 static void render_post(int job, uint32_t tadr, int tte) {
     pthread_mutex_lock(&sLock);
     sJob = job;
@@ -1443,11 +1494,13 @@ static int render_thread_wanted(void) {
     extern int Port_Setting(const char *name, int def);
     extern int SDL_GetNumLogicalCPUCores(void);
     const char *e = getenv("BT3_GS_THREAD");
+    const char *api = getenv("BT3_GPU_API");
     int want = e != NULL ? atoi(e) != 0 : Port_Setting("render_thread", 1) != 0;
 #ifdef __APPLE__
     want = 0;
 #endif
-    if (want && e == NULL && (Port_Setting("gpu_api", 0) == 1 || SDL_GetNumLogicalCPUCores() <= 2)) {
+    if (want && e == NULL && ((api && (!strcmp(api, "gl") || !strcmp(api, "opengl"))) ||
+                             Port_Setting("gpu_api", 0) == 1 || SDL_GetNumLogicalCPUCores() <= 2)) {
         want = 0;
     }
     return want;
@@ -1496,9 +1549,7 @@ void Port_GsGifChannel(uint32_t addr, uint32_t qwc, int chain) {
     if (!gs_on()) {
         return;
     }
-    if (sThreaded) {
-        render_wait(); /* the GS is one device: this transfer goes after the list that is being drawn */
-    }
+    if (render_gif(addr, qwc, chain)) return;
     gGsResim = gPortResim;
     if (!chain) {
         Gs_Gif((const uint8_t *)Port_Ptr(addr), qwc);

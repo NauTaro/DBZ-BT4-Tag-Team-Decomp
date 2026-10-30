@@ -16,6 +16,9 @@ typedef struct TexPackImage {
 
 void TexPack_Init(void);  /* looks through the folder once */
 int TexPack_Count(void);
+/* Content-specific visual exclusions apply to original GS textures too,
+   regardless of the replacement-pack setting. */
+int TexPack_SkipDraw(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32_t th);
 /* The replacement for the texture the GS registers describe (as it lies in GS memory now), or -1. *maxAlpha: the largest
    alpha byte the original texture has. The game uses bit 7 of the alpha it writes into the picture as a mask for
    later draws (a texture whose alpha stays at 0x7F never sets it); a replacement's alpha is redrawn and compressed

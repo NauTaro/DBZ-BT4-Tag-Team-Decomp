@@ -114,6 +114,13 @@ static s32 TagOnline_Tick(void){
         sTagOnlinePausePending=0;
     }
     ++sTagOnlineFrame;sTagOnlineSent=0;
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_INPUT_AUDIT")) {
+        u32 hash=2166136261u; s32 a,b;
+        for(a=0;a<TagBattle_Count();++a)for(b=0;b<18;++b)hash=(hash^sTagOnlinePads[a][b])*16777619u;
+        fprintf(stderr,"tag delivered input: frame=%u hash=%08X p0=%02X%02X%02X%02X p1=%02X%02X%02X%02X\n",sTagOnlineFrame,hash,
+            sTagOnlinePads[0][0],sTagOnlinePads[0][1],sTagOnlinePads[0][2],sTagOnlinePads[0][3],
+            sTagOnlinePads[1][0],sTagOnlinePads[1][1],sTagOnlinePads[1][2],sTagOnlinePads[1][3]);
+    }
     if(TagBattle_NetIntroSkip() && sequence!=3)
         fprintf(stderr,"tag sequence: shared START frame=%u state=%d\n",sTagOnlineFrame,sequence);
 

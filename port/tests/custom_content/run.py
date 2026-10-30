@@ -20,11 +20,24 @@ def run(command,**kw):
 dead='-Wl,-dead_strip' if sys.platform=='darwin' else '-Wl,--gc-sections'
 common=[cc,'-std=gnu99','-O2','-ffunction-sections','-fdata-sections',dead,'-I'+str(root/'port/include')]
 suffix='.exe' if os.name=='nt' else ''
-def build(name,sources,extra=()):
-    exe=out/(name+suffix);run(common+[str(root/p) for p in sources]+list(extra)+flags+['-lm','-o',str(exe)]);return exe
+def build(name,sources,extra=(),cxx=False):
+    options=common if not cxx else [env.get('CXX','g++'),'-std=c++17']+common[2:]
+    exe=out/(name+suffix);run(options+[str(root/p) for p in sources]+list(extra)+flags+['-lm','-o',str(exe)]);return exe
 audio=build('audio_probe',['port/tests/custom_content/audio_probe.c'])
 songs=build('songs_probe',['port/tests/custom_content/songs_probe.c','port/src/plat_songs.c','port/src/plat_extras.c','port/src/plat_file.c'])
 pack=build('pack_probe',['port/tests/custom_content/pack_probe.c','port/third_party/miniz/miniz.c'],['-DMINIZ_NO_ARCHIVE_WRITING_APIS','-DMINIZ_NO_STDIO','-DMINIZ_NO_TIME','-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES'])
+menu=build('menu_probe',['port/tests/custom_content/menu_probe.cpp'],cxx=True)
+run([str(menu)],cwd=out)
+def function(path,signature):
+    text=(root/path).read_text();start=text.index(signature);at=text.index('{',start)+1;depth=1
+    while depth:depth+=(text[at]=='{')-(text[at]=='}');at+=1
+    return text[start:at]
+(out/'sync_under_test.inc').write_text(function('port/src/gs/gs_core.c','int Gs_SyncPath(')+'\n'+function('port/src/plat_stub.c','int sceGsSyncPath('))
+sync=build('sync_probe',['port/tests/custom_content/sync_probe.c'],['-I'+str(out),'-pthread'])
+run([str(sync)],cwd=out)
+(out/'epoch_under_test.inc').write_text(function('port/src/gs/tag_team_net.c','int Port_TagTakeFrame('))
+epoch=build('epoch_probe',['port/tests/custom_content/epoch_probe.c','port/src/tag_team.c'],['-I'+str(out)])
+run([str(epoch)],cwd=out)
 with tempfile.TemporaryDirectory(prefix='BT4 media test ') as temp:
     temp=Path(temp);songdir=temp/'songs';songdir.mkdir()
     for extension in ('wav','mp3','flac','adx'):
