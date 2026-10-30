@@ -6,7 +6,7 @@
   <p>
     <a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/latest"><img src="https://img.shields.io/badge/Download-Latest%20release-ef8b24?style=flat-square" alt="Download the latest published release"></a>
     <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-1f6feb?style=flat-square" alt="Windows, Linux and macOS">
-    <img src="https://img.shields.io/badge/upstream-0.1.39.1-7c3aed?style=flat-square" alt="Tenkaichi3Decomp engine 0.1.39.1">
+    <img src="https://img.shields.io/badge/upstream-0.1.39.2-7c3aed?style=flat-square" alt="Tenkaichi3Decomp engine 0.1.39.2">
     <a href="https://ko-fi.com/nautaro"><img src="https://img.shields.io/badge/Ko--fi-Support%20NauTaro-ff5e5b?style=flat-square&amp;logo=ko-fi&amp;logoColor=white" alt="Support NauTaro on Ko-fi"></a>
   </p>
   <p><strong><a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/latest">Download</a> &nbsp; · &nbsp; <a href="#installation">Install</a> &nbsp; · &nbsp; <a href="docs/README.md">Documentation</a> &nbsp; · &nbsp; <a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/issues/new/choose">Report an issue</a></strong></p>
@@ -75,7 +75,7 @@ Installations that predate the signed updater need one initial package installat
 
 ## Source and online compatibility
 
-The source integrates **Tenkaichi3Decomp 0.1.39.1**, with BT4 revisions tracked separately as **R1, R2, R3** and onward. The `main` branch can contain changes awaiting release; the Download button points to the published package. See the [changelog](CHANGELOG.md) for source changes and [release notes](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) for packaged builds.
+The source integrates **Tenkaichi3Decomp 0.1.39.2**, with BT4 revisions tracked separately as **R1, R2, R3** and onward. The `main` branch can contain changes awaiting release; the Download button points to the published package. See the [changelog](CHANGELOG.md) for source changes and [release notes](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) for packaged builds.
 
 Use compatible BT4 data and the same published launcher on every participating computer. The selected language does not define the online compatibility family.
 

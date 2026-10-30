@@ -61,3 +61,11 @@ The [decompilation guide](../decomp_guide.md) describes original-binary comparis
 
 Release packages target Windows x64, Linux x86-64 and macOS arm64. See the
 native platform guide for minimum OS versions and the scope of validation.
+
+## Menu layouts
+
+F1 > UI > Menus provides Stretched, 4:3 and Widescreen (beta). The optional
+widescreen layout positions menu columns and guides at their respective screen
+edges while preserving the proportions of text and artwork. It is disabled by
+default. Tenkaichi Budokai Online continues to use its existing full-width layout.
+The menu layout setting is independent of the combat aspect ratio and HUD layout.

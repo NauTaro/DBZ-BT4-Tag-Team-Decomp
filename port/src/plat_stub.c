@@ -659,6 +659,20 @@ int Port_Menus43(void) {
 void Port_Menus43Set(int on) {
     sMenus43 = on != 0;
 }
+/* The menu layout "Widescreen" (setting menus_wide; BT3_MENU_WIDE=0/1 over it): the screens converted for it
+   (Port_MenuPage, port/src/gs_marker.c) have their 2D at its true shape and their backdrops across the whole width;
+   the others are stretched as before. Not with "Menus in 4:3". */
+PORT_HOST static int sMenusWide = -1;
+int Port_MenusWide(void) {
+    if (sMenusWide < 0) {
+        const char *env = getenv("BT3_MENU_WIDE");
+        sMenusWide = env != NULL && env[0] != '\0' ? atoi(env) != 0 : Port_Setting("menus_wide", 0) != 0;
+    }
+    return sMenusWide && !Port_Menus43();
+}
+void Port_MenusWideSet(int on) {
+    sMenusWide = on != 0;
+}
 int Port_PageAspectMilli(void) {
     return gPortMenuMode && Port_Menus43() ? 1333 : Port_AspectMilli();
 }

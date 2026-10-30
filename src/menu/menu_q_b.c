@@ -1,6 +1,10 @@
 #include "common.h"
 #include "menu/menu_q.h"
 #include "sys/pad.h"
+#ifdef PORT
+extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+extern void Port_MenuFill(int on);
+#endif
 
 /* The screen's work area (.data, 0x3B7384). */
 SimDay *gSimDay = NULL;
@@ -1174,7 +1178,14 @@ void SimDay_Draw(void) {
     s32 n;
     s32 done;
 
+#ifdef PORT
+    Port_MenuPage(32); /* widescreen menus: this screen's page, its backdrop filling the width */
+    Port_MenuFill(1);
     Sprite_DrawPicture(gSimDay->bg, 0, 0, 0x80);
+    Port_MenuFill(0);
+#else
+    Sprite_DrawPicture(gSimDay->bg, 0, 0, 0x80);
+#endif
     flash = &gSimDay->flash[SIMDAY_FL_BOARD];
     Flash_FindLabel(flash, NULL, "mc_icon_timer", &ref);
     Flash_ClipSetFlags(flash, &ref, 0x400, 1);
@@ -1338,6 +1349,9 @@ void SimDay_Draw(void) {
         }
     }
     Dialog_Draw(1);
+#ifdef PORT
+    Port_MenuPage(0);
+#endif
 }
 
 /*

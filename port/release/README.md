@@ -10,7 +10,7 @@ preserved by the installer.
 
 BT4 changes increment the revision, not the upstream engine version. Update `port/include/bt4_version.h`,
 the build identities, `port/release/BT4_VERSION.txt`, package text and `CHANGELOG.md` together. After the R2 migration,
-push canonical tags such as `v0.1.39.1-R3` and `v0.1.39.1-R4`. A new upstream adaptation starts its own revision
+push canonical tags such as `v0.1.39.2-R3` and `v0.1.39.2-R4`. A new upstream adaptation starts its own revision
 series, for example `v0.1.39.2-R1`. The numeric tag `v0.1.39.3` is reserved for the approved R2 migration bridge;
 it is not an upstream version. The workflow checks the tag against the declared revision before publishing.
 

@@ -2,6 +2,10 @@
 #include "menu/menu_h.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#ifdef PORT
+extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+extern void Port_MenuFill(int on);
+#endif
 
 CharRef *gCharRef = NULL; /* 0x3B4854 */
 
@@ -270,7 +274,14 @@ void CharRef_Draw(void) {
     MChrTblEntry *tbl;
 
     Job_Run();
+#ifdef PORT
+    Port_MenuPage(17); /* widescreen menus: this screen's page, its backdrop filling the width */
+    Port_MenuFill(1);
     Sprite_DrawPicture(gCharRef->bg, 0, 0, 0x80);
+    Port_MenuFill(0);
+#else
+    Sprite_DrawPicture(gCharRef->bg, 0, 0, 0x80);
+#endif
     Flash_Advance(&gCharRef->flash[0]);
     if (pose) {
         gCharRef->tex[32] = gCharRef->tex[43];
@@ -449,6 +460,9 @@ void CharRef_Draw(void) {
         MsgWin_Draw(0, 0, gCharRef->voiceLine + gCharRef->commentBase + gCharRef->comment);
     }
     ColorFade_Draw();
+#ifdef PORT
+    Port_MenuPage(0);
+#endif
 }
 
 /* State 0: waits for the movie's intro, then lights the cursor row and greets. */

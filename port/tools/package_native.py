@@ -1,5 +1,22 @@
 """Native release folders with bundled SDL, TLS transport and Opus libraries."""
-import json,os,pathlib,re,shutil,subprocess,sys,zipfile
+import json,os,pathlib,re,shutil,subprocess,sys,zipfile,struct
+
+def require_mac_pagezero(executable):
+    """Reject the startup failure fixed by upstream 0.1.39.2 before packaging."""
+    data=pathlib.Path(executable).read_bytes()
+    if len(data)<32 or struct.unpack_from('<I',data)[0]!=0xFEEDFACF:
+        raise RuntimeError('Expected a 64-bit Mach-O runtime')
+    count=struct.unpack_from('<I',data,16)[0];offset=32
+    for _ in range(count):
+        if offset+8>len(data):break
+        command,size=struct.unpack_from('<II',data,offset)
+        if size<8 or offset+size>len(data):break
+        if command==0x19 and size>=72 and data[offset+8:offset+24].rstrip(b'\0')==b'__PAGEZERO':
+            address,length=struct.unpack_from('<QQ',data,offset+24)
+            if address==0 and length>=0x100000000:return
+            break
+        offset+=size
+    raise RuntimeError('The macOS runtime needs a 4 GiB __PAGEZERO segment; rebuild with the current linker')
 
 def run(*args):
     return subprocess.check_output(list(map(str,args)),text=True).strip()
@@ -68,6 +85,7 @@ def main(p,mac=False):
     archive=root/'port/build'/('BT4decomp-macos-arm64.zip' if mac else 'BT4decomp-linux-x64.zip')
     exe=root/'port/build'/('bt3_mac' if mac else 'bt3_64');setup=root/'BT4decomp-setup'
     if not exe.is_file() or not setup.is_file():raise RuntimeError('Build the native runtime and setup first')
+    if mac:require_mac_pagezero(exe)
     if out.exists():
         assert out.resolve().is_relative_to((root/'port/build').resolve()) and not out.is_symlink()
         shutil.rmtree(out)

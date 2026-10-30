@@ -509,7 +509,12 @@ void step_test(const std::string &root) {
     SDL_DestroyProperties(props);
     SDL_DestroyEnvironment(env);
     if (proc == NULL) {
+#ifdef __APPLE__
+        throw Stop{std::string("The game could not be started: ") + SDL_GetError() +
+                   " (macOS may still be blocking it: see step 0 of README.txt)"};
+#else
         throw Stop{std::string("The game could not be started: ") + SDL_GetError()};
+#endif
     }
     size_t size = 0;
     int code = -1;

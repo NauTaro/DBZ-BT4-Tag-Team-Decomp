@@ -18,7 +18,7 @@ if [ "${1:-linux}" = win ]; then
            [ -d "$S" ] || { echo "SDL3 for mingw not found: unpack SDL3-devel-*-mingw.tar.gz under port/build/win"; exit 1; }
            SDL="-I$S/include -L$S/lib" ;;
     esac
-elif [ "${1:-linux}" = mac ]; then
+elif [ "${1:-linux}" = mac ] || [ "$(uname -s)" = Darwin ]; then
     O=port/build/setup_mac; OUT=BT4decomp-setup; CXX=clang++; CC=clang
     S=${BT3_SDL3:-/opt/homebrew/opt/sdl3}
     SDL="-I$S/include -L$S/lib"

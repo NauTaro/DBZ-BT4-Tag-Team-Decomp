@@ -2,6 +2,12 @@
 #include "menu/menu_c.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+extern void Port_MenuFill(int on);
+#endif
 
 HistResult *gHistResult = NULL; /* 0x3B1300 */
 
@@ -174,6 +180,11 @@ void HistResult_Init(s32 section) {
     s32 bg;
 
     flags = BattleResult_GetFlags();
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_SCENARIO_TEST")){
+        printf("story-result enter saga=%d episode=%d flags=%x\n",gProgress->subMenu,gProgress->subMenuItem,flags);fflush(stdout);
+    }
+#endif
     gHistResult = Heap_Alloc(0x140, 0x20, 0, 2);
     memset(gHistResult, 0, 0x140);
     gHistResult->pack = (u32 *)MPACK_AT(gMenuArc2, section);
@@ -255,7 +266,14 @@ void HistResult_Draw(void) {
     s32 i;
     MFlash *flash;
 
+#ifdef PORT
+    Port_MenuPage(14); /* widescreen menus: this screen's page, its backdrop filling the width */
+    Port_MenuFill(1);
     Sprite_DrawPicture(gHistResult->bg, 0, 0, 0x80);
+    Port_MenuFill(0);
+#else
+    Sprite_DrawPicture(gHistResult->bg, 0, 0, 0x80);
+#endif
     flash = &gHistResult->flash[0];
     for (i = 0; i < 2; i++) {
         sprintf(name, "mc_result_text_%d", i + 1);
@@ -320,6 +338,9 @@ void HistResult_Draw(void) {
         Flash_Draw(&gHistResult->flash[i]);
     }
     GetWin_Draw();
+#ifdef PORT
+    Port_MenuPage(0);
+#endif
 }
 
 /* Steps the movie; when the "fl_out" animation has ended, leaves. */
@@ -504,6 +525,16 @@ s32 HistResult_Run(s32 section) {
             HistResult_UpdateState();
         }
         HistResult_Draw();
+#ifdef PORT
+        if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_SCENARIO_TEST")){
+            static s32 checkedFrames;
+            if(++checkedFrames==120){
+                s32 lost=(gHistResult->flags&HISTRESULT_LOST)!=0;
+                printf("story-result PASS saga=%d episode=%d lost=%d frames=%d\n",gProgress->subMenu,gProgress->subMenuItem,lost,checkedFrames);
+                fflush(stdout);exit(getenv("BT4_STORY_LOSS_TEST")&&!lost?3:0);
+            }
+        }
+#endif
         ColorFade_Draw();
         Gfx_EndFrame(1);
         Dma_Flush();

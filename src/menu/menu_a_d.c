@@ -6,6 +6,8 @@
 #ifdef PORT
 #include <stdlib.h>
 #include <stdio.h>
+extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+extern void Port_MenuFill(int on);
 #endif
 
 ModeMenu *gModeMenu = NULL; /* 0x3B12F0 */
@@ -316,6 +318,9 @@ void ModeMenu_Term(void) {
 
 /* Sets up every clip of the movie for this frame and draws it and the message window. */
 void ModeMenu_Draw(void) {
+#ifdef PORT
+    Port_MenuPage(10); /* widescreen menus: this screen's page */
+#endif
     MFlashRef ref;
     MFlashUv uv;
     char name[64];
@@ -426,6 +431,9 @@ void ModeMenu_Draw(void) {
     }
     Font_FlushAll();
     MsgWin_Draw(0, 0, gModeMenu->voiceLine);
+#ifdef PORT
+    Port_MenuPage(0);
+#endif
 }
 
 /*

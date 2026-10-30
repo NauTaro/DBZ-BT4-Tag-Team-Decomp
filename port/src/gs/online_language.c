@@ -6,6 +6,19 @@ extern int Port_GameProfileEnglish(void);
 static int sRaw;
 void PortOnline_Raw(int on){if(on)sRaw++;else if(sRaw)sRaw--;}
 static const char *const kText[][2]={
+{"Menus","Men\u00fas"},
+{"Stretched","Estirado"},
+{"Widescreen (beta)","Panor\u00e1mico (beta)"},
+{"How the menus fill a picture wider than 4:3 (fights keep the wide picture):\n"
+ "Stretched: the 4:3 menus stretched to the width.\n"
+ "4:3: at their own shape, with the side bars at the sides.\n"
+ "Widescreen (beta): at their own shape across the whole width, the backdrops filling it,\n"
+ "each menu's parts against the side they belong to.",
+ "Presentaci\u00f3n de los men\u00fas en pantallas panor\u00e1micas (el combate conserva su formato):\n"
+ "Estirado: ampl\u00eda los men\u00fas 4:3 hasta ocupar todo el ancho.\n"
+ "4:3: conserva las proporciones originales y a\u00f1ade bordes laterales.\n"
+ "Panor\u00e1mico (beta): conserva las proporciones, ampl\u00eda los fondos y distribuye\n"
+ "los elementos del men\u00fa por toda la pantalla."},
 {"%d FRAME","%d FOTOGRAMA"},
 {"%d FRAMES","%d FOTOGRAMAS"},
 {"Chat","Chat"},

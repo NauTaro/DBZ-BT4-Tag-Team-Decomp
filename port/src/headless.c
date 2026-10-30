@@ -188,6 +188,17 @@ int __wrap_Progress_Main(int arg) {
                             time == 0 ? "60" : time == 1 ? "90" : time == 2 ? "180" : time == 3 ? "240" : "none");
                 }
             }
+            {   /* BT3_MENU_MODE=<n> (testing): the menus start at progress mode n instead of the title (src/menu/menu_a_b.c:
+                   6 Dragon History, 13 Ultimate Battle, 33 World Tournament, 38 the versus menu, 44 Training, 48 Evolution Z,
+                   53 the disc fusion, 60 Character Reference, 62 Options, 70 Shenron): its screens, seen without the way
+                   there being pressed */
+                static int modeEntered;
+
+                if (!modeEntered && getenv("BT3_MENU_MODE") != NULL && !Port_NetSession() && gProgress != NULL && gSaveData != NULL) {
+                    modeEntered = 1;
+                    gProgress->mode = atoi(getenv("BT3_MENU_MODE"));
+                }
+            }
             {   /* BT3_TBO=1 (testing): the first menu is Tenkaichi Budokai Online's (src/menu/port_tbo.c), not the
                    title: its screens, a lobby's included (BT3_LOBBY), without a button pressed */
                 static int tboEntered;
@@ -587,7 +598,17 @@ void Port_Trace(unsigned vblanks) {
         extern int GAME_PTR BtlMember_GetActiveGauge(void *chr);
         int a;for(a=1;a<TagBattle_Count();a+=2)BtlMember_GetActiveGauge(BtlChar_Get(a))[0]=0;
     }
-    if(getenv("BT4_STORY_BATTLE_TEST") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=60) {
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_LOSS_TEST") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=180){
+        extern unsigned char GAME_PTR BtlChar_Get(int actor);
+        extern int BtlMember_Damage(void *chr,int damage,int flags);
+        static int injected;
+        if(!injected){
+            /* Use normal damage bookkeeping so the story receives KO events. */
+            BtlMember_Damage(BtlChar_Get(0),1000000,0x3C1);injected=1;
+            fprintf(stderr,"story-loss damage injected with KO events\n");
+        }
+    }
+    if(getenv("BT4_STORY_BATTLE_TEST") && !getenv("BT4_STORY_CONTINUE_TEST") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=60) {
         fprintf(stderr,"story-play script=%s state=3 tick=%d PASS\n",getenv("BT4_STORY_BATTLE_TEST"),BtlSeq_GetClock()[0]);exit(0);
     }
     if (getenv("BT4_TEST_TECH") != NULL && gBtlSeq != NULL && gBtlSeq->state == 3) {

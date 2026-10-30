@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 extern void Hist_StoryAudit(void);
+extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+extern void Port_MenuFill(int on);
 #endif
 
 HistOutro *gHistOutro = NULL; /* 0x3B12F8 */
@@ -256,6 +258,9 @@ void HistOutro_Term(void) {
 
 /* Sets up the clips of the movie (both guides' faces, the three lines of the closing text) and draws. */
 void HistOutro_Draw(void) {
+#ifdef PORT
+    Port_MenuPage(12); /* widescreen menus: this screen's page */
+#endif
     MFlashRef ref;
     char name[64];
     char sub[64];
@@ -299,6 +304,9 @@ void HistOutro_Draw(void) {
     }
     Font_FlushAll();
     MsgWin_Draw(0, 0, gHistOutro->voiceLine);
+#ifdef PORT
+    Port_MenuPage(0);
+#endif
 }
 
 /* Advances the movie; brings the guide(s) in when the movie asks for it; scrolls the closing text. */
@@ -845,6 +853,20 @@ s32 Hist_Main(void) {
 
     HIST_LOAD_ARC();
 #ifdef PORT
+    /* Local regression starts the actual selected BT4 story script and keeps
+       the normal return to its result menu. No user saves or network involved. */
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_SCENARIO_TEST")){
+        static s32 started;
+        if(!started){
+            extern void BattleSetup_Clear(void), BattleSetup_SetScript(s32 script);
+            s32 script=atoi(getenv("BT4_STORY_SCENARIO_TEST"));
+            HistResult_SplitEpisode(script,&gProgress->subMenu,&gProgress->subMenuItem);
+            gProgress->prevMode=7;gProgress->mode=8;started=1;
+            BattleSetup_Clear();BattleSetup_SetScript(script);
+            printf("story-scenario script=%d saga=%d episode=%d\n",script,gProgress->subMenu,gProgress->subMenuItem);fflush(stdout);
+            return 1;
+        }
+    }
     if(getenv("BT4_STORY_AUDIT"))Hist_StoryAudit();
 #endif
     do {

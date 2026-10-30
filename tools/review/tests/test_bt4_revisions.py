@@ -16,6 +16,9 @@ int main(void){
  assert(UpdateVer_Compare("0.1.39.2","v0.1.39.3")==-1);
  assert(UpdateVer_Compare("0.1.39.3","v0.1.39.1-R2")==0);
  assert(UpdateVer_Compare("0.1.39.3","v0.1.39.1-R3")==-1);
+ assert(UpdateVer_Compare("0.1.39.3","v0.1.39.2-R3")==-1);
+ assert(UpdateVer_Compare("0.1.39.1-R3","v0.1.39.2-R3")==-1);
+ assert(UpdateVer_Compare("0.1.39.2-R3","v0.1.39.2-R3")==0);
  assert(UpdateVer_Compare("0.1.39.1-R99","v0.1.39.2-R1")==-1);
  assert(UpdateVer_Compare("0.1.39.1-R99","v0.1.40-R1")==-1);
  assert(UpdateVer_Compare("dev","0.1.39.1-R1")==-2);

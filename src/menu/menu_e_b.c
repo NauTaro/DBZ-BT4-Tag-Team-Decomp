@@ -33,6 +33,10 @@ static s32 sPortStageRows = 11; /* rows of the stage reel: the game's 6, more wi
 #define STGGRID_ID_LOCKED 0x24
 #define STGGRID_ID_EMPTY 0x25
 #endif
+#ifdef PORT
+extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+extern void Port_MenuFill(int on);
+#endif
 
 /*
  * TeamSel: the team character / stage / music select of the versus modes, 0x348D78..0x351C38. One object,
@@ -985,7 +989,14 @@ void TeamSel_Draw(void) {
                 gTeamSel->bgAlpha[i] = 0x80;
             }
         }
+#ifdef PORT
+        Port_MenuPage(15); /* widescreen menus: this screen's page, its backdrop filling the width */
+        Port_MenuFill(1);
         Sprite_DrawPicture(gTeamSel->bg[i], 0, 0, gTeamSel->bgAlpha[i]);
+        Port_MenuFill(0);
+#else
+        Sprite_DrawPicture(gTeamSel->bg[i], 0, 0, gTeamSel->bgAlpha[i]);
+#endif
     }
     flash = &gTeamSel->flash[0];
     for (i = 0; i < TEAMSEL_SIDES; i++) {
@@ -1388,6 +1399,9 @@ void TeamSel_Draw(void) {
     ItemPanel_Draw(0);
     ItemPanel_Draw(1);
     ItemHelp_Draw(gTeamSel->help);
+#ifdef PORT
+    Port_MenuPage(0);
+#endif
 }
 
 /* ======== 0x34D368: the per-frame update, the pad handler and the main loop ======== */
