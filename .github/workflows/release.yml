@@ -79,7 +79,7 @@ jobs:
       platform: all
     secrets: inherit
 
-  publish:
+  prepare-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [build, native]
     runs-on: ubuntu-22.04
@@ -112,7 +112,7 @@ jobs:
             python3 port/tools/update_key.py sign "$archive"
             python3 port/tools/update_key.py verify "$archive"
           done
-      - name: Publish the complete signed release
+      - name: Prepare the complete signed draft
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TITLE: ${{ needs.build.outputs.title }}
@@ -135,4 +135,4 @@ jobs:
           assert {asset['name'] for asset in release['assets']} == expected, 'Incomplete release assets'
           assert all(asset['size'] > 0 for asset in release['assets']), 'Empty release asset'
           PY
-          gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
+          echo "Signed packages are ready in a draft. Publish explicitly after gameplay validation." >> "$GITHUB_STEP_SUMMARY"
