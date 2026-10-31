@@ -1,61 +1,101 @@
 #!/usr/bin/env python3
-"""Restore the pinned Windows voice SDK and GitHub authorization helper.
-
-The bootstrap archive is verified before extracting the explicit dependency set.
-No game executable, installer, settings, saves, ISO or extracted game data is used.
-"""
-import argparse, hashlib, json, pathlib, urllib.request, zipfile
+"""Assemble pinned Windows voice and GitHub authorization dependencies."""
+import argparse
+import hashlib
+import json
+import pathlib
+import urllib.request
+import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-URL = "https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/download/bt4-r26-rc1/BT4-Tag-Team-R26-RC1.zip"
-SHA256 = "935a14f57273ffef6667ff7ab4070503a6bc41987125275a4e05b4da6177d167"
-REQUIRED = {
-    "libdatachannel.dll", "libopus-0.dll", "libwinpthread-1.dll",
-    "tbo/setup/gh.exe", "licenses/GitHub-CLI-MIT.txt",
-    "licenses/source/VOICE-SDK-source.zip", "licenses/voice/SOURCES.json",
-}
+GH_VERSION = "2.103.3"
+GH_URL = f"https://github.com/cli/cli/releases/download/v{GH_VERSION}/gh_{GH_VERSION}_windows_amd64.zip"
+GH_SHA256 = "98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0"
+VOICE_DLLS = ("libdatachannel.dll", "libopus-0.dll", "libwinpthread-1.dll")
 
-def sha(path):
-    digest = hashlib.sha256()
-    with path.open('rb') as stream:
-        while block := stream.read(1024*1024):
-            digest.update(block)
-    return digest.hexdigest()
+
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def fetch_github_cli(archive):
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    if not archive.exists() or sha256(archive.read_bytes()) != GH_SHA256:
+        temporary = archive.with_suffix(archive.suffix + ".part")
+        request = urllib.request.Request(GH_URL, headers={"User-Agent": "BT4decomp-build"})
+        with urllib.request.urlopen(request, timeout=120) as response, temporary.open("wb") as output:
+            while block := response.read(1024 * 1024):
+                output.write(block)
+        if sha256(temporary.read_bytes()) != GH_SHA256:
+            temporary.unlink(missing_ok=True)
+            raise SystemExit("GitHub CLI archive checksum mismatch")
+        temporary.replace(archive)
+    return archive
+
 
 def prepare(archive=None):
-    archive = pathlib.Path(archive).resolve() if archive else ROOT / 'port/build/runtime-base.zip'
-    if not archive.exists():
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        temporary = archive.with_suffix('.part')
-        with urllib.request.urlopen(URL, timeout=120) as response, temporary.open('wb') as out:
-            while block := response.read(1024*1024):
-                out.write(block)
-        if sha(temporary) != SHA256:
-            temporary.unlink()
-            raise SystemExit('Windows runtime bootstrap checksum mismatch')
-        temporary.replace(archive)
-    if sha(archive) != SHA256:
-        raise SystemExit('Windows runtime bootstrap checksum mismatch')
-    target = ROOT / 'port/build/windows-runtime'
+    archive = pathlib.Path(archive).resolve() if archive else ROOT / f"port/build/gh_{GH_VERSION}_windows_amd64.zip"
+    archive = fetch_github_cli(archive)
+    target = ROOT / "port/build/windows-runtime"
     manifest = {}
-    with zipfile.ZipFile(archive) as zipped:
-        names = set(zipped.namelist())
-        if not REQUIRED <= names:
-            raise SystemExit('Windows runtime bootstrap is incomplete')
-        selected = REQUIRED | {n for n in names if n.startswith('licenses/voice/') and not n.endswith('/')}
-        for name in sorted(selected):
-            parts = pathlib.PurePosixPath(name).parts
-            if '..' in parts or pathlib.PurePosixPath(name).is_absolute():
-                raise SystemExit('Invalid Windows runtime dependency path')
-            data = zipped.read(name)
-            output = target.joinpath(*parts)
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_bytes(data)
-            manifest[name] = hashlib.sha256(data).hexdigest()
-    (target/'manifest.json').write_text(json.dumps({'bootstrap_url':URL,'bootstrap_sha256':SHA256,'files':manifest},indent=2)+'\n')
-    print(f'Prepared {len(manifest)} verified Windows runtime dependencies')
+    runtime_assets = json.loads((ROOT / "port/runtime-assets.json").read_text(encoding="utf-8"))
+    expected_hashes = {item["source"]: item["sha256"] for item in runtime_assets}
 
-if __name__ == '__main__':
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--archive', type=pathlib.Path)
+    def put(relative, data):
+        output = target.joinpath(*pathlib.PurePosixPath(relative).parts)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(data)
+        manifest[relative] = sha256(data)
+
+    voice = ROOT / "port/voice-runtime"
+    for name in VOICE_DLLS:
+        source = voice / name
+        if not source.is_file():
+            raise SystemExit("Missing pinned Windows voice dependency: " + name)
+        relative = "port/voice-runtime/" + name
+        data = source.read_bytes()
+        if expected_hashes.get(relative) != sha256(data):
+            raise SystemExit("Windows voice dependency checksum mismatch: " + name)
+        put(name, data)
+    license_dir = voice / "licenses/voice"
+    for source in sorted(license_dir.rglob("*")):
+        if source.is_file() and source.name != "SOURCES.json":
+            put("licenses/voice/" + source.relative_to(license_dir).as_posix(), source.read_bytes())
+
+    source_archive = ROOT / "port/build/libdatachannel-build-source.zip"
+    source_lock = ROOT / "port/release/rtc-sources.lock.json"
+    build_receipt = ROOT / "port/build/libdatachannel-BUILD.json"
+    if not source_archive.is_file() or not source_lock.is_file() or not build_receipt.is_file():
+        raise SystemExit("Pinned Windows RTC source kit is incomplete")
+    put("licenses/source/VOICE-SDK-source.zip", source_archive.read_bytes())
+    put("licenses/voice/SOURCES.json", source_lock.read_bytes())
+    put("licenses/voice/BUILD.json", build_receipt.read_bytes())
+    windows_sources = license_dir / "SOURCES.json"
+    if windows_sources.is_file():
+        put("licenses/voice/WINDOWS-RUNTIME-SOURCES.json", windows_sources.read_bytes())
+
+    with zipfile.ZipFile(archive) as package:
+        names = set(package.namelist())
+        executable = "bin/gh.exe"
+        license_name = "LICENSE"
+        if executable not in names or license_name not in names:
+            raise SystemExit("Pinned GitHub CLI archive is incomplete")
+        put("tbo/setup/gh.exe", package.read(executable))
+        put("licenses/GitHub-CLI-MIT.txt", package.read(license_name))
+
+    (target / "manifest.json").write_text(
+        json.dumps({
+            "github_cli_version": GH_VERSION,
+            "github_cli_url": GH_URL,
+            "github_cli_archive_sha256": GH_SHA256,
+            "files": manifest,
+        }, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Prepared {len(manifest)} verified Windows runtime files")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--archive", type=pathlib.Path)
     prepare(parser.parse_args().archive)

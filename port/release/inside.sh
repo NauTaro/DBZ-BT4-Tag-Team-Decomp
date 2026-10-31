@@ -24,6 +24,10 @@ clang --version | head -1
 llc --version | head -1
 run
 sh port/setup/build.sh win
+# Preserve the exact RTC source bundle and receipt produced in the pinned build image.
+mkdir -p port/build
+cp /usr/local/share/licenses/BT4-RTC/libdatachannel-build-source.zip port/build/libdatachannel-build-source.zip
+cp /usr/local/share/licenses/BT4-RTC/BUILD.json port/build/libdatachannel-BUILD.json
 python3 port/tools/prepare_windows_runtime.py
 python3 port/tools/package.py
 ls -la port/build/*.zip
