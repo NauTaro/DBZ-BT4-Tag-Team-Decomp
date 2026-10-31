@@ -8,6 +8,12 @@ for name in ['BT4decomp','BT4decomp-setup','BT4decomp.dat','BT4decomp.mem','BT4_
     assert (out/name).is_file(),name
 rtc_library=out/'lib'/('libdatachannel.dylib' if mac else 'libdatachannel.so')
 assert rtc_library.is_file(),'The native RTC SCTP library must be bundled'
+if mac:
+    from mac_dependencies import verify_dependencies
+    import ctypes
+    for library in verify_dependencies(out):
+        subprocess.run(['codesign','--verify',str(library)],check=True)
+        if library.suffix=='.dylib':ctypes.CDLL(str(library))
 for name in ['SOURCES.json','BUILD.json','libdatachannel-build-source.zip','libdatachannel-MPL-2.0.txt',
              'libjuice-MPL-2.0.txt','libsrtp-BSD.txt','plog-MIT.txt','usrsctp-BSD.txt']:
     assert (out/'licenses/native/BT4-RTC'/name).is_file(),name

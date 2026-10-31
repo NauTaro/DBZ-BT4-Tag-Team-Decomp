@@ -912,7 +912,13 @@ void CharSel_Draw(void) {
             gCharSel->faceAlpha[i] = 0.0f;
         }
         Flash_FindLabel(f, NULL, i ? "mc_single_chara_r" : "mc_single_chara_l", &ref);
+#ifdef PORT
+        /* BT4 keeps this portrait clip in the map movie. Do not let its
+         * selection fade remain visible over the stage preview. */
+        Flash_ClipSetAlpha(f, &ref, (gCharSel->flags & CHARSEL_STAGE_PHASE) ? 0.0f : gCharSel->faceAlpha[i]);
+#else
         Flash_ClipSetAlpha(f, &ref, gCharSel->faceAlpha[i]);
+#endif
         Flash_ClipSetFlags(f, &ref, 0x80, (u8)gCharSel->faceMask);
         Flash_FindLabel(f, NULL, i ? "mc_name_text_r" : "mc_name_text_l", &ref);
         TextBox_AttachLine(f, &ref, 0, 0, gCharSel->side[i]->chara, &gCharSel->nameBox[i]);
@@ -1318,12 +1324,14 @@ void CharSel_Input(s32 *running) {
 
 #ifdef PORT
     /* Opt-in render regression: traverse the real training selector, then capture its map reel. */
-    if (getenv("BT4_RENDER_TEST") && getenv("BT4_MAP_SELECTOR_TEST")) {
+    if (getenv("BT4_RENDER_TEST") && (getenv("BT4_MAP_SELECTOR_TEST") || getenv("BT4_COSTUME_SELECTOR_TEST"))) {
         static int fixtureTick, fixtureSelected, fixtureShot;
+        static int costumeTick;
+        int costumeOnly = getenv("BT4_COSTUME_SELECTOR_TEST") != NULL;
         extern void Port_TagUiCapture(int index);
         gPad[0].gamePressed = gPad[0].gameRepeat = gPad[0].gameHeld = 0;
         if ((gCharSel->flags & CHARSEL_STAGE_PHASE) && !fixtureSelected) {
-            int wanted = atoi(getenv("BT4_MAP_SELECTOR_TEST"));
+            int wanted = getenv("BT4_MAP_SELECTOR_TEST") ? atoi(getenv("BT4_MAP_SELECTOR_TEST")) : 0;
             for (j = 0; j < gCharSel->stageCount; ++j) {
                 if (gCharSel->stageIds[j] == wanted) {
                     CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_off_start");
@@ -1341,7 +1349,9 @@ void CharSel_Input(s32 *running) {
                 }
             }
         }
-        if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
+        if (costumeOnly && gCharSel->side[0]->state == CHARSEL_ST_COLOR) {
+            if (++costumeTick == 60) Port_TagUiCapture(21);
+        } else if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
             if(fixtureSelected&&getenv("BT4_MAP_BROWSE_TEST")&&fixtureTick>=170&&(fixtureTick-170)%40==0){
                 int step=(fixtureTick-170)/40;
                 gPad[0].gameRepeat=step<10?2:step<20?1:step<40?4:8;

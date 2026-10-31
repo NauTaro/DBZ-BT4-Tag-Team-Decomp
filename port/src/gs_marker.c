@@ -22,8 +22,9 @@ void Port_GsMarker(int effect) {
     Dma_AddData(pkt, sizeof(pkt));
 }
 
-/* Widescreen menus (the menu layout "Widescreen", port/src/gs/gs_draw.c). A screen converted for it marks its draw,
-   and each 2D piece of it is kept at its true shape, anchored where the screen's design has it:
+/* Widescreen menu markers (port/src/gs/gs_draw.c). Converted screens and clips are marked so the renderer can keep
+   page bounds and animation clipping. The beta panoramic layout expands the whole interface to the viewport.
+   Other paths use these anchors:
      PORT_MENU_CENTER  about the middle of the picture (the default of a page)
      PORT_MENU_LEFT    against the left edge (a menu's column)
      PORT_MENU_RIGHT   against the right edge (the characters beside it)
@@ -39,8 +40,8 @@ void Port_GsMarker(int effect) {
                        cut there (World Tour's timer, Character Reference's list)
      PORT_MENU_CENTER_FREE  as CENTER, not cut at the 4:3 screen's edges: a picture that flies across the whole of
                        the wide picture (World Tour's announcer poster)
-   Which clip of a screen's movie goes where is the table in Port_MenuClipPart, by the clips' names. A screen that
-   marks nothing is stretched as before. The renderer acts on the markers only with that layout chosen. */
+   Which clip of a screen's movie receives an anchor is the table in Port_MenuClipPart. A screen that marks nothing
+   is stretched as before. The renderer acts on these markers only with that layout chosen. */
 enum { PORT_MENU_NONE = -1, PORT_MENU_CENTER, PORT_MENU_FILL, PORT_MENU_LEFT, PORT_MENU_RIGHT, PORT_MENU_CENTER_ALL, PORT_MENU_LEFT_ALL,
        PORT_MENU_RIGHT_ALL, PORT_MENU_PAGE, PORT_MENU_PAGE_TOP, PORT_MENU_PAGE_EDGE, PORT_MENU_CENTER_FREE };
 static int sMenuPart = PORT_MENU_NONE;

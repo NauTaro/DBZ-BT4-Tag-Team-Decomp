@@ -314,6 +314,13 @@ static void Bt4Costume_Line(char *text, f32 cx, f32 base, f32 cap, f32 maxWidth,
     x1 = x0 + PortTbo_TextInfo(id, 1) * kx;
     y0 = base - PortTbo_TextInfo(id, 3) * ky;
     height = PortTbo_TextInfo(id, 2) * ky;
+    { extern int Port_MenusWide(void);
+      if (Port_MenusWide()) {
+          /* This caption is a TBO texture on a native Flash costume plate.
+           * Match the plate's centered page transform, once. */
+          Ps_PageSet();x0=Ps_X(x0);x1=Ps_X(x1);
+      }
+    }
     Ps_SpriteScreen(id, x0, y0, x1, y0 + height, 0, 0.5f, 1, 1,
                     Ps_Tint(Ps_Rgba(10, 35, 49, 255)), alpha);
     for (band = 0; band < bands; band++) {

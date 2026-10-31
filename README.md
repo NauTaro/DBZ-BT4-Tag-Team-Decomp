@@ -25,7 +25,7 @@ BT4decomp adapts **BT4 B14 Rev2** for Windows, Linux and Apple Silicon. It runs 
 | **Tournaments** | Two to eight entrants, automatic byes, a live bracket and match rejoining. |
 | **Spectators** | Join without occupying a fighter slot; follow either side or use a split view. |
 
-Menus and setup support **English and Spanish**. Combat HUD visibility can be toggled locally, including health bars, damage indicators, technique labels, names and radar.
+Menus and setup support **English and Spanish**. F1 settings support **English, Spanish and Brazilian Portuguese**. Use **F1 > Spectator** to enable the local free camera during battles. Panoramic mode expands menus and HUD across the viewport. Hiding the combat HUD also dismisses the Start pause menu; press Start to open it again.
 
 ## Voice and presentation
 

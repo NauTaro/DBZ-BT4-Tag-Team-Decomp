@@ -1366,12 +1366,14 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
         ++step;gPad[0].gamePressed=0;
         if(step==30)gPortTagUiCaptureRequest=30;
         if(step==60 || step==110)gPad[0].gamePressed=PADG_START;
-        if(step==80 || step==82)gPad[0].gamePressed=PADG_DOWN;
+        if(step==80 || step==82 || step==118 || step==120)gPad[0].gamePressed=PADG_DOWN;
         if(step==85 || step==130)gPad[0].gamePressed=PADG_CROSS;
         if(step==70)gPortTagUiCaptureRequest=31;
-        if(step==100){gPortTagUiCaptureRequest=32;fprintf(stderr,"HUD fixture: hidden=%d expected=1\n",PortHud_Hidden());}
+        if(step==100){gPortTagUiCaptureRequest=32;fprintf(stderr,"HUD fixture: hidden=%d expected=1 menu=%d\n",PortHud_Hidden(),!!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU));
+            if(!PortHud_Hidden() || (Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU))exit(6);}
         if(step==122)gPortTagUiCaptureRequest=33;
-        if(step==145){gPortTagUiCaptureRequest=34;fprintf(stderr,"HUD fixture: hidden=%d expected=0\n",PortHud_Hidden());}
+        if(step==145){gPortTagUiCaptureRequest=34;fprintf(stderr,"HUD fixture: hidden=%d expected=0 menu=%d\n",PortHud_Hidden(),!!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU));
+            if(PortHud_Hidden() || (Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU))exit(6);}
         if(step==155){fprintf(stderr,"HUD fixture: complete\n");exit(0);}
     }
 #endif

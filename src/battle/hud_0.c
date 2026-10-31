@@ -52,6 +52,7 @@ static BtlMenuItem sTagPauseItems[5];
 static BtlMenu sPresentationPauseMenu;
 static BtlMenuItem sPresentationPauseItems[32];
 static s32 sPresentationPauseReady;
+static s32 sHudPauseDismissRequested;
 extern int PortHud_Hidden(void);
 extern void PortHud_Toggle(void);
 /* The menu input is simulated on both 1v1 peers; only its owner changes
@@ -61,6 +62,7 @@ static s32 PauseMenu_HudToggle(BtlMenuEvent *ev) {
     if (ev->selected) {
         if (!Port_NetActive() || Port_NetSpectating() || BtlMenu_GetWork()->pad == Port_NetMe())
             PortHud_Toggle();
+        sHudPauseDismissRequested = 1;
         ev->menu->state=BTL_MENU_STATE_CLOSE;
     }
     return 1;
@@ -447,6 +449,7 @@ BtlMenu *PauseMenu_PortConfirmBox(void) {
 void PauseMenu_Init(void) {
 #ifdef PORT
     sPresentationPauseReady=0;
+    sHudPauseDismissRequested=0;
     if(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_MENU_MATRIX")) {
         BtlMenu *menus[]={&gPauseMenuVersus,&gPauseMenuReplayRec,&gPauseMenuReplayPlay,
             &gPauseMenuMode1,&gPauseMenuMode2,&gPauseMenuMode3,&gPauseMenuMode4,
@@ -544,6 +547,7 @@ void PauseMenu_Term(void) {
     BtlMenu_Term();
 #ifdef PORT
     sPresentationPauseReady=0;
+    sHudPauseDismissRequested=0;
 #endif
 }
 
@@ -575,6 +579,18 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
         Adx_ResumeSeVoice();
         return 0;
     }
+#ifdef PORT
+    if (which == 0 && sHudPauseDismissRequested) {
+        /* Hide the pause tree on the same update as the HUD toggle. Reset its
+         * root so a later Start opens it normally on every peer. */
+        sHudPauseDismissRequested = 0;
+        BtlMenu_Reset(menu);
+        Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE;
+        BtlMenu_ClearActive();
+        Adx_ResumeSeVoice();
+        return 0;
+    }
+#endif
     BtlMenu_SetTop(menu);
     item = BtlMenu_FindResult(NULL, menu);
     if (item != NULL) {

@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-/* A release's number: "0.1.39" or "v0.1.39", two to four numbers, optionally followed by -R<number> or R<number>. 1 and the numbers in out (missing ones 0), or
+/* A release's number: "0.1.39" or "v0.1.39", two to four numbers, optionally followed by -R<number>[.<patch>]. 1 and the numbers in out (missing ones 0), or
    0 for anything else ("dev", "0.1.39-rc1", ""). */
 int UpdateVer_Parse(const char *text, int out[4]);
 /* -1: a is older than b, 0 the same, 1 newer; -2: either is not a release's number (a "dev" build: never updated). */

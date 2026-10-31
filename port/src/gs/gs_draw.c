@@ -30,6 +30,7 @@
 #include <SDL3/SDL.h>   /* the one window both back ends share */
 #include "gs_internal.h"
 #include "gs_draw.h"
+#include "menu_wide_layout.h"
 static uint32_t sPresentationObject;
 #include "ui.h"         /* PortVideo and the window helpers */
 #include "gs_texpack.h" /* texture packs (replacement textures) */
@@ -1856,18 +1857,19 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
        Narrowing the side panels left a large gap beside the timer. */
     int hudPanel = presentation_hud() && gsAnchor >= 1 && gsAnchor <= 6;
     int bt4OriginalHud = sHudLayout == 0 && (gsAnchor == 1 || gsAnchor == 2 || gsAnchor == 5 || gsAnchor == 6);
-    if (!bt4OriginalHud && gsAnchor != 20 && Port_IsWide() && (!gPortMenuMode || ((gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19)) && Port_MenusWide()) || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
+    int wideInterface = Port_MenuWideStretch(gPortMenuMode, Port_MenusWide(), presentation_hud());
+    if (!wideInterface && !bt4OriginalHud && gsAnchor != 20 && Port_IsWide() && (!gPortMenuMode || ((gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19)) && Port_MenusWide()) || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
                           (battleText && Port_PageAspectMilli() > 1340)) &&
         !sWholeFrame && (!d.tex_is_target || hudPanel) && !tbo && (type == 6 || fst || battleText || gsAnchor == 8 || (gPortMenuMode && gsAnchor >= 9)) &&
         gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
         /* HUD quads keep their layout even when their sheet comes from a render target
            or an animated mask spans most of the page. World effects keep their own rules. */
         /* Widescreen. The 3D scene is projected for a 16:9 picture by the game itself; 2D art is laid out for
-           4:3 and would come out a third too wide. Each 2D piece is narrowed to 3/4 about a fixed point:
-             (not in the menus: their pages are shown whole, stretched to the width; see Port_WideFactor)
+           4:3 and would come out a third too wide. Each 2D piece is narrowed to fit the 4:3 composition:
+             - the beta panoramic layout bypasses this block: its entire interface fills the width;
              - in a fight, the left edge, the right edge or the middle for the HUD's left panel, right panel and
                centre parts (markers from the HUD code), so the panels sit at the screen's edges;
-             - any other 2D piece, the middle of the screen (see below).
+             - other 2D pieces, the middle of the screen (see below).
            Only what is drawn into the picture itself: the work buffers of the effects and of the shadow are
            filled with 2D rectangles too, and narrowing those left unfilled bands and stripes in them.
            Left alone: full-screen fills and fades (untextured, full height), and in a fight sprites as wide as
@@ -1891,9 +1893,8 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
                A menu's untextured pieces narrower than that, a plate's plain body, keep their shape as its art does) */
             pivot = -1.0f;
         } else if (gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19)) {
-            /* A menu screen converted for widescreen (Port_MenuPage, gs_marker.c): each part at its true shape about
-               the middle, the left edge or the right edge, the long bars too (some of a bar's pieces are wider than
-               480, some not: they have to stay together). What fills the width is marked 10 and not narrowed. */
+            /* Non-panoramic paths retain the legacy menu anchor behavior. The full-width beta interface
+               bypasses this entire narrowing pass. */
             pivot = gsAnchor == 11 || gsAnchor == 14 ? 0.0f : gsAnchor == 12 || gsAnchor == 15 ? 512.0f : 256.0f;
             int corner = gsAnchor == 16 || gsAnchor == 17 || gsAnchor == 18 || (gsAnchor == 13 && x1 - x0 <= 260.0f && y1 <= 140.0f);
             /* (13, character select: only a sprite the size of a corner's cloud, not the big pictures from the top) */
@@ -1941,9 +1942,9 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             pivot = 256.0f;
         }
         if (pivot >= 0.0f) {
-            float narrow = 1333.333f / (float)Port_AspectMilli(); /* 3/4 at 16:9, 9/16 at 21:9 */
+            float narrow = Port_MenuWideScaleX(Port_AspectMilli()); /* 3/4 at 16:9; centered 4:3 menu composition */
             for (k = d.first; k < gsVertCount; k++) {
-                gsVerts[k].x = pivot + (gsVerts[k].x - pivot) * narrow;
+                gsVerts[k].x = Port_MenuWideTransformX(gsVerts[k].x, pivot, narrow);
             }
             static int noclip = -1;
             if (noclip < 0) {
@@ -1959,8 +1960,9 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
                 d.scissor[0] = (int)(a * (float)SCALE);
                 d.scissor[2] = (int)(b * (float)SCALE + 0.5f) - d.scissor[0];
             }
-            if ((gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19)) && !noclip && !(gsAnchor == 13 && y1 - y0 >= 300.0f) && gsAnchor != 19 &&
-                !sMenuFree && !menu_piece_moving(&gsVerts[d.first], &gsVerts[gsVertCount - 1], x0, x1, y1 - y0)) {
+            if ((gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19)) && !noclip &&
+                (!(gsAnchor == 13 && y1 - y0 >= 300.0f) && gsAnchor != 19 && !sMenuFree &&
+                 !menu_piece_moving(&gsVerts[d.first], &gsVerts[gsVertCount - 1], x0, x1, y1 - y0))) {
                 /* and what lies beyond the page's edge (plates sliding in) stays out of sight, as on the 4:3 screen.
                    Not character select's big pictures (13, taller than 300): they slide outwards when a stage is
                    chosen, and are not parked off the screen. */

@@ -14,12 +14,15 @@ extern s32 PortTbo_TextId(const char *,s32),PortTbo_TextInfo(s32,s32);
 extern void Gfx_AddDefaultEnv(void);
 static void TagHudScreen_Caption(void *arg,f32 *prop){
     s32 id=PortTbo_TextId("Tag Team HUD",0),on=gOption->cursor==OPT_ITEM_TAG_HUD;
-    s32 alpha=(s32)(128*prop[24]),i;f32 ky=26.0f/1000,kx=ky*.857f;
+    s32 alpha=(s32)(128*prop[24]),i;f32 ky=18.0f/1000,kx=ky*.857f;
     f32 x0,x1,y0,h;u32 top,bottom;
     static const f32 edge[8][2]={{-1,0},{1,0},{0,-1},{0,1},{-.7f,-.7f},{.7f,-.7f},{-.7f,.7f},{.7f,.7f}};
     if(id<0 || alpha<=0)return;if(alpha>128)alpha=128;
     x0=prop[14]+82-PortTbo_TextInfo(id,4)*kx;
     x1=x0+PortTbo_TextInfo(id,1)*kx;
+    /* The native clip gives 4:3 page coordinates; TBO textures bypass the
+     * renderer's native-menu transform, so map the caption exactly once. */
+    {extern int Port_MenusWide(void);if(Port_MenusWide()){Ps_PageSet();x0=Ps_X(x0);x1=Ps_X(x1);}}
     y0=prop[17]+24-PortTbo_TextInfo(id,3)*ky;h=PortTbo_TextInfo(id,2)*ky;
     for(i=0;i<8;++i)Ps_SpriteScreen(id,x0+edge[i][0]*.65f,y0+edge[i][1]*.65f,x1+edge[i][0]*.65f,y0+h+edge[i][1]*.65f,0,.5f,1,1,0,alpha);
     top=on?Ps_Rgba(255,247,179,255):Ps_Rgba(255,255,255,255);
@@ -78,7 +81,8 @@ static void TagHudScreen_TestInput(void){
             return;
         }
         if(gOption->cursor==OPT_ITEM_TAG_HUD){
-            if(!reported){fprintf(stderr,"tag hud menu: Screen fourth row selected\n");reported=1;}
+            if(!reported){fprintf(stderr,"tag hud menu: Screen fourth row selected\n");reported=1;
+                {extern void Port_TagUiCapture(s32);Port_TagUiCapture(40);}}
             if((test[0]=='o'||test[0]=='v') && !phase){gPad[0].gamePressed=PADG_CROSS;phase=1;}
         }else gPad[0].gameRepeat=PADG_DOWN;
     }
@@ -94,6 +98,7 @@ static void TagHudEditor_Input(void){
     s32 step=2,i;u32 move;
     const char *test=getenv("BT4_HUD_EDITOR_TEST");
     ++sHudEditorFrames;
+    if(getenv("BT4_RENDER_TEST") && sHudEditorFrames==30){extern void Port_TagUiCapture(s32);Port_TagUiCapture(41);}
     if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_LONG_VIDEO")){
         s32 f=sHudEditorFrames;
         if(f==150||f==330||f==510)gPad[0].gamePressed=PADG_R1;
@@ -156,6 +161,9 @@ static void TagHudEditor_Frame(TagHudRect *b,s32 selected){
 static void TagHudEditor_Draw(void){
     s32 i,j;f32 x,y;TagHudRect *b;char line[80];
     Ps_PageSet();Ps_SetShift(0);Ps_Align(0);
+    /* Ps_* already maps this editor to the window. Its untextured bars and
+     * frames must bypass the additional native Flash menu transform too. */
+    Port_MenuFill(1);
     Ps_Sprite(TBO_TAG_HUD_PREVIEW,Ps_Left(),0,512-Ps_Left(),448,0,0,1,1,PS_PLAIN,0x80);
     for(i=0;i<4;++i){
         b=&sHudEditorRects[i];x=b->x;y=b->y;
@@ -195,4 +203,5 @@ static void TagHudEditor_Draw(void){
     Ps_Copy(line,"L1 / R1: ",80);Ps_Cat(line,(char *)PortOnline_Text(sHudEditorNames[sHudEditorBlock]),80);Ps_Text(256,378,line,.42f,190,3);
     Ps_Text(256,399,"D-PAD: MOVE | L2: FASTER | SELECT: RESET ALL",.40f,490,0);Ps_Align(0);
     Ps_PromptsClear();Ps_Prompt(0,"Save");Ps_Prompt(1,"Reset Panel");Ps_Prompt(2,"Cancel");Ps_PromptsDraw();
+    Port_MenuFill(0);
 }

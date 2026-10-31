@@ -663,9 +663,7 @@ int Port_Menus43(void) {
 void Port_Menus43Set(int on) {
     sMenus43 = on != 0;
 }
-/* The menu layout "Widescreen" (setting menus_wide; BT3_MENU_WIDE=0/1 over it): the screens converted for it
-   (Port_MenuPage, port/src/gs_marker.c) have their 2D at its true shape and their backdrops across the whole width;
-   the others are stretched as before. Not with "Menus in 4:3". */
+/* The menu layout "Widescreen" (setting menus_wide; BT3_MENU_WIDE=0/1 over it): the menus and battle HUD fill the viewport width. Native and port-drawn widgets use the same full-page coordinates. Not with "Menus in 4:3". */
 PORT_HOST static int sMenusWide = -1;
 int Port_MenusWide(void) {
     if (sMenusWide < 0) {

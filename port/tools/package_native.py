@@ -47,6 +47,7 @@ def libraries_linux(out):
     return sources
 
 def libraries_mac(out):
+    from mac_dependencies import collect_dependencies,verify_dependencies
     seeds=[]
     for env,default,name in [('BT3_SDL3','/opt/homebrew/opt/sdl3','libSDL3.0.dylib'),
                               ('BT3_CURL','/opt/homebrew/opt/curl','libcurl.4.dylib'),
@@ -55,30 +56,20 @@ def libraries_mac(out):
         source=pathlib.Path(os.environ.get(env,default))/'lib'/name
         if not source.exists():raise RuntimeError('Missing native library: '+str(source))
         seeds.append(source)
-    queue=[out/'BT4decomp',out/'BT4decomp-setup',*seeds];done=set();sources={};changes={}
-    while queue:
-        file=queue.pop(0);key=str(file)
-        if key in done:continue
-        done.add(key);deps=[]
-        for line in run('otool','-L',file).splitlines()[1:]:
-            name=line.strip().split(' (',1)[0]
-            if name.startswith(('/opt/homebrew/','/usr/local/')):deps.append(pathlib.Path(name))
-        if file in seeds:deps.append(file)
-        changes[key]=deps
-        for source in deps:
-            if source.name in sources:continue
-            sources[source.name]=str(source.resolve());shutil.copy2(source.resolve(),out/'lib'/source.name);queue.append(source)
-    for original,deps in changes.items():
-        original=pathlib.Path(original);dest=original if original.parent==out else out/'lib'/original.name
-        if not dest.exists():continue
-        for dep in deps:
-            if dep==original:continue
-            relative=('@executable_path/lib/' if dest.parent==out else '@loader_path/')+dep.name
-            subprocess.run(['install_name_tool','-change',str(dep),relative,str(dest)],check=True)
+    executables=[out/'BT4decomp',out/'BT4decomp-setup']
+    sources,changes=collect_dependencies(executables,seeds)
+    for name,source in sources.items():shutil.copy2(source,out/'lib'/name)
+    destinations=[(file.resolve(),file) for file in executables]
+    destinations.extend((source,out/'lib'/name) for name,source in sources.items())
+    for original,dest in destinations:
+        for name,alias in changes[original]:
+            relative=('@executable_path/lib/' if dest.parent==out else '@loader_path/')+alias
+            subprocess.run(['install_name_tool','-change',name,relative,str(dest)],check=True)
         if dest.parent!=out:subprocess.run(['install_name_tool','-id','@rpath/'+dest.name,str(dest)],check=True)
+    verify_dependencies(out)
     for file in [*sorted((out/'lib').glob('*.dylib')),out/'BT4decomp',out/'BT4decomp-setup']:
         subprocess.run(['codesign','--force','--sign','-',str(file)],check=True)
-    return sources
+    return {name:str(source) for name,source in sources.items()}
 
 def main(p,mac=False):
     root=p.ROOT;out=root/'port/build'/('release-mac' if mac else 'release')

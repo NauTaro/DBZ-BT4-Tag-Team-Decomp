@@ -8,6 +8,9 @@ extern int TagBattle_Active(void);
 #include "battle/tag_team_native.h"
 #include "sys/heap.h"
 #include "sys/pad.h"
+#ifdef PORT
+#include "../../port/src/port_host.h"
+#endif
 
 /* Battle camera, 0x23E040-0x23F620. See battle/btl_cam.h for the structures and the per-frame flow. */
 
@@ -48,6 +51,11 @@ extern s32 D_002FF280[2];
 
 extern View gDbgCamView;
 extern s32 gDbgCamLocked;
+#ifdef PORT
+PORT_HOST static BtlCamView sPortFreeCam;
+PORT_HOST static Vec4 sPortFreeCamPos, sPortFreeCamRot;
+PORT_HOST static s32 sPortFreeCamLive;
+#endif
 
 /* Rebuilds the projection matrices of a view from its parameters. */
 void View_BuildProjection(View *view) {
@@ -341,6 +349,9 @@ void BtlCam_BuildView(BtlCamView *view, s32 apply) {
 
 /* Clears the camera block, rebuilds the views, selects view 0 and resets the demo camera. */
 void BtlCam_Reset(void) {
+#ifdef PORT
+    sPortFreeCamLive = 0;
+#endif
     memset(gBtlCam, 0, sizeof(BtlCam));
     BtlCam_InitViews();
     gBtlCam->cur = &gBtlCam->views[0];
@@ -356,6 +367,9 @@ void BtlCam_Init(void) {
 
 /* Frees the camera block and the demo camera. */
 void BtlCam_Term(void) {
+#ifdef PORT
+    sPortFreeCamLive = 0;
+#endif
     Heap_Free(gBtlCam);
     gBtlCam = NULL;
     DemoCam_Term();
@@ -514,6 +528,71 @@ void BtlCam_ApplyView(s32 scissor) {
 
 #ifdef PORT
 extern int Port_NetView(void); /* port/src/gs/net.c: the local player's view (0 or 1), or -1 */
+
+/* Build a render-local free camera from the selected native view. The fighter
+ * camera structures stay untouched, so each network peer may move its view. */
+static s32 BtlCam_PortFreeCamera(s32 selected) {
+    extern int Port_Setting(const char *name, int def);
+    extern int Port_NetActive(void), Port_NetMe(void), Port_NetSpectating(void);
+    extern int gPortResim;
+    extern s32 BtlPause_GetPad(void);
+    s32 pad;
+
+    /* Presentation input advances only on a live frame, not again for each
+     * rollback re-simulation. Its pose is outside saved game memory. */
+    if (gPortResim) return 0;
+
+    if (!Port_Setting("spectator_camera", 0)) {
+        sPortFreeCamLive = 0;
+        return 0;
+    }
+    if (gBtlCam == NULL || gBtlCam->cur == NULL) {
+        return 0;
+    }
+    if (!selected) {
+        s32 idx = BtlCam_GetPriorityView();
+        if (idx < 0) idx = BtlCam_GetDefaultView();
+        if (idx < 0 || idx > 1) idx = 0;
+        BtlCam_SelectView(idx);
+    }
+    if (!sPortFreeCamLive) {
+        sPortFreeCam = *gBtlCam->cur;
+        BtlCam_SetViewLayout(&sPortFreeCam, VIEW_LAYOUT_FULL);
+        Vec4_Copy(&sPortFreeCamPos, &gBtlCam->cur->pos);
+        Vec4_Copy(&sPortFreeCamRot, &gBtlCam->cur->rot);
+        BtlCam_BuildView(&sPortFreeCam, 0);
+        sPortFreeCamLive = 1;
+    }
+    if (Port_NetSpectating() || TagBattle_Active()) {
+        pad = 0;
+    } else if (Port_NetActive()) {
+        pad = Port_NetMe();
+    } else {
+        pad = BtlPause_GetPad();
+        if (pad < 0 || pad > 1) pad = 0;
+    }
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_FREE_CAMERA_AUDIT")) {
+        PORT_HOST static s32 ticks;
+        Pad saved = gPad[pad];
+        Vec4 nativePos = gBtlCam->cur->pos, nativeRot = gBtlCam->cur->rot;
+        f32 yaw = sPortFreeCamRot.y;
+        gPad[pad].gameHeld = 0;
+        gPad[pad].gameLeft[0] = 0.5f;
+        gPad[pad].gameLeft[1] = 0.0f;
+        gPad[pad].gameRight[1] = 0.0f;
+        DbgCam_Update(&sPortFreeCam.view, &sPortFreeCamPos, &sPortFreeCamRot, pad, 1.0f);
+        gPad[pad] = saved;
+        if (nativePos.x != gBtlCam->cur->pos.x || nativePos.y != gBtlCam->cur->pos.y || nativePos.z != gBtlCam->cur->pos.z ||
+            nativeRot.x != gBtlCam->cur->rot.x || nativeRot.y != gBtlCam->cur->rot.y || nativeRot.z != gBtlCam->cur->rot.z ||
+            !(sPortFreeCamRot.y == sPortFreeCamRot.y) || yaw == sPortFreeCamRot.y) {
+            fprintf(stderr,"free camera audit: FAIL mode=%d tag=%d\n",Battle_GetMode(),TagBattle_Active());exit(6);
+        }
+        if (++ticks == 30) fprintf(stderr,"free camera audit: PASS mode=%d tag=%d moved=1 native-pose-unchanged=1\n",Battle_GetMode(),TagBattle_Active());
+    } else {
+        DbgCam_Update(&sPortFreeCam.view, &sPortFreeCamPos, &sPortFreeCamRot, pad, 1.0f);
+    }
+    return 1;
+}
 #endif
 /* Decides whether one full-screen view replaces the per-player views this frame; returns 1 if so. */
 s32 BtlCam_UpdateOverride(void) {
@@ -560,6 +639,9 @@ s32 BtlCam_UpdateOverride(void) {
             gBtlCam->cur->rot.y+=phase*1.57079632679f;
             BtlCam_BuildView(gBtlCam->cur,1);
         }
+#ifdef PORT
+        (void)BtlCam_PortFreeCamera(1);
+#endif
         return 1;
     }
 
@@ -592,6 +674,11 @@ s32 BtlCam_UpdateOverride(void) {
         DemoCam_Update();
         ret = 1;
     }
+#ifdef PORT
+    if (BtlCam_PortFreeCamera(ret)) {
+        ret = 1;
+    }
+#endif
     return ret;
 }
 

@@ -171,6 +171,7 @@ static const char *f1_text(const char *english) {
         {"Cheats", "Trucos", "Trapaças"},
         {"Misc", "Varios", "Outros"},
         {"Online", "En línea", "Online"},
+        {"Spectator", "Espectador", "Espectador"},
         {"Exit game", "Salir del juego", "Sair do jogo"},
         {"D-pad: move   Cross / A: choose   Circle / B: back   L1 / R1: tab", "Cruceta: mover   Cruz / A: elegir   Círculo / B: volver   L1 / R1: pestaña", "Direcional: mover   X / A: escolher   Círculo / B: voltar   L1 / R1: aba"},
         {"Menu language", "Idioma del menú", "Idioma do menu"},
@@ -188,6 +189,7 @@ static const char *f1_text(const char *english) {
         {"Menus", "Menús", "Menus"},
         {"Stretched", "Estirados", "Esticados"},
         {"Widescreen (beta)", "Panorámico (beta)", "Widescreen (beta)"},
+        {"Menu display on a picture wider than 4:3. Stretched fills the window. 4:3 keeps side bars. Widescreen (beta) expands menus and HUD across the full width.", "Menús en una imagen más ancha que 4:3. Estirado ocupa toda la ventana. 4:3 conserva las barras laterales. Panorámico (beta) expande los menús y el HUD a todo el ancho.", "Menus em uma imagem mais larga que 4:3. Esticado ocupa toda a janela. 4:3 mantém as barras laterais. Widescreen (beta) expande os menus e o HUD por toda a largura."},
         {"Original", "Original", "Original"},
         {"Black", "Negro", "Preto"},
         {"Border", "Borde", "Moldura"},
@@ -199,6 +201,8 @@ static const char *f1_text(const char *english) {
         {"BT4 original, centered", "BT4 original, centrado", "BT4 original, centralizado"},
         {"Show HUD", "Mostrar HUD", "Mostrar HUD"},
         {"Hide HUD", "Ocultar HUD", "Ocultar HUD"},
+        {"Free spectator camera", "Cámara libre de espectador", "Câmera livre de espectador"},
+        {"Enable a local free camera in every battle mode. The left stick turns; hold L1 to pan; the right stick moves closer or farther. Fighter controls remain active.", "Activa una cámara libre local en todos los modos de combate. La palanca izquierda gira; mantén L1 para desplazar la cámara y usa la palanca derecha para acercar o alejar. Los controles del luchador siguen activos.", "Ativa uma câmera livre local em todos os modos de batalha. O analógico esquerdo gira; segure L1 para deslocar a câmera e use o analógico direito para aproximar ou afastar. Os comandos do lutador continuam ativos."},
         {"Spanish (text and voices)", "Español (textos y voces)", "Espanhol (texto e vozes)"},
         {"English (text and voices)", "Inglés (textos y voces)", "Inglês (texto e vozes)"},
         {"New update available. Restart required.", "Nueva actualización disponible, requiere reiniciar.", "Nova atualização disponível. É necessário reiniciar."},
@@ -212,7 +216,6 @@ static const char *f1_text(const char *english) {
         {"Choose original battle announcements and HUD text, or any battle font listed in fonts.tsv.", "Elige los anuncios y textos del HUD originales o una fuente de combate incluida en fonts.tsv.", "Escolha os anúncios e textos do HUD originais ou uma fonte de batalha listada em fonts.tsv."},
         {"Replace the shared font used by dialogue, subtitles and ordinary UI text.\nOriginal keeps the game's glyphs. Text placement, colors, shadows and icons are preserved.", "Reemplaza la fuente compartida de diálogos, subtítulos y textos de interfaz.\nOriginal conserva los glifos del juego. Se mantienen posiciones, colores, sombras e iconos.", "Substitui a fonte compartilhada de diálogos, legendas e textos da interface.\nOriginal mantém os caracteres do jogo. Posições, cores, sombras e ícones são preservados."},
         {"Where a fight's health bars and gauges sit in a picture wider than 4:3.\nLong health bars: the bars reach from the edges to the timer.\nIn the middle: the original 4:3 arrangement, next to the timer.", "Posición de las barras de vida y medidores en una imagen más ancha que 4:3.\nBarras extendidas: van desde los bordes hasta el temporizador.\nCentrado: disposición original 4:3, junto al temporizador.", "Posição das barras de vida e medidores em uma imagem mais larga que 4:3.\nBarras longas: vão das bordas até o cronômetro.\nCentralizado: disposição original 4:3, ao lado do cronômetro."},
-        {"How the menus fill a picture wider than 4:3 (fights keep the wide picture):\nStretched: the 4:3 menus stretched to the width.\n4:3: at their own shape, with the side bars at the sides.\nWidescreen (beta): at their own shape across the whole width, the backdrops filling it,\neach menu's parts against the side they belong to.", "Cómo se muestran los menús en una imagen más ancha que 4:3 (los combates conservan el formato panorámico):\nEstirados: los menús 4:3 ocupan todo el ancho.\n4:3: conservan su forma, con barras laterales.\nPanorámico (beta): mantienen su forma a todo el ancho; los fondos se amplían y cada elemento queda en su lado.", "Como os menus ocupam uma imagem mais larga que 4:3 (as batalhas continuam em widescreen):\nEsticados: os menus 4:3 ocupam toda a largura.\n4:3: mantêm a forma original, com barras laterais.\nWidescreen (beta): mantêm a forma em toda a largura; os fundos se expandem e cada elemento fica no seu lado."},
         {"What fills the sides where the picture is narrower than the window:\na 4:3 picture, or the menus with \"Menus: 4:3\", in a wide window.\nFighter panels: the border, and in a fight each side's fighter with its name and form.\nYour own: a folder \"bars\" next to the game with trim.png (the strip along the\npicture, kept in proportion) and fill.png (stretched over the rest). Read at start.", "Qué aparece en los laterales cuando la imagen es más estrecha que la ventana:\nla imagen 4:3 o los menús con \"Menús: 4:3\" en una ventana panorámica.\nPaneles de luchadores: el borde y, durante el combate, el luchador de cada lado con su nombre y transformación.\nPersonalizadas: carpeta \"bars\" junto al juego con trim.png (borde proporcional) y fill.png (relleno estirado). Se leen al iniciar.", "O que aparece nas laterais quando a imagem é mais estreita que a janela:\na imagem 4:3 ou os menus com \"Menus: 4:3\" em uma janela widescreen.\nPainéis dos lutadores: a moldura e, na batalha, o lutador de cada lado com nome e forma.\nPersonalizadas: pasta \"bars\" ao lado do jogo com trim.png (moldura proporcional) e fill.png (preenchimento esticado). Lida ao iniciar."},
         {"Hide what's new", "Ocultar novedades", "Ocultar novidades"},
         {"What's new", "Novedades", "Novidades"},
@@ -308,7 +311,6 @@ static const char *f1_text(const char *english) {
         {"Performance mode: 1x resolution, reduced post-processing and no HD texture pack. Your other renderers keep their saved quality settings.", "Modo de rendimiento: resolución 1x, posprocesado reducido y sin paquete de texturas HD. Los demás renderizadores conservan sus ajustes de calidad.", "Modo de desempenho: resolução 1x, pós-processamento reduzido e sem pacote de texturas HD. Os outros renderizadores mantêm as configurações de qualidade salvas."},
         {"4:3 (original)", "4:3 (original)", "4:3 (original)"},
         {"How finely the game is drawn. 1x is the PlayStation 2's own resolution.\nHigher is sharper and uses more video memory.", "Nivel de detalle de la imagen. 1x es la resolución original de PlayStation 2.\nLos valores mayores ofrecen más nitidez y usan más memoria de vídeo.", "Nível de detalhe da imagem. 1x é a resolução original do PlayStation 2.\nValores maiores oferecem mais nitidez e usam mais memória de vídeo."},
-        {"Wider than 4:3 shows more of the fight to the sides. Menus are stretched.", "Los formatos más anchos que 4:3 muestran más de la pelea a los lados. Los menús se estiran.", "Formatos mais largos que 4:3 mostram mais da luta nas laterais. Os menus são esticados."},
         {"How the display of a fight, the menus and text are drawn above 1x internal resolution.\nSharp: each of the PlayStation 2's pixels is a block. Smooth: as an emulator shows them.\nNo difference at 1x.", "Cómo se muestran los combates, los menús y los textos por encima de la resolución interna 1x.\nNítido: cada píxel de PlayStation 2 forma un bloque. Suave: como en un emulador.\nNo hay diferencia en 1x.", "Como as lutas, os menus e os textos são exibidos acima da resolução interna 1x.\nNítido: cada pixel do PlayStation 2 forma um bloco. Suave: como em um emulador.\nNão há diferença em 1x."},
         {"Each picture waits for the display's refresh. Turn it on if the picture tears.\nOff is the default: it adds a little delay.", "Cada imagen espera al refresco de la pantalla. Actívalo si la imagen se corta.\nEstá desactivado por defecto: activarlo añade un poco de retraso.", "Cada quadro espera a atualização da tela. Ative se a imagem apresentar cortes.\nFica desativado por padrão: ativá-lo acrescenta um pequeno atraso."},
         {"When this machine cannot show a picture in time, the game normally runs slower.\nWith this on it stays at full speed and leaves pictures out instead (choppier,\nnot slower). It helps where the graphics chip is the slow part. On by default.", "Si el equipo no puede mostrar una imagen a tiempo, normalmente el juego se ralentiza.\nCon esta opción sigue a velocidad normal y omite imágenes (menos fluido,\npero no más lento). Ayuda cuando la GPU es el límite. Activado por defecto.", "Se o computador não consegue exibir um quadro a tempo, o jogo normalmente fica mais lento.\nCom esta opção, mantém a velocidade e pula quadros (menos fluido,\nmas não mais lento). Ajuda quando a GPU é o limite. Ativado por padrão."},
@@ -1045,6 +1047,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
             sQuit = true;
             PortQuit_Request();
         }
+        if (!strcmp(getenv("BT3_UI_OPEN"), "spectator")) sForceTab = 8;
         sOpen = !sQuit;
         gPortOverlayOpen = 1;
     }
@@ -2308,6 +2311,16 @@ static void online_tab(void) {
     }
 }
 
+// F1 > Spectator: local free camera for battle footage in every game mode.
+static void spectator_tab(void) {
+    bool enabled = Port_Setting("spectator_camera", 0) != 0;
+    if (ImGui::Checkbox(f1_text("Free spectator camera"), &enabled)) {
+        Port_SettingSave("spectator_camera", enabled ? 1 : 0);
+        Port_SettingsWrite();
+    }
+    ImGui::SetItemTooltip("%s", f1_text("Enable a local free camera in every battle mode. The left stick turns; hold L1 to pan; the right stick moves closer or farther. Fighter controls remain active."));
+}
+
 static void update_prompt_draw(void) {
     const char *popup = "###update-restart-required";
     if (sUpdPromptQueued) {
@@ -2435,11 +2448,7 @@ static void ui_tab(PortVideo &v) {
             Port_SettingSave("menus_wide", m == 2);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip(f1_text("How the menus fill a picture wider than 4:3 (fights keep the wide picture):\n"
-                              "Stretched: the 4:3 menus stretched to the width.\n"
-                              "4:3: at their own shape, with the side bars at the sides.\n"
-                              "Widescreen (beta): at their own shape across the whole width, the backdrops filling it,\n"
-                              "each menu's parts against the side they belong to."));
+        ImGui::SetItemTooltip(f1_text("Menu display on a picture wider than 4:3. Stretched fills the window. 4:3 keeps side bars. Widescreen (beta) expands menus and HUD across the full width."));
     }
     {
         static const char *const kBars[] = {"Black", "Border", "Fighter panels"};
@@ -2785,7 +2794,7 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 7 : 1)) % 8;
+        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 8 : 1)) % 9;
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -2854,6 +2863,7 @@ static void build(void) {
             if (tab(f1_text("Cheats"), 5)) { cheats_tab(); ImGui::EndTabItem(); }
             if (tab(f1_text("Misc"), 6)) { misc_tab(); ImGui::EndTabItem(); }
             if (tab(f1_text("Online"), 7)) { online_tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Spectator"), 8)) { spectator_tab(); ImGui::EndTabItem(); }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();

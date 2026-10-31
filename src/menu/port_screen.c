@@ -155,6 +155,13 @@ static s32 sPsAlign;                                      /* 0 a line starts at 
 void Ps_PageSet(void) {
     f32 aspect = (f32)Port_PageAspectMilli() / 1000.0f;
     f32 page = 4.0f / 3.0f;
+    extern int Port_MenusWide(void);
+
+    if (Port_MenusWide()) {
+        sPsPx = sPsPy = 0.0f;
+        sPsPw = 512.0f;sPsPh = 448.0f;
+        return;
+    }
 
     if (aspect >= page) { /* wider: the whole height, the grounds at the sides */
         sPsPh = 448.0f;

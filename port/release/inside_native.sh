@@ -9,6 +9,7 @@ esac
 export BT3_SKELETON=1
 PYTHON=${PYTHON:-python3}
 mkdir -p port/build
+"$PYTHON" -m unittest discover -s port/tests/mac_package -v
 "$PYTHON" port/tools/undefined.py > "port/build/compile_$BT3_CC.txt" 2>&1 || {
     tail -60 "port/build/compile_$BT3_CC.txt"; exit 1;
 }
