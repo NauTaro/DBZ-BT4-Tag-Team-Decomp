@@ -380,7 +380,7 @@ void UbTeamSel_Init(s32 section) {
     gUbTeamSel->nameText = MPACK_AT(gUbTeamSel->res, 28);
     gUbTeamSel->formText = MPACK_AT(gUbTeamSel->res, 29);
     gUbTeamSel->chips = (u32 *)MPACK_AT(gUbTeamSel->res, 27);
-    for (i = 0; i < UB_CELL_MAX; i++) {
+    for (i = 0; i < Menu_CharacterChipCount(gUbTeamSel->chips); i++) {
         res = (MTexRes *)MPACK_AT(gUbTeamSel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }

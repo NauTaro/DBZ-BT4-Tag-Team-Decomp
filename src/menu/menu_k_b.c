@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "menu/menu_k.h"
 #include "sys/pad.h"
 #include "sys/save.h"
@@ -75,7 +76,7 @@ void Bracket_Init(void) {
             Bgm_Play(BRK_BGM_OTHER);
             break;
         case TOUR_YAMCHA:
-            Bgm_Play(BRK_BGM_OTHER);
+            Bgm_Play(BRK_BGM_YAMCHA);
             break;
         }
     }
@@ -188,7 +189,7 @@ void Bracket_Update(void) {
                 Bgm_Play(BRK_BGM_OTHER);
                 break;
             case TOUR_YAMCHA:
-                Bgm_Play(BRK_BGM_OTHER);
+                Bgm_Play(BRK_BGM_YAMCHA);
                 break;
             }
             gBracket->flags &= ~BRK_FANFARE;

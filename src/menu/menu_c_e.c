@@ -916,6 +916,9 @@ void CharSel_Draw(void) {
         /* BT4 keeps this portrait clip in the map movie. Do not let its
          * selection fade remain visible over the stage preview. */
         Flash_ClipSetAlpha(f, &ref, (gCharSel->flags & CHARSEL_STAGE_PHASE) ? 0.0f : gCharSel->faceAlpha[i]);
+        /* The movie can add alpha after the multiplier. Visibility also
+         * suppresses that additive pass over the map preview. */
+        Flash_ClipSetFlags(f, &ref, 2, (gCharSel->flags & CHARSEL_STAGE_PHASE) == 0);
 #else
         Flash_ClipSetAlpha(f, &ref, gCharSel->faceAlpha[i]);
 #endif

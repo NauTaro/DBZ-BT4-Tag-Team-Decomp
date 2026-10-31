@@ -189,7 +189,7 @@ static const char *f1_text(const char *english) {
         {"Menus", "Menús", "Menus"},
         {"Stretched", "Estirados", "Esticados"},
         {"Widescreen (beta)", "Panorámico (beta)", "Widescreen (beta)"},
-        {"Menu display on a picture wider than 4:3. Stretched fills the window. 4:3 keeps side bars. Widescreen (beta) expands menus and HUD across the full width.", "Menús en una imagen más ancha que 4:3. Estirado ocupa toda la ventana. 4:3 conserva las barras laterales. Panorámico (beta) expande los menús y el HUD a todo el ancho.", "Menus em uma imagem mais larga que 4:3. Esticado ocupa toda a janela. 4:3 mantém as barras laterais. Widescreen (beta) expande os menus e o HUD por toda a largura."},
+        {"Menu display on a picture wider than 4:3. Stretched fills the window. 4:3 keeps side bars. Widescreen (beta) anchors menus and HUD to the wider view while preserving artwork proportions.", "Menús en una imagen más ancha que 4:3. Estirado ocupa toda la ventana. 4:3 conserva las barras laterales. Panorámico (beta) adapta la posición de los menús y el HUD conservando las proporciones de sus texturas.", "Menus em uma imagem mais larga que 4:3. Esticado ocupa toda a janela. 4:3 mantém as barras laterais. Widescreen (beta) adapta a posição dos menus e do HUD preservando as proporções das texturas."},
         {"Original", "Original", "Original"},
         {"Black", "Negro", "Preto"},
         {"Border", "Borde", "Moldura"},
@@ -2471,7 +2471,7 @@ static void ui_tab(PortVideo &v) {
             Port_SettingSave("menus_wide", m == 2);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip(f1_text("Menu display on a picture wider than 4:3. Stretched fills the window. 4:3 keeps side bars. Widescreen (beta) expands menus and HUD across the full width."));
+        ImGui::SetItemTooltip(f1_text("Menu display on a picture wider than 4:3. Stretched fills the window. 4:3 keeps side bars. Widescreen (beta) anchors menus and HUD to the wider view while preserving artwork proportions."));
     }
     {
         static const char *const kBars[] = {"Black", "Border", "Fighter panels"};

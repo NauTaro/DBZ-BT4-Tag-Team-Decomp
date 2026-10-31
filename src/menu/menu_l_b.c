@@ -220,7 +220,7 @@ void SoloSel_Init(s32 section) {
     gSoloSel->nameText = MPACK_AT(gSoloSel->res, 28);
     gSoloSel->formText = MPACK_AT(gSoloSel->res, 29);
     gSoloSel->chips = (u32 *)MPACK_AT(gSoloSel->res, 27);
-    for (i = 0; i < LCHR_CELL_MAX; i++) {
+    for (i = 0; i < Menu_CharacterChipCount(gSoloSel->chips); i++) {
         res = (MTexRes *)MPACK_AT(gSoloSel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }

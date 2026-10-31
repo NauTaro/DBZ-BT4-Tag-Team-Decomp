@@ -1,14 +1,15 @@
 #ifndef BT4_MENU_WIDE_LAYOUT_H
 #define BT4_MENU_WIDE_LAYOUT_H
 
-/* Panoramic menus and battle HUD use the full page. Do not narrow their
- * vertices or scissor to a centered 4:3 region a second time. */
-static inline int Port_MenuWideStretch(int menu_mode, int menus_wide, int hud) {
-    return menus_wide && (menu_mode || hud);
-}
-
 static inline float Port_MenuWideScaleX(int aspect_milli) {
     return aspect_milli > 1333 ? 1333.333333f / (float)aspect_milli : 1.0f;
+}
+
+/* Scenery covers the viewport uniformly. Unlike UI artwork, its excess
+ * height may be cropped, but its pixels must keep the original aspect. */
+static inline float Port_MenuWideCoverY(float y, int aspect_milli) {
+    float scale = Port_MenuWideScaleX(aspect_milli);
+    return 224.0f + (y - 224.0f) / scale;
 }
 
 static inline float Port_MenuWideTransformX(float x, float pivot, float scale) {

@@ -317,8 +317,13 @@ static void Bt4Costume_Line(char *text, f32 cx, f32 base, f32 cap, f32 maxWidth,
     { extern int Port_MenusWide(void);
       if (Port_MenusWide()) {
           /* This caption is a TBO texture on a native Flash costume plate.
-           * Match the plate's centered page transform, once. */
-          Ps_PageSet();x0=Ps_X(x0);x1=Ps_X(x1);
+           * It bypasses the renderer's native-art pass, so use the SAME
+           * parent anchor as the plate, once, rather than a centred page. */
+          extern int Port_MenuPartNow(void), Port_PageAspectMilli(void);
+          int part=Port_MenuPartNow(),aspect=Port_PageAspectMilli();
+          f32 pivot=part==2||part==5?0.0f:part==3||part==6?512.0f:256.0f;
+          f32 scale=aspect>1333?1333.333333f/(f32)aspect:1.0f;
+          x0=pivot+(x0-pivot)*scale;x1=pivot+(x1-pivot)*scale;
       }
     }
     Ps_SpriteScreen(id, x0, y0, x1, y0 + height, 0, 0.5f, 1, 1,

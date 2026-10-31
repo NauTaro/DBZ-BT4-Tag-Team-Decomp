@@ -272,7 +272,7 @@ void EntrySel_Init(s32 section) {
     gEntrySel->nameText = MPACK_AT(gEntrySel->res, 30);
     gEntrySel->formText = MPACK_AT(gEntrySel->res, 31);
     gEntrySel->chips = (u32 *)MPACK_AT(gEntrySel->res, 32);
-    for (i = 0; i < ESEL_CELL_MAX; i++) {
+    for (i = 0; i < Menu_CharacterChipCount(gEntrySel->chips); i++) {
         res = (MTexRes *)MPACK_AT(gEntrySel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }

@@ -1853,12 +1853,18 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     /* (Not the cross-fade's picture: it is the whole frame as it was shown, wide view and all, drawn back over the
        whole frame in strips. Each strip is narrower than the screen, so the rule below took it for a piece of 2D
        art and the old shot was drawn at three quarters of the width over the new one: seen by the user.) */
-    /* BT4's original HUD uses the full 512-unit page, including its masks.
-       Narrowing the side panels left a large gap beside the timer. */
+    /* Scenery uses uniform cover, while menu artwork and HUD pieces keep
+       their proportions and the parent clip's left/right/centre anchor. */
+    if (gPortMenuMode && Port_MenusWide() && Port_IsWide() && gsAnchor == 10 &&
+        !sWholeFrame && !d.tex_is_target && d.mode[0] && !tbo &&
+        gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
+        uint32_t k;
+        for (k = d.first; k < gsVertCount; k++) {
+            gsVerts[k].y = Port_MenuWideCoverY(gsVerts[k].y, Port_AspectMilli());
+        }
+    }
     int hudPanel = presentation_hud() && gsAnchor >= 1 && gsAnchor <= 6;
-    int bt4OriginalHud = sHudLayout == 0 && (gsAnchor == 1 || gsAnchor == 2 || gsAnchor == 5 || gsAnchor == 6);
-    int wideInterface = Port_MenuWideStretch(gPortMenuMode, Port_MenusWide(), presentation_hud());
-    if (!wideInterface && !bt4OriginalHud && gsAnchor != 20 && Port_IsWide() && (!gPortMenuMode || ((gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19)) && Port_MenusWide()) || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
+    if (gsAnchor != 20 && Port_IsWide() && (!gPortMenuMode || ((gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19)) && Port_MenusWide()) || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
                           (battleText && Port_PageAspectMilli() > 1340)) &&
         !sWholeFrame && (!d.tex_is_target || hudPanel) && !tbo && (type == 6 || fst || battleText || gsAnchor == 8 || (gPortMenuMode && gsAnchor >= 9)) &&
         gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
@@ -1866,7 +1872,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
            or an animated mask spans most of the page. World effects keep their own rules. */
         /* Widescreen. The 3D scene is projected for a 16:9 picture by the game itself; 2D art is laid out for
            4:3 and would come out a third too wide. Each 2D piece is narrowed to fit the 4:3 composition:
-             - the beta panoramic layout bypasses this block: its entire interface fills the width;
+             - panoramic menus retain each parent clip's left/right/centre anchor;
              - in a fight, the left edge, the right edge or the middle for the HUD's left panel, right panel and
                centre parts (markers from the HUD code), so the panels sit at the screen's edges;
              - other 2D pieces, the middle of the screen (see below).
@@ -1886,15 +1892,15 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
         }
         if (type == 6 && !d.mode[0] && y1 - y0 >= 400.0f && !battleText) {
             pivot = -1.0f;
-        } else if ((gsAnchor == 9 || gsAnchor == 11 || gsAnchor == 12 || gsAnchor == 16 || gsAnchor == 17 || gsAnchor == 18 || (gsAnchor >= 13 && gsAnchor <= 15 && !d.mode[0])) && x0 <= 0.5f &&
+        } else if (!d.mode[0] && (gsAnchor == 9 || gsAnchor == 11 || gsAnchor == 12 || gsAnchor == 16 || gsAnchor == 17 || gsAnchor == 18 || (gsAnchor >= 13 && gsAnchor <= 15)) && x0 <= 0.5f &&
                    x1 >= 511.5f) {
             /* (in a widescreen menu page, a piece as wide as the whole 4:3 screen is scenery or a tint over all of
                it: it fills the width; untextured (a fade, a tint), in a part that keeps such pieces too as well.
                A menu's untextured pieces narrower than that, a plate's plain body, keep their shape as its art does) */
             pivot = -1.0f;
         } else if (gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19)) {
-            /* Non-panoramic paths retain the legacy menu anchor behavior. The full-width beta interface
-               bypasses this entire narrowing pass. */
+            /* Every piece of the same clip uses the same pivot, including
+               masks, glyphs, shadows and the scrolling scissor. */
             pivot = gsAnchor == 11 || gsAnchor == 14 ? 0.0f : gsAnchor == 12 || gsAnchor == 15 ? 512.0f : 256.0f;
             int corner = gsAnchor == 16 || gsAnchor == 17 || gsAnchor == 18 || (gsAnchor == 13 && x1 - x0 <= 260.0f && y1 <= 140.0f);
             /* (13, character select: only a sprite the size of a corner's cloud, not the big pictures from the top) */

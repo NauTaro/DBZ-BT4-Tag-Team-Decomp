@@ -1016,6 +1016,9 @@ void TeamSel_Draw(void) {
         }
         Flash_FindLabel(flash, NULL, i ? "mc_single_chara_r" : "mc_single_chara_l", &ref);
         Flash_ClipSetAlpha(flash, &ref, gTeamSel->faceAlpha[i]);
+#ifdef PORT
+        Flash_ClipSetFlags(flash, &ref, 2, (gTeamSel->flags & TEAMSEL_STAGE) == 0);
+#endif
         Flash_ClipSetFlags(flash, &ref, 0x80, (u8)gTeamSel->faceMask);
         Flash_FindLabel(flash, NULL, i ? "mc_name_text_r" : "mc_name_text_l", &ref);
         TextBox_AttachLine(flash, &ref, 0, 0, gTeamSel->side[i]->chara, &gTeamSel->nameBox[i]);

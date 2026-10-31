@@ -190,7 +190,7 @@ void Bracket_Load(LBracket *b) {
     b->nameText = MPACK_AT(b->res, 21);
     b->formText = MPACK_AT(b->res, 22);
     b->chips = (u32 *)MPACK_AT(b->res, 23);
-    for (i = 0; i < LCHR_CELL_MAX; i++) {
+    for (i = 0; i < Menu_CharacterChipCount(b->chips); i++) {
         res = (MTexRes *)MPACK_AT(b->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
