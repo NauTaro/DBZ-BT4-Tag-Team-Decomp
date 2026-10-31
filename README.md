@@ -84,7 +84,9 @@ Use compatible BT4 data and the same published launcher on every participating c
 
 1 vs 1 uses the upstream peer rollback path. Lobby matches can relay through the lobby owner when the assigned fighters cannot connect directly.
 
-The current Tag Team source negotiates a voice-independent WebRTC game connection before combat. If every participant validates the route and shared state, a dedicated native thread on the host coordinates inputs at 114% game speed. ICE selects a direct or TURN path; authenticated TLS carries backup copies of the same timeline. If preparation fails or a compatible client lacks this path, the room retains server coordination.
+Rooms and Quick Match use authenticated private Supabase signaling. Tag Team room authority runs on the owner's computer from admission onward; gameplay and voice travel between participants. The default connection no longer uses Cloudflare coordination or a hosted game/audio relay. STUN assists direct connection discovery. Networks that block peer traffic, including some CGNAT configurations, can still prevent a direct connection. No public relay is bundled.
+
+The Free signaling project has provider quotas, including concurrent Realtime connection limits. P2P reduces server traffic; it does not provide unlimited hosting capacity. R6 was validated with local native multi-client combat, tournaments and synthetic voice; this is not a cross-ISP or load-capacity benchmark.
 
 The active route supplies measured ping. A single human fighting CPU uses local input scheduling. If the native coordinator leaves, the round ends; live coordinator migration is not implemented. Geographic routes and network conditions still affect latency.
 

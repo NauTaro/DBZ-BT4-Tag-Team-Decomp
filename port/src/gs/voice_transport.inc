@@ -20,14 +20,16 @@ class VoiceWs {
     static int receiveThread(void *p){return static_cast<VoiceWs*>(p)->receive();}
     static int sendThread(void *p){return static_cast<VoiceWs*>(p)->sendLoop();}
     int receive(){
-        wchar_t wide[1400],host[256],path[1000];URL_COMPONENTS u={};u.dwStructSize=sizeof(u);u.lpszHostName=host;u.dwHostNameLength=256;u.lpszUrlPath=path;u.dwUrlPathLength=1000;
+        wchar_t wide[1400],host[256],path[1000],extra[1000];URL_COMPONENTS u={};u.dwStructSize=sizeof(u);u.lpszHostName=host;u.dwHostNameLength=256;u.lpszUrlPath=path;u.dwUrlPathLength=1000;u.lpszExtraInfo=extra;u.dwExtraInfoLength=1000;
         MultiByteToWideChar(CP_UTF8,0,url.c_str(),-1,wide,1400);
         if(!WinHttpCrackUrl(wide,0,0,&u))return fail();
         if(!adopt(session,WinHttpOpen(L"BT4-Voice/1",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0)))return fail();
         WinHttpSetTimeouts(session,4000,4000,4000,6000);
         if(!adopt(connection,WinHttpConnect(session,host,u.nPort,0)))return fail();
-        if(!adopt(request,WinHttpOpenRequest(connection,L"GET",path,nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,u.nScheme==INTERNET_SCHEME_HTTPS?WINHTTP_FLAG_SECURE:0)))return fail();
-        std::string headers="Authorization: Bearer "+cap+"\r\nX-BT4-Seat: "+std::to_string(seat)+"\r\nX-BT4-Name: ";
+        std::wstring fullPath(path,u.dwUrlPathLength);fullPath.append(extra,u.dwExtraInfoLength);
+        if(!adopt(request,WinHttpOpenRequest(connection,L"GET",fullPath.c_str(),nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,u.nScheme==INTERNET_SCHEME_HTTPS?WINHTTP_FLAG_SECURE:0)))return fail();
+        std::string headers=cap.empty()?std::string():"Authorization: Bearer "+cap+"\r\n";
+        headers+="X-BT4-Seat: "+std::to_string(seat)+"\r\nX-BT4-Name: ";
         for(unsigned char c:name){if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9'))headers+=c;else {char h[4];snprintf(h,4,"%%%02X",c);headers+=h;}}
         headers+="\r\n";wchar_t wh[1024];MultiByteToWideChar(CP_UTF8,0,headers.c_str(),-1,wh,1024);
         if(!WinHttpSetOption(request,WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET,nullptr,0)||!WinHttpSendRequest(request,wh,(DWORD)-1,WINHTTP_NO_REQUEST_DATA,0,0,0)||!WinHttpReceiveResponse(request,nullptr))return fail();

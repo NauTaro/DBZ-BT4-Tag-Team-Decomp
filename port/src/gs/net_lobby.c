@@ -1828,7 +1828,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         }
         sL.owner = *from;
         sL.state = 2;
-        Match_Cancel(); /* (a code's search: it has done its work, the owner's relay address is not needed now) */
+        if (!Match_KeepSession()) Match_Cancel();
         fprintf(stderr, "bt3: lobby: in the lobby (%s)\n", Relay_IsPeer(from) ? "through the relay" : "the owner answered");
     }
     if (!same(from, &sL.owner)) {
@@ -1991,7 +1991,7 @@ static void lobby_off(void) {
     int was = sL.on;
     sL.on = 0;
     sL.state = sL.error[0] != '\0' ? 3 : 0;
-    if (was == 1 && sL.byCode) {
+    if ((was == 1 && sL.byCode) || (was == 2 && Match_KeepSession())) {
         Match_Cancel(); /* (the room is given up) */
     }
     if (NetIo_SessionMode() == 0 && !NetIo_SessionStarting()) {

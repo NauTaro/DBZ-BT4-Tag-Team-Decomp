@@ -4,9 +4,11 @@
 #include <math.h>
 #include <algorithm>
 #include <string>
+#include <map>
 #include "update_sign.h"
 #include "voice_platform.inc"
 #include "voice.h"
+#include "supabase_signal.h"
 #include "spatial_audio.h"
 #include "../../third_party/voice/rtc/rtc.h"
 #include "../../third_party/voice/opus/opus.h"
@@ -29,16 +31,19 @@ static struct {
     PortVoiceOptions options={};PortVoiceState state={};bool initialized=false;
     int generation=0,sessionMode=0,seat=0,channel=0,allowRoom=0;std::string url,cap,name;
     std::string inputName,outputName;
+    bool direct=false,manualRoom=false;std::string directRoster,rendezvous;
     float positions[40]={};int worldMode=0,listener=0,worldCount=0;Uint64 worldAt=0;
 } v;
 static std::mutex signalingLock;
 static std::shared_ptr<VoiceWs> signaling;
+static bool directSignaling=false;static std::string directGeneration;static std::atomic<unsigned> directSerial{30000};
+static std::atomic<bool> directMedia{false};
 static std::atomic<unsigned> selfId{0};
-static std::vector<std::string> voiceIceServers={"stun:stun.cloudflare.com:3478"};
+static std::vector<std::string> voiceIceServers={"stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"};
 static void status(const char *s){std::lock_guard<std::mutex>g(v.lock);SDL_strlcpy(v.state.status,s,sizeof(v.state.status));}
 static bool fixture(){return getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_TEST_FILE");}
 static void logVoice(const char *s){if(getenv("BT4_RENDER_TEST")){fprintf(stderr,"bt4 voice: %s\n",s);fflush(stderr);}}
-static void post(const VJson &j){std::shared_ptr<VoiceWs> ws;{std::lock_guard<std::mutex>g(signalingLock);ws=signaling;}if(ws)ws->text(j.dump());}
+static void post(const VJson &j);
 struct VoiceRtcApi {
     VoiceModule module=nullptr;bool ready=false;
 #define VF(n) decltype(&::n) n=nullptr;
@@ -79,8 +84,11 @@ struct VoicePeer {
     std::mutex lock;std::deque<VoicePacket> packets;OpusDecoder *decoder=nullptr;
     uint16_t last=0;bool haveLast=false,remoteReady=false;int missing=0;Uint64 speaking=0,start=0;
     std::vector<VJson> candidates;
+    std::atomic<unsigned> revision{0};Uint64 offerAt=0,requestAt=0;
 };
 static VoicePeer peers[10];
+static std::map<unsigned,unsigned> outgoingRevision,incomingRevision;
+static std::map<unsigned,std::vector<VJson>> pendingVoiceCandidates;
 static VoicePeer *peerFor(unsigned id){for(auto &p:peers)if(p.id==id)return &p;return nullptr;}
 static bool newer(uint16_t a,uint16_t b){return (int16_t)(a-b)>0;}
 static void receiveAudio(VoicePeer &p,uint16_t seq,const unsigned char *data,size_t size,bool direct,int expectedTrack=-1){
@@ -103,16 +111,17 @@ static void RTC_API rtcAudio(int track,const char *data,int size,void *ptr){
     if(b[0]&32){int padding=b[size-1];if(!padding||padding>size-offset)return;size-=padding;}
     receiveAudio(p,(uint16_t)((b[2]<<8)|b[3]),b+offset,size-offset,true,track);
 }
-static void RTC_API rtcDescription(int pc,const char *sdp,const char *type,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc||!p.id)return;post({{"type","signal"},{"to",p.id.load()},{"signal",{{"type",type},{"sdp",sdp}}}});}
-static void RTC_API rtcCandidate(int pc,const char *candidate,const char *mid,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc||!p.id)return;if(getenv("BT4_RENDER_TEST")&&candidate&&strstr(candidate," typ relay"))logVoice("TURN relay candidate gathered");post({{"type","signal"},{"to",p.id.load()},{"signal",{{"type","candidate"},{"candidate",candidate},{"mid",mid}}}});}
+static void RTC_API rtcDescription(int pc,const char *sdp,const char *type,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc||!p.id||!sdp||!type)return;VJson signal={{"type",type},{"sdp",sdp}};if(directMedia)signal["revision"]=p.revision.load();post({{"type","signal"},{"to",p.id.load()},{"signal",signal}});}
+static void RTC_API rtcCandidate(int pc,const char *candidate,const char *mid,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc||!p.id||!candidate||!mid)return;if(getenv("BT4_RENDER_TEST")&&strstr(candidate," typ relay"))logVoice("TURN relay candidate gathered");VJson signal={{"type","candidate"},{"candidate",candidate},{"mid",mid}};if(directMedia)signal["revision"]=p.revision.load();post({{"type","signal"},{"to",p.id.load()},{"signal",signal}});}
 static void RTC_API voiceRtcState(int pc,rtcState state,void *ptr){auto &p=*static_cast<VoicePeer*>(ptr);if(p.pc!=pc)return;p.connected=state==RTC_CONNECTED;}
 static void closePeer(VoicePeer &p){
     int pc=p.pc.exchange(-1);p.track=-1;p.connected=0;
     if(pc>=0){rtc.rtcClosePeerConnection(pc);rtc.rtcDeletePeerConnection(pc);}
-    std::lock_guard<std::mutex>g(p.lock);p.packets.clear();if(p.decoder)opus.opus_decoder_destroy(p.decoder);p.decoder=nullptr;p.id=0;p.haveLast=false;p.remoteReady=false;p.candidates.clear();p.missing=0;p.speaking=0;p.start=0;p.gain=1.f;
+    std::lock_guard<std::mutex>g(p.lock);p.packets.clear();if(p.decoder)opus.opus_decoder_destroy(p.decoder);p.decoder=nullptr;p.id=0;p.haveLast=false;p.remoteReady=false;p.candidates.clear();p.missing=0;p.speaking=0;p.start=0;p.gain=1.f;p.revision=0;p.offerAt=p.requestAt=0;
 }
 static void openPeer(VoicePeer &p){
     if(!rtc.load()||getenv("BT4_VOICE_FORCE_RELAY"))return;
+    if(directMedia&&selfId<p.id){p.revision=++outgoingRevision[p.id];p.offerAt=SDL_GetTicks();}
     std::vector<const char *> servers;for(const auto &server:voiceIceServers)servers.push_back(server.c_str());
     rtcConfiguration cfg={};cfg.iceServers=servers.data();cfg.iceServersCount=(int)servers.size();cfg.disableAutoNegotiation=true;cfg.forceMediaTransport=true;
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_ICE_RELAY_TEST"))cfg.iceTransportPolicy=RTC_TRANSPORT_POLICY_RELAY;
@@ -125,13 +134,24 @@ static void openPeer(VoicePeer &p){
 }
 static unsigned number(const VJson &j,const char *key,unsigned fallback=0){auto it=j.find(key);return it!=j.end()&&it->is_number_unsigned()?it->get<unsigned>():fallback;}
 static std::string str(const VJson &j,const char *key){auto it=j.find(key);return it!=j.end()&&it->is_string()?it->get<std::string>():std::string();}
+static void post(const VJson &j){
+    std::shared_ptr<VoiceWs> ws;bool direct;std::string generation;
+    {std::lock_guard<std::mutex>g(signalingLock);ws=signaling;direct=directSignaling;generation=directGeneration;}
+    if(direct){
+        auto s=j.find("signal");if(str(j,"type")!="signal"||s==j.end()||!s->is_object())return;
+        auto body=*s;std::string kind=str(body,"type");body.erase("type");
+        VJson args={{"generation",generation},{"to",number(j,"to")},{"channel","voice"},{"kind",kind},{"body",body}};
+        Bt4Signal_Command(2,++directSerial,"signal",args.dump().c_str());return;
+    }
+    if(ws)ws->text(j.dump());
+}
 static void control(const unsigned char *data,size_t size){
     auto j=VJson::parse(data,data+size,nullptr,false);if(!j.is_object())return;
     auto type=str(j,"type");
     if(type=="hello"){
         auto ice=j.find("iceServers");
         if(ice!=j.end()&&ice->is_array()){
-            std::vector<std::string> list={"stun:stun.cloudflare.com:3478"};
+            std::vector<std::string> list={"stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"};
             auto encode=[](const std::string &value){std::string out;const char hex[]="0123456789ABCDEF";for(unsigned char c:value){if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='_'||c=='.'||c=='~')out+=(char)c;else{out+='%';out+=hex[c>>4];out+=hex[c&15];}}return out;};
             for(const auto &entry:*ice){
                 if(!entry.is_object())continue;auto urls=entry.find("urls");if(urls==entry.end())continue;
@@ -169,6 +189,7 @@ static void control(const unsigned char *data,size_t size){
         }
     }
 }
+#include "voice_p2p_control.inc"
 static SDL_AudioDeviceID findDevice(bool recording,const std::string &name){
     if(recording&&name=="@none")return 0;
     if(name.empty()&&!recording)return recording?SDL_AUDIO_DEVICE_DEFAULT_RECORDING:SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
@@ -183,14 +204,15 @@ static std::vector<short> testSamples(){
 }
 static int voiceThread(void *){
     OpusEncoder *encoder=nullptr;VoiceAudio capture(true),playback(false);
-    int generation=-1,error=0;std::shared_ptr<VoiceWs> ws;Uint64 reconnect=0,tick=SDL_GetTicks(),ping=0,stats=0,lastSpeech=0,start=SDL_GetTicks();uint16_t sequence=0;uint32_t timestamp=0;size_t testOffset=0;
+    int generation=-1,error=0;std::shared_ptr<VoiceWs> ws;std::string appliedRoster,lastDirectRoom;Uint64 reconnect=0,tick=SDL_GetTicks(),ping=0,stats=0,lastSpeech=0,start=SDL_GetTicks(),manualRequestAt=0,manualLeaseAt=0;uint16_t sequence=0;uint32_t timestamp=0;size_t testOffset=0;
     auto samples=testSamples();FILE *testAudio=nullptr;
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_TEST_RECEIVE_PCM"))testAudio=fopen(getenv("BT4_VOICE_TEST_RECEIVE_PCM"),"wb");
     while(!v.quit){
-        PortVoiceOptions options;int next,mode,seat;float positions[40];int worldMode,listener,worldCount;Uint64 worldAt;std::string url,cap,name,inName,outName;
-        {std::lock_guard<std::mutex>g(v.lock);options=v.options;next=v.generation;mode=v.sessionMode;seat=v.seat;url=v.url;cap=v.cap;name=v.name;worldMode=v.worldMode;listener=v.listener;worldCount=v.worldCount;worldAt=v.worldAt;memcpy(positions,v.positions,sizeof(positions));inName=v.inputName;outName=v.outputName;}
+        PortVoiceOptions options;int next,mode,seat;bool directSession,manualRoom;float positions[40];int worldMode,listener,worldCount;Uint64 worldAt;std::string url,cap,name,inName,outName,roster,rendezvous;
+        {std::lock_guard<std::mutex>g(v.lock);options=v.options;next=v.generation;mode=v.sessionMode;seat=v.seat;url=v.url;cap=v.cap;name=v.name;directSession=v.direct;roster=v.directRoster;manualRoom=v.manualRoom;rendezvous=v.rendezvous;worldMode=v.worldMode;listener=v.listener;worldCount=v.worldCount;worldAt=v.worldAt;memcpy(positions,v.positions,sizeof(positions));inName=v.inputName;outName=v.outputName;}
         if(generation!=next){
-            {std::lock_guard<std::mutex>g(signalingLock);signaling.reset();}ws.reset();
+            {std::lock_guard<std::mutex>g(signalingLock);signaling.reset();directSignaling=directSession;directGeneration=directSession?cap:std::string();}ws.reset();appliedRoster.clear();directMedia=directSession;
+            if(!directSession||lastDirectRoom!=cap){outgoingRevision.clear();incomingRevision.clear();pendingVoiceCandidates.clear();lastDirectRoom=cap;}
             for(auto &p:peers)closePeer(p);
             capture.close();playback.close();
             if(encoder)opus.opus_encoder_destroy(encoder);encoder=nullptr;selfId=0;generation=next;reconnect=0;sequence=0;testOffset=0;start=SDL_GetTicks();
@@ -198,7 +220,27 @@ static int voiceThread(void *){
         }
         if(!options.enabled||!mode||url.empty()){status(options.enabled?"Voice ready; join an online room.":"Voice chat is off.");SDL_Delay(20);continue;}
         if(!opus.load()){status("Voice codec is missing. Reinstall the complete launcher.");SDL_Delay(1000);continue;}
-        if(!ws&&SDL_GetTicks()>=reconnect){
+        if(directSession){
+            Uint64 now=SDL_GetTicks();
+            if(manualRoom&&!selfId&&(!manualRequestAt||now-manualRequestAt>=5000)){
+                manualRequestAt=now;auto args=VJson{{"token",rendezvous},{"seat",seat},{"name",name}}.dump();Bt4Signal_Command(2,++directSerial,"voice",args.c_str());
+            }
+            if(manualRoom&&selfId==1&&now>=manualLeaseAt){manualLeaseAt=now+60000;Bt4Signal_Command(2,++directSerial,"lease","{}");}
+            if(roster!=appliedRoster){appliedRoster=roster;control((const unsigned char*)roster.data(),roster.size());}
+            char bytes[24577];unsigned work=0;
+            while(work++<64&&Bt4Signal_Read(2,bytes,sizeof(bytes))>0){
+                auto event=VJson::parse(bytes,nullptr,false);if(!event.is_object())continue;
+                auto b=event.find("body");if(b==event.end()||!b->is_object())continue;
+                if(manualRoom&&b->contains("members")&&str(*b,"wire")=="bt4-voice-direct-1"){
+                    PortVoice_P2PSession(1,b->dump().c_str(),nullptr,0);continue;
+                }
+                if(str(event,"event")!="bt4.signal"||str(*b,"generation")!=cap||str(*b,"channel")!="voice")continue;
+                auto signal=b->find("body");if(signal==b->end()||!signal->is_object())continue;
+                directVoiceSignal(*b);
+            }
+            directVoiceRetry();
+        }
+        if(!directSession&&!ws&&SDL_GetTicks()>=reconnect){
             status("Connecting voice...");ws=std::make_shared<VoiceWs>(url,cap,seat,name);{std::lock_guard<std::mutex>g(signalingLock);signaling=ws;}
             for(auto &p:peers)closePeer(p);selfId=0;ping=0;
         }
@@ -282,7 +324,7 @@ extern "C" void PortVoice_OptionsSet(const PortVoiceOptions *o){
         if(o->input!=v.options.input||o->output!=v.options.output||o->enabled!=v.options.enabled){++v.generation;v.pttKey=false;v.pttPad=false;}
         if(o->input!=v.options.input){const char *n=o->input>0?SDL_GetAudioDeviceName(o->input):nullptr;v.inputName=o->input==-1?"@none":n?n:"";Port_SettingTextSave("voice_input",v.inputName.c_str());}
         if(o->output!=v.options.output){const char *n=o->output>0?SDL_GetAudioDeviceName(o->output):nullptr;v.outputName=n?n:"";Port_SettingTextSave("voice_output",v.outputName.c_str());}
-        v.options=*o;if(o->enabled)startThread();
+        v.options=*o;if(v.direct)Bt4Signal_Listen(2,o->enabled);if(o->enabled)startThread();
     }
     const char *keys[]={"voice_enabled","voice_mode","voice_key","voice_button","voice_gain","voice_volume","voice_threshold","voice_indicators","voice_mic_muted"};int values[]={o->enabled,o->mode,o->key,o->button,o->gain,o->volume,o->threshold,o->indicators,o->muted};for(int i=0;i<9;++i)Port_SettingSave(keys[i],values[i]);Port_SettingsWrite();
 }
@@ -299,9 +341,21 @@ extern "C" void PortVoice_Session(int mode,const char *endpoint,const char *room
     if(!endpoint||!room||!cap||strlen(cap)!=64||seat<0||seat>9)return;init();
     std::string url=std::string(endpoint)+"/v3/voice/"+(mode==2?"tag/":"duel/")+room;
     std::lock_guard<std::mutex>g(v.lock);if(v.url==url&&v.cap==cap&&v.sessionMode==mode)return;
-    v.sessionMode=mode;v.url=url;v.cap=cap;v.seat=seat;v.name=name?name:"Player";++v.generation;if(v.options.enabled)startThread();
+    v.direct=false;v.manualRoom=false;v.rendezvous.clear();v.directRoster.clear();Bt4Signal_Listen(2,0);v.sessionMode=mode;v.url=url;v.cap=cap;v.seat=seat;v.name=name?name:"Player";++v.generation;if(v.options.enabled)startThread();
 }
-extern "C" void PortVoice_Leave(int mode){init();std::lock_guard<std::mutex>g(v.lock);if(v.sessionMode==mode){v.sessionMode=0;v.url.clear();v.cap.clear();++v.generation;v.pttKey=false;v.pttPad=false;}}
+extern "C" void PortVoice_P2PSession(int mode,const char *descriptor,const PortVoiceRoomMember *actors,int count){
+    if(!descriptor||count<0||count>10||(mode!=1&&mode!=2))return;
+    auto room=VJson::parse(descriptor,nullptr,false);if(!room.is_object())return;auto generation=str(room,"generation");unsigned self=number(room,"self");
+    auto members=room.find("members");if(generation.size()!=36||!self||members==room.end()||!members->is_array()||members->size()>10)return;
+    VJson peers=VJson::array();int seat=0;std::string name="Player";
+    if(actors&&count){for(int i=0;i<count;++i){if(actors[i].id==self){seat=actors[i].seat;name=actors[i].name;}else peers.push_back({{"id",actors[i].id},{"seat",actors[i].seat},{"team",actors[i].team},{"name",actors[i].name}});}}
+    else {int index=0;for(const auto &p:*members){unsigned id=number(p,"peer");if(id==self){seat=index;name=str(p,"name");}else peers.push_back({{"id",id},{"seat",index},{"team",index&1},{"name",str(p,"name")}});++index;}}
+    VJson hello={{"type","hello"},{"self",self},{"seat",seat},{"host",self==1},{"allowRoom",true},{"peers",peers},{"iceServers",VJson::array()}};
+    init();std::lock_guard<std::mutex>g(v.lock);bool changed=!v.direct||v.sessionMode!=mode||v.cap!=generation;
+    v.direct=true;v.manualRoom=str(room,"wire")=="bt4-voice-direct-1";if(!v.manualRoom)v.rendezvous.clear();v.sessionMode=mode;v.url=Bt4Signal_Project();v.cap=generation;v.seat=seat;v.name=name;v.directRoster=hello.dump();if(changed)++v.generation;
+    if(v.options.enabled){Bt4Signal_Listen(2,1);startThread();}
+}
+extern "C" void PortVoice_Leave(int mode){init();std::lock_guard<std::mutex>g(v.lock);if(v.sessionMode==mode){if(v.manualRoom&&Bt4Signal_Status()==1){auto args=VJson{{"generation",v.cap}}.dump();Bt4Signal_Command(2,++directSerial,"leave",args.c_str());}if(v.direct)Bt4Signal_Listen(2,0);v.direct=false;v.manualRoom=false;v.rendezvous.clear();v.directRoster.clear();v.sessionMode=0;v.url.clear();v.cap.clear();++v.generation;v.pttKey=false;v.pttPad=false;}}
 extern "C" void PortVoice_Mute(unsigned id,int muted){for(auto &p:peers)if(p.id==id)p.muted=muted!=0;}
 extern "C" float PortVoice_ProximityGain(float distance){
     /* Voice uses arena units. Keep the near range clear, then fade smoothly over
@@ -331,9 +385,16 @@ extern "C" void PortVoice_World(int mode,int listener,int count,const float *pos
 extern "C" void PortVoice_DeviceName(int recording,char *out,int size){init();std::lock_guard<std::mutex>g(v.lock);SDL_strlcpy(out,(recording?v.inputName:v.outputName).c_str(),size);}
 extern "C" int PortVoice_NewKey(unsigned char out[32]){return voiceRandom(out);}
 extern "C" void PortVoice_DuelKey(const unsigned char key[32],int seat,const char *name){
+    {std::lock_guard<std::mutex>g(v.lock);if(v.direct&&v.sessionMode==1){v.seat=seat;return;}}
     char cap[65],room[65];for(int i=0;i<32;++i)snprintf(cap+i*2,3,"%02x",key[i]);
     UpdSha256_Hex(cap,64,room);
-    const char *root=getenv("BT4_VOICE_SERVER");if(!root)root="https://bt4-tag-team.mellamannau22.workers.dev";PortVoice_Session(1,root,room,cap,seat,name);
+    const char *root=getenv("BT4_VOICE_SERVER");if(root&&root[0])PortVoice_Session(1,root,room,cap,seat,name);
+    else {
+        init();std::lock_guard<std::mutex>g(v.lock);if(v.manualRoom&&v.rendezvous==room)return;
+        v.direct=true;v.manualRoom=true;v.rendezvous=room;v.sessionMode=1;v.url=Bt4Signal_Project();v.cap.clear();v.seat=seat;v.name=name?name:"Player";v.directRoster.clear();++v.generation;
+        if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"voice manual rendezvous: enabled=%d seat=%d\n",v.options.enabled,seat);
+        if(v.options.enabled){Bt4Signal_Listen(2,1);startThread();}
+    }
 }
 extern "C" void PortVoice_Shutdown(void){if(!v.initialized)return;v.quit=true;if(v.thread){SDL_WaitThread(v.thread,nullptr);v.thread=nullptr;}}
 extern "C" int PortVoice_TestRun(void){

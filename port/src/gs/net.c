@@ -4013,7 +4013,7 @@ void Port_LobbyLaunch(void) {
     sSock = -1;
     sLobby = 0;
     if (sCodeMode) {
-        if (!(sLobbyRole == 1 && Port_SessionCan() && spec_allowed())) {
+        if (!Match_KeepSession() && !(sLobbyRole == 1 && Port_SessionCan() && spec_allowed())) {
             Match_Cancel(); /* (a host that lets spectators in keeps its room while the match is on: Port_NetSessionEnd) */
         }
         sCodeMode = 0;

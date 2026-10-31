@@ -17,6 +17,8 @@ void PortVoice_OptionsSet(const PortVoiceOptions *options);
 void PortVoice_State(PortVoiceState *out);
 void PortVoice_Event(const SDL_Event *event);
 void PortVoice_Session(int mode,const char *endpoint,const char *room,const char *cap,int seat,const char *name);
+typedef struct {unsigned id;int seat,team;char name[20];} PortVoiceRoomMember;
+void PortVoice_P2PSession(int mode,const char *descriptor,const PortVoiceRoomMember *members,int count);
 void PortVoice_Leave(int mode);
 void PortVoice_Mute(unsigned id,int mute);
 void PortVoice_World(int mode,int listener,int count,const float *positions);

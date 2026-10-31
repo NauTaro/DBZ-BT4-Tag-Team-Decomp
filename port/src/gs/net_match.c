@@ -33,11 +33,13 @@
 #include <unistd.h>
 #endif
 
-#define MATCH_URL_DEFAULT "https://bt4-tag-team.mellamannau22.workers.dev"
+#define MATCH_URL_DEFAULT "" /* legacy HTTP adapter requires an explicit test/operator override */
 #include "net_match.h"
+#include "match_supabase.h"
 #include "../port_release.h"
 #include "net_relay.h"
 #include "net_sign.h"
+static int supabase_discovery(void){const char *override=SDL_getenv("BT3_MATCH_URL");return !override||!override[0];}
 
 static struct {
     SDL_Mutex *lock;
@@ -503,6 +505,34 @@ static int lan_address(int localPort, char *out, size_t size) {
 
 /* ---- the thread ---- */
 
+static int supabase_match_loop(const char *name,const char *addrs){
+    unsigned generation=(unsigned)(uintptr_t)SDL_GetTLS(&sMine);
+    unsigned long long content=0;char addresses[192];Bt4DiscoveryStatus status;
+    extern int Port_BuildIdentity(unsigned long long *);
+    if(Port_BuildIdentity(&content)!=1){set_state(-1,"The installed battle data is incompatible with this build.");return 0;}
+    SDL_snprintf(addresses,sizeof(addresses),"[%s]",addrs);
+    if(!Bt4Discovery_Begin(generation,sM.role,sM.version,content,name,sM.code,addresses,sM.queue)){
+        set_state(-1,"The matchmaking could not be started.");return 0;
+    }
+    while(!STOPPED()){
+        if(!Bt4Discovery_Poll(generation,&status))break;
+        SDL_LockMutex(sM.lock);
+        if(!STOPPED()){
+            sM.st.state=status.state;sM.st.role=status.role;sM.st.lobby=status.lobby;
+            SDL_strlcpy(sM.st.code,status.code,sizeof(sM.st.code));SDL_strlcpy(sM.st.error,status.error,sizeof(sM.st.error));
+            SDL_strlcpy(sM.st.peerName,status.peerName,sizeof(sM.st.peerName));
+            sM.st.peerCount=status.peerCount;SDL_memcpy(sM.st.peerAddr,status.peerAddr,sizeof(sM.st.peerAddr));
+            if(sM.watchCount!=status.watchCount||SDL_memcmp(sM.watchAddr,status.watchAddr,sizeof(sM.watchAddr))){
+                sM.watchCount=status.watchCount;SDL_memcpy(sM.watchAddr,status.watchAddr,sizeof(sM.watchAddr));++sM.watchGen;
+            }
+        }
+        SDL_UnlockMutex(sM.lock);
+        if(status.state<0)break;
+        SDL_Delay(10);
+    }
+    Bt4Discovery_End(generation);return 0;
+}
+
 static int SDLCALL match_thread(void *arg) {
     char pub[64] = "", lan[64] = "", addrs[160], body[512], answer[4096], key[40] = "", you[64] = "", name[20], relayAddr[64] = "";
     int i, n = 0, hosting, searches = 0, again = 0;
@@ -516,8 +546,8 @@ static int SDLCALL match_thread(void *arg) {
         }
     }
     name[n] = '\0';
-    if (!stun_ask(sM.sock, "stun.cloudflare.com", 3478, pub, sizeof(pub))) {
-        stun_ask(sM.sock, "stun.l.google.com", 19302, pub, sizeof(pub));
+    if (!stun_ask(sM.sock, "stun.l.google.com", 19302, pub, sizeof(pub))) {
+        stun_ask(sM.sock, "stun1.l.google.com", 19302, pub, sizeof(pub));
     }
     lan_address(sM.localPort, lan, sizeof(lan));
     if (STOPPED()) {
@@ -534,6 +564,7 @@ static int SDLCALL match_thread(void *arg) {
         set_state(-1, "This computer's address could not be found (no network?).");
         return 0;
     }
+    if(supabase_discovery())return supabase_match_loop(name,addrs);
 again:
     hosting = sM.role == 1 || sM.role == 5;
     if (sM.role == 3) {
@@ -999,6 +1030,12 @@ static int SDLCALL queues_thread(void *arg) {
     int i;
 
     (void)arg;
+    if(supabase_discovery()){
+        unsigned long long content=0;int counts[MATCH_QUEUES];extern int Port_BuildIdentity(unsigned long long *);
+        if(Port_BuildIdentity(&content)==1&&Bt4Discovery_Counts(sQueueVersion,content,counts))
+            for(i=0;i<MATCH_QUEUES;++i)SDL_SetAtomicInt(&sQueueCount[i],counts[i]+1);
+        SDL_SetAtomicInt(&sQueueBusy,0);return 0;
+    }
     SDL_snprintf(body, sizeof(body), "{\"v\":%d}", sQueueVersion);
     if (http_post("queues", body, answer, sizeof(answer)) && SDL_strstr(answer, "\"waiting\"") != NULL) {
         for (i = 0; i < MATCH_QUEUES; i++) {
@@ -1036,6 +1073,7 @@ static int SDLCALL hello_thread(void *arg) {
 
 void Match_HelloAsk(void) {
     SDL_Thread *t;
+    if(supabase_discovery())return; /* signed GitHub updater owns release discovery */
     if (SDL_GetAtomicInt(&sRelBusy)) {
         return;
     }
@@ -1107,6 +1145,7 @@ int Match_SocketBusy(void) {
 }
 
 void Match_RelayAsk(void) {
+    if(supabase_discovery())return; /* direct UDP or participant-host lobby routing */
     SDL_CompareAndSwapAtomicInt(&sM.relayAsk, 0, 1);
 }
 
@@ -1139,6 +1178,8 @@ void Match_Cancel(void) {
         SDL_UnlockMutex(sM.lock);
     }
 }
+
+int Match_KeepSession(void) { return supabase_discovery(); }
 
 /* BT3_SIGN_TEST (called before the game starts, plat_mem.c; the program ends after it): the build key's signature
    for a fixed request, for port/matchmaking/test_sign.py. BT3_SIGN_TEST=post also sends one "hello" the way every

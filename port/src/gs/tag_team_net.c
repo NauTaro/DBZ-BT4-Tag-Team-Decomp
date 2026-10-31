@@ -376,6 +376,8 @@ static char room_code[7],error[128];static time_t last_ping,last_heard;static in
 
 #include "tag_team_ws.h"
 #include "tag_team_direct.h"
+#include "tag_team_p2p.h"
+#include "supabase_signal.h"
 #include "update_sign.h"
 static int tag_direct_supported,tag_direct_ticket,tag_direct_route;
 static Uint64 tag_direct_ticket_at;
@@ -401,7 +403,7 @@ static int tag_random(void *out,unsigned size){
 #endif
 }
 
-static int cpu_fill,cpu_difficulty=2,local_room,ws_mode,ws_started;
+static int cpu_fill,cpu_difficulty=2,local_room,ws_mode,ws_started,peer_mode;
 
 static char ws_endpoint[384];
 
@@ -465,7 +467,7 @@ static uint64_t tag_load_digest(const TtRoom *r){
     return hash;
 }
 
-const char *Port_TagEndpoint(void){const char *s=getenv("BT4_TAG_SERVER");return s&&s[0]?s:"https://bt4-tag-team.mellamannau22.workers.dev";}
+const char *Port_TagEndpoint(void){const char *s=getenv("BT4_TAG_SERVER");return s&&s[0]?s:Bt4Signal_Project();}
 
 /* Keep clipboard strings and the 64-bit release fingerprint in the native
  * facade. The menu only passes its bounded code and receives a status. */
@@ -528,7 +530,7 @@ static void tag_transport_report(const char *why){
         why,state.phase,state.epoch,tag_paced,Port_TagPing(),tag_ping,tag_direct_route,received.next,tag_received_latest,tag_backlog(),rx,tx,(long long)(time(NULL)-last_heard));
     fclose(f);
 }
-static void fail(const char *why){tag_transport_report(why);SDL_SetAtomicInt(&tag_catchup,0);TagDirect_Close();tag_direct_route=0;PortVoice_Leave(2);if(ws_mode)TagWs_Close();channel_close(&client);state.phase=TT_ABORTED;snprintf(error,sizeof(error),"%s",why);}
+static void fail(const char *why){tag_transport_report(why);SDL_SetAtomicInt(&tag_catchup,0);if(peer_mode)TagPeer_Close();TagDirect_Close();tag_direct_route=0;PortVoice_Leave(2);if(ws_mode)TagWs_Close();channel_close(&client);state.phase=TT_ABORTED;snprintf(error,sizeof(error),"%s",why);}
 
 int Port_TagConnect(const char *server){
 
@@ -544,6 +546,11 @@ int Port_TagConnect(const char *server){
 
     }
 
+    if(!strcmp(server,Bt4Signal_Project())){
+        if(!TagPeer_Open()){snprintf(error,sizeof(error),"Cannot initialize the direct connection.");return 0;}
+        peer_mode=ws_mode=ws_started=1;tag_paced=1;tag_caps_sent=1;
+        snprintf(ws_endpoint,sizeof(ws_endpoint),"%s",server);last_ping=last_heard=time(NULL);return 1;
+    }
     if(!strncmp(server,"https://",8) || (getenv("BT4_RENDER_TEST")&&!strncmp(server,"http://127.0.0.1:",17))){
 
         if(strlen(server)>=sizeof(ws_endpoint)){snprintf(error,sizeof(error),"TAG TEAM endpoint is too long.");return 0;}
@@ -570,7 +577,7 @@ int Port_TagConnect(const char *server){
 
 }
 
-void Port_TagClose(void){Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_adjusted=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
+void Port_TagClose(void){if(peer_mode)TagPeer_Close();peer_mode=0;Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_adjusted=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
 
 int Port_TagReselect(void){
 
@@ -597,7 +604,8 @@ static void request(unsigned char *p){
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")&&Ttw_Read(p+4)!=11&&Ttw_Read(p+4)!=17&&Ttw_Read(p+4)!=10)
         fprintf(stderr,"tag request: serial=%u cmd=%u epoch=%u phase=%d\n",serial,Ttw_Read(p+4),Ttw_Read(p+8),state.phase);
 
-    if(ws_mode){if(!ws_started||!TagWs_Send(p))fail("TAG TEAM WebSocket send failed.");}
+    if(peer_mode){if(!TagPeer_Send(p))fail("The direct connection to the room was lost.");}
+    else if(ws_mode){if(!ws_started||!TagWs_Send(p))fail("TAG TEAM WebSocket send failed.");}
 
     else if(client.sock!=TT_INVALID&&!channel_queue(&client,p))fail("TAG TEAM send queue overflow.");
 
@@ -605,6 +613,7 @@ static void request(unsigned char *p){
 
 static int ws_start(const char *code){
 
+    if(peer_mode)return 1;
     if(!ws_mode)return 1;
 
     if(ws_started||!TagWs_Open(ws_endpoint,code)){fail("Cannot open secure TAG TEAM room.");return 0;}
@@ -626,7 +635,7 @@ void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content
 
     }
 
-    if(ws_mode){static const char alphabet[]="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    if(ws_mode&&!peer_mode){static const char alphabet[]="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
         unsigned char random[6];int i;
 
@@ -695,7 +704,7 @@ void Port_TagCommand(int command,int a,int b){
 }
 
 static int tag_read_packet(unsigned char *packet,Uint64 *at,int *direct){
-    int n;*direct=0;if(!ws_mode)return channel_read(&client);
+    int n;*direct=0;if(peer_mode){n=TagPeer_Read(packet,(uint64_t*)at);if(n>0)*direct=Ttw_Read(packet+4)==TTW_FRAME;return n;}if(!ws_mode)return channel_read(&client);
     n=TagWs_Read(packet,at);if(n)return n;
     if(tag_direct_route&&state.phase==TT_FIGHT&&TagDirect_Read(packet,(uint64_t*)at)){*direct=1;return 1;}
     return 0;
@@ -703,6 +712,7 @@ static int tag_read_packet(unsigned char *packet,Uint64 *at,int *direct){
 void Port_TagPoll(void){
 
     int n=0,work=0,direct=0;Uint64 arrived=0;if(ws_mode?!ws_started:client.sock==TT_INVALID)return;
+    if(peer_mode&&TagPeer_Status()<0){fail("Could not establish or maintain a direct connection to the room.");return;}
     if(tag_direct_route&&TagDirect_Active()<0){fail("This client fell too far behind the TAG TEAM coordinator.");return;}
 
     if(connecting){fd_set wr,er;struct timeval tv={0,0};int e=0;int len=sizeof(e);
@@ -795,6 +805,16 @@ void Port_TagPoll(void){
         }
 
         if(!Ttw_Decode(client.in,&state,&member,&result,room_code)){fail("Incompatible TAG TEAM server.");return;}
+        if(peer_mode&&!result){
+            char descriptor[8192];PortVoiceRoomMember people[TT_MAX_PLAYERS];int i,count=0;
+            if(TagPeer_Descriptor(descriptor,sizeof(descriptor))){
+                for(i=0;i<Tt_Count(&state);++i)if(!state.players[i].cpu&&state.players[i].member){
+                    people[count].id=state.players[i].member;people[count].seat=i;people[count].team=state.players[i].team;
+                    snprintf(people[count].name,sizeof(people[count].name),"%s",state.players[i].name);++count;
+                }
+                PortVoice_P2PSession(2,descriptor,people,count);
+            }
+        }
         if(received.epoch!=state.epoch){
             /* A result choice starts a new epoch before its first input arrives.
              * Buffered inputs from the preceding fight must not advance the
@@ -832,24 +852,25 @@ void Port_TagPoll(void){
 
     }
 
-    if(ws_mode&&Port_TagSeat()>=0&&!tag_caps_sent){
+    if(ws_mode&&!peer_mode&&Port_TagSeat()>=0&&!tag_caps_sent){
         unsigned char b[512];Ttw_Request(b,TT_CAPS_COMMAND,state.epoch);Ttw_Write(b+12,TT_CAP_PACED_INPUT|TT_CAP_DETAILED_SYNC|(TagDirect_Available()?TT_CAP_DIRECT_INPUT:0));request(b);tag_caps_sent=1;
     }
-    if(ws_mode&&tag_direct_supported&&!tag_direct_ticket&&Port_TagSeat()>=0&&TagDirect_Available()&&SDL_GetTicks()-tag_direct_ticket_at>=1000){
+    if(ws_mode&&!peer_mode&&tag_direct_supported&&!tag_direct_ticket&&Port_TagSeat()>=0&&TagDirect_Available()&&SDL_GetTicks()-tag_direct_ticket_at>=1000){
         unsigned char b[512];Ttw_Request(b,23,state.epoch);request(b);tag_direct_ticket_at=SDL_GetTicks();
     }
-    if(ws_mode&&!voice_ticket&&Port_TagSeat()>=0&&SDL_GetTicks()-voice_ticket_at>=1500){
+    if(ws_mode&&!peer_mode&&!voice_ticket&&Port_TagSeat()>=0&&SDL_GetTicks()-voice_ticket_at>=1500){
         unsigned char b[512];Ttw_Request(b,TTW_VOICE_TICKET,state.epoch);request(b);voice_ticket_at=SDL_GetTicks();
     }
     if(n<0){fail("TAG TEAM connection was lost.");return;}
 
-    if(time(NULL)-last_heard>10){fail("TAG TEAM server stopped responding.");return;}
+    if((!peer_mode||member)&&time(NULL)-last_heard>10){fail("TAG TEAM server stopped responding.");return;}
 
     if(SDL_GetTicks()-tag_ping_at>=(state.phase==TT_FIGHT?500:1000)){unsigned char b[TT_WIRE_BYTES];Ttw_Request(b,TTW_PING,state.epoch);request(b);last_ping=time(NULL);tag_ping_at=SDL_GetTicks();}
 
 }
 
 void Port_TagYield(void){
+    if(peer_mode){SDL_Delay(2);return;}
     if(!ws_mode){SDL_Delay(4);return;}
 #ifdef _WIN32
     if(!(tag_direct_route&&state.phase==TT_FIGHT&&TagDirect_Pending()))TagWs_Wait(4);
@@ -966,7 +987,7 @@ unsigned Port_TagSeed(void){return state.seed;}
 int Port_TagDelay(void){
     int lead=1,full=1,margin=0,total,ping=Port_TagPing();
     if(local_room||solo_cpu_fight()||!tag_paced)return state.delay;
-    if(tag_direct_route&&member==state.host)return tag_backlog();
+    if((tag_direct_route||peer_mode)&&member==state.host)return tag_backlog();
     /* Use estimated one-way relay time, not the full RTT. The Worker reports
      * late seats in each authoritative frame; that feedback raises this margin
      * only when this player's input actually misses a deadline. */

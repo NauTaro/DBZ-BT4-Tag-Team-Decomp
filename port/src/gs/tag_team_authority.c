@@ -1,4 +1,3 @@
-/* Compile the production room kernel natively without a second implementation
- * of input deadlines, neutral controls, epoch checks or synchronization. */
+/* Native participant-hosted authority. Shared with the legacy build adapter. */
 #define TT_KERNEL_NATIVE 1
-#include "../../../cloudflare/kernel.c"
+#include "../../../shared/tag_kernel.c"

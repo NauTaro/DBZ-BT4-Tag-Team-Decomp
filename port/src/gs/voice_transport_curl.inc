@@ -26,7 +26,7 @@ class VoiceWs {
             else { char hex[4]; snprintf(hex, sizeof(hex), "%%%02X", c); encoded += hex; }
         }
         curl_slist *headers = nullptr;
-        headers = curl_slist_append(headers, ("Authorization: Bearer " + cap).c_str());
+        if (!cap.empty()) headers = curl_slist_append(headers, ("Authorization: Bearer " + cap).c_str());
         headers = curl_slist_append(headers, ("X-BT4-Seat: " + std::to_string(seat)).c_str());
         headers = curl_slist_append(headers, ("X-BT4-Name: " + encoded).c_str());
         bool opened;

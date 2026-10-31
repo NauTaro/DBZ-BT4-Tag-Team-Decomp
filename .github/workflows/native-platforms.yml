@@ -20,7 +20,7 @@ on:
       version:
         description: Launcher version embedded in the test packages
         required: true
-        default: "0.1.39.2-R5"
+        default: "0.1.39.2-R6"
         type: string
 
       platform:
