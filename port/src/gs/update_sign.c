@@ -54,7 +54,9 @@ int UpdateVer_Compare(const char *a,const char *b) {
 void UpdateVer_Display(const char *text,char *out,size_t size) {
     int base[4],revision,revision_patch;
     if(!version_parts(text,base,&revision,&revision_patch)){SDL_snprintf(out,size,"%s",text?text:"");return;}
-    if(revision_patch)SDL_snprintf(out,size,"%d.%d.%d.%d R%d.%d",base[0],base[1],base[2],base[3],revision,revision_patch);
+    if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==2 && revision==7 && revision_patch==1)
+        SDL_snprintf(out,size,"0.1.39.2 R7 Hotfix");
+    else if(revision_patch)SDL_snprintf(out,size,"%d.%d.%d.%d R%d.%d",base[0],base[1],base[2],base[3],revision,revision_patch);
     else if(revision)SDL_snprintf(out,size,"%d.%d.%d.%d R%d",base[0],base[1],base[2],base[3],revision);
     else SDL_snprintf(out,size,"%s",text);
 }

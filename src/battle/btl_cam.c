@@ -10,6 +10,7 @@ extern int TagBattle_Active(void);
 #include "sys/pad.h"
 #ifdef PORT
 #include "../../port/src/port_host.h"
+#include "../../port/src/gs/presentation.h"
 #endif
 
 /* Battle camera, 0x23E040-0x23F620. See battle/btl_cam.h for the structures and the per-frame flow. */
@@ -351,6 +352,7 @@ void BtlCam_BuildView(BtlCamView *view, s32 apply) {
 void BtlCam_Reset(void) {
 #ifdef PORT
     sPortFreeCamLive = 0;
+    PortSpectator_EndBattle();
 #endif
     memset(gBtlCam, 0, sizeof(BtlCam));
     BtlCam_InitViews();
@@ -369,6 +371,7 @@ void BtlCam_Init(void) {
 void BtlCam_Term(void) {
 #ifdef PORT
     sPortFreeCamLive = 0;
+    PortSpectator_EndBattle();
 #endif
     Heap_Free(gBtlCam);
     gBtlCam = NULL;
@@ -529,67 +532,55 @@ void BtlCam_ApplyView(s32 scissor) {
 #ifdef PORT
 extern int Port_NetView(void); /* port/src/gs/net.c: the local player's view (0 or 1), or -1 */
 
-/* Build a render-local free camera from the selected native view. The fighter
- * camera structures stay untouched, so each network peer may move its view. */
+#include "spectator_collision.inc"
+/* A separate local view, with camera settings and raw input in host memory. */
 static s32 BtlCam_PortFreeCamera(s32 selected) {
-    extern int Port_Setting(const char *name, int def);
-    extern int Port_NetActive(void), Port_NetMe(void), Port_NetSpectating(void);
-    extern int gPortResim;
-    extern s32 BtlPause_GetPad(void);
-    s32 pad;
-
-    /* Presentation input advances only on a live frame, not again for each
-     * rollback re-simulation. Its pose is outside saved game memory. */
-    if (gPortResim) return 0;
-
-    if (!Port_Setting("spectator_camera", 0)) {
-        sPortFreeCamLive = 0;
-        return 0;
+    extern int gPortResim,Port_Setting(const char *,int);
+    extern void BtlCharApi_GetBasePos(s32,Vec4 *);
+    extern f32 BtlCharApi_GetHeight(s32),BtlCharApi_GetRadius(s32);
+    BtlCamView *native;
+    Vec4 targets[10],eye,rotation,previous,nativeEye,nativeRotation;
+    f32 zoom,tanY;
+    s32 count,i,idx,mode=PortSpectator_Mode();
+    if(gPortResim)return 0;
+    PortSpectator_SetInputActive(gBtlCam!=NULL && !(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU));
+    if(!mode){sPortFreeCamLive=0;return 0;}
+    if(!gBtlCam || !gBtlCam->cur)return 0;
+    native=gBtlCam->cur;
+    if(!selected) {
+        idx=BtlCam_GetPriorityView();if(idx<0)idx=BtlCam_GetDefaultView();
+        if(idx<0 || idx>1)idx=0;native=&gBtlCam->views[idx];
     }
-    if (gBtlCam == NULL || gBtlCam->cur == NULL) {
-        return 0;
+    nativeEye=native->pos;nativeRotation=native->rot;
+    count=TagBattle_Active()?TagBattle_Count():2;
+    if(count<1 || count>10)return 0;
+    for(i=0;i<count;i++) {
+        s32 object=BattleSide_GetObjId(i);
+        f32 height=BtlCharApi_GetHeight(object),radius=BtlCharApi_GetRadius(object);
+        BtlCharApi_GetBasePos(object,&targets[i]);
+        targets[i].y-=height*.5f;targets[i].w=fmaxf(fabsf(height)*.65f,fabsf(radius))+2;
     }
-    if (!selected) {
-        s32 idx = BtlCam_GetPriorityView();
-        if (idx < 0) idx = BtlCam_GetDefaultView();
-        if (idx < 0 || idx > 1) idx = 0;
-        BtlCam_SelectView(idx);
-    }
-    if (!sPortFreeCamLive) {
-        sPortFreeCam = *gBtlCam->cur;
-        BtlCam_SetViewLayout(&sPortFreeCam, VIEW_LAYOUT_FULL);
-        Vec4_Copy(&sPortFreeCamPos, &gBtlCam->cur->pos);
-        Vec4_Copy(&sPortFreeCamRot, &gBtlCam->cur->rot);
-        BtlCam_BuildView(&sPortFreeCam, 0);
-        sPortFreeCamLive = 1;
-    }
-    if (Port_NetSpectating() || TagBattle_Active()) {
-        pad = 0;
-    } else if (Port_NetActive()) {
-        pad = Port_NetMe();
-    } else {
-        pad = BtlPause_GetPad();
-        if (pad < 0 || pad > 1) pad = 0;
-    }
-    if (getenv("BT4_RENDER_TEST") && getenv("BT4_FREE_CAMERA_AUDIT")) {
+    previous=sPortFreeCamLive?sPortFreeCamPos:native->pos;
+    tanY=224.f/gBtlCam->layouts[0].screenDist;
+    if(!PortSpectator_Camera((f32 *)&native->pos,(f32 *)&native->rot,(f32 *)targets,count,
+        tanY,Port_Setting("aspect_milli",1333)/1000.f,(f32 *)&eye,(f32 *)&rotation,&zoom))return 0;
+    if(sPortFreeCamLive)SpecCamera_AvoidStage(&eye,&previous);
+    PortSpectator_ResolveEye((f32 *)&eye);
+    sPortFreeCam.view=gBtlCam->layouts[0];sPortFreeCamPos=eye;sPortFreeCamRot=rotation;
+    sPortFreeCam.view.screenDist*=zoom;View_BuildProjection(&sPortFreeCam.view);
+    View_SetTransform(&sPortFreeCam.view.world2view,&sPortFreeCam.view.world2view2,&sPortFreeCamPos,&sPortFreeCamRot);
+    View_UpdateMatrices(&sPortFreeCam.view,&sPortFreeCamPos);View_Apply(&sPortFreeCam.view,1);
+    sPortFreeCamLive=1;
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_FREE_CAMERA_AUDIT")) {
         PORT_HOST static s32 ticks;
-        Pad saved = gPad[pad];
-        Vec4 nativePos = gBtlCam->cur->pos, nativeRot = gBtlCam->cur->rot;
-        f32 yaw = sPortFreeCamRot.y;
-        gPad[pad].gameHeld = 0;
-        gPad[pad].gameLeft[0] = 0.5f;
-        gPad[pad].gameLeft[1] = 0.0f;
-        gPad[pad].gameRight[1] = 0.0f;
-        DbgCam_Update(&sPortFreeCam.view, &sPortFreeCamPos, &sPortFreeCamRot, pad, 1.0f);
-        gPad[pad] = saved;
-        if (nativePos.x != gBtlCam->cur->pos.x || nativePos.y != gBtlCam->cur->pos.y || nativePos.z != gBtlCam->cur->pos.z ||
-            nativeRot.x != gBtlCam->cur->rot.x || nativeRot.y != gBtlCam->cur->rot.y || nativeRot.z != gBtlCam->cur->rot.z ||
-            !(sPortFreeCamRot.y == sPortFreeCamRot.y) || yaw == sPortFreeCamRot.y) {
-            fprintf(stderr,"free camera audit: FAIL mode=%d tag=%d\n",Battle_GetMode(),TagBattle_Active());exit(6);
+        for(i=0;i<4;i++)if(((f32 *)&nativeEye)[i]!=((f32 *)&native->pos)[i] ||
+                          ((f32 *)&nativeRotation)[i]!=((f32 *)&native->rot)[i]) {
+            fprintf(stderr,"free camera audit: FAIL native-pose changed\\n");exit(6);
         }
-        if (++ticks == 30) fprintf(stderr,"free camera audit: PASS mode=%d tag=%d moved=1 native-pose-unchanged=1\n",Battle_GetMode(),TagBattle_Active());
-    } else {
-        DbgCam_Update(&sPortFreeCam.view, &sPortFreeCamPos, &sPortFreeCamRot, pad, 1.0f);
+        if(!isfinite(eye.x) || !isfinite(eye.y) || !isfinite(eye.z)) {
+            fprintf(stderr,"free camera audit: FAIL non-finite eye\\n");exit(6);
+        }
+        if(++ticks==30)fprintf(stderr,"free camera audit: PASS mode=%d tag=%d moved=1 native-pose-unchanged=1 camera-mode=%d\n",Battle_GetMode(),TagBattle_Active(),mode);
     }
     return 1;
 }

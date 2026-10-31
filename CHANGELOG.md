@@ -1,3 +1,9 @@
+# 0.1.39.2 R7 Hotfix
+
+- Restore the full spectator controls: free camera, fighter tracking, fight overview, target, speed, zoom and reset.
+- Restore keyboard and controller navigation with complete English, Spanish and Brazilian Portuguese labels.
+- Keep camera motion outside rollback state; route camera controls before local input is recorded or transmitted.
+
 # 0.1.39.2 R7
 
 - Bundle nested macOS library dependencies, including Brotli, and reject packages with missing or external libraries.

@@ -25,7 +25,7 @@ BT4decomp adapts **BT4 B14 Rev2** for Windows, Linux and Apple Silicon. It runs 
 | **Tournaments** | Two to eight entrants, automatic byes, a live bracket and match rejoining. |
 | **Spectators** | Join without occupying a fighter slot; follow either side or use a split view. |
 
-Menus and setup support **English and Spanish**. F1 settings support **English, Spanish and Brazilian Portuguese**. Use **F1 > Spectator** to enable the local free camera during battles. Panoramic mode expands menus and HUD across the viewport. Hiding the combat HUD also dismisses the Start pause menu; press Start to open it again.
+Menus and setup support **English and Spanish**. F1 settings support **English, Spanish and Brazilian Portuguese**. **F1 > Spectator** offers free camera, fighter tracking and fight overview, with target, speed, zoom and reset controls. Keyboard and controller camera input replaces local fighter input while the camera is active; Start remains available. Panoramic mode expands menus and HUD across the viewport. Hiding the combat HUD also dismisses the Start pause menu; press Start to open it again.
 
 ## Voice and presentation
 
@@ -72,6 +72,8 @@ For Linux permissions, macOS download handling and source builds, see [native pl
 The launcher checks this repository for the latest signed package for its platform. It verifies the archive SHA-256 and Ed25519 signature, then applies the update at the offline main menu. Saves, settings, installed game data and custom content remain outside the replacement list. Updating does not restart an active battle or online session.
 
 Installations that predate the signed updater need one initial package installation. Subsequent published signed updates can install through the launcher.
+
+R7 recognizes patch-revision tags and can update to **R7 Hotfix** (`v0.1.39.2-R7.1`). Launchers that do not recognize patch-revision tags require one installation of the current package.
 
 ## Source and online compatibility
 

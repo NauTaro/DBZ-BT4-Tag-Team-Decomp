@@ -35,6 +35,8 @@ int main(void) {
         {"0.1.39.2-R6.1", "v0.1.39.2-R6.1", 0}, {"0.1.39.2-R6.1", "v0.1.39.2-R6.2", -1},
         {"0.1.39.2-R6.1", "v0.1.39.2-R7", -1}, {"0.1.39.2-R6.0", "v0.1.39.2-R6", 0},
         {"0.1.39.2-R6", "v0.1.39.2-R7", -1}, {"0.1.39.2-R7", "v0.1.39.2-R7", 0},
+        {"0.1.39.2-R7", "v0.1.39.2-R7.1", -1}, {"0.1.39.2-R7.1", "v0.1.39.2-R7", 1},
+        {"0.1.39.2-R7.1", "v0.1.39.2-R7.1", 0}, {"0.1.39.2-R7.1", "v0.1.39.2-R8", -1},
         {"0.1.39.2-R6.1.1", "v0.1.39.2-R6.2", -2}, {"0.1.39.2-R6.", "v0.1.39.2-R6", -2},
     };
     for (size_t i = 0; i < sizeof(cmp) / sizeof(cmp[0]); i++) {
@@ -42,6 +44,8 @@ int main(void) {
         snprintf(what, sizeof(what), "compare %s %s = %d", cmp[i].a, cmp[i].b, cmp[i].want);
         check(UpdateVer_Compare(cmp[i].a, cmp[i].b) == cmp[i].want, what);
     }
+    { char shown[80];UpdateVer_Display("v0.1.39.2-R7.1",shown,sizeof(shown));
+      check(!strcmp(shown,"0.1.39.2 R7 Hotfix"),"R7 Hotfix release display"); }
     /* SHA-256 (FIPS 180-4 examples) */
     {
         char hex[65];

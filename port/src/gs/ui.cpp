@@ -201,8 +201,17 @@ static const char *f1_text(const char *english) {
         {"BT4 original, centered", "BT4 original, centrado", "BT4 original, centralizado"},
         {"Show HUD", "Mostrar HUD", "Mostrar HUD"},
         {"Hide HUD", "Ocultar HUD", "Ocultar HUD"},
-        {"Free spectator camera", "Cámara libre de espectador", "Câmera livre de espectador"},
-        {"Enable a local free camera in every battle mode. The left stick turns; hold L1 to pan; the right stick moves closer or farther. Fighter controls remain active.", "Activa una cámara libre local en todos los modos de combate. La palanca izquierda gira; mantén L1 para desplazar la cámara y usa la palanca derecha para acercar o alejar. Los controles del luchador siguen activos.", "Ativa uma câmera livre local em todos os modos de batalha. O analógico esquerdo gira; segure L1 para deslocar a câmera e use o analógico direito para aproximar ou afastar. Os comandos do lutador continuam ativos."},
+        {"Game camera", "Cámara del juego", "Câmera do jogo"},
+        {"Free camera", "Cámara libre", "Câmera livre"},
+        {"Follow fighter", "Seguir luchador", "Seguir lutador"},
+        {"Fight overview", "Vista general del combate", "Visão geral da batalha"},
+        {"Fighter", "Luchador", "Lutador"},
+        {"Camera speed", "Velocidad de cámara", "Velocidade da câmera"},
+        {"Camera zoom", "Zoom de cámara", "Zoom da câmera"},
+        {"Reset camera", "Restablecer cámara", "Redefinir câmera"},
+        {"Close F1 to control the camera. WASD: move; Q/E: descend/ascend; arrows: turn; Shift: accelerate; +/-: zoom.", "Cierra F1 para controlar la cámara. WASD: mover; Q/E: bajar/subir; flechas: girar; Shift: acelerar; +/-: zoom.", "Feche F1 para controlar a câmera. WASD: mover; Q/E: descer/subir; setas: girar; Shift: acelerar; +/-: zoom."},
+        {"Controller: left stick moves, right stick turns, L1/R1 descend/ascend, L2/R2 zoom, L3 accelerates.", "Mando: palanca izquierda para mover, derecha para girar, L1/R1 para bajar/subir, L2/R2 para zoom y L3 para acelerar.", "Controle: analógico esquerdo move, direito gira, L1/R1 descem/sobem, L2/R2 ajustam o zoom e L3 acelera."},
+        {"Camera controls replace your local fighter controls during battle. Start still opens the pause menu.", "Durante el combate, los controles de cámara sustituyen a los de tu luchador local. Start sigue abriendo el menú de pausa.", "Durante a batalha, os comandos da câmera substituem os do seu lutador local. Start continua abrindo o menu de pausa."},
         {"Spanish (text and voices)", "Español (textos y voces)", "Espanhol (texto e vozes)"},
         {"English (text and voices)", "Inglés (textos y voces)", "Inglês (texto e vozes)"},
         {"New update available. Restart required.", "Nueva actualización disponible, requiere reiniciar.", "Nova atualização disponível. É necessário reiniciar."},
@@ -2311,14 +2320,28 @@ static void online_tab(void) {
     }
 }
 
-// F1 > Spectator: local free camera for battle footage in every game mode.
+// The existing free, tracking and overview camera controls.
 static void spectator_tab(void) {
-    bool enabled = Port_Setting("spectator_camera", 0) != 0;
-    if (ImGui::Checkbox(f1_text("Free spectator camera"), &enabled)) {
-        Port_SettingSave("spectator_camera", enabled ? 1 : 0);
-        Port_SettingsWrite();
+    int mode=PortSpectator_Mode();
+    const char *modes[]={"Game camera","Free camera","Follow fighter","Fight overview"};
+    for(int n=0;n<4;n++)if(ImGui::RadioButton(f1_text(modes[n]),mode==n)){PortSpectator_SetMode(n);mode=n;}
+    ImGui::BeginDisabled(mode==0);
+    if(mode==2) {
+        int actor=PortSpectator_Target()+1,count=PortSpectator_Count();
+        if(actor>count){actor=count;PortSpectator_SetTarget(actor-1);}
+        if(ImGui::SliderInt(f1_text("Fighter"),&actor,1,count))PortSpectator_SetTarget(actor-1);
     }
-    ImGui::SetItemTooltip("%s", f1_text("Enable a local free camera in every battle mode. The left stick turns; hold L1 to pan; the right stick moves closer or farther. Fighter controls remain active."));
+    int speed=PortSpectator_Speed();
+    if(ImGui::SliderInt(f1_text("Camera speed"),&speed,25,400,"%d%%"))PortSpectator_SetSpeed(speed);
+    int zoom=PortSpectator_Zoom();
+    if(ImGui::SliderInt(f1_text("Camera zoom"),&zoom,100,300,"%d%%",ImGuiSliderFlags_AlwaysClamp))PortSpectator_SetZoom(zoom);
+    if(ImGui::Button(f1_text("Reset camera")))PortSpectator_ResetCamera();
+    ImGui::EndDisabled();ImGui::Separator();
+    bool hidden=PortHud_Hidden()!=0;
+    if(ImGui::Checkbox(f1_text("Hide HUD"),&hidden))PortHud_SetHidden(hidden);
+    ImGui::TextWrapped("%s",f1_text("Close F1 to control the camera. WASD: move; Q/E: descend/ascend; arrows: turn; Shift: accelerate; +/-: zoom."));
+    ImGui::TextWrapped("%s",f1_text("Controller: left stick moves, right stick turns, L1/R1 descend/ascend, L2/R2 zoom, L3 accelerates."));
+    ImGui::TextWrapped("%s",f1_text("Camera controls replace your local fighter controls during battle. Start still opens the pause menu."));
 }
 
 static void update_prompt_draw(void) {
