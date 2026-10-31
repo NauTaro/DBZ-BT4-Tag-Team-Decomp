@@ -1,7 +1,14 @@
 /* Local camera mathematics. No game globals, input APIs or rollback state. */
 #ifndef BT4_SPECTATOR_CAMERA_H
 #define BT4_SPECTATOR_CAMERA_H
+#ifdef BT4_SPECTATOR_GAME_MATH
+/* The ptr32 translator defines PS2 math aliases before parsing game files.
+ * glibc's SIMD declaration macros cannot be used under those aliases. */
+extern float sinf(float),cosf(float),sqrtf(float),expf(float),fabsf(float);
+extern float atan2f(float,float),fmaxf(float,float);
+#else
 #include <math.h>
+#endif
 
 typedef struct SpecInput { float right, forward, up, yaw, pitch, zoom, boost; } SpecInput;
 typedef struct SpecCamera {
@@ -9,7 +16,7 @@ typedef struct SpecCamera {
     int live, mode, target;
 } SpecCamera;
 
-static float spec_clamp(float n,float lo,float hi) { return !isfinite(n)?lo:n<lo?lo:n>hi?hi:n; }
+static float spec_clamp(float n,float lo,float hi) { return !__builtin_isfinite(n)?lo:n<lo?lo:n>hi?hi:n; }
 static float spec_angle(float n) { return atan2f(sinf(n),cosf(n)); }
 static void spec_basis(float yaw,float pitch,float right[3],float up[3],float forward[3]) {
     float sy=sinf(yaw),cy=cosf(yaw),sp=sinf(pitch),cp=cosf(pitch);

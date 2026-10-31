@@ -577,7 +577,7 @@ static s32 BtlCam_PortFreeCamera(s32 selected) {
                           ((f32 *)&nativeRotation)[i]!=((f32 *)&native->rot)[i]) {
             fprintf(stderr,"free camera audit: FAIL native-pose changed\\n");exit(6);
         }
-        if(!isfinite(eye.x) || !isfinite(eye.y) || !isfinite(eye.z)) {
+        if(!__builtin_isfinite(eye.x) || !__builtin_isfinite(eye.y) || !__builtin_isfinite(eye.z)) {
             fprintf(stderr,"free camera audit: FAIL non-finite eye\\n");exit(6);
         }
         if(++ticks==30)fprintf(stderr,"free camera audit: PASS mode=%d tag=%d moved=1 native-pose-unchanged=1 camera-mode=%d\n",Battle_GetMode(),TagBattle_Active(),mode);

@@ -1,7 +1,9 @@
 /* Read-only camera rays. Native StgCol queries overwrite shared collision
  * scratch globals, so local spectator cameras must not use those queries. */
 #include "battle/col_a.h"
+#define BT4_SPECTATOR_GAME_MATH
 #include "../../port/src/gs/spectator_camera.h"
+#undef BT4_SPECTATOR_GAME_MATH
 typedef struct SpecStageRec { s32 broken,obj;ColMesh *mesh;s32 unused; } SpecStageRec;
 typedef struct SpecStageZone {
     s32 mark;ColMesh *mesh;s32 nearCount;void *near;s32 unused,recCount;SpecStageRec *recs;s32 unused1;
