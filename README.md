@@ -90,9 +90,9 @@ The Free signaling project has provider quotas, including concurrent Realtime co
 
 The active route supplies measured ping. A single human fighting CPU uses local input scheduling. If the native coordinator leaves, the round ends; live coordinator migration is not implemented. Geographic routes and network conditions still affect latency.
 
-Voice and gameplay have separate queues. Current native package builds include the RTC SDK; TLS Opus provides a voice fallback. Idle duel voice connections use server-side WebSocket hibernation.
+Voice and gameplay have separate queues. Native packages include the RTC SDK. SDP and ICE negotiation use private Supabase inboxes; Opus audio travels over peer media tracks. The default provider does not relay voice through WebSockets.
 
-See the [compatibility and validation profile](BT4_PROFILE.md), [service architecture](cloudflare/README.md) and [native SDK build notes](port/release/RTC_SDK.md). Local tests and package builds do not establish performance on every remote PC, router or graphics driver.
+See the [compatibility and validation profile](BT4_PROFILE.md), [signaling architecture](supabase/README.md) and [native SDK build notes](port/release/RTC_SDK.md). Local tests and package builds do not establish performance on every remote PC, router or graphics driver.
 
 </details>
 
