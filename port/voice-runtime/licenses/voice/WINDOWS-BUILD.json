@@ -1,7 +1,7 @@
 {
   "library": "libdatachannel",
   "commit": "6b1e2e620f1e37f0eafeee702eaea0043cb305fd",
-  "source_lock_sha256": "03886246180c0517c4b593a648b80a2642ef1886531bbe2909e684f3de18c6c7",
+  "source_lock_sha256": "abccfe1db3da35279a6146274f2dfd704855df8473777652b469ebcc7239be8e",
   "openssl": {
     "package": "mingw-w64-ucrt-x86_64-openssl-3.6.5-1-any.pkg.tar.zst",
     "sha256": "773e021ebad83f14b5c103db467411e8ff064663e1c7e7f730e2be72f4117064"
