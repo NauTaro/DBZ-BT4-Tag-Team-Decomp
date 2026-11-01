@@ -73,7 +73,7 @@ The launcher checks this repository for the latest signed package for its platfo
 
 Installations that predate the signed updater need one initial package installation. Subsequent published signed updates can install through the launcher.
 
-Revision tags follow the upstream engine version, for example `v0.1.39.2-R8`. R7 and later recognize patch-revision tags as well. All Tag Team participants must use the same room protocol; update together when moving to R8.
+Revision tags follow the upstream engine version, for example `v0.1.39.3-R1`. A new upstream adaptation starts at R1; subsequent BT4 changes increment the revision. Patch revisions are also supported. All Tag Team participants must use the same room protocol and a compatible published build.
 
 ## Source and online compatibility
 

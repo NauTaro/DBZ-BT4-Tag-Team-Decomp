@@ -10,11 +10,11 @@ are preserved by the installer.
 ## Publishing a release
 
 BT4 changes increment the revision, not the upstream engine version. Update `port/include/bt4_version.h`,
-the build identities, `port/release/BT4_VERSION.txt`, package text and `CHANGELOG.md` together. After the R2 migration,
-push canonical tags such as `v0.1.39.2-R8`, with the matching display title `0.1.39.2 R8`. Patch revisions such as
-`v0.1.39.2-R8.1` are also ordered by the updater. A new upstream adaptation starts its own revision
-series, for example `v0.1.39.2-R1`. The numeric tag `v0.1.39.3` is reserved for the approved R2 migration bridge;
-it is not an upstream version. The workflow checks the tag against the declared revision before publishing.
+the build identities, `port/release/BT4_VERSION.txt`, package text and `CHANGELOG.md` together.
+Push canonical tags such as `v0.1.39.3-R1`, with the matching display title `0.1.39.3 R1`. Patch revisions such as
+`v0.1.39.3-R1.1` are also ordered by the updater. Each upstream adaptation starts its own revision series at R1.
+The historical numeric tag `v0.1.39.3` belongs to the older R2 migration bridge; current releases use the
+canonical upstream-and-revision format. The workflow checks the tag against the declared revision before packaging.
 
 The release workflow builds Windows x64 and calls `native-platforms.yml` for Linux x86-64 and macOS Apple Silicon.
 After all three builds pass, it signs and verifies each ZIP against `port/src/update_key.h`, uploads all six files to a
