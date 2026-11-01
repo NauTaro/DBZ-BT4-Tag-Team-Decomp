@@ -1000,7 +1000,7 @@ std::string download_optional(const std::string &root,bool portuguese){
         try{
             for(int part=1;part<=2;++part){
                 check_cancel();const std::string partName=std::string("BT4-HD-v1.07.zip.00")+std::to_string(part),piece=folder+partName;
-                cli_run(root,{"release","download","v0.1.39.2-R9","--repo",kLanguageRepository,"--pattern",partName,"--dir",folder,"--clobber"},piece,part==1?1850000000ULL:1840378076ULL);
+                cli_run(root,{"release","download",kTextureRelease,"--repo",kLanguageRepository,"--pattern",partName,"--dir",folder,"--clobber"},piece,part==1?1850000000ULL:1840378076ULL);
                 SDL_IOStream *input=SDL_IOFromFile(piece.c_str(),"rb");if(!input)throw Stop{"LANGUAGE_DOWNLOAD_INCOMPLETE"};
                 std::vector<Uint8> buffer(1024*1024);Sint64 remaining=SDL_GetIOSize(input);
                 try{while(remaining>0){check_cancel();size_t n=(size_t)std::min<Sint64>(remaining,buffer.size());

@@ -64,9 +64,12 @@ def prepare(archive=None):
 
     source_archive = ROOT / "port/build/libdatachannel-build-source.zip"
     source_lock = ROOT / "port/release/rtc-sources.lock.json"
-    build_receipt = ROOT / "port/build/libdatachannel-BUILD.json"
+    build_receipt = license_dir / "WINDOWS-BUILD.json"
     if not source_archive.is_file() or not source_lock.is_file() or not build_receipt.is_file():
         raise SystemExit("Pinned Windows RTC source kit is incomplete")
+    receipt = json.loads(build_receipt.read_text(encoding="utf-8"))
+    if receipt["library_sha256"] != manifest["libdatachannel.dll"] or receipt["source_lock_sha256"] != sha256(source_lock.read_bytes()):
+        raise SystemExit("Windows RTC build receipt does not match the shipped library and source lock")
     put("licenses/source/VOICE-SDK-source.zip", source_archive.read_bytes())
     put("licenses/voice/SOURCES.json", source_lock.read_bytes())
     put("licenses/voice/BUILD.json", build_receipt.read_bytes())

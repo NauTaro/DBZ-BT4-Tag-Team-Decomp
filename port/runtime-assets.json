@@ -12,7 +12,7 @@
   {
     "source": "port/voice-runtime/libdatachannel.dll",
     "target": "libdatachannel.dll",
-    "sha256": "5c281bf1403f075b4771653385da78e5cc8b508aee5a0b6229a91a2c61681835"
+    "sha256": "4a90d22d9d232da2906857f3b58044165215a1bfb481f9f4cf4be4f33a5c9909"
   },
   {
     "source": "port/voice-runtime/libopus-0.dll",
@@ -103,5 +103,10 @@
     "source": "port/release/icon_game.ico",
     "target": "fonts/icon_game.ico",
     "sha256": "78caca6f0c3db69cd89a62e806400407177786b70a6fc62bdf8b5bf9df8a71e9"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/WINDOWS-BUILD.json",
+    "target": "licenses/voice/WINDOWS-BUILD.json",
+    "sha256": "79c936230a19335c15236aa9135e43554a426455b6f6b533a7b145d5ff44a641"
   }
 ]

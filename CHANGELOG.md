@@ -3,6 +3,8 @@
 - Install Brazilian Portuguese through setup and select it from the native game language menu, using the English data profile.
 - Download the optional HD texture pack (3.69 GB) with progress and archive verification.
 - Isolate Portuguese text and textures from the Spanish and English installations; no command scripts or junctions are needed.
+- Keep language packs and HD textures in their dedicated releases, separate from signed game updates.
+- Rebuild the Windows RTC library from locked upstream sources and verify its build receipt during packaging.
 
 # 0.1.39.2 R8 Hotfix
 

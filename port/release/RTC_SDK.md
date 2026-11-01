@@ -33,3 +33,23 @@ describes the local test, not Internet latency or gameplay performance.
 Build provenance includes the exact SDK sources and options. Compiler, OpenSSL
 and operating-system builds still differ between platforms; this is not a claim
 of identical binary output across systems.
+
+## Windows runtime rebuild
+
+`port/voice-runtime/licenses/voice/WINDOWS-BUILD.json` records the Windows
+compiler, CMake options, OpenSSL package digest and compiled DLL digest.
+`prepare_windows_runtime.py` checks that receipt against the shipped library and
+the locked source archives. The Windows package contains this receipt as
+`licenses/voice/BUILD.json`; it does not use the Linux SDK build receipt.
+
+To rebuild, extract the verified archives from `rtc-sources.lock.json` into one
+source tree at their recorded destinations. Install CMake 4.1.3, Ninja 1.13.0 and
+the recorded MSYS2 UCRT64 compiler. Extract the pinned OpenSSL package, verify its
+SHA-256, and substitute the compiler, Ninja and OpenSSL paths in the receipt's
+`cmake_args`. Run its configure and build commands. The build enables SCTP and
+media and statically links OpenSSL, libjuice, usrsctp, libSRTP, plog and the GCC
+C++ runtime. `libwinpthread-1.dll` remains a shared dependency.
+
+Run `port/tests/native_rtc/run.py --library <BUILD>/libdatachannel.dll` with `CC`
+set to the UCRT64 compiler and `BT3_SDL3` set to the SDL3 SDK. The R9 rebuild
+preserves the previous RTC C exports and DLL import dependencies.
