@@ -3,6 +3,7 @@
   "root_directories": [
     "fonts",
     "gamedata",
+    "PTBR",
     "licenses",
     "net_session",
     "saves",
@@ -39,6 +40,7 @@
     "BT4decomp-setup"
   ],
   "preserve_user_content": [
+    "PTBR",
     "gamedata",
     "saves",
     "net_session",

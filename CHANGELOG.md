@@ -1,3 +1,9 @@
+# 0.1.39.2 R9
+
+- Install Brazilian Portuguese through setup and select it from the native game language menu, using the English data profile.
+- Download the optional HD texture pack (3.69 GB) with progress and archive verification.
+- Isolate Portuguese text and textures from the Spanish and English installations; no command scripts or junctions are needed.
+
 # 0.1.39.2 R8 Hotfix
 
 - Restore the One on One / native BT3 Team Battle selector in Quick Match and route both modes through the standard online lobby queues.

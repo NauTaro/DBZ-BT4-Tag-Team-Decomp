@@ -1085,6 +1085,13 @@ int MenuText_FontIdToSave(void) {
 static void labels_take(void) {
     int id = sWantedId;
     int battleId = sWantedBattleId;
+    if(getenv("BT4_PTBR_ROOT")){
+        int i;
+        for(i=0;i<sFontCount;i++){
+            if(!id&&sFonts[i].uses[FONT_MENU])id=sFonts[i].id;
+            if(!battleId&&sFonts[i].uses[FONT_BATTLE])battleId=sFonts[i].id;
+        }
+    }
     sMake = 0;
     sWantedId = 0;
     sWantedBattleId = 0;
@@ -1222,7 +1229,9 @@ void MenuText_BootLanguageChosen(void) {
     __atomic_store_n(&sBootAwaitLanguage, 0, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&sLock);
     MenuText_SetFontId(Port_Setting("menu_font_id", 0));
+    if(getenv("BT4_PTBR_ROOT")&&Port_Setting("menu_font_id",0)==0)MenuText_SetFontId(MenuText_FirstFontId(MENU_TEXT_MENU));
     MenuText_SetBattleFontId(Port_Setting("battle_font_id", 0));
+    if(getenv("BT4_PTBR_ROOT")&&Port_Setting("battle_font_id",0)==0)MenuText_SetBattleFontId(MenuText_FirstFontId(MENU_TEXT_BATTLE));
 }
 
 /* Decode strictly, skipping characters absent from the selected font. Malformed UTF-8 keeps the original row. */

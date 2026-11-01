@@ -14,15 +14,15 @@
 extern void Port_SettingText(const char *,const char *,char *,int);
 extern void Port_SettingTextSave(const char *,const char *);
 extern void Port_SettingsWrite(void);
-static int sEnglish,sExternal,sSkip,sReady[2];
+static int sEnglish,sLanguage,sExternal,sSkip,sReady[3];
 static int sMenuActive,sMenuChoice,sMenuAlpha;
 void Port_GameProfileMenuSet(int active,int choice,int alpha){
-    sMenuActive=active!=0;sMenuChoice=choice!=0;sMenuAlpha=alpha<0?0:alpha>128?128:alpha;
+    sMenuActive=active!=0;sMenuChoice=choice;sMenuAlpha=alpha<0?0:alpha>128?128:alpha;
 }
 int Port_GameProfileMenuActive(void){return sMenuActive;}
 int Port_GameProfileMenuChoice(void){return sMenuChoice;}
 int Port_GameProfileMenuAlpha(void){return sMenuAlpha;}
-static char sRoots[2][1600],sError[192];
+static char sRoots[2][1600],sError[192],sPortuguese[1800];
 /* Conversion is a separate low-priority hidden process. Starting a room never
  * scans or converts the music library; missing cache entries use original ADX. */
 static void music_prepare(void){
@@ -80,21 +80,38 @@ void Port_GameProfileInit(void){
     }
     {char file[1800];FILE *f;int mask=3;
      SDL_snprintf(file,sizeof(file),"%stbo/languages.ini",base?base:"");f=fopen(file,"rb");
-     if(f){if(fscanf(f,"%d",&mask)!=1||mask<1||mask>3)mask=3;fclose(f);}
+     if(f){if(fscanf(f,"%d",&mask)!=1||mask<1||mask>7)mask=3;fclose(f);}
+     SDL_snprintf(sPortuguese,sizeof(sPortuguese),"%sPTBR",base?base:"");
+     sReady[2]=(mask&4)&&sReady[1]&&readable(sPortuguese,"game-text/translations/labels/pt-BR.json");
      for(i=0;i<2;++i)if(!(mask&(1<<i)))sReady[i]=0;}
     Port_SettingText("game_language",installed?"en":"es",saved,sizeof(saved));
-    sEnglish=sExternal?installed:!strcmp(saved,"en");
-    if(!sReady[sEnglish])sEnglish=sReady[installed]?installed:!installed;
+    sLanguage=!strcmp(saved,"pt-BR")?2:!strcmp(saved,"en");
+    {char pending[1800],value[16]={0};FILE *f;
+     SDL_snprintf(pending,sizeof(pending),"%stbo/setup/selected-game-language",base?base:"");
+     f=fopen(pending,"rb");if(f){fgets(value,sizeof(value),f);fclose(f);
+       if(!strcmp(value,"pt-BR")&&sReady[2]){sLanguage=2;Port_SettingTextSave("game_language","pt-BR");Port_SettingsWrite();remove(pending);}}}
+    if(sExternal)sLanguage=installed;
+    if(!sReady[sLanguage])sLanguage=sReady[installed]?installed:!installed;
+    sEnglish=sLanguage!=0;
+    if(sLanguage!=2&&!sReady[sEnglish])sEnglish=sReady[installed]?installed:!installed;
     profile_env_set("BT3_DATA",sRoots[sEnglish]);
+    if(sLanguage==2){
+        char path[2048];
+        profile_env_set("BT4_PTBR_ROOT",sPortuguese);
+        SDL_snprintf(path,sizeof(path),"%s/game-text",sPortuguese);profile_env_set("BT3_MENU_FONT",path);
+        profile_env_set("BT3_MENU_LANG","pt-BR");
+    }else profile_env_set("BT4_PTBR_ROOT",NULL);
     if(!getenv("BT3_MENU_LANG"))profile_env_set("BT3_MENU_LANG","en");
     fprintf(stderr,"bt4: game profile=%s data=%s\n",sEnglish?"English":"Spanish",sRoots[sEnglish]);
     music_prepare();
 }
 int Port_GameProfileEnglish(void){return sEnglish;}
-int Port_GameProfileAvailable(int english){return sReady[english!=0];}
+int Port_GameProfileLanguage(void){return sLanguage;}
+int Port_GameProfilePortuguese(void){return sLanguage==2;}
+int Port_GameProfileAvailable(int language){return language>=0&&language<3?sReady[language]:0;}
 int Port_GameProfilePrompt(void){
     extern int Port_NetSession(void);
-    if(!sReady[0]||!sReady[1])return 0;
+    if((sReady[0]+sReady[1]+sReady[2])<2)return 0;
     /* A session restores the boot snapshot in-process. Its neutral network
      * input must never reopen the language dialog and wait for a choice. */
     if(Port_NetSession())return 0;
@@ -104,15 +121,15 @@ int Port_GameProfilePrompt(void){
 }
 const char *Port_GameProfileError(void){return sError;}
 int Port_GameProfileChoose(int english){
-    char previous[16];english=english!=0;sError[0]=0;
+    char previous[16];if(english<0||english>2)return 0;sError[0]=0;
     if(!sReady[english]){
         SDL_snprintf(sError,sizeof(sError),"Install the %s ISO once using the launcher.",english?"English":"Spanish");return 0;
     }
     Port_SettingText("game_language",sEnglish?"en":"es",previous,sizeof(previous));
-    Port_SettingTextSave("game_language",english?"en":"es");
+    Port_SettingTextSave("game_language",english==2?"pt-BR":english?"en":"es");
     /* 'en' means the disc's native text; do not overlay a translation pack. */
     Port_SettingTextSave("menu_lang","en");Port_SettingsWrite();
-    if(english==sEnglish)return 1;
+    if(english==sLanguage)return 1;
     if(getenv("BT4_PROFILE_NO_SPAWN_TEST"))return 2;
 #ifdef _WIN32
     WCHAR executable[32768];STARTUPINFOW startup;PROCESS_INFORMATION process;
@@ -123,7 +140,8 @@ int Port_GameProfileChoose(int english){
         child=(WCHAR *)malloc(count*sizeof(WCHAR));write=child;
         if(child){
             for(item=original;*item;item+=wcslen(item)+1){
-                if(!_wcsnicmp(item,L"BT3_DATA=",9)||!_wcsnicmp(item,L"BT4_PROFILE_SKIP_ONCE=",22))continue;
+                if(!_wcsnicmp(item,L"BT3_DATA=",9)||!_wcsnicmp(item,L"BT4_PROFILE_SKIP_ONCE=",22)||
+                   !_wcsnicmp(item,L"BT4_PTBR_ROOT=",14)||!_wcsnicmp(item,L"BT3_MENU_FONT=",14)||!_wcsnicmp(item,L"BT3_MENU_LANG=",14))continue;
                 size_t n=wcslen(item)+1;memcpy(write,item,n*sizeof(WCHAR));write+=n;
             }
             wcscpy(write,L"BT4_PROFILE_SKIP_ONCE=1");write+=wcslen(write)+1;*write=0;
@@ -137,7 +155,7 @@ int Port_GameProfileChoose(int english){
         CloseHandle(process.hThread);CloseHandle(process.hProcess);exit(0);
     }
 #else
-    {const char *base=SDL_GetBasePath();char exe[1800];SDL_setenv_unsafe("BT4_PROFILE_SKIP_ONCE","1",1);SDL_unsetenv_unsafe("BT3_DATA");SDL_snprintf(exe,sizeof(exe),"%sBT4decomp",base?base:"");execl(exe,exe,(char *)NULL);}
+    {const char *base=SDL_GetBasePath();char exe[1800];SDL_setenv_unsafe("BT4_PROFILE_SKIP_ONCE","1",1);SDL_unsetenv_unsafe("BT3_DATA");profile_env_set("BT4_PTBR_ROOT",NULL);profile_env_set("BT3_MENU_FONT",NULL);profile_env_set("BT3_MENU_LANG",NULL);SDL_snprintf(exe,sizeof(exe),"%sBT4decomp",base?base:"");execl(exe,exe,(char *)NULL);}
 #endif
     profile_env_set("BT3_DATA",sRoots[sEnglish]);profile_env_set("BT4_PROFILE_SKIP_ONCE",NULL);
     Port_SettingTextSave("game_language",previous);Port_SettingsWrite();

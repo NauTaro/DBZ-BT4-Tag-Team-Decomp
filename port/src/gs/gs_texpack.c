@@ -157,6 +157,13 @@ static void add(const char *dir, const char *name, int archive, mz_uint member) 
     }
     part[parts++][len] = '\0';
     e.tex = strtoull(part[0], NULL, 16);
+    if(getenv("BT4_PTBR_ROOT")){
+        static uint64_t blocked[1024];static unsigned count;static int loaded;
+        if(!loaded){char path[2048],line[80];FILE *f;loaded=1;
+            SDL_snprintf(path,sizeof(path),"%s/fontes-sem-conflito.txt",getenv("BT4_PTBR_ROOT"));f=fopen(path,"rb");
+            if(f){while(count<1024&&fgets(line,sizeof(line),f))blocked[count++]=strtoull(line,NULL,16);fclose(f);}}
+        for(unsigned k=0;k<count;k++)if(blocked[k]==e.tex)return;
+    }
     e.pal = parts == 3;
     e.clut = e.pal ? strtoull(part[1], NULL, 16) : 0;
     e.bits = (uint32_t)strtoul(part[parts - 1], NULL, 16);
@@ -209,6 +216,7 @@ static SDL_EnumerationResult SDLCALL walk(void *userdata, const char *dir, const
     SDL_PathInfo info;
 
     (void)userdata;
+    if(SDL_strcasecmp(name,"PTBR")==0&&!getenv("BT4_PTBR_ROOT")){free(path);return SDL_ENUM_CONTINUE;}
     snprintf(path, n, "%s%s", dir, name);
     if (SDL_GetPathInfo(path, &info) && info.type == SDL_PATHTYPE_DIRECTORY) {
         strcat(path, "/");
@@ -229,6 +237,10 @@ void TexPack_Init(void) {
         const char *base=SDL_GetBasePath();SDL_PathInfo at;
         SDL_snprintf(nextToProgram,sizeof(nextToProgram),"%stextures",base?base:"");
         root=SDL_GetPathInfo(nextToProgram,&at)&&at.type==SDL_PATHTYPE_DIRECTORY?nextToProgram:"textures";
+        if(!SDL_GetPathInfo(root,&at)&&getenv("BT4_PTBR_ROOT")){
+            SDL_snprintf(nextToProgram,sizeof(nextToProgram),"%s/textures",getenv("BT4_PTBR_ROOT"));
+            root=nextToProgram;
+        }
     }
     size_t n = strlen(root);
     char *dir = malloc(n + 2);
@@ -242,6 +254,10 @@ void TexPack_Init(void) {
     strcpy(dir, root);
     if (dir[n - 1] != '/' && dir[n - 1] != '\\') {
         strcat(dir, "/");
+    }
+    if(getenv("BT4_PTBR_ROOT")){
+        char portuguese[2048];SDL_snprintf(portuguese,sizeof(portuguese),"%s/textures/",getenv("BT4_PTBR_ROOT"));
+        SDL_EnumerateDirectory(portuguese,walk,NULL);
     }
     SDL_EnumerateDirectory(dir, walk, NULL);
     free(dir);

@@ -22,7 +22,12 @@
 #include <vector>
 #include <algorithm>
 #include <functional>
+#include <stdint.h>
 #include <zlib.h>
+#define MINIZ_NO_ARCHIVE_WRITING_APIS
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+#define MINIZ_NO_TIME
+#include "../third_party/miniz/miniz.h"
 #include "../src/plat_verify_tab.h"
 #include "../src/plat_verify_tab_eng.h"
 #include "../include/bt4_build_identity.h"
@@ -217,6 +222,322 @@ void check_cancel() {
     if (sCancel) {
         throw Stop{"Cancelled. Install continues from where it stopped."};
     }
+}
+
+void step(const char *title);
+bool installed_language(const std::string &root,bool english);
+std::string download_optional(const std::string &root,bool portuguese);
+
+void ensure_directories(const std::string &path) {
+    std::string normalized=path;
+    for(char &c:normalized)if(c=='\\')c='/';
+    std::string current;
+    size_t pos=0;
+    if(!normalized.empty()&&normalized[0]=='/') {current="/";pos=1;}
+    else if(normalized.size()>=3&&normalized[1]==':'&&normalized[2]=='/') {current=normalized.substr(0,2);pos=3;}
+    while(pos<=normalized.size()) {
+        size_t end=normalized.find('/',pos);
+        std::string part=normalized.substr(pos,end==std::string::npos?std::string::npos:end-pos);
+        if(!part.empty()) {
+            if(!current.empty()&&current.back()!='/')current+='/';
+            current+=part;
+            SDL_PathInfo info;
+            if(!SDL_GetPathInfo(current.c_str(),&info)) {
+                if(!SDL_CreateDirectory(current.c_str())&&!SDL_GetPathInfo(current.c_str(),&info))
+                    throw Stop{"Could not create directory " + current + ". Is the disk full or the folder read-only?"};
+            } else if(info.type!=SDL_PATHTYPE_DIRECTORY) {
+                throw Stop{"A file blocks the required directory " + current + "."};
+            }
+        }
+        if(end==std::string::npos)break;
+        pos=end+1;
+    }
+}
+
+std::string normalized_path(std::string path) {
+    for(char &c:path) {
+        if(c=='\\')c='/';
+#ifdef _WIN32
+        c=(char)tolower((unsigned char)c);
+#endif
+    }
+    while(path.size()>1&&path.back()=='/')path.pop_back();
+    return path;
+}
+
+bool valid_zip_relative_path(std::string &path, bool directory) {
+    if(path.empty()||path.size()>500)return false;
+    for(char &c:path) {
+        if(c=='\\')c='/';
+        if((unsigned char)c<32||c==':')return false;
+    }
+    if(path[0]=='/'||path.rfind("//",0)==0)return false;
+    while(directory&&!path.empty()&&path.back()=='/')path.pop_back();
+    if(path.empty())return directory;
+    size_t start=0;
+    while(start<=path.size()) {
+        size_t end=path.find('/',start);
+        std::string part=path.substr(start,end==std::string::npos?std::string::npos:end-start);
+        if(part.empty()||part=="."||part=="..")return false;
+        if(end==std::string::npos)break;
+        start=end+1;
+    }
+    return true;
+}
+
+std::string unique_backup_path(const std::string &root,const std::string &relative,const std::string &folder) {
+    std::string base=root+"tbo/setup/"+folder+"/"+relative;
+    std::string parent=base.substr(0,base.find_last_of('/'));
+    ensure_directories(parent);
+    SDL_PathInfo info;
+    if(!SDL_GetPathInfo(base.c_str(),&info))return base;
+    for(int i=1;i<1000;i++) {
+        std::string candidate=base+".backup-"+std::to_string(i);
+        if(!SDL_GetPathInfo(candidate.c_str(),&info))return candidate;
+    }
+    throw Stop{"Could not choose a safe backup path for " + relative + "."};
+}
+
+struct ZipReader {
+    mz_zip_archive zip{};
+    bool open=false;
+    explicit ZipReader(const std::string &path) {
+        mz_zip_zero_struct(&zip);
+        open=mz_zip_reader_init_file(&zip,path.c_str(),0)!=0;
+    }
+    ~ZipReader(){if(open)mz_zip_reader_end(&zip);}
+    ZipReader(const ZipReader&)=delete;
+    ZipReader& operator=(const ZipReader&)=delete;
+};
+
+struct ZipEntry { mz_zip_archive_file_stat stat{}; std::string path; };
+
+void validate_texture_archive(const std::string &path) {
+    SDL_PathInfo fi;
+    if(!SDL_GetPathInfo(path.c_str(),&fi)||fi.type!=SDL_PATHTYPE_FILE||fi.size!=3690378076ULL)
+        throw Stop{"TEXTURE_PACK_INVALID"};
+    ZipReader reader(path);
+    if(!reader.open)throw Stop{"TEXTURE_PACK_INVALID"};
+    mz_uint count=mz_zip_reader_get_num_files(&reader.zip);
+    if(count!=24639)throw Stop{"TEXTURE_PACK_INVALID"};
+    mz_uint png=0,ini=0;Uint64 total=0;
+    for(mz_uint i=0;i<count;i++) {
+        mz_zip_archive_file_stat st{};
+        if(mz_zip_reader_get_filename(&reader.zip,i,NULL,0)>sizeof(st.m_filename)-1||
+           !mz_zip_reader_file_stat(&reader.zip,i,&st)||!st.m_is_supported||st.m_is_encrypted||st.m_is_directory)
+            throw Stop{"TEXTURE_PACK_INVALID"};
+        std::string name=st.m_filename;
+        if(name.rfind("SLUS-21978/",0)!=0||!valid_zip_relative_path(name,false))
+            throw Stop{"TEXTURE_PACK_INVALID"};
+        size_t dot=name.find_last_of('.');
+        std::string ext=dot==std::string::npos?"":name.substr(dot);
+        for(char &c:ext)c=(char)tolower((unsigned char)c);
+        if(ext==".png")png++;
+        else if(ext==".ini")ini++;
+        else throw Stop{"TEXTURE_PACK_INVALID"};
+        if(st.m_uncomp_size>50000000ULL||total>5000000000ULL-st.m_uncomp_size)
+            throw Stop{"TEXTURE_PACK_INVALID"};
+        total+=st.m_uncomp_size;
+    }
+    if(png!=24638||ini!=1||total!=3998269861ULL)throw Stop{"TEXTURE_PACK_INVALID"};
+}
+
+void install_texture_pack(const std::string &root,std::string source) {
+    step("Texture pack");
+    if(source=="@download")source=download_optional(root,false);
+    say("@activity texture-copy");
+    validate_texture_archive(source);
+    const std::string relative="dbz bt4 HD v1.07.zip";
+    const std::string destination=root+"textures/"+relative;
+    SDL_PathInfo sourceInfo,destInfo;
+    if(!SDL_GetPathInfo(source.c_str(),&sourceInfo)||sourceInfo.type!=SDL_PATHTYPE_FILE)
+        throw Stop{"TEXTURE_PACK_INVALID"};
+    if(normalized_path(source)==normalized_path(destination)) {
+        say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
+        say("@ok HD texture pack is already in textures");
+        return;
+    }
+    bool destinationExists=SDL_GetPathInfo(destination.c_str(),&destInfo);
+    if(destinationExists&&destInfo.type!=SDL_PATHTYPE_FILE)
+        throw Stop{"A non-file already exists at the HD texture pack destination."};
+    if(destinationExists&&destInfo.size==sourceInfo.size) {
+        try {
+            validate_texture_archive(destination);
+            say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
+            say("@skip DBZ BT4 HD v1.07 is already installed");
+            return;
+        } catch(const Stop &) {
+            // The destination has the expected size but is damaged; replace it from the validated source.
+        }
+    }
+    ensure_directories(root+"textures");
+    const std::string temp=destination+".part";
+    SDL_IOStream *in=SDL_IOFromFile(source.c_str(),"rb");
+    SDL_IOStream *out=SDL_IOFromFile(temp.c_str(),"wb");
+    if(!in||!out) {
+        if(in)SDL_CloseIO(in);if(out)SDL_CloseIO(out);SDL_RemovePath(temp.c_str());
+        throw Stop{"Could not open the texture pack or create its destination. Check disk space and permissions."};
+    }
+    std::vector<Uint8> buffer(1024*1024);
+    Uint64 copied=0,lastPct=0;bool ioOk=true;
+    try {
+        while(copied<sourceInfo.size) {
+            size_t n=(size_t)std::min<Uint64>(buffer.size(),sourceInfo.size-copied);
+            size_t got=SDL_ReadIO(in,buffer.data(),n);
+            if(got!=n||SDL_WriteIO(out,buffer.data(),n)!=n){ioOk=false;break;}
+            copied+=n;check_cancel();
+            Uint64 pct=copied*100/sourceInfo.size;
+            if(pct!=lastPct){lastPct=pct;say("@progress "+std::to_string(copied)+" "+std::to_string(sourceInfo.size)+" 1 1");}
+        }
+    } catch(...) {SDL_CloseIO(in);SDL_CloseIO(out);SDL_RemovePath(temp.c_str());throw;}
+    bool closeIn=SDL_CloseIO(in),closeOut=SDL_CloseIO(out);
+    if(!ioOk||!closeIn||!closeOut){SDL_RemovePath(temp.c_str());throw Stop{"Could not copy the HD texture pack. Check available disk space."};}
+    std::string backup;
+    if(destinationExists) {
+        backup=unique_backup_path(root,relative,"texture-pack-v1.07-originals");
+        if(!SDL_RenamePath(destination.c_str(),backup.c_str())){SDL_RemovePath(temp.c_str());throw Stop{"Could not preserve the existing texture pack before replacing it."};}
+    }
+    if(!SDL_RenamePath(temp.c_str(),destination.c_str())) {
+        if(!backup.empty())SDL_RenamePath(backup.c_str(),destination.c_str());
+        SDL_RemovePath(temp.c_str());
+        throw Stop{"Could not finish installing the texture pack. Check available disk space."};
+    }
+    say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
+    say("@ok DBZ BT4 HD v1.07 copied to textures");
+}
+
+bool bytes_match_file(const std::string &path,const void *data,size_t size) {
+    SDL_PathInfo info;
+    if(!SDL_GetPathInfo(path.c_str(),&info)||info.type!=SDL_PATHTYPE_FILE||info.size!=size)return false;
+    size_t oldSize=0;void *old=SDL_LoadFile(path.c_str(),&oldSize);
+    if(!old)return false;
+    bool same=oldSize==size&&(!size||memcmp(old,data,size)==0);
+    SDL_free(old);return same;
+}
+
+bool allowed_ptbr_path(const std::string &path,bool directory) {
+    std::string p=path;for(char &c:p)c=(char)tolower((unsigned char)c);
+    if(p=="ptbr"||p.rfind("ptbr/",0)==0||p=="fonts"||p.rfind("fonts/",0)==0||
+       p=="gamedata"||p=="gamedata/game-text"||p.rfind("gamedata/game-text/",0)==0||
+       p=="textures"||p=="textures/ptbr"||p.rfind("textures/ptbr/",0)==0)return true;
+    if(directory)return false;
+    return p=="jogar em portugues.cmd"||p=="escolher idioma.cmd"||p=="leia-me - portugues.txt";
+}
+
+void install_ptbr_pack(const std::string &root,std::string source) {
+    step("Portuguese (Brazil) language pack");
+    if(source=="@download")source=download_optional(root,true);
+    say("@activity ptbr-unpack");
+    if(!installed_language(root,true))throw Stop{"PTBR_REQUIRES_ENGLISH"};
+    SDL_PathInfo fi;
+    if(!SDL_GetPathInfo(source.c_str(),&fi)||fi.type!=SDL_PATHTYPE_FILE||fi.size>120000000ULL)
+        throw Stop{"PTBR_ARCHIVE_INVALID"};
+    const std::string marker=root+"tbo/setup/PTBR_v1.2.native-installed";
+    ZipReader reader(source);
+    if(!reader.open)throw Stop{"PTBR_ARCHIVE_INVALID"};
+    mz_uint count=mz_zip_reader_get_num_files(&reader.zip);
+    if(count<500||count>1000)throw Stop{"PTBR_ARCHIVE_INVALID"};
+    std::vector<ZipEntry> entries;entries.reserve(count);
+    Uint64 total=0;unsigned fileCount=0,ptbrData=0,fonts=0,languageText=0,ptbrTextures=0;
+    bool hasLauncher=false,hasChoose=false,hasPrepareFonts=false,hasPrepareFolders=false;
+    for(mz_uint i=0;i<count;i++) {
+        ZipEntry entry;
+        if(mz_zip_reader_get_filename(&reader.zip,i,NULL,0)>sizeof(entry.stat.m_filename)-1||
+           !mz_zip_reader_file_stat(&reader.zip,i,&entry.stat)||entry.stat.m_is_encrypted||!entry.stat.m_is_supported)
+            throw Stop{"PTBR_ARCHIVE_INVALID"};
+        entry.path=entry.stat.m_filename;
+        if(!valid_zip_relative_path(entry.path,entry.stat.m_is_directory))throw Stop{"PTBR_ARCHIVE_INVALID"};
+        if(!allowed_ptbr_path(entry.path,entry.stat.m_is_directory))throw Stop{"PTBR_ARCHIVE_INVALID"};
+        if(!entry.stat.m_is_directory) {
+            if((entry.stat.m_version_made_by>>8)==3&&(((entry.stat.m_external_attr>>16)&0170000)==0120000))
+                throw Stop{"PTBR_ARCHIVE_INVALID"};
+            if(entry.stat.m_uncomp_size>32000000ULL||total>250000000ULL-entry.stat.m_uncomp_size)
+                throw Stop{"PTBR_ARCHIVE_INVALID"};
+            total+=entry.stat.m_uncomp_size;fileCount++;
+            std::string lower=entry.path;for(char &c:lower)c=(char)tolower((unsigned char)c);
+            if(lower.rfind("ptbr/",0)==0)ptbrData++;
+            if(lower.rfind("fonts/",0)==0)fonts++;
+            if(lower.rfind("gamedata/game-text/",0)==0)languageText++;
+            if(lower.rfind("textures/ptbr/",0)==0)ptbrTextures++;
+            if(lower=="jogar em portugues.cmd")hasLauncher=true;
+            if(lower=="escolher idioma.cmd")hasChoose=true;
+            if(lower=="ptbr/preparar-fontes.ps1")hasPrepareFonts=true;
+            if(lower=="ptbr/preparar-pastas.ps1")hasPrepareFolders=true;
+        }
+        entries.push_back(entry);
+    }
+    if(fileCount<500||total<60000000ULL||ptbrData<200||fonts<5||languageText<1||ptbrTextures<200||
+       !hasLauncher||!hasChoose||!hasPrepareFonts||!hasPrepareFolders)
+        throw Stop{"PTBR_ARCHIVE_INVALID"};
+
+    struct Changed {std::string destination,backup;bool hadOriginal=false;};
+    std::vector<Changed> changed;changed.reserve(fileCount);
+    Uint64 completed=0;unsigned processed=0;bool packageOk=false;
+    try {
+        for(mz_uint i=0;i<count;i++) {
+            const ZipEntry &entry=entries[i];
+            if(entry.stat.m_is_directory) {
+                std::string dir=root+entry.path;
+                ensure_directories(dir);
+                continue;
+            }
+            check_cancel();
+            std::string output=entry.path;
+            if(output.rfind("fonts/",0)==0)output="PTBR/"+output;
+            else if(output.rfind("textures/PTBR/",0)==0)output="PTBR/textures/"+output.substr(14);
+            else if(output!="PTBR/fontes-sem-conflito.txt"&&output.rfind("PTBR/gamedata/mods/",0)!=0&&output.rfind("PTBR/game-text/",0)!=0)continue;
+            std::string destination=root+output;
+            size_t slash=output.find_last_of('/');
+            std::string parent=slash==std::string::npos?root:root+output.substr(0,slash);
+            ensure_directories(parent);
+            size_t bytes=0;void *data=mz_zip_reader_extract_to_heap(&reader.zip,i,&bytes,0);
+            if(!data&&entry.stat.m_uncomp_size!=0)throw Stop{"PTBR_ARCHIVE_INVALID"};
+            if(bytes!=entry.stat.m_uncomp_size){if(data)mz_free(data);throw Stop{"PTBR_ARCHIVE_INVALID"};}
+            if(bytes_match_file(destination,data,bytes)) {
+                if(data)mz_free(data);
+            } else {
+                std::string temp=destination+".ptbr-v1.2.part";
+                if(!SDL_SaveFile(temp.c_str(),data,bytes)) {
+                    if(data)mz_free(data);SDL_RemovePath(temp.c_str());
+                    throw Stop{"Could not write Portuguese language data. Check disk space and permissions."};
+                }
+                if(data)mz_free(data);
+                Changed change;change.destination=destination;
+                SDL_PathInfo oldInfo;
+                if(SDL_GetPathInfo(destination.c_str(),&oldInfo)) {
+                    if(oldInfo.type!=SDL_PATHTYPE_FILE){SDL_RemovePath(temp.c_str());throw Stop{"A folder blocks Portuguese language data at " + destination + "."};}
+                    std::string relative=output;
+                    change.backup=unique_backup_path(root,relative,"ptbr-v1.2-originals");
+                    if(!SDL_RenamePath(destination.c_str(),change.backup.c_str())) {
+                        SDL_RemovePath(temp.c_str());throw Stop{"Could not preserve an existing file before installing Portuguese language data."};
+                    }
+                    change.hadOriginal=true;
+                }
+                if(!SDL_RenamePath(temp.c_str(),destination.c_str())) {
+                    if(change.hadOriginal)SDL_RenamePath(change.backup.c_str(),destination.c_str());
+                    SDL_RemovePath(temp.c_str());throw Stop{"Could not finish writing Portuguese language data."};
+                }
+                changed.push_back(change);
+            }
+            completed+=entry.stat.m_uncomp_size;processed++;
+            char line[160];snprintf(line,sizeof(line),"@progress %llu %llu %u %u",
+                (unsigned long long)completed,(unsigned long long)total,processed,fileCount);say(line);
+        }
+        ensure_directories(root+"tbo/setup");
+        const char *mark="Português (Brasil) v1.2\nRequires BT4 B14 Rev2 English data. Select Portuguese in the game language settings.\n";
+        if(!SDL_SaveFile(marker.c_str(),mark,strlen(mark)))throw Stop{"Could not save the Portuguese language pack installation marker."};
+        packageOk=true;
+    } catch(...) {
+        if(!packageOk) {
+            for(auto it=changed.rbegin();it!=changed.rend();++it) {
+                SDL_RemovePath(it->destination.c_str());
+                if(it->hadOriginal)SDL_RenamePath(it->backup.c_str(),it->destination.c_str());
+            }
+        }
+        throw;
+    }
+    say("@progress "+std::to_string(total)+" "+std::to_string(total)+" "+std::to_string(fileCount)+" "+std::to_string(fileCount));
+    say("@ok Português (Brasil) v1.2 installed; select Portuguese in the game language settings");
 }
 
 // Copies `size` bytes of the image at `offset` into a new file.
@@ -651,6 +972,42 @@ void step_eu(const std::string &root, const std::string &path) {
 #include "private_packages.inc"
 #include "language_install.inc"
 
+std::string download_optional(const std::string &root,bool portuguese){
+    const std::string folder=root+"tbo/setup/cache/";
+    ensure_directories(folder);
+    const std::string name=portuguese?"BT4_PT-BR_v1.2.zip":"dbz bt4 HD v1.07.zip",path=folder+name;
+    const char *digest=portuguese?"64366f583fd3a09068cd6692bc607dea7ca600be58f8d6172400e30fb64f9ffd":"f129248fcd0d508a5e901e6901109726fd2b38e1d57812b9f8ba743aafdd4129";
+    const Uint64 bytes=portuguese?59570177ULL:3690378076ULL;
+    SDL_PathInfo info;
+    if(SDL_GetPathInfo(path.c_str(),&info)&&info.size==bytes&&sha256_file(path)==digest)return path;
+    say("@activity download");say("@package 0");
+    try{cli_run(root,{"auth","status","--hostname","github.com"});}
+    catch(const Stop &){say("@github login");cli_run(root,{"auth","login","--web","--hostname","github.com","--git-protocol","https","--scopes","repo"},"",0,true);}
+    if(portuguese){
+        cli_run(root,{"release","download","v0.1.39.2-R9","--repo",kLanguageRepository,"--pattern",name,"--dir",folder,"--clobber"},path,bytes);
+    }else{
+        const std::string temp=path+".part";SDL_IOStream *output=SDL_IOFromFile(temp.c_str(),"wb");
+        if(!output)throw Stop{"Could not create the texture download. Check free disk space."};
+        try{
+            for(int part=1;part<=2;++part){
+                check_cancel();const std::string partName=std::string("BT4-HD-v1.07.zip.00")+std::to_string(part),piece=folder+partName;
+                cli_run(root,{"release","download","v0.1.39.2-R9","--repo",kLanguageRepository,"--pattern",partName,"--dir",folder,"--clobber"},piece,part==1?1850000000ULL:1840378076ULL);
+                SDL_IOStream *input=SDL_IOFromFile(piece.c_str(),"rb");if(!input)throw Stop{"LANGUAGE_DOWNLOAD_INCOMPLETE"};
+                std::vector<Uint8> buffer(1024*1024);Sint64 remaining=SDL_GetIOSize(input);
+                try{while(remaining>0){check_cancel();size_t n=(size_t)std::min<Sint64>(remaining,buffer.size());
+                    if(SDL_ReadIO(input,buffer.data(),n)!=n||SDL_WriteIO(output,buffer.data(),n)!=n)throw Stop{"LANGUAGE_DOWNLOAD_INCOMPLETE"};remaining-=n;}}
+                catch(...){SDL_CloseIO(input);throw;}
+                SDL_CloseIO(input);SDL_RemovePath(piece.c_str());
+            }
+            bool ok=SDL_CloseIO(output);output=NULL;if(!ok)throw Stop{"LANGUAGE_DOWNLOAD_INCOMPLETE"};
+            if(!SDL_RenamePath(temp.c_str(),path.c_str()))throw Stop{"LANGUAGE_DOWNLOAD_INCOMPLETE"};
+        }catch(...){if(output)SDL_CloseIO(output);SDL_RemovePath(temp.c_str());throw;}
+    }
+    if(!SDL_GetPathInfo(path.c_str(),&info)||info.size!=bytes||sha256_file(path)!=digest){SDL_RemovePath(path.c_str());throw Stop{"LANGUAGE_VERIFY_FAILED"};}
+    return path;
+}
+
+
 bool installed_language(const std::string &root,bool english){
     bool base=base_english(root);std::string data=root+"gamedata/"+(base==english?"":english?"languages/en/":"languages/es/");
     if(base!=english&&!SDL_GetPathInfo((data+".installed-bt4-b14rev2").c_str(),NULL))return false;
@@ -665,9 +1022,9 @@ bool installed_language(const std::string &root,bool english){
     }
     return checked==3;
 }
-void work(std::string root, std::string path, std::string eu) {
+void work(std::string root, std::string path, std::string eu, std::string texturePack, std::string ptbrPack) {
     try {
-        sStep=0;sSteps=(path.empty()?0:4)+(sInstallMask==3?2:0);
+        sStep=0;sSteps=(path.empty()?0:4)+(sInstallMask==3?2:0)+(!texturePack.empty()?1:0)+(!ptbrPack.empty()?1:0);
         if(!path.empty()){
             Iso iso;step_disc(iso,path);check_cancel();
             if(sInstallMask==0)sInstallMask=sEnglish?2:1;
@@ -679,11 +1036,22 @@ void work(std::string root, std::string path, std::string eu) {
         bool base=base_english(root);
         if(sInstallMask==3){
             if(!installed_language(root,!base))install_language(root,!base);
-            else {step("Language package");say("@package 100");say("@skip verified language is installed");}
+            else {
+                step("Language package");say("@package 100");say("@skip verified language is installed");
+                step("Self-test");say("@skip verified language needs no additional self-test");
+            }
         }else if(!installed_language(root,sInstallMask==2))throw Stop{"ISO_REQUIRED"};
+        if(!texturePack.empty())install_texture_pack(root,texturePack);
+        if(!ptbrPack.empty())install_ptbr_pack(root,ptbrPack);
+        if(texturePack=="@download")SDL_RemovePath((root+"tbo/setup/cache/dbz bt4 HD v1.07.zip").c_str());
+        if(ptbrPack=="@download")SDL_RemovePath((root+"tbo/setup/cache/BT4_PT-BR_v1.2.zip").c_str());
         say("@activity finalize");
         SDL_CreateDirectory((root+"tbo").c_str());
-        std::string options=std::to_string(sInstallMask)+"\n";
+        std::string options=std::to_string(sInstallMask|((!ptbrPack.empty()||SDL_GetPathInfo((root+"tbo/setup/PTBR_v1.2.native-installed").c_str(),NULL))?4:0))+"\n";
+        if(!ptbrPack.empty()){
+            const char *settings="pt-BR";
+            SDL_SaveFile((root+"tbo/setup/selected-game-language").c_str(),settings,strlen(settings));
+        }
         if(!SDL_SaveFile((root+"tbo/languages.ini").c_str(),options.data(),options.size()))throw Stop{"INSTALL_STATE_FAILED"};
         const char *identity=BT4_BUILD_IDENTITY;
         SDL_SaveFile((root+BT4_BUILD_MARKER).c_str(),identity,strlen(identity));
@@ -699,14 +1067,15 @@ void work(std::string root, std::string path, std::string eu) {
 
 } // namespace
 
-void Native_Start(const std::string &root, const std::string &iso, const std::string &eu,int mask) {
+void Native_Start(const std::string &root, const std::string &iso, const std::string &eu,int mask,
+                  const std::string &texturePack,const std::string &ptbrPack) {
     if (sThread.joinable()) {
         sThread.join();
     }
     sInstallMask=mask>=0&&mask<=3?mask:1;
     sCancel = false;
     sRunning = true;
-    sThread = std::thread(work, root, iso, eu);
+    sThread = std::thread(work, root, iso, eu, texturePack, ptbrPack);
 }
 
 bool Native_Poll(std::string &line) {
@@ -749,3 +1118,4 @@ bool Native_Installed(const std::string &root) {
 bool Native_EuInstalled(const std::string &root) { return true; }
 bool Native_BundledEnglish(const std::string &root) { return false; }
 bool Native_EnglishInstalled(const std::string &root) { return english_installed(root); }
+bool Native_SpanishInstalled(const std::string &root) { return installed_language(root,false); }

@@ -2402,14 +2402,14 @@ static void ui_tab(PortVideo &v) {
     }
     {
         static int choice = -1;
-        if (choice < 0) choice = Port_GameProfileEnglish();
-        const char *names[] = {f1_text("Spanish (text and voices)"), f1_text("English (text and voices)")};
+        if (choice < 0) choice = Port_GameProfileLanguage();
+        const char *names[] = {f1_text("Spanish (text and voices)"), f1_text("English (text and voices)"), "Português (Brasil)"};
         ImGui::BeginDisabled(Port_NetActive() || Port_TagBattleRenderActive());
         if (ImGui::BeginCombo(f1_text("Game language"), names[choice])) {
-            for (int i=0;i<2;i++) {
+            for (int i=0;i<3;i++) {
                 ImGui::BeginDisabled(!Port_GameProfileAvailable(i));
                 if (ImGui::Selectable(names[i],choice==i)) {
-                    choice=i; Port_SettingTextSave("game_language",i?"en":"es"); Port_SettingsWrite();
+                    choice=i; Port_SettingTextSave("game_language",i==2?"pt-BR":i?"en":"es"); Port_SettingsWrite();
                 }
                 ImGui::EndDisabled();
             }
@@ -2417,7 +2417,7 @@ static void ui_tab(PortVideo &v) {
         }
         ImGui::EndDisabled();
         ImGui::SetItemTooltip(f1_text("Full disc profile: text and voices. Install each ISO once using the launcher. The startup selector confirms your choice before the game begins."));
-        if (choice != Port_GameProfileEnglish()) ImGui::TextWrapped("%s", f1_text("Language saved for the next launch."));
+        if (choice != Port_GameProfileLanguage()) ImGui::TextWrapped("%s", f1_text("Language saved for the next launch."));
         ImGui::Separator();
     }
     if (ImGui::BeginCombo(f1_text("Menu font"), f1_text(MenuText_FontName(v.menuFont)))) {

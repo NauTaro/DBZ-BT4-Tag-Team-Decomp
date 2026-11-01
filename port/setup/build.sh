@@ -33,10 +33,14 @@ for f in $I/imgui.cpp $I/imgui_draw.cpp $I/imgui_tables.cpp $I/imgui_widgets.cpp
     o=$O/$(basename "$f" .cpp).o
     if [ ! -f "$o" ] || [ "$f" -nt "$o" ] || [ port/setup/native.h -nt "$o" ] ||
        [ port/setup/progress.h -nt "$o" ] || [ port/setup/private_packages.inc -nt "$o" ] ||
-       [ port/setup/language_install.inc -nt "$o" ]; then
+       [ port/setup/language_install.inc -nt "$o" ] || [ port/third_party/miniz/miniz.h -nt "$o" ]; then
         $CXX -std=c++17 -O2 -w -I$I $SDL -c "$f" -o "$o" || exit 1
     fi
 done
+# ZIP package support uses the repository's vendored miniz reader only. Keep its
+# configuration identical in native.cpp and this C object to avoid ABI drift.
+$CC -O2 -DMINIZ_NO_ARCHIVE_WRITING_APIS -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES -DMINIZ_NO_TIME \
+    -c port/third_party/miniz/miniz.c -o "$O/miniz.o"
 # Language packages use the same portable SHA-256 implementation as updates.
 $CC -O2 $SDL -c port/src/gs/update_sign.c -o "$O/update_sign.o"
 # -Wl,-Bdynamic for SDL3 only: the rest (C++ runtime, threads) is linked in

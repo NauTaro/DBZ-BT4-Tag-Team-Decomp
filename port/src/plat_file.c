@@ -125,6 +125,10 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
             snprintf(rel, sizeof(rel), "%s", a);
         }
     }
+    if(getenv("BT4_PTBR_ROOT")){
+        snprintf(out,(size_t)size,"%s/gamedata/mods/%s",getenv("BT4_PTBR_ROOT"),rel);
+        fp=fopen(out,"rb");if(fp){fclose(fp);return 1;}
+    }
     snprintf(out, (size_t)size, "%s/mods/%s", root(), rel);
     fp = fopen(out, "rb");
     if (fp == NULL) {

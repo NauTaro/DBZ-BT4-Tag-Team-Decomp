@@ -5,6 +5,8 @@ extern "C" {
 #endif
 void Port_GameProfileInit(void);
 int Port_GameProfileEnglish(void);
+int Port_GameProfileLanguage(void);
+int Port_GameProfilePortuguese(void);
 int Port_GameProfileAvailable(int english);
 int Port_GameProfilePrompt(void);
 int Port_GameProfileChoose(int english);

@@ -51,29 +51,37 @@ static void original_text(s32 english,s32 alpha){
 /* The same Flash dialog, card resources, sounds and cursor input as BootCard.
  * Its allocation is shared with the following memory-card flow. */
 void PortLanguage_Run(void){
-    s32 selected=0,frame=0,choice=Port_GameProfileEnglish(),result;
+    s32 selected=0,frame=0,choice=Port_GameProfileLanguage(),result;
     DialogFlashRef anchor;s32 sharedFont,alpha,spoken=choice;
     if(!Port_GameProfilePrompt())return;
     sharedFont=MenuText_GetSharedFont();MenuText_SetSharedFont(0);
-    Dialog_SetLayout(0);Dialog_SetChoices(1);Dialog_SetPort(0);
+    int three=Port_GameProfileAvailable(2);
+    Dialog_SetLayout(0);Dialog_SetChoices(three?0:1);Dialog_SetPort(0);
     Dialog_SetChoiceLabels(sLabels[0],sLabels[1]);
     Dialog_SetMsg(-1);Dialog_SetTitle(-1);
     Port_GameProfileMenuSet(1,choice,0);
     Dialog_SetCursor(choice);Dialog_Start(DIALOG_CMD_OPEN);
     ColorFade_StartIn(0,0,0,20);
-    PortA11y_Say(choice?"Select the game language. English.":"Selecciona el idioma del juego. Espa\xC3\xB1ol.",1);
+    PortA11y_Say(choice==2?"Selecione o idioma do jogo. Portugu\xC3\xAAs.":choice?"Select the game language. English.":"Selecciona el idioma del juego. Espa\xC3\xB1ol.",1);
     while(1){
         Gfx_BeginFrame();Pad_Update();Snd_Update();ColorFade_Update();
         if(!selected&&!gPortOverlayOpen&&ColorFade_IsInDone()){
-            result=Dialog_Input(1);choice=gDialog->cursor;
+            if(three){
+                unsigned keys=gPad[0].pressed;int direction=0;result=0;
+                if(keys&(PAD_LEFT|PAD_LSTICK_LEFT))direction=-1;
+                if(keys&(PAD_RIGHT|PAD_LSTICK_RIGHT))direction=1;
+                if(direction){int next=choice;do{next=(next+direction+3)%3;}while(!Port_GameProfileAvailable(next));choice=next;Snd_PlaySe(1,0);}
+                if(keys&PAD_CROSS)result=DIALOG_RESULT_FIRST;
+                if(keys&(PAD_TRIANGLE|PAD_CIRCLE))result=DIALOG_RESULT_CANCEL;
+            }else {result=Dialog_Input(1);choice=gDialog->cursor;}
             if(getenv("BT4_PROFILE_PICKER_TEST")&&getenv("BT4_PROFILE_TEST_HOVER")&&frame==45){
-                choice=atoi(getenv("BT4_PROFILE_TEST_HOVER"))!=0;Dialog_SetCursor(choice);
+                choice=atoi(getenv("BT4_PROFILE_TEST_HOVER"));if(choice<0||choice>(three?2:1))choice=0;Dialog_SetCursor(three?0:choice);
             }
             if(getenv("BT4_PROFILE_PICKER_TEST")&&frame==90&&getenv("BT4_PROFILE_TEST_CHOOSE")){
-                choice=atoi(getenv("BT4_PROFILE_TEST_CHOOSE"))!=0;
-                Dialog_SetCursor(choice);result=choice?DIALOG_RESULT_SECOND:DIALOG_RESULT_FIRST;
+                choice=atoi(getenv("BT4_PROFILE_TEST_CHOOSE"));if(choice<0||choice>(three?2:1))choice=0;
+                Dialog_SetCursor(three?0:choice);result=choice?DIALOG_RESULT_SECOND:DIALOG_RESULT_FIRST;
             }
-            if(spoken!=choice){PortA11y_Say(choice?"English. Text and voices.":"Espa\xC3\xB1ol. Textos y voces.",1);spoken=choice;}
+            if(spoken!=choice){PortA11y_Say(choice==2?"Portugu\xC3\xAAs. Textos em portugu\xC3\xAAs, vozes em ingl\xC3\xAAs.":choice?"English. Text and voices.":"Espa\xC3\xB1ol. Textos y voces.",1);spoken=choice;}
             if(result==DIALOG_RESULT_CANCEL)exit(0);
             if(result==DIALOG_RESULT_FIRST||result==DIALOG_RESULT_SECOND){
                 if(Port_GameProfileAvailable(choice)){
@@ -86,7 +94,12 @@ void PortLanguage_Run(void){
         Dialog_Draw(1);
         Flash_FindLabel(gDialog->flash,NULL,"mc_dummy_text_1",&anchor);
         alpha=anchor.id<0?0:(s32)(Flash_ClipGetAlpha(gDialog->flash,&anchor)*128.0f);
-        Port_GameProfileMenuSet(1,choice,alpha);original_text(choice,alpha);
+        Port_GameProfileMenuSet(1,choice,alpha);if(three){
+            original_line(0,choice==2?"Selecione o idioma":choice?"Select language":"Selecciona el idioma",256,210,1.2f,1.85f,416,alpha);
+            original_line(1,choice==0?"> Espa\xF1ol <":"Espa\xF1ol",115,290,.85f,1.5f,130,alpha);
+            original_line(2,choice==1?"> English <":"English",256,290,.85f,1.5f,130,alpha);
+            original_line(3,choice==2?"> Portugu\xEAs <":"Portugu\xEAs",397,290,.85f,1.5f,130,alpha);Font_FlushAll();
+        }else original_text(choice,alpha);
         ColorFade_Draw();Gfx_EndFrame(1);Dma_Flush();File_Stub264D90();
         if(getenv("BT4_PROFILE_PICKER_TEST")&&frame==60){extern int gPortTagUiCaptureRequest;gPortTagUiCaptureRequest=1;}
         frame++;
@@ -96,6 +109,6 @@ void PortLanguage_Run(void){
     Dialog_SetChoiceLabels(NULL,NULL);Dialog_SetChoices(0);Dialog_SetMsgTable(NULL);Dialog_SetMsg(-1);Dialog_SetTitle(-1);
     Dma_ResetBuffers();
     if(!Port_GameProfileChoose(choice)) {PortLanguage_Run();return;}
-    MenuTranslation_SaveChoice("en");MenuText_BootLanguageChosen();Ui_LanguageChosen("en");
+    MenuTranslation_SaveChoice(choice==2?"pt-BR":"en");MenuText_BootLanguageChosen();Ui_LanguageChosen(choice==2?"pt-BR":"en");
 }
 #endif

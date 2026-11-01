@@ -47,6 +47,8 @@ static bool sRelease;
 static bool sUiEnglish=false,sPackage=false;
 static int sInstallMask=1,sPackagePercent=0;
 static std::string sGithubCode, sActivity;
+static std::string sTexturePackPath, sPtbrPackPath;
+static bool sInstallTexturePack=false, sInstallPtbrPack=false;
 static const char *L(const char *es,const char *en){return sUiEnglish?en:es;}
 
 
@@ -73,7 +75,7 @@ static char sIso[1024];
 // install.py --eu-iso).
 static char sIsoEu[1024];
 static bool sEuOnly;    // only the languages are added (the game was set up before: the "Listo para jugar" page)
-static int sDialogFor;  // which field the file dialog fills: 0 the USA image, 1 the European one
+static int sDialogFor;  // 0 USA ISO, 1 European ISO, 2 HD textures ZIP, 3 Portuguese ZIP
 static std::string sRoot, sError, sLauncher, sLine;
 static std::vector<StepRow> sRows;
 static std::vector<Missing> sMissing;
@@ -155,6 +157,8 @@ static void reset_rows() {
         titles.push_back("English language");titles.push_back("English self-test");
     }
     if(sRelease&&sInstallMask==3){titles.push_back("Language package");titles.push_back("Self-test");}
+    if(sRelease&&sInstallTexturePack)titles.push_back("Texture pack");
+    if(sRelease&&sInstallPtbrPack)titles.push_back("Portuguese (Brazil) language pack");
     sPackage=false;sPackagePercent=0;sGithubCode.clear();sActivity.clear();
     sRows.assign(titles.size(), StepRow());
     for (size_t i = 0; i < titles.size(); i++) {
@@ -177,7 +181,9 @@ static void start_install() {
         sLauncher.clear();
         sRunStart = SDL_GetTicks();
         sNative = true;
-        Native_Start(sRoot,sEuOnly?"":sIso,"",sInstallMask);
+        Native_Start(sRoot,sEuOnly?"":sIso,"",sInstallMask,
+                     sInstallTexturePack?(sTexturePackPath.empty()?"@download":sTexturePackPath):"",
+                     sInstallPtbrPack?(sPtbrPackPath.empty()?"@download":sPtbrPackPath):"");
         sPage = PAGE_RUN;
         return;
     }
@@ -410,7 +416,7 @@ static void SDLCALL dialog_done(void *userdata, const char *const *files, int fi
     std::lock_guard<std::mutex> lock(sDialogLock);
     if (files != NULL && files[0] != NULL) {
         sDialogResult = files[0];
-        sDialogFor = userdata != NULL; // (NULL: the USA image's field)
+        sDialogFor = userdata == (void *)1 ? 1 : userdata == (void *)2 ? 2 : userdata == (void *)3 ? 3 : 0;
         sDialogReady = true;
     }
 }
@@ -471,6 +477,7 @@ static bool eu_field() {
 
 static void page_pick() {
     static const SDL_DialogFileFilter filters[]={{"BT4 ISO","iso;bin;img"},{"All files","*"}};
+    static const SDL_DialogFileFilter zipFilters[]={{"ZIP packages","zip"},{"All files","*"}};
     ImGui::SetNextItemWidth(160);
     int ui=sUiEnglish?1:0;
     if(ImGui::Combo("##interface-language",&ui,"Español\0English\0"))sUiEnglish=ui!=0;
@@ -480,9 +487,9 @@ static void page_pick() {
     ImGui::Dummy(ImVec2(0,10));
     const char *labels[]={L("Español","Spanish"),L("Inglés","English"),L("Español e inglés","Spanish and English")};
     for(int i=0;i<3;++i){
-        bool selected=sInstallMask==i+1;
+        bool selected=!sInstallPtbrPack&&sInstallMask==i+1;
         if(selected){ImGui::PushStyleColor(ImGuiCol_Button,kAccent);ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(.08f,.05f,.02f,1));}
-        if(ImGui::Button(labels[i],ImVec2(i==2?340:165,48)))sInstallMask=i+1;
+        if(ImGui::Button(labels[i],ImVec2(i==2?340:165,48))){sInstallMask=i+1;sInstallPtbrPack=false;}
         if(selected)ImGui::PopStyleColor(2);
         if(i==0)ImGui::SameLine();
     }
@@ -491,17 +498,61 @@ static void page_pick() {
         L("El segundo idioma se descarga desde GitHub. Iniciá sesión si se solicita.","The second language downloads from GitHub. Sign in if requested."):
         L("Textos y voces. Sin selector de idioma al iniciar.","Text and voices. No language selector at startup."));ImGui::PopStyleColor();
     ImGui::Dummy(ImVec2(0,12));
+    if(sInstallPtbrPack){ImGui::PushStyleColor(ImGuiCol_Button,kAccent);ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(.08f,.05f,.02f,1));}
+    if(ImGui::Button("Português (Brasil)",ImVec2(340,48))){sInstallPtbrPack=true;sInstallMask=3;}
+    if(sInstallPtbrPack)ImGui::PopStyleColor(2);
+    if(sInstallPtbrPack)ImGui::TextWrapped("%s",L("Portugués seleccionado. Usa los datos ingleses y el paquete PT-BR.","Portuguese selected. Uses English game data and the PT-BR pack."));
+    bool packsReady=true;
+    if(sRelease){
+        if(ImGui::CollapsingHeader(L("Paquetes opcionales","Optional packs"))){
+            ImGui::Checkbox(L("DBZ BT4 HD v1.07 (3.69 GB)","DBZ BT4 HD v1.07 (3.69 GB)"),&sInstallTexturePack);
+            ImGui::SameLine();
+            if(ImGui::Button(L("Elegir ZIP##texture","Choose ZIP##texture"),ImVec2(120,0)))
+                SDL_ShowOpenFileDialog(dialog_done,(void *)2,sWindow,zipFilters,2,NULL,false);
+            std::string textureName=sTexturePackPath;
+            size_t textureSlash=textureName.find_last_of("/\\");
+            if(textureSlash!=std::string::npos)textureName=textureName.substr(textureSlash+1);
+            ImGui::PushStyleColor(ImGuiCol_Text,kDim);
+            ImGui::TextWrapped("%s",sTexturePackPath.empty()?L("Se descarga desde GitHub (3.69 GB). También podés elegir el ZIP local.","Downloads from GitHub (3.69 GB). You can also choose a local ZIP."):textureName.c_str());
+            ImGui::PopStyleColor();
+            if(sInstallTexturePack&&!sTexturePackPath.empty()&&!file_exists(sTexturePackPath.c_str()))packsReady=false;
+
+            ImGui::TextUnformatted("Português (Brasil) v1.2 (59.6 MB)");
+            ImGui::SameLine();
+            if(ImGui::Button(L("Elegir ZIP##ptbr","Choose ZIP##ptbr"),ImVec2(120,0)))
+                SDL_ShowOpenFileDialog(dialog_done,(void *)3,sWindow,zipFilters,2,NULL,false);
+            std::string ptbrName=sPtbrPackPath;
+            size_t ptbrSlash=ptbrName.find_last_of("/\\");
+            if(ptbrSlash!=std::string::npos)ptbrName=ptbrName.substr(ptbrSlash+1);
+            ImGui::PushStyleColor(ImGuiCol_Text,kDim);
+            ImGui::TextWrapped("%s",sPtbrPackPath.empty()?L("Descarga desde GitHub. Requiere datos ingleses; se activa desde Idioma del juego.","Downloads from GitHub. Requires English data; select it under Game language."):ptbrName.c_str());
+            ImGui::PopStyleColor();
+            bool englishReady=Native_EnglishInstalled(sRoot)||sInstallMask==3||
+                (sInstallMask==2&&sIso[0]&&file_exists(sIso));
+            if(sInstallPtbrPack&&!englishReady){
+                packsReady=false;
+                ImGui::TextColored(kRed,"%s",L("El paquete PT-BR necesita datos ingleses. Elegí Inglés o Español e inglés.","The PT-BR pack needs English data. Choose English or Spanish and English."));
+            }
+            if(sInstallPtbrPack&&!sPtbrPackPath.empty()&&!file_exists(sPtbrPackPath.c_str()))packsReady=false;
+        }
+    }
+    if(sInstallTexturePack&&!sTexturePackPath.empty()&&!file_exists(sTexturePackPath.c_str()))packsReady=false;
+    if(sInstallPtbrPack&&((!sPtbrPackPath.empty()&&!file_exists(sPtbrPackPath.c_str()))||
+       !(Native_EnglishInstalled(sRoot)||sInstallMask==3||(sInstallMask==2&&file_exists(sIso)))))packsReady=false;
     ImGui::TextUnformatted(L("Tu ISO de BT4 B14 Rev2","Your BT4 B14 Rev2 ISO"));
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-140);
     ImGui::InputTextWithHint("##iso",L("Seleccionar archivo…","Select file…"),sIso,sizeof(sIso));ImGui::SameLine();
     if(ImGui::Button(L("Elegir ISO","Choose ISO"),ImVec2(130,0)))SDL_ShowOpenFileDialog(dialog_done,NULL,sWindow,filters,2,NULL,false);
-    bool existing=Native_Installed(sRoot),ok=file_exists(sIso)||(sIso[0]==0&&existing);
+    bool existing=Native_Installed(sRoot);
+    bool languageReady=sInstallMask==3||sIso[0]||
+        (sInstallMask==2?Native_EnglishInstalled(sRoot):Native_SpanishInstalled(sRoot));
+    bool ok=(file_exists(sIso)||(sIso[0]==0&&existing))&&languageReady;
     if(existing&&sIso[0]==0)ImGui::TextColored(kDim,"%s",L("Se usará la instalación actual.","Your existing installation will be used."));
     else if(sIso[0]&&!file_exists(sIso))ImGui::TextColored(kRed,"%s",L("No se encuentra ese archivo.","That file could not be found."));
     bottom_row(2);
     if(big_button(L("Cerrar","Close"),false))sQuit=true;
     ImGui::SameLine();
-    if(big_button(L("Instalar","Install"),true,ok&&!sRoot.empty())){sEuOnly=false;start_install();}
+    if(big_button(L("Instalar","Install"),true,ok&&packsReady&&!sRoot.empty())){sEuOnly=false;start_install();}
 }
 
 static void state_icon(State st, float t) {
@@ -581,6 +632,8 @@ static void page_run() {
         else if(sActivity=="download")task=L("Descargando paquete de idioma","Downloading language pack");
         else if(sActivity=="verify-package")task=L("Verificando la descarga","Verifying download");
         else if(sActivity=="unpack")task=L("Extrayendo paquete de idioma","Extracting language pack");
+        else if(sActivity=="texture-copy")task=L("Instalando el paquete de texturas HD","Installing the HD texture pack");
+        else if(sActivity=="ptbr-unpack")task=L("Instalando Português (Brasil)","Installing Português (Brasil)");
         else if(row){
             if(row->title=="Disc image"||row->title=="Imagen ISO")task=L("Verificando ISO de BT4","Verifying BT4 ISO");
             else if(row->title=="Native data tables"||row->title=="Executable data")task=L("Preparando datos del juego","Preparing game data");
@@ -604,6 +657,8 @@ static void page_run() {
 static void page_done() {
     ImGui::Dummy(ImVec2(0,75));
     heading(L("BT4 está listo","BT4 is ready"),sInstallMask==3?L("Español e inglés instalados.","Spanish and English installed."):sInstallMask==2?L("Inglés instalado.","English installed."):L("Español instalado.","Spanish installed."));
+    if(sInstallPtbrPack)ImGui::TextWrapped("%s",L("Português (Brasil) instalado y disponible en Idioma del juego.","Português (Brasil) installed and available under Game language."));
+    if(sInstallTexturePack)ImGui::TextWrapped("%s",L("El paquete HD está en la carpeta textures.","The HD pack is in the textures folder."));
     bottom_row(2);
     if(big_button(L("Volver","Back"),false))sPage=PAGE_PICK;
     ImGui::SameLine();if(big_button(L("Jugar","Play"),true))play_game();
@@ -617,6 +672,9 @@ static const char *error_text(){
     if(sError=="ISO_REQUIRED")return L("Elegí una ISO de BT4 del idioma que querés instalar.","Choose a BT4 ISO in the language you want to install.");
     if(sError=="INSTALL_CANCELLED")return L("Instalación cancelada.","Installation cancelled.");
     if(sError=="LANGUAGE_VERIFY_FAILED")return L("La descarga no se pudo verificar. Volvé a intentarlo.","The download could not be verified. Try again.");
+    if(sError=="PTBR_REQUIRES_ENGLISH")return L("El paquete portugués requiere los datos ingleses de BT4.","The Portuguese pack requires the English BT4 data.");
+    if(sError=="PTBR_ARCHIVE_INVALID")return L("El ZIP de Português (Brasil) está incompleto o no es compatible.","The Português (Brasil) ZIP is incomplete or unsupported.");
+    if(sError=="TEXTURE_PACK_INVALID")return L("El ZIP seleccionado no es DBZ BT4 HD v1.07 o está dañado.","The selected ZIP is not DBZ BT4 HD v1.07 or is damaged.");
     return L("No se pudo completar la instalación. Revisá el archivo ISO, la conexión y el espacio disponible.","Installation could not complete. Check the ISO, your connection and available disk space.");
 }
 static void page_failed() {
@@ -889,6 +947,14 @@ int main(int argc, char **argv) {
         ImGui_ImplSDLGPU3_Init(&info);
     }
     sRoot = find_root();
+    if(sRelease&&!sRoot.empty()){
+        bool hasSpanish=Native_SpanishInstalled(sRoot),hasEnglish=Native_EnglishInstalled(sRoot);
+        sInstallMask=hasSpanish&&hasEnglish?3:hasEnglish?2:1;
+        const std::string textureCandidate=sRoot+"textures/dbz bt4 HD v1.07.zip";
+        const std::string ptbrCandidate=sRoot+"BT4_PT-BR_v1.2.zip";
+        if(file_exists(textureCandidate.c_str()))sTexturePackPath=textureCandidate;
+        if(file_exists(ptbrCandidate.c_str()))sPtbrPackPath=ptbrCandidate;
+    }
 #ifdef __APPLE__
     if (sRelease) {
         // A folder downloaded from the internet is marked "quarantined" by macOS, and a quarantined program started by
@@ -958,9 +1024,13 @@ int main(int argc, char **argv) {
         {
             std::lock_guard<std::mutex> lock(sDialogLock);
             if (sDialogReady) {
-                SDL_strlcpy(sDialogFor ? sIsoEu : sIso, sDialogResult.c_str(), sDialogFor ? sizeof(sIsoEu) : sizeof(sIso));
+                const int selected=sDialogFor;
+                if(selected==0)SDL_strlcpy(sIso,sDialogResult.c_str(),sizeof(sIso));
+                else if(selected==1)SDL_strlcpy(sIsoEu,sDialogResult.c_str(),sizeof(sIsoEu));
+                else if(selected==2)sTexturePackPath=sDialogResult;
+                else if(selected==3)sPtbrPackPath=sDialogResult;
                 sDialogReady = false;
-                if (sDialogFor && sPage == PAGE_DONE && sRelease && !Native_Running()) { // "Add languages...": only that step
+                if (selected==1 && sPage == PAGE_DONE && sRelease && !Native_Running()) { // "Add languages...": only that step
                     sEuOnly = true;
                     start_install();
                 }
