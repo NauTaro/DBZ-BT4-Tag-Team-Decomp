@@ -92,6 +92,21 @@ int main(void){
       sTagWs.incomingAt[0]=140;sTagWs.inWrite=1;last_heard=time(NULL);
       Port_TagPoll();printf(",\"transport_rtt\":%d",Port_TagPing());if(Port_TagPing()!=40)return 8;
     }
+    end();room(1);
+    { TtRoom joined;
+      Tt_Open(&state,member,"First entrant",2,123);state.delay=0;
+      Tt_InputsReset(&received,state.epoch,1);joined=state;
+      for(i=1;i<4;i++)if(Tt_Join(&joined,101+i,"Entrant",123)!=TT_OK)return 9;
+      joined.phase=TT_ARMED;Ttw_Snapshot(sTagWs.incoming[0],&joined,member,0,"TEST00");
+      joined.phase=TT_FIGHT;Ttw_Snapshot(sTagWs.incoming[1],&joined,member,0,"TEST00");
+      Ttw_Request(sTagWs.incoming[2],TTW_FRAME,joined.epoch);Ttw_Write(sTagWs.incoming[2]+12,0);
+      for(i=0;i<4;i++)memcpy(sTagWs.incoming[2]+16+i*TT_PAD_BYTES,pad,TT_PAD_BYTES);
+      sTagWs.incomingAt[0]=sTagWs.incomingAt[1]=sTagWs.incomingAt[2]=SDL_GetTicks();
+      sTagWs.inWrite=3;tag_caps_sent=voice_ticket=1;last_heard=time(NULL);error[0]=0;
+      Port_TagPoll();
+      if(error[0]||received.seats!=4||!Port_TagTakeFrame(taken))return 10;
+      printf(",\"admission_roster_inputs\":1");
+    }
 #endif
     printf("}\n");
     end();return 0;

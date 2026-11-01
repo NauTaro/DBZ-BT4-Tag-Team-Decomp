@@ -828,10 +828,12 @@ void Port_TagPoll(void){
                 PortVoice_P2PSession(2,descriptor,people,count);
             }
         }
-        if(received.epoch!=state.epoch){
+        if(received.epoch!=state.epoch || (state.phase!=TT_FIGHT&&received.seats!=Tt_Count(&state))){
             /* A result choice starts a new epoch before its first input arrives.
              * Buffered inputs from the preceding fight must not advance the
-             * new simulation while the direct route is reconnecting. */
+             * new simulation while the direct route is reconnecting. Lobby
+             * admission can grow the roster without changing its epoch; bind
+             * the ring to that final roster before any fight frames arrive. */
             Tt_InputsReset(&received,state.epoch,Tt_Count(&state));
             tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);
         }
@@ -855,7 +857,7 @@ void Port_TagPoll(void){
 
         else error[0]=0;
 
-        if(!result&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")&&state.phase==TT_LOBBY&&member==state.host){fprintf(stderr,"tag online code=%s humans=%d\n",room_code,Tt_Humans(&state));fflush(stderr);}
+        if(!result&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")&&state.phase==TT_LOBBY&&(member==state.host||getenv("BT4_TAG_QUICK_TEST"))){fprintf(stderr,"tag online code=%s humans=%d\n",room_code,Tt_Humans(&state));fflush(stderr);}
 
         if(!result && state.phase==TT_LOBBY && member==state.host && configure_pending==1){
 

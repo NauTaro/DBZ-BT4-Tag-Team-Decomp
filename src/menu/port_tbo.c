@@ -1113,13 +1113,29 @@ static void Tb_TagRoomUpdate(s32 live){
         char why[128];Ps_Copy(why,(char*)Port_TagError(),128);Port_TagClose();
         sTb->tagSetup=0;sTb->tagCur=0;Tb_SetMode(sTb->tagJoin?TB_JOIN:TB_TAG);Tb_Note(why);return;
     }
+    if(sTb->tagQuick&&Port_TagPhase()<1){
+        Ps_Prompt(2,"Cancel");
+        if(live&&(pad->gamePressed&PADG_TRIANGLE)){
+            Port_TagClose();sTb->tagSetup=0;sTb->tagCur=0;Tb_SetMode(TB_TAG);
+        }
+        return;
+    }
     if(sTb->tagQuick&&!sTb->tagQuickStarted&&Port_TagHost()&&Port_TagCanStart()&&Port_TagHumans()==sTb->tagQuick){
         Port_TagCommand(3,0,0);sTb->tagQuickStarted=1;
+    }
+    if(sTb->tagQuick&&Port_TagPhase()==1){
+        /* Quick Match fixes the four human seats. Room editing is reserved
+         * for Create Room and cannot replace an admitted entrant with a CPU. */
+        Ps_Prompt(2,"Cancel");
+        if(live&&(pad->gamePressed&PADG_TRIANGLE)){
+            Port_TagClose();sTb->tagSetup=0;sTb->tagCur=0;Tb_SetMode(TB_TAG);
+        }
+        return;
     }
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_MOVE_TEST")&&Port_TagHost()&&Port_TagPhase()==1&&Port_TagHumans()==2){
         static s32 moved;if(!moved){Port_TagMovePlayer(0,2);moved=1;return;}if(Port_TagSeat()!=2)return;
     }
-    if(getenv("BT4_TAG_DRAFT_TEST")&&(!getenv("BT4_TAG_ONLINE_TEST")||Port_TagHumans()>=(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_TEST_MIN_HUMANS")?atoi(getenv("BT4_TAG_TEST_MIN_HUMANS")):2))&&!getenv("BT4_TAG_VIDEO_TEST")&&!getenv("BT4_TAG_LOBBY_PREVIEW")&&!getenv("BT4_TAG_LOBBY_TEST")&&!sTb->tagTestSent&&Port_TagHost()&&Port_TagCanStart()){
+    if(!sTb->tagQuick&&getenv("BT4_TAG_DRAFT_TEST")&&(!getenv("BT4_TAG_ONLINE_TEST")||Port_TagHumans()>=(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_TEST_MIN_HUMANS")?atoi(getenv("BT4_TAG_TEST_MIN_HUMANS")):2))&&!getenv("BT4_TAG_VIDEO_TEST")&&!getenv("BT4_TAG_LOBBY_PREVIEW")&&!getenv("BT4_TAG_LOBBY_TEST")&&!sTb->tagTestSent&&Port_TagHost()&&Port_TagCanStart()){
         Port_TagCommand(3,0,0);sTb->tagTestSent=1;}
     Ps_Prompt(0,Port_TagHost()?(sTb->tagRoomAction?"Confirm":Port_TagCPU(sTb->tagRoomCur)?"Remove CPU":Port_TagPlayerName(sTb->tagRoomCur)[0]?"Move player":"Add CPU"):"Copy code");
     if(!local)Ps_Prompt(4,"Chat");Ps_Prompt(2,"Back");
@@ -1847,6 +1863,7 @@ static f32 Tb_TagBottom(void){
 static void Tb_DrawTagRoom(void){
     s32 i,team,local=!strcmp(Port_TagCode(),"LOCAL0");f32 bottom=Tb_TagBottom(),step=Tb_TagRowStep();
     f32 left=Tb_TagWideLeft(),right=512-left;
+    if(sTb->tagQuick&&Port_TagPhase()<2){Ps_Panel(TBO_KIT_WINDOW,left+14,108,right-14,246,0x80);return;}
     if(sTb->tagChatTyping){Ps_Panel(TBO_KIT_WINDOW,28,94,484,322,0x80);Ps_Pill(TBO_KIT_BAR,40,276,472,305,0x80);return;}
     for(team=0;team<2;++team){
         f32 x=team?262.0f:14.0f+left;
@@ -1867,6 +1884,12 @@ static void Tb_DrawTagRoomText(void){
     char line[128];s32 i,team,local=!strcmp(Port_TagCode(),"LOCAL0");
     f32 step=Tb_TagRowStep(),bottom=Tb_TagBottom();
     f32 left=Tb_TagWideLeft(),right=512-left;
+    if(sTb->tagQuick&&Port_TagPhase()<2){
+        s32 seconds=sTb->modeT/60;
+        Ps_Align(1);Ps_Text(256,145,Port_TagPhase()?"Connecting players...":"Searching for players...",.90f,430-2*left,1);
+        sprintf(line,"%d:%02d",seconds/60,seconds%60);Ps_TextRaw(256,194,line,.74f,120,0);Ps_Align(0);
+        return;
+    }
     if(sTb->tagChatTyping){
         Ps_Text(44,107,"ROOM CHAT",.65f,410,3);
         for(i=0;i<Port_TagChatCount();++i)Ps_TextRaw(44,141+i*20,(char*)Port_TagChatLine(i),.43f,420,0);
@@ -3892,6 +3915,7 @@ static char *Tb_Help(void) {
             "Find players for Free for All, 2 vs 2 or 5 vs 5."};
         return help[sTb->tagCur>=0&&sTb->tagCur<9?sTb->tagCur:0];}
     case TB_TAG_ROOM:
+        if(sTb->tagQuick&&Port_TagPhase()<2)return "Waiting for four players to join the 2 vs 2 battle.";
         if(sTb->tagChatTyping)return "Type your message with the keyboard. ENTER sends it and ESC closes the chat.";
         if(!Port_TagHost())return "SELECT copies the room code. The host arranges the teams and starts character selection.";
         if(sTb->tagMoving>=0)return "Choose a destination with X. TRIANGLE cancels. SELECT copies the room code.";
@@ -4327,6 +4351,7 @@ static void Tb_DrawText(void) {
     char **title = sTbTitle;
     const char *heading=title[sTb->mode];
     if(sTb->mode==TB_WAIT&&!sTb->found&&sTb->host!=2)heading=sTb->host?"Room Open":"Joining Room";
+    if(sTb->mode==TB_TAG_ROOM&&sTb->tagQuick&&Port_TagPhase()<2)heading="Quick Match";
 
     /* its capitals centred on the crest beside it (y 32); up to the player card */
     Ps_Heading(Tb_TitleLeft() + 44.0f, Ps_TextTop(32.0f, 1.3f), (char *)PortOnline_Text((sTb->mode==TB_JOIN&&sTb->tagJoin)?"Join Room":heading), 1.3f, 248.0f, 0x80);
@@ -4456,7 +4481,8 @@ s32 PortTbo_Run(void) {
     Tb_WinInit();
     if (getenv("BT4_RENDER_TBO") != NULL) {
         const char *which = getenv("BT4_RENDER_TBO");
-        if (which[0] == 't') Tb_SetMode(TB_TAG);
+        if(!strcmp(which,"tag-quick-wait")&&getenv("BT4_RENDER_TEST")){sTb->tagQuick=4;Tb_SetMode(TB_TAG_ROOM);}
+        else if (which[0] == 't') Tb_SetMode(TB_TAG);
         else if (which[0] == 'c' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_CREATE);
         else if (which[0] == 'j' && getenv("BT4_RENDER_TEST")) {sTb->tagJoin=1;Tb_SetMode(TB_JOIN);}
         else if (which[0] == 'p' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_PROFILE);
@@ -4499,6 +4525,9 @@ s32 PortTbo_Run(void) {
         extern void Port_LobbyReviewFixture(int);
         Port_LobbyReviewFixture(6);Port_LobbyView(&sTbLv);Tb_BracketOpen();
         if(getenv("BT4_TOURNAMENT_SELFTEST"))exit(0);
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_QUICK_TEST")){
+        sTb->tagCur=0;sTb->tagSetup=0;Tb_SetMode(TB_TAG);
     }
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {

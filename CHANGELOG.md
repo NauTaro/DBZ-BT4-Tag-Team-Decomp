@@ -5,6 +5,7 @@
 - Add an online-menu fighter count refreshed every five minutes.
 - Expand native message panels without stretching their decorations; align menu groups and enlarge ultrawide labels.
 - Synchronize Free for All rules, targeting and winner selection through the participant-hosted room protocol.
+- Reset Tag Team input admission when a same-room quick-match roster fills, so the four-player match accepts its first synchronized frames.
 
 # 0.1.39.2 R7 Hotfix
 

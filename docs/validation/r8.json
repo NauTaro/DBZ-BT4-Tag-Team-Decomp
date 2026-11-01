@@ -6,7 +6,7 @@
   "kernel_parity_scenarios": 8,
   "kernel_frames_per_scenario": 2000,
   "ffa_results": "All six survivor identities, pre-existing native KO flags, timeout, ties, loading/pause gates, team and duel regression checks",
-  "tag_timing": "Local CPU ping/delay zero; 240 local frames without network input packets; measured fixture RTT 40 ms",
+  "tag_timing": "Local CPU ping/delay zero; 240 local frames without network input packets; measured fixture RTT 40 ms; regression confirms input ring updates from one to four players as a same-room quick match fills",
   "sql_contract": {
     "passed": true,
     "checks": [
@@ -85,7 +85,7 @@
       "actors": 10
     }
   ],
-  "online": {
+  "online_custom_room": {
     "native_instances": 4,
     "same_room": true,
     "last_common_frame": 900,
@@ -118,15 +118,28 @@
       ]
     ]
   },
-  "scope": "Background Windows validation with isolated runtimes and no physical input/audio. Four local game processes in one hosted Supabase custom room; not a cross-ISP or capacity benchmark.",
-  "pending_before_publication": [
-    "Deploy both R8 Supabase migrations and run hosted presence/quick-queue checks",
-    "Build and verify the three signed platform packages"
-  ],
+  "hosted_backend": {
+    "presence_deployed": true,
+    "presence_reply": {"online": 0, "version": 1, "refresh_seconds": 300},
+    "checks_passed": 7,
+    "presence_uses_realtime": false,
+    "private_realtime_notifications": true
+  },
+  "online_quick_match": {
+    "native_instances": 4,
+    "same_room": true,
+    "last_common_frame": 900,
+    "mismatches": [],
+    "injected_start": true,
+    "shared_start_commands": [
+      [["308", "1"]], [["308", "1"]], [["308", "1"]], [["308", "1"]]
+    ]
+  },
+  "scope": "Background Windows validation with isolated runtimes and no physical input/audio. Four local game processes joined one hosted Supabase quick-match room and reached 900 common frames. This is not a cross-ISP or capacity benchmark.",
+  "pending_before_publication": ["Build and verify the three signed platform packages from the final R8 commit"],
   "limitations": [
     "Native Linux/macOS gameplay is not tested on physical hardware here",
-    "Panoramic backgrounds use proportional cover and can crop source scenery; not every animation or menu transition has been certified",
-    "The new public Tag queue has local PostgreSQL contract coverage, not hosted validation yet"
+    "Panoramic backgrounds use proportional cover and can crop source scenery; not every animation or menu transition has been certified"
   ],
   "legacy_negotiation_checks_passed": 35
 }
