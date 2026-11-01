@@ -23,4 +23,4 @@ with tempfile.TemporaryDirectory(prefix='bt4-setup-check-') as directory:
     for name,source,extra,args in sources:
         exe=out/(name+'-probe')
         subprocess.run(common+[str(source)]+extra+['-o',str(exe)]+flags+libs,env=env,check=True)
-        subprocess.run([str(exe)]+args,env=env,cwd=out,check=True,timeout=120)
+        subprocess.run([str(exe)]+args,env=env,cwd=out,check=True,timeout=240)

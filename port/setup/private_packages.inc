@@ -20,17 +20,21 @@ static void download_public_asset(const std::string &root,const std::string &tag
     std::vector<std::string> args;
 #ifdef _WIN32
     args.emplace_back("curl.exe");
+#elif defined(__APPLE__)
+    args.emplace_back("/usr/bin/curl");
 #else
     args.emplace_back("curl");
 #endif
-    args.insert(args.end(),{"--location","--fail","--silent","--show-error","--proto-redir","=https","--connect-timeout","25","--max-redirs","8","--output",temp,"--url",url});
+    args.insert(args.end(),{"--location","--fail","--silent","--show-error","--proto-redir","=https","--connect-timeout","25","--speed-limit","1024","--speed-time","60","--max-redirs","8","--output",temp,"--url",url});
     std::vector<const char*> argv;for(const auto &arg:args)argv.push_back(arg.c_str());argv.push_back(NULL);
     SDL_PropertiesID props=SDL_CreateProperties();
     SDL_SetPointerProperty(props,SDL_PROP_PROCESS_CREATE_ARGS_POINTER,(void*)argv.data());
     SDL_SetNumberProperty(props,SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,SDL_PROCESS_STDIO_NULL);
     SDL_SetNumberProperty(props,SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,SDL_PROCESS_STDIO_APP);
     SDL_SetBooleanProperty(props,SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN,true);
+#ifdef _WIN32
     SDL_SetBooleanProperty(props,SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN,true);
+#endif
     SDL_SetStringProperty(props,SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING,root.c_str());
     SDL_Process *process=SDL_CreateProcessWithProperties(props);SDL_DestroyProperties(props);
     if(!process)throw Stop{"PUBLIC_DOWNLOAD_TOOL_MISSING"};
