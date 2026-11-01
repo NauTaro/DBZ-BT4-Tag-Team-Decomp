@@ -925,19 +925,26 @@ static void Tb_SparUpdate(s32 live) {
 /* ---------------------------------------------------------------------------------------------- Quick Match */
 static void Tb_QuickStart(void) {
     s32 state;
-    if(!sTb->quickFromTag)sTb->queue=0;
 
     if (!Tb_Vanilla(1)) {
         return;
     }
-    Port_SettingSave("bt4_quick_mode",sTb->queue);
-    if(sTb->queue){
+    if(!sTb->quickFromTag){
+        Port_SettingSave("tbo_queue",sTb->queue);
+        Port_SettingSave("tbo_region",sTb->region);
+        Port_SettingsWrite();
+    }
+    if(sTb->quickFromTag){
         unsigned long long content=0;
-        s32 size=sTb->queue==1?3:sTb->queue==2?2:5;
+        s32 tagQueue=sTb->queue;
+        s32 size;
+        if(tagQueue<1||tagQueue>3)tagQueue=2;
+        sTb->queue=tagQueue;Port_SettingSave("bt4_quick_mode",sTb->queue);
+        size=tagQueue==1?3:tagQueue==2?2:5;
         if(Port_TagDataFingerprint(&content)!=1)return;
         Port_TagCPUOptions(0,2);
         if(!Port_TagConnect(Port_TagEndpoint())){Tb_Note((char*)Port_TagError());return;}
-        Port_TagModeOptions(sTb->queue==1,1);
+        Port_TagModeOptions(tagQueue==1,1);
         sTb->tagQuick=size*2;sTb->tagQuickStarted=0;sTb->tagJoin=0;
         Port_TagOpen(size,4,0,Port_NetNameGet(),content);
         Tb_SetMode(TB_TAG_ROOM);return;
@@ -946,9 +953,6 @@ static void Tb_QuickStart(void) {
     Port_NetRulesSet(sTb->queue, 0, 4); /* (a queue's rules: its battle type, no time limit, the standard speed) */
     Port_NetOptions(Port_RollCan() ? 4 : 0, -2);
     Port_NetNameSet(Port_NetNameGet());
-    Port_SettingSave("tbo_queue", sTb->queue);
-    Port_SettingSave("tbo_region", sTb->region);
-    Port_SettingsWrite();
     Port_LobbyQuickArea(sTbRegionArea[sTb->region]);
     state = Port_LobbyStartQuick(sTb->queue);
     if (state < 0) {
@@ -976,10 +980,11 @@ static void Tb_QuickUpdate(s32 live) {
         return;
     }
     Ps_Move(&sTb->qkCur, 3);
-    if (sTb->qkCur == 0 && Ps_Side() != 0 && sTb->quickFromTag) {
-        sTb->queue = 1+(sTb->queue-1 + Ps_Side() + 3) % 3;
+    if (sTb->qkCur == 0 && Ps_Side() != 0) {
+        if(sTb->quickFromTag)sTb->queue = 1+(sTb->queue-1 + Ps_Side() + 3) % 3;
+        else sTb->queue = !sTb->queue;
         Snd_PlaySe(1, 0);
-    } else if (sTb->qkCur == 1 && Ps_Side() != 0) {
+    } else if (sTb->qkCur == 1 && Ps_Side() != 0 && !sTb->quickFromTag) {
         sTb->region = (sTb->region + Ps_Side() + QK_REGIONS) % QK_REGIONS;
         Snd_PlaySe(1, 0);
     }
@@ -1213,7 +1218,7 @@ static void Tb_HubUpdate(s32 live) {
         switch (sTb->hubCur) {
         case HUB_QUICK:
             Snd_PlaySe(1, 1);
-            sTb->quickFromTag=0;sTb->queue=0;
+            sTb->quickFromTag=0;sTb->queue=Port_Setting("tbo_queue",0)==1;
             sTb->qkCur = 2;
             sTb->asked = sTb->frames - 100000;
             Tb_SetMode(TB_QUICK);
@@ -2152,12 +2157,13 @@ static void Tb_DrawQuick(void) {
 
 static void Tb_DrawQuickText(void) {
     static char line[128];
+    static char *tagModes[] = {"One on One","Free for All","2 vs 2","5 vs 5"};
     s32 q;
 
     Ps_Text(26.0f, 76.0f, "PICK YOUR BATTLE", 0.62f, 0.0f, 2);
     Ps_Text(36.0f, 115.0f, "Battle", 0.66f, 110.0f, sTb->qkCur == 0 ? 1 : 0);
     Ps_Align(2);
-    Ps_Text(266.0f, 117.0f, (char*[]){"ONE ON ONE","FREE FOR ALL (6)","2 VS 2","5 VS 5"}[sTb->queue], 0.54f, 140.0f, 3);
+    Ps_Text(266.0f, 117.0f, sTb->quickFromTag ? (char*[]){"ONE ON ONE","FREE FOR ALL (6)","2 VS 2","5 VS 5"}[sTb->queue] : (sTb->queue ? "TEAMS (UP TO 5)" : "ONE ON ONE"), 0.54f, 140.0f, 3);
     Ps_Align(0);
     Ps_Text(36.0f, 149.0f, "Region", 0.66f, 110.0f, sTb->qkCur == 1 ? 1 : 0);
     Ps_Align(2);
@@ -2165,17 +2171,20 @@ static void Tb_DrawQuickText(void) {
     Ps_Align(0);
     Ps_Text(36.0f, 183.0f, "Search", 0.66f, 110.0f, sTb->qkCur == 2 ? 1 : 0);
     Ps_Text(28.0f, 238.0f, "WAITING RIGHT NOW", 0.52f, 0.0f, 2);
-    for (q = sTb->quickFromTag?1:0; q < (sTb->quickFromTag?4:1); q++) {
-        s32 n = getenv("BT4_RENDER_TEST")?-1:q?Port_TagQueueWaiting(q-1):Port_LobbyQueueWaiting(0);
+    for (q = sTb->quickFromTag?1:0; q < (sTb->quickFromTag?4:2); q++) {
+        s32 row=q-(sTb->quickFromTag?1:0);
+        s32 n = getenv("BT4_RENDER_TEST")?-1:sTb->quickFromTag?Port_TagQueueWaiting(q-1):Port_LobbyQueueWaiting(q);
+        f32 y=sTb->quickFromTag?255.0f+17.0f*(f32)row:262.0f+22.0f*(f32)row;
+        char *label=sTb->quickFromTag?tagModes[q]:(q?"Teams":"One on One");
 
-        Ps_Text(36.0f, 255.0f + 17.0f * (f32)(q-sTb->quickFromTag), (char*[]){"One on One","Free for All","2 vs 2","5 vs 5"}[q], 0.56f, 120.0f, q == sTb->queue ? 1 : 0);
+        Ps_Text(36.0f, y, label, 0.56f, 120.0f, q == sTb->queue ? 1 : 0);
         if (n < 0) {
             sprintf(line, "...");
         } else {
             sprintf(line, Tb_Fmt("%d WAITING"), (int)n);
         }
         Ps_Align(2);
-        Ps_Text(286.0f, 255.0f + 17.0f * (f32)(q-sTb->quickFromTag), line, 0.5f, 120.0f, n > 0 ? 5 : 3);
+        Ps_Text(286.0f, y, line, 0.5f, 120.0f, n > 0 ? 5 : 3);
         Ps_Align(0);
     }
     /* (the queues count everyone; what the region choice means instead of the rules, which the hosts' line says) */

@@ -1,3 +1,7 @@
+# 0.1.39.2 R8 Hotfix
+
+- Restore the One on One / native BT3 Team Battle selector in Quick Match and route both modes through the standard online lobby queues.
+
 # 0.1.39.2 R8
 
 - Separate Tag Team Quick Match (2 vs 2) from custom rooms, with 2 vs 2, 5 vs 5 and six-player Free for All presets.
