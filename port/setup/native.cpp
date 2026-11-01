@@ -221,7 +221,7 @@ std::string upper(std::string s) {
 
 void check_cancel() {
     if (sCancel) {
-        throw Stop{"Cancelled. Install continues from where it stopped."};
+        throw Stop{"INSTALL_CANCELLED"};
     }
 }
 
@@ -825,7 +825,7 @@ void step_test(const std::string &root) {
     SDL_SetEnvironmentVariable(env, "BT3_NOSOUND", "1", true);
     SDL_SetEnvironmentVariable(env, "BT4_MUSIC_NO_CACHE", "1", true);
     SDL_SetEnvironmentVariable(env, "BT3_DATA", sDataRoot.c_str(), true); // no window: a release program opens one by default
-    for (const char *name : {"BT3_REPLAY", "BT3_PAD_PLAY", "BT3_PAD_REC"}) {
+    for (const char *name : {"BT3_REPLAY", "BT3_PAD_PLAY", "BT3_PAD_REC", "BT3_A11Y_LOG"}) {
         SDL_UnsetEnvironmentVariable(env, name);
     }
     SDL_PropertiesID props = SDL_CreateProperties();
@@ -990,17 +990,15 @@ std::string download_optional(const std::string &root,bool portuguese){
     SDL_PathInfo info;
     if(SDL_GetPathInfo(path.c_str(),&info)&&info.size==bytes&&sha256_file(path)==digest)return path;
     say("@activity download");say("@package 0");
-    try{cli_run(root,{"auth","status","--hostname","github.com"});}
-    catch(const Stop &){say("@github login");cli_run(root,{"auth","login","--web","--hostname","github.com","--git-protocol","https","--scopes","repo"},"",0,true);}
     if(portuguese){
-        cli_run(root,{"release","download",kLanguageRelease,"--repo",kLanguageRepository,"--pattern",name,"--dir",folder,"--clobber"},path,bytes);
+        download_public_asset(root,kLanguageRelease,name,path,bytes);
     }else{
         const std::string temp=path+".part";SDL_IOStream *output=SDL_IOFromFile(temp.c_str(),"wb");
         if(!output)throw Stop{"Could not create the texture download. Check free disk space."};
         try{
             for(int part=1;part<=2;++part){
                 check_cancel();const std::string partName=std::string("BT4-HD-v1.07.zip.00")+std::to_string(part),piece=folder+partName;
-                cli_run(root,{"release","download",kTextureRelease,"--repo",kLanguageRepository,"--pattern",partName,"--dir",folder,"--clobber"},piece,part==1?1850000000ULL:1840378076ULL);
+                download_public_asset(root,kTextureRelease,partName,piece,part==1?1850000000ULL:1840378076ULL,(part-1)*27,part==1?27:28);
                 SDL_IOStream *input=SDL_IOFromFile(piece.c_str(),"rb");if(!input)throw Stop{"LANGUAGE_DOWNLOAD_INCOMPLETE"};
                 std::vector<Uint8> buffer(1024*1024);Sint64 remaining=SDL_GetIOSize(input);
                 try{while(remaining>0){check_cancel();size_t n=(size_t)std::min<Sint64>(remaining,buffer.size());
@@ -1033,18 +1031,20 @@ bool installed_language(const std::string &root,bool english){
 }
 void work(std::string root, std::string path, std::string eu, std::string texturePack, std::string ptbrPack) {
     try {
-        sStep=0;sSteps=(path.empty()?0:4)+(sInstallMask==3?2:0)+(!texturePack.empty()?1:0)+(!ptbrPack.empty()?1:0);
+        sStep=0;sSteps=(path.empty()?0:4)+((sInstallMask==3||!ptbrPack.empty())?2:0)+(!texturePack.empty()?1:0)+(!ptbrPack.empty()?1:0);
         if(!path.empty()){
             Iso iso;step_disc(iso,path);check_cancel();
             if(sInstallMask==0)sInstallMask=sEnglish?2:1;
-            if(sInstallMask!=3&&sInstallMask!=(sEnglish?2:1))throw Stop{"LANGUAGE_ISO_MISMATCH"};
+            const bool portugueseCanAddEnglish=!ptbrPack.empty()&&sInstallMask==2&&!sEnglish;
+            if(sInstallMask!=3&&sInstallMask!=(sEnglish?2:1)&&!portugueseCanAddEnglish)throw Stop{"LANGUAGE_ISO_MISMATCH"};
             select_data_root(root);step_data(iso,root);check_cancel();step_tables(root);check_cancel();step_test(root);
             const char *profile=sEnglish?"BT4 B14 Rev2 ENG; SLUS_219.78; native profile 7\n":"BT4 B14 Rev2 LATINO; SLUS_219.78; native profile 7\n";
             if(!SDL_SaveFile((sDataRoot+".installed-bt4-b14rev2").c_str(),profile,strlen(profile)))throw Stop{"INSTALL_STATE_FAILED"};
         }else if(!Native_Installed(root))throw Stop{"ISO_REQUIRED"};
         bool base=base_english(root);
-        if(sInstallMask==3){
-            if(!installed_language(root,!base))install_language(root,!base);
+        if(sInstallMask==3||!ptbrPack.empty()){
+            const bool targetEnglish=sInstallMask==3?!base:true;
+            if(!installed_language(root,targetEnglish))install_language(root,targetEnglish);
             else {
                 step("Language package");say("@package 100");say("@skip verified language is installed");
                 step("Self-test");say("@skip verified language needs no additional self-test");
@@ -1059,7 +1059,7 @@ void work(std::string root, std::string path, std::string eu, std::string textur
         std::string options=std::to_string(sInstallMask|((!ptbrPack.empty()||SDL_GetPathInfo((root+"tbo/setup/PTBR_v1.2.native-installed").c_str(),NULL))?4:0))+"\n";
         if(!ptbrPack.empty()){
             const char *settings="pt-BR";
-            SDL_SaveFile((root+"tbo/setup/selected-game-language").c_str(),settings,strlen(settings));
+            if(!SDL_SaveFile((root+"tbo/setup/selected-game-language").c_str(),settings,strlen(settings)))throw Stop{"INSTALL_STATE_FAILED"};
         }
         if(!SDL_SaveFile((root+"tbo/languages.ini").c_str(),options.data(),options.size()))throw Stop{"INSTALL_STATE_FAILED"};
         const char *identity=BT4_BUILD_IDENTITY;

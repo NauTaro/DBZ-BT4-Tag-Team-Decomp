@@ -1128,7 +1128,7 @@ static int SDLCALL install_thread(void *arg) {
         items[count].index = (unsigned)i;
         unixMode = (st.m_version_made_by >> 8) == 3 ? (unsigned)(st.m_external_attr >> 16) & 07777 : 0;
         items[count].mode = unixMode != 0 ? unixMode : 0644;
-        if (strcmp(rel, GAME_EXE) == 0 || strcmp(rel, GAME "-setup") == 0 || strstr(rel, ".so") != NULL) {
+        if (strcmp(rel, GAME_EXE) == 0 || strcmp(rel, GAME "-setup") == 0 || strstr(rel, ".so") != NULL || strstr(rel, ".dylib") != NULL) {
             items[count].mode |= 0755; /* (the programs stay programs, whatever the archive says) */
         }
         haveGame = haveGame || strcmp(rel, GAME_EXE) == 0;

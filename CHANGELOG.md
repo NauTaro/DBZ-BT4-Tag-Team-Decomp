@@ -1,3 +1,10 @@
+# 0.1.39.3 R1
+
+- Integrate upstream 0.1.39.3 widescreen menus, replay loading and screen reader support.
+- Fix Portuguese selection and install its required English data automatically.
+- Add Brazilian Portuguese installer text and keep the optional HD pack checkbox visible.
+- Download public language and texture packs without GitHub sign-in.
+
 # 0.1.39.2 R9
 
 - Install Brazilian Portuguese through setup and select it from the native game language menu, using the English data profile.

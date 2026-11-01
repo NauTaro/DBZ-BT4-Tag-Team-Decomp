@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the setup window (port/setup/setup.cpp, native.cpp).
+# Builds the setup window (port/setup/setup.cpp, native.cpp) and the shared screen reader.
 #   port/setup/build.sh        -> ./BT4decomp-setup            (needs g++ and SDL3; Dear ImGui is in the repository)
 #   port/setup/build.sh win    -> port/build/BT4decomp-setup.exe
 #        on Linux: cross-compiled with mingw-w64 (x86_64-w64-mingw32-g++) and SDL3's mingw development package
@@ -21,20 +21,28 @@ if [ "${1:-linux}" = win ]; then
 elif [ "${1:-linux}" = mac ] || [ "$(uname -s)" = Darwin ]; then
     O=port/build/setup_mac; OUT=BT4decomp-setup; CXX=clang++; CC=clang
     S=${BT3_SDL3:-/opt/homebrew/opt/sdl3}
+    [ -f "$S/include/SDL3/SDL.h" ] || { echo "SDL3 not found in $S: brew install sdl3"; exit 1; }
     SDL="-I$S/include -L$S/lib"
-    LIBS="-lSDL3 -lz -lpthread -Wl,-rpath,@executable_path/lib -mmacosx-version-min=11.0"
+    LIBS="-lSDL3 -lz -lpthread -Wl,-rpath,@executable_path/lib -Wl,-rpath,$S/lib -mmacosx-version-min=11.0"
 else
     O=port/build/setup; OUT=BT4decomp-setup; CXX=g++; CC=gcc
     SDL="$(pkg-config --cflags --libs sdl3 zlib)"
     LIBS="-lSDL3 -lz -lpthread -ldl -static-libstdc++ -static-libgcc -Wl,-rpath,\$ORIGIN/lib"
 fi
+CC=$(echo "$CXX" | sed 's/clang++/clang/; s/g++/gcc/') # (the C compiler beside it, same flags: gcc, clang)
 mkdir -p $O
-for f in $I/imgui.cpp $I/imgui_draw.cpp $I/imgui_tables.cpp $I/imgui_widgets.cpp $I/imgui_impl_sdl3.cpp $I/imgui_impl_sdlgpu3.cpp $I/imgui_impl_opengl3.cpp port/setup/native.cpp port/setup/setup.cpp; do
+# The screen reader (port/src/gs/ui_a11y.cpp, a11y.c, plat_settings.c) needs Dear ImGui's item hooks:
+# IMGUI_ENABLE_TEST_ENGINE. An object older than this script is built again (one from before lacks them).
+for f in $I/imgui.cpp $I/imgui_draw.cpp $I/imgui_tables.cpp $I/imgui_widgets.cpp $I/imgui_impl_sdl3.cpp $I/imgui_impl_sdlgpu3.cpp $I/imgui_impl_opengl3.cpp port/setup/native.cpp port/setup/setup.cpp port/src/gs/ui_a11y.cpp; do
     o=$O/$(basename "$f" .cpp).o
-    if [ ! -f "$o" ] || [ "$f" -nt "$o" ] || [ port/setup/native.h -nt "$o" ] ||
-       [ port/setup/progress.h -nt "$o" ] || [ port/setup/private_packages.inc -nt "$o" ] ||
-       [ port/setup/language_install.inc -nt "$o" ] || [ port/third_party/miniz/miniz.h -nt "$o" ]; then
-        $CXX -std=c++17 -O2 -w -I$I $SDL -c "$f" -o "$o" || exit 1
+    if [ ! -f "$o" ] || [ "$f" -nt "$o" ] || [ port/setup/native.h -nt "$o" ] || [ port/src/gs/ui.h -nt "$o" ] || [ port/setup/build.sh -nt "$o" ] || [ port/setup/progress.h -nt "$o" ] || [ port/setup/private_packages.inc -nt "$o" ] || [ port/setup/language_install.inc -nt "$o" ] || [ port/third_party/miniz/miniz.h -nt "$o" ]; then
+        $CXX -std=c++17 -O2 -w -DIMGUI_ENABLE_TEST_ENGINE -I$I -Iport/src/gs $SDL -c "$f" -o "$o" || exit 1
+    fi
+done
+for f in port/src/gs/a11y.c port/src/plat_settings.c; do
+    o=$O/$(basename "$f" .c).o
+    if [ ! -f "$o" ] || [ "$f" -nt "$o" ] || [ port/setup/build.sh -nt "$o" ]; then
+        $CC -O2 -w $SDL -c "$f" -o "$o" || exit 1
     fi
 done
 # ZIP package support uses the repository's vendored miniz reader only. Keep its
