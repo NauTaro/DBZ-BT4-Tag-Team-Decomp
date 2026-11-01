@@ -417,6 +417,10 @@ void Ps_Line(s32 id, f32 x, f32 base, f32 cap, f32 fit, u32 top, u32 bottom, u32
 /* A line of letters with independent horizontal and vertical size, and an optional outer border. */
 void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width,
                       u32 top, u32 bottom, u32 line, u32 outer, f32 outerWidth) {
+    extern int Port_MenusWide(void),gPortMenuMode;
+    if(gPortMenuMode&&Port_MenusWide()&&Port_PageAspectMilli()>=2000){
+        y-=PS_CELL_UNITS*scaleY*.08f;scaleX*=1.20f;scaleY*=1.20f;
+    }
     f32 cell = PS_CELL_UNITS * scaleY;
     f32 cap = cell * PS_CAP_OF_CELL;
     f32 fit = 1.0f;

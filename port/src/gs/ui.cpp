@@ -1274,10 +1274,10 @@ static void quick_status(int state, int &lastState, const char *name) {
     ImGui::EndDisabled();
     if (search) {
         since = SDL_GetTicks() + 1;
-        // The same for everyone in a quick match, whoever turns out to be the host: rollback of up to 8 frames and
+        // The same for everyone in a quick match, whoever turns out to be the host: rollback of up to 4 frames and
         // the input delay measured from the connection. (The Host tab's own choices are for matches with someone
         // you can agree them with; a stranger's saved ones were not to be inherited unseen.)
-        Port_NetOptions(Port_RollCan() ? 8 : 0, -2);
+        Port_NetOptions(Port_RollCan() ? 4 : 0, -2);
         Port_NetSpeedSet(Port_NetSpeedStandard()); // (every quick match: the competitive standard)
         Port_NetRulesSet(sQueue == 0 ? 0 : sQueue == 1 ? 1 : 2, sQueue >= 2 ? sQueue - 2 : 0, 4);
         Port_NetNameSet(name);
@@ -1354,7 +1354,7 @@ static void build_net(void) {
                 ImGui::InputText(f1_text("Port"), port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
                 ImGui::EndDisabled();
                 if (roll < 0) { // the choices of last time (new names: the first ones' defaults were 4 frames and delay 1)
-                    roll = Port_RollCan() ? Port_Setting("net_rollback2", 8) / 2 : 0;
+                    roll = Port_RollCan() ? Port_Setting("net_rollback2", 4) / 2 : 0;
                     delay = Port_Setting("net_delay2", -1) + 1; // 0 = automatic, else the delay + 1
                     if (roll < 0 || roll > 4) { roll = 4; }
                     if (delay < 0 || delay > 7) { delay = 0; }

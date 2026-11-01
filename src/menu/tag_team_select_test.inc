@@ -24,6 +24,9 @@ static void TagLongVideo_Input(s32 seat){
     s32 team=Port_TagTeam(seat);TeamSelSide *side=gTeamSel->side[team];
     if(!getenv("BT4_RENDER_TEST")||!getenv("BT4_TAG_LONG_VIDEO"))return;
     gPad[team].gamePressed=gPad[team].gameHeld=gPad[team].gameRepeat=0;
+    if(getenv("BT4_TAG_WIDE_AUDIT")&&side->state==TEAMSEL_ST_COLOR){
+        static s32 hold;if(hold++<80)return;
+    }
     if(++sTagLongTick%28)return;
     if(side->state==TEAMSEL_ST_FORM && side->chara!=TagLongVideo_Chara(seat))gPad[team].gameRepeat=PADG_RIGHT;
     else gPad[team].gamePressed=PADG_CROSS;

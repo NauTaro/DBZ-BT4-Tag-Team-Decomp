@@ -5,6 +5,9 @@
 s32 TagBattle_Count(void);
 s32 TagBattle_Active(void);
 s32 TagBattle_Team(s32 actor);
+s32 TagBattle_FreeForAll(void),TagBattle_Allied(s32 a,s32 b);
+s32 TagBattle_WinningActor(void);
+void TagBattle_SetWinningActor(s32 actor);
 s32 TagBattle_TeamIndex(s32 actor);
 s32 TagBattle_TeamCount(s32 team);
 s32 TagBattle_Target(s32 actor);

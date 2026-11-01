@@ -66,7 +66,7 @@ static void TagClash_UpdateBlows(void) {
     for(i=0;i<count;++i)for(j=i+1;j<count;++j){
         BtlFlagChr *a=BtlChar_Get(i),*b=BtlChar_Get(j);
         s32 *timer=&sTagBlowTicks[i][j];
-        if(TagBattle_Team(i)==TagBattle_Team(j) || BtlAct_GetCurrent(a)!=0xFA || BtlAct_GetCurrent(b)!=0xFA ||
+        if(TagBattle_Allied(i,j) || BtlAct_GetCurrent(a)!=0xFA || BtlAct_GetCurrent(b)!=0xFA ||
            TagBattle_Target(i)!=j || TagBattle_Target(j)!=i){*timer=0;continue;}
         if(*timer==0)ChrCam_RequestCut(a,1,6);
         if(*timer==1)BtlChar_PlayVoice(a,0x18);

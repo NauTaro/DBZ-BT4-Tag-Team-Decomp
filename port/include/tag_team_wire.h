@@ -20,6 +20,8 @@ void Port_TagMenuTestAdvance(unsigned ms);
 void Port_TagPoll(void);
 void Port_TagOpen(int size, int time, int delay, const char *name, uint64_t content);
 void Port_TagCPUOptions(int fill,int difficulty);
+void Port_TagModeOptions(int free_for_all,int quick);
+int Port_TagFreeForAll(void);
 void Port_TagJoin(const char *code, const char *name, uint64_t content);
 void Port_TagCommand(int command, int a, int b);
 int Port_TagNetwork(void);

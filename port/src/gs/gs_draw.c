@@ -31,6 +31,7 @@
 #include "gs_internal.h"
 #include "gs_draw.h"
 #include "menu_wide_layout.h"
+#include "menu_panel_layout.h"
 static uint32_t sPresentationObject;
 #include "ui.h"         /* PortVideo and the window helpers */
 #include "gs_texpack.h" /* texture packs (replacement textures) */
@@ -1853,6 +1854,15 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     /* (Not the cross-fade's picture: it is the whole frame as it was shown, wide view and all, drawn back over the
        whole frame in strips. Each strip is narrower than the screen, so the rule below took it for a piece of 2D
        art and the old shot was drawn at three quarters of the width over the new one: seen by the user.) */
+    if (gPortMenuMode && Port_MenusWide() && Port_IsWide() && (gsAnchor == 21 || gsAnchor == 22) &&
+        !sWholeFrame && !d.tex_is_target && !tbo && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp &&
+        gsVertCount - d.first <= 6 && gsVertCount + 768 < MAX_VERTS) {
+        Vtx source[6];
+        unsigned count = gsVertCount - d.first;
+        memcpy(source, gsVerts + d.first, count * sizeof(Vtx));
+        gsVertCount = d.first + menu_panel_expand(gsVerts + d.first, source, count,
+                                                Port_MenuWideScaleX(Port_AspectMilli()));
+    }
     /* Scenery uses uniform cover, while menu artwork and HUD pieces keep
        their proportions and the parent clip's left/right/centre anchor. */
     if (gPortMenuMode && Port_MenusWide() && Port_IsWide() && gsAnchor == 10 &&
@@ -1902,7 +1912,8 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             /* Every piece of the same clip uses the same pivot, including
                masks, glyphs, shadows and the scrolling scissor. */
             pivot = gsAnchor == 11 || gsAnchor == 14 ? 0.0f : gsAnchor == 12 || gsAnchor == 15 ? 512.0f : 256.0f;
-            int corner = gsAnchor == 16 || gsAnchor == 17 || gsAnchor == 18 || (gsAnchor == 13 && x1 - x0 <= 260.0f && y1 <= 140.0f);
+            int corner = gsAnchor == 16 || gsAnchor == 17 || gsAnchor == 18 ||
+                         ((gsAnchor >= 11 && gsAnchor <= 15) && x1 - x0 <= 260.0f && y1 - y0 <= 96.0f && y0 <= 8.0f);
             /* (13, character select: only a sprite the size of a corner's cloud, not the big pictures from the top) */
             if ((corner && y0 <= 8.0f && x0 >= 256.0f && x1 >= 511.5f) ||
                 (gsAnchor == 17 && y1 <= 120.0f && x0 >= 256.0f)) {
@@ -1916,11 +1927,6 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             } else if (gsAnchor == 18 && x0 <= 0.5f && x1 <= 312.0f) {
                 pivot = 0.0f;
             } else if (corner && y0 <= 8.0f && x1 <= 256.0f && x0 <= 0.5f) {
-                pivot = 0.0f;
-            }
-            if (gsAnchor == 11 && x0 >= 256.0f && x1 >= 511.5f) {
-                pivot = 512.0f; /* (a piece of a left column that lies in the right half against its edge: there) */
-            } else if (gsAnchor == 12 && x1 <= 256.0f && x0 <= 0.5f) {
                 pivot = 0.0f;
             }
         } else if (x1 - x0 >= 480.0f && !hudPanel && gsAnchor != 5 && gsAnchor != 6 && gsAnchor != 8 && !battleText) {
@@ -2280,6 +2286,9 @@ void GsGpu_Native(int effect) {
          * the UI page. Applying the battle's 4:3 correction a second time
          * separates the portrait from its frame on widescreen displays. */
         gsAnchor = 20;
+        return;
+    } else if (effect == 0x30 || effect == 0x31) {
+        gsAnchor = 21 + effect - 0x30;
         return;
     } else if (effect >= 0x22 && effect <= 0x2C) { /* widescreen menus: centre / fill / left / right; centre, left, right, bars too; page; top; edge */
         gsAnchor = effect - 0x22 + 9;

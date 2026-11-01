@@ -7,7 +7,7 @@ function room(count){
  const output=new Uint8Array(a.memory.buffer,a.Kernel_Output(),512);
  function command(id,cmd,x=0,y=0,z=0,pad=null){
   input.fill(0);const v=new DataView(input.buffer,input.byteOffset,512);
-  v.setUint32(0,0x54540008,true);v.setUint32(4,cmd,true);v.setUint32(8,a.Kernel_Epoch(),true);
+  v.setUint32(0,0x54540009,true);v.setUint32(4,cmd,true);v.setUint32(8,a.Kernel_Epoch(),true);
   v.setUint32(12,x,true);v.setUint32(16,y,true);v.setUint32(20,z,true);
   if(cmd===1||cmd===2||cmd===5||cmd===6)v.setUint32(24,123,true);
   if(cmd===1||cmd===2)input.set(new TextEncoder().encode('Test'+id),32);

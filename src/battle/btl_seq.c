@@ -1257,7 +1257,17 @@ s32 BtlSeq_CheckBattleEnd(void) {
     BattleResult *result = Battle_GetResult();
     s32 timeUp;
 
-    if(TagBattle_Active() && (result->winner&3)){
+    if(TagBattle_FreeForAll() && (result->winner&7)){
+        /* Native two-sided KO flags do not identify the surviving FFA actor.
+         * Resolve that actor even if the native result was already set. */
+        s32 a,alive=0,last=-1;
+        for(a=0;a<TagBattle_Count();++a)if(BtlCharApi_GetHp(a)>0){++alive;last=a;}
+        if(alive<=1){
+            TagBattle_SetWinningActor(last);
+            result->reason=BTL_REASON_KO;
+            result->winner=last<0?BTL_RESULT_DRAW:TagBattle_Team(last)?BTL_RESULT_WIN_P2:BTL_RESULT_WIN_P1;
+        }else{result->winner=0;result->reason=0;}
+    }else if(TagBattle_Active() && (result->winner&3)){
         s32 a,alive[2]={0,0};
         for(a=0;a<TagBattle_Count();++a)if(BtlCharApi_GetHp(a)>0)alive[TagBattle_Team(a)]++;
         if(alive[0] && alive[1]){result->winner=0;result->reason=0;}
@@ -1278,6 +1288,19 @@ s32 BtlSeq_CheckBattleEnd(void) {
         return 0;
     }
     timeUp = BtlSeq_TickClocksExt();
+    if(TagBattle_FreeForAll()){
+        s32 actor,alive=0,best=-1,hpBest=-1,tied=0;
+        for(actor=0;actor<TagBattle_Count();++actor){s32 hp=BtlCharApi_GetHp(actor);
+            if(hp>0){++alive;if(hp>hpBest){hpBest=hp;best=actor;tied=0;}else if(hp==hpBest)tied=1;}}
+        if(timeUp||alive<=1){
+            if(tied)best=-1;
+            TagBattle_SetWinningActor(best);
+            result->reason=timeUp?BTL_REASON_TIME_UP:BTL_REASON_KO;
+            result->winner=best<0?BTL_RESULT_DRAW:TagBattle_Team(best)?BTL_RESULT_WIN_P2:BTL_RESULT_WIN_P1;
+            return 1;
+        }
+        return 0;
+    }
     if(TagBattle_Active()){
         s32 actor,alive[2]={0,0};
         result->health[0]=result->health[1]=0;

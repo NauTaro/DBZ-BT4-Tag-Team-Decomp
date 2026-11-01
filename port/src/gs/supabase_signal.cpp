@@ -77,11 +77,11 @@ struct State {
     std::mutex lock;SDL_Thread *thread=nullptr;SDL_Semaphore *wake=nullptr;
     std::atomic<bool> quit{false};std::atomic<int> status{0};
     unsigned consumers=0;
-    std::deque<Job> jobs;std::array<std::deque<std::string>,3> events;
+    std::deque<Job> jobs;std::array<std::deque<std::string>,4> events;
 } state;
 static void wake(void*){if(state.wake)SDL_SignalSemaphore(state.wake);}
 static bool emit(int consumer,const Sj &j){
-    if(consumer<0||consumer>2)return false;
+    if(consumer<0||consumer>3)return false;
     std::string body=j.dump();if(body.size()>24576)return false;
     std::lock_guard<std::mutex> g(state.lock);
     if(!(state.consumers&(1u<<consumer)))return true;
@@ -144,7 +144,9 @@ static int entry(void*){
     auto post=[&](const char *event,const Sj &payload,const std::string &topic){std::string ref=std::to_string(++serial);if(ws)ws->text(Sj{{"topic",topic},{"event",event},{"payload",payload},{"ref",ref},{"join_ref",joinRef}}.dump());return ref;};
     while(!state.quit){
         Uint64 now=SDL_GetTicks();
-        if(!ws&&now>=reconnect){
+        bool realtimeWanted;
+        {std::lock_guard<std::mutex> g(state.lock);realtimeWanted=(state.consumers&7u)!=0;}
+        if(!ws&&realtimeWanted&&now>=reconnect){
             if(!authenticate()){state.status=-1;reconnect=now+30000;continue;}
             std::string url=std::string(project)+"/realtime/v1/websocket?apikey="+publishable+"&vsn=1.0.0";
             ws=std::make_unique<VoiceWs>(url,"",0,"",true,wake,nullptr);joined=false;joinAt=0;state.status=0;
@@ -168,8 +170,8 @@ static int entry(void*){
         if(joined&&now>=nextBeat){post("heartbeat",Sj::object(),"phoenix");nextBeat=now+20000;}
         if(joined&&now>=identity.renewAt){if(authenticate())post("access_token",{{"access_token",identity.access}},"realtime:bt4:inbox:"+identity.user);else{ws.reset();joined=false;state.status=-1;reconnect=now+30000;}}
         Job job;bool have=false;
-        if(joined){std::lock_guard<std::mutex> g(state.lock);if(!state.jobs.empty()){job=std::move(state.jobs.front());state.jobs.pop_front();have=true;}}
-        if(have){Sj reply;if(!http("/rest/v1/rpc/bt4_api",{{"p_op",job.op},{"p_args",job.args}},true,reply))reply={{"error","SIGNALING_UNAVAILABLE"}};
+        {std::lock_guard<std::mutex> g(state.lock);if(!state.jobs.empty()&&(joined||state.jobs.front().consumer==3)){job=std::move(state.jobs.front());state.jobs.pop_front();have=true;}}
+        if(have){Sj reply;if(!authenticate()||!http("/rest/v1/rpc/bt4_api",{{"p_op",job.op},{"p_args",job.args}},true,reply))reply={{"error","SIGNALING_UNAVAILABLE"}};
             emit(job.consumer,{{"event","reply"},{"serial",job.serial},{"body",reply}});}
         SDL_WaitSemaphoreTimeout(state.wake,have?0:20);
     }
@@ -183,17 +185,18 @@ extern "C" int Bt4Signal_Open(void){
     state.thread=SDL_CreateThread(entry,"BT4 Supabase signaling",nullptr);if(!state.thread){SDL_DestroySemaphore(state.wake);state.wake=nullptr;return 0;}return 1;
 }
 extern "C" int Bt4Signal_Status(void){return state.status;}
-extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consumer>2)return;std::lock_guard<std::mutex> g(state.lock);if(enabled)state.consumers|=1u<<consumer;else{state.consumers&=~(1u<<consumer);state.events[consumer].clear();}}
+extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consumer>3)return;std::lock_guard<std::mutex> g(state.lock);if(enabled)state.consumers|=1u<<consumer;else{state.consumers&=~(1u<<consumer);state.events[consumer].clear();}}
 extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,const char *args){
-    if(consumer<0||consumer>2||!op||!args||strlen(args)>18000)return 0;
-    static const char *allowed[]={"create","join","get","lease","leave","list","queue","cancel","signal","counts","voice"};bool found=false;
+    if(consumer<0||consumer>3||!op||!args||strlen(args)>18000)return 0;
+    if((consumer==3)!=(!strcmp(op,"presence")))return 0;
+    static const char *allowed[]={"create","join","get","lease","leave","list","queue","cancel","signal","counts","voice","presence"};bool found=false;
     for(auto kind:allowed)if(!strcmp(op,kind)){found=true;break;}if(!found)return 0;
     Sj body=Sj::parse(args,nullptr,false);if(!body.is_object())return 0;
     if(!Bt4Signal_Open())return 0;std::lock_guard<std::mutex> g(state.lock);if(state.jobs.size()>=64)return 0;state.consumers|=1u<<consumer;
     state.jobs.push_back({consumer,serial,op,std::move(body)});wake(nullptr);return 1;
 }
 extern "C" int Bt4Signal_Read(int consumer,char *out,size_t capacity){
-    if(consumer<0||consumer>2||!out||!capacity)return 0;std::lock_guard<std::mutex> g(state.lock);
+    if(consumer<0||consumer>3||!out||!capacity)return 0;std::lock_guard<std::mutex> g(state.lock);
     auto &events=state.events[consumer];if(events.empty())return 0;if(events.front().size()+1>capacity)return -1;
     memcpy(out,events.front().c_str(),events.front().size()+1);events.pop_front();return 1;
 }

@@ -13,7 +13,8 @@ class TagDirectKernelTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='bt4-kernel-parity-') as directory:
             result=module.run(Path(directory),2000)
         self.assertTrue(result['passed'])
-        self.assertEqual(len(result['scenarios']),7)
+        self.assertEqual(len(result['scenarios']),8)
+        self.assertTrue(any(row['case']=='6-humans-0-CPU-FFA' for row in result['scenarios']))
         self.assertTrue(all(row['frames']==2000 and row['byte_parity'] for row in result['scenarios']))
 
 if __name__=='__main__':unittest.main()

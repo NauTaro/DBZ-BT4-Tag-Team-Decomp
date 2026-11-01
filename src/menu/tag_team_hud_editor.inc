@@ -17,12 +17,18 @@ static void TagHudScreen_Caption(void *arg,f32 *prop){
     s32 alpha=(s32)(128*prop[24]),i;f32 ky=18.0f/1000,kx=ky*.857f;
     f32 x0,x1,y0,h;u32 top,bottom;
     static const f32 edge[8][2]={{-1,0},{1,0},{0,-1},{0,1},{-.7f,-.7f},{.7f,-.7f},{-.7f,.7f},{.7f,.7f}};
+    {extern f32 Port_MenuReadableScale(void);f32 scale=Port_MenuReadableScale();ky*=scale;kx*=scale;}
     if(id<0 || alpha<=0)return;if(alpha>128)alpha=128;
     x0=prop[14]+82-PortTbo_TextInfo(id,4)*kx;
     x1=x0+PortTbo_TextInfo(id,1)*kx;
     /* The native clip gives 4:3 page coordinates; TBO textures bypass the
      * renderer's native-menu transform, so map the caption exactly once. */
-    {extern int Port_MenusWide(void);if(Port_MenusWide()){Ps_PageSet();x0=Ps_X(x0);x1=Ps_X(x1);}}
+    {extern int Port_MenusWide(void),Port_PageAspectMilli(void),Port_MenuPartNow(void);
+     if(Port_MenusWide()){
+        int part=Port_MenuPartNow();f32 scale=1333.333333f/Port_PageAspectMilli();
+        f32 pivot=part==2||part==5?0:part==3||part==6?512:256;
+        if(scale<1){x0=pivot+(x0-pivot)*scale;x1=pivot+(x1-pivot)*scale;}
+     }}
     y0=prop[17]+24-PortTbo_TextInfo(id,3)*ky;h=PortTbo_TextInfo(id,2)*ky;
     for(i=0;i<8;++i)Ps_SpriteScreen(id,x0+edge[i][0]*.65f,y0+edge[i][1]*.65f,x1+edge[i][0]*.65f,y0+h+edge[i][1]*.65f,0,.5f,1,1,0,alpha);
     top=on?Ps_Rgba(255,247,179,255):Ps_Rgba(255,255,255,255);

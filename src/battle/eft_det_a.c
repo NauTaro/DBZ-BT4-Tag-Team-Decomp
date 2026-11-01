@@ -1161,7 +1161,7 @@ void EftDet_ClashPass(void) {
                 s32 result;
 
                 if (list->rec[i].objId != list->rec[j].objId &&
-                    (!TagBattle_Active() || (TagBattle_Team(list->rec[i].objId)!=TagBattle_Team(list->rec[j].objId)))) {
+                    (!TagBattle_Active() || !TagBattle_Allied(list->rec[i].objId,list->rec[j].objId))) {
                     if (EftHit_CanHit(&list->rec[j], 2)) {
                         if (list->rec[i].shape.type == 0 && list->rec[j].shape.type == 0) {
                             if (EftDet_SpheresVsSpheres(&list->rec[i].shape, &list->rec[j].shape)) {

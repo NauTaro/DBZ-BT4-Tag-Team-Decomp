@@ -9,12 +9,13 @@ unsigned Kernel_Epoch(void),Kernel_PendingFrame(void),Kernel_DeadlineFrame(void)
 void Kernel_Leave(unsigned),Kernel_Snapshot(unsigned,int,const char*),Kernel_Abort(void);
 
 static void check(int rc,const char *step){if(rc){fprintf(stderr,"fixture %s rejected: %d\n",step,rc);exit(2);}}
-static int fixture(const char *name,int humans,int slots){
+static int fixture(const char *name,int humans,int slots,int ffa){
     TtRoom room;unsigned char packet[512];int i;FILE *out;
     if(humans<1||humans>slots||slots<2||slots>10)return 2;
     Tt_Open(&room,101,"Human 101",slots>4?(slots+1)/2:2,0xc03619a07f5e8d9aULL);
     room.delay=0;room.seed=0x12345678;
     check(Tt_SetTeams(&room,101,room.epoch,slots/2,slots-slots/2),"teams");
+    if(ffa)check(Tt_SetMode(&room,101,room.epoch,1),"Free for All");
     for(i=1;i<humans;++i){char text[20];snprintf(text,sizeof(text),"Human %d",101+i);check(Tt_Join(&room,101+i,text,room.content),"join");}
     check(Tt_FillCPU(&room,101,room.epoch,2),"CPU");
     check(Tt_BeginSelect(&room,101,room.epoch),"select");
@@ -30,7 +31,7 @@ static int fixture(const char *name,int humans,int slots){
 }
 int main(int argc,char **argv){
     FILE *events,*trace,*wire;unsigned char record[520],result[20];size_t got;
-    if(argc==5&&!strcmp(argv[1],"--fixture"))return fixture(argv[2],atoi(argv[3]),atoi(argv[4]));
+    if((argc==5||argc==6)&&!strcmp(argv[1],"--fixture"))return fixture(argv[2],atoi(argv[3]),atoi(argv[4]),argc==6?atoi(argv[5]):0);
     if(argc!=4)return 1;
     events=fopen(argv[1],"rb");trace=fopen(argv[2],"wb");wire=fopen(argv[3],"wb");
     if(!events||!trace||!wire)return 3;

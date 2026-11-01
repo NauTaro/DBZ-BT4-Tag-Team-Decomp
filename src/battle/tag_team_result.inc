@@ -17,7 +17,19 @@ u16 *TagBattle_ResultText(s32 id) {
     const char *text; s32 i,en=Port_GameProfileEnglish();
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_UI_LANGUAGE_TEST"))en=!strcmp(getenv("BT4_UI_LANGUAGE_TEST"),"en");
     switch(id) {
-    case 0x7110: text=sTagResultWinner==1?(en?"TEAM 1 WINS":"GANA EL EQUIPO 1"):
+    case 0x7110:
+        if(TagBattle_FreeForAll()){
+            extern const char *Port_TagPlayerName(s32);
+            static char title[96];s32 winner=TagBattle_WinningActor();
+            if(winner<0)text=en?"DRAW":"EMPATE";
+            else {
+                const char *name=Port_TagPlayerName(winner);char cpu[20];
+                if(!name[0]){snprintf(cpu,sizeof(cpu),"CPU %02d",winner+1);name=cpu;}
+                snprintf(title,sizeof(title),en?"%s WINS":"GANA %s",name);text=title;
+            }
+            break;
+        }
+        text=sTagResultWinner==1?(en?"TEAM 1 WINS":"GANA EL EQUIPO 1"):
         sTagResultWinner==2?(en?"TEAM 2 WINS":"GANA EL EQUIPO 2"):(en?"DRAW":"EMPATE");break;
     case 0x7111: text=sTagResultPending>=0?(en?"Waiting for players...":"Esperando jugadores..."):(en?"Rematch":"Revancha");break;
     case 0x7112: text=en?"Return to Character Select":"Volver a elegir personaje";break;

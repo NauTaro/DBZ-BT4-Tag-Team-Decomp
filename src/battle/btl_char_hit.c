@@ -1028,7 +1028,7 @@ void BtlHit_CheckProximityAll(void) {
 
     for (i = 0; i < BtlChar_GetCount(); i++) {
         for (j = 0; j < BtlChar_GetCount(); j++) {
-            if (i != j && (!TagBattle_Active() || (TagBattle_Team(i)!=TagBattle_Team(j)))) {
+            if (i != j && (!TagBattle_Active() || !TagBattle_Allied(i,j))) {
                 extern s32 TagBattle_CanInteract(s32,s32);
                 if(!TagBattle_CanInteract(i,j))continue;
                 HitChr *a = BtlChar_Get(i);

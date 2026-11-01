@@ -3962,7 +3962,7 @@ void Port_LobbyAuto(void) {
             Port_NetSpeedSet(NET_SPEED_STANDARD);
             Port_NetRulesSet(type, dp, 4); /* (a queue's rules: its battle type, no time limit, 120%) */
             if (getenv("BT3_NET_ROLLBACK") == NULL && getenv("BT3_NET_DELAY") == NULL) {
-                Port_NetOptions(Port_RollCan() ? 8 : 0, -2); /* (and a quick match's fixed rollback and delay, as the window sets them) */
+                Port_NetOptions(Port_RollCan() ? 4 : 0, -2); /* (and a quick match's fixed rollback and delay, as the window sets them) */
             }
             Port_LobbyQuickArea(getenv("BT3_QUICK_AREA")); /* (testing: "auto", "any", or a region such as "EU") */
             Port_LobbyStartQuick(q);

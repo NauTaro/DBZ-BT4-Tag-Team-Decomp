@@ -10,6 +10,29 @@ void Port_UiBanner(const char *text,int ms){}
 void Port_PaceNetworkResume(unsigned long long waited){}
 void PortTbo_Copy(const char *text){}
 int Port_BuildIdentity(unsigned long long *out){return 1;}
+int Bt4Discovery_TagCounts(unsigned long long content,int *out){return 0;}
+/* This fixture exercises scheduling only; no discovery/RTC/media work. */
+const char *Bt4Signal_Project(void){return "https://example.invalid";}
+int TagPeer_Open(void){return 0;}
+void TagPeer_Close(void){}
+int TagPeer_Send(const unsigned char *p){return 0;}
+int TagPeer_Read(unsigned char *p,uint64_t *at){return 0;}
+int TagPeer_Status(void){return 0;}
+int TagPeer_Ping(void){return -1;}
+int TagPeer_Descriptor(char *p,unsigned n){return 0;}
+int TagDirect_Available(void){return 0;}
+void TagDirect_Close(void){}
+int TagDirect_Active(void){return 0;}
+int TagDirect_Pending(void){return 0;}
+int TagDirect_Ping(void){return -1;}
+void TagDirect_RelayPing(int ms){}
+int TagDirect_Send(const unsigned char *p){return 0;}
+int TagDirect_Read(unsigned char *p,uint64_t *at){return 0;}
+void TagDirect_Session(const char *a,const char *b,const char *c,unsigned d){}
+void TagDirect_State(const unsigned char *p){}
+void PortVoice_P2PSession(int a,const char *b,const PortVoiceRoomMember *c,int d){}
+int Upd_HexBytes(const char *a,unsigned char *b,size_t n){return 0;}
+void Gs_NetworkWait(int ms){}
 const char *Port_NetNameGet(void){return "Test";}
 void Gs_HoldFrame(void){}
 void PortVoice_Session(int a,const char *b,const char *c,const char *d,int e,const char *f){}

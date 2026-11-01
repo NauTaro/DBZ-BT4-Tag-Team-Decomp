@@ -47,7 +47,7 @@ struct Peer {std::atomic<unsigned> id{0};std::atomic<int> pc{-1},control{-1},inp
 static std::array<Peer,10> stablePeers;
 struct Session {
     std::array<Peer,10> &peers=stablePeers;unsigned self=0,epoch=0,lo=0,hi=0,initSerial=0,reconcile=0;
-    std::string room,generation,code,content;Packet opening={};bool creating=false,initializing=false,clock=false;int phase=TT_CLOSED;
+    std::string room,generation,code,content;Packet opening={};Pj queueProfile;bool creating=false,initializing=false,clock=false,queued=false,waiting=false;int phase=TT_CLOSED;
     Uint64 nextTick=0,nextPing=0,nextLease=0,began=SDL_GetTicks(),lastReplay=0;int publishedPhase=-1;
     unsigned expected=0,probeSerial=0;std::array<std::pair<unsigned,Uint64>,32> probes={};
     std::deque<Wire> history,recent;std::map<unsigned,Wire> reordered;
@@ -103,8 +103,9 @@ struct Session {
             room=nextRoom;generation=nextGeneration;code=text(j,"code");self=number(j,"self");if(!self||number(j,"host")!=1){fprintf(stderr,"P2P admission identity is invalid\n");service.status=-1;return;}
             std::string id;for(char c:generation)if(c!='-')id+=c;if(id.size()!=32){service.status=-1;return;}
             lo=(unsigned)strtoul(id.substr(0,8).c_str(),nullptr,16);hi=(unsigned)strtoul(id.substr(8,8).c_str(),nullptr,16);
+            if(queued)creating=self==1;
             if(creating){Kernel_Reset();Kernel_Pacing(1);memcpy(Kernel_Input(),opening.data(),512);int result=Kernel_Command(self);if(result!=TT_OK){fprintf(stderr,"P2P local room rejected: %d\n",result);service.status=-1;return;}Kernel_Seed((unsigned)SDL_GetTicksNS());epoch=Kernel_Epoch();snapshot(self);service.ping=0;service.status=1;}
-            nextLease=SDL_GetTicks()+60000;initializing=false;
+            nextLease=SDL_GetTicks()+60000;began=SDL_GetTicks();initializing=false;waiting=false;
         }
         if(nextRoom!=room||nextGeneration!=generation)return;
         {std::lock_guard<std::mutex> g(service.lock);service.descriptor=j.dump();}
@@ -119,9 +120,9 @@ struct Session {
         while(count++<64&&Bt4Signal_Read(1,raw,sizeof(raw))>0){Pj j=Pj::parse(raw,nullptr,false);if(!j.is_object())continue;auto body=j.find("body");if(body==j.end()||!body->is_object())continue;
             auto event=text(j,"event");
             if(event=="reply"){
-                if(number(j,"serial")==initSerial||number(j,"serial")==reconcile){if(body->contains("error")){if(!self){fprintf(stderr,"tag P2P admission failed: %s\n",text(*body,"error").c_str());service.status=-1;}}else metadata(*body);}
+                if(number(j,"serial")==initSerial||number(j,"serial")==reconcile){if(body->contains("error")){if(!self){fprintf(stderr,"tag P2P admission failed: %s\n",text(*body,"error").c_str());service.status=-1;}}else if(text(*body,"state")=="waiting"){waiting=true;nextLease=SDL_GetTicks()+60000;}else metadata(*body);}
             }else if(event=="bt4.ready"&&!room.empty()){reconcile=++rpcSerial;rpc("get",Pj::object(),reconcile);
-            }else if(event=="bt4.room"&&!room.empty())metadata(*body);
+            }else if(event=="bt4.room"&&(!room.empty()||queued))metadata(*body);
             else if(event=="bt4.signal"&&text(*body,"generation")==generation&&text(*body,"channel")=="tag"&&number(*body,"to")==self){
                 auto *p=find(number(*body,"from"));auto b=body->find("body");if(!p||p->pc<0||b==body->end()||!b->is_object())continue;auto kind=text(*body,"kind");
                 if(kind=="offer"||kind=="answer"){auto sdp=text(*b,"sdp");if(sdp.empty()||sdp.size()>14000||rtc.rtcSetRemoteDescription(p->pc,sdp.c_str(),kind.c_str())<0)continue;p->remote=true;
@@ -153,11 +154,15 @@ struct Session {
         }
     }
     void initialize(const Packet &packet){opening=packet;creating=Ttw_Read(packet.data()+4)==TTW_OPEN;initializing=true;initSerial=++rpcSerial;
+        queued=creating&&Ttw_Read(packet.data()+64)==1;
         char hash[17];snprintf(hash,sizeof(hash),"%08x%08x",Ttw_Read(packet.data()+28),Ttw_Read(packet.data()+24));content=hash;
         char name[20];memcpy(name,packet.data()+32,19);name[19]=0;
         rpc("leave",Pj::object());
-        if(creating)rpc("create",{{"mode","tag"},{"wire","bt4-p2p-1"},{"content",content},{"rules","tag-114"},{"name",name},{"capacity",10}},initSerial);
-        else{char joinCode[7];memcpy(joinCode,packet.data()+12,6);joinCode[6]=0;rpc("join",{{"code",joinCode},{"wire","bt4-p2p-1"},{"content",content},{"name",name}},initSerial);}
+        if(creating){
+            const char *rules=Ttw_Read(packet.data()+60)?"ffa6-114":Ttw_Read(packet.data()+12)==2?"2v2-114":"5v5-114";
+            queueProfile={{"mode","tag"},{"wire","bt4-p2p-2"},{"content",content},{"rules",queued?rules:"tag-114"},{"name",name},{"capacity",Ttw_Read(packet.data()+12)*2}};
+            rpc(queued?"queue":"create",queueProfile,initSerial);
+        }else{char joinCode[7];memcpy(joinCode,packet.data()+12,6);joinCode[6]=0;rpc("join",{{"code",joinCode},{"wire","bt4-p2p-2"},{"content",content},{"name",name}},initSerial);}
     }
     void run(){
         while(!service.quit&&service.status>=0){
@@ -167,7 +172,8 @@ struct Session {
             for(auto &packet:requests){unsigned cmd=Ttw_Read(packet.data()+4);if(!self){if(!initializing&&(cmd==TTW_OPEN||cmd==TTW_JOIN))initialize(packet);continue;}
                 if(self==1)command(self,packet);else if(auto *p=find(1)){if(cmd==TTW_INPUT)send(*p,packet,false);else send(*p,packet,true);}}
             Uint64 now=SDL_GetTicks();
-            if(service.status==0&&now-began>30000){service.status=-1;break;}
+            if(waiting&&now>=nextLease){initSerial=++rpcSerial;rpc("queue",queueProfile,initSerial);nextLease=now+60000;}
+            if(service.status==0&&!waiting&&now-began>30000){service.status=-1;break;}
             if(self!=1&&self&&now>=nextPing){nextPing=now+500;if(auto *p=find(1)){Packet packet={};Ttw_Request(packet.data(),pingCommand,epoch);unsigned n=++probeSerial;probes[n%32]={n,now};Ttw_Write(packet.data()+12,n);send(*p,packet,false);
                 if(p->admitted&&now-p->heard>10000){service.status=-1;break;}}}
             if(self==1&&(now>=nextLease||publishedPhase!=Kernel_Phase())&&Bt4Signal_Status()==1){nextLease=now+60000;publishedPhase=Kernel_Phase();rpc("lease",{{"joinable",publishedPhase==TT_LOBBY}});}
@@ -180,6 +186,7 @@ struct Session {
             SDL_WaitSemaphoreTimeout(service.wake,2);
         }
         for(auto &p:peers)if(p.id)close(p);
+        if(queued&&!self)rpc("cancel",Pj::object());
         if(self&&Bt4Signal_Status()==1)rpc("leave",{{"generation",generation}});
     }
 };

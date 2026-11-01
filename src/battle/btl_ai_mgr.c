@@ -276,11 +276,11 @@ static void TagAi_SelectTarget(s32 actor){
     for(i=0;i<TagBattle_Count();++i){
         s32 candidate=(i+actor+frame/180)%TagBattle_Count(),pressure=0;
         f32 dx,dy,dz,score;
-        if(TagBattle_Team(candidate)==TagBattle_Team(actor)||BtlCharApi_GetHp(candidate)<=0||!TagBattle_CanInteract(actor,candidate))continue;
+        if(TagBattle_Allied(candidate,actor)||BtlCharApi_GetHp(candidate)<=0||!TagBattle_CanInteract(actor,candidate))continue;
         BtlCharApi_GetPos(candidate,(BtlAiVec *)other);
         dx=pos[0]-other[0];dy=pos[1]-other[1];dz=pos[2]-other[2];
         for(j=0;j<TagBattle_Count();++j)if(j!=actor && BtlCharApi_GetHp(j)>0 &&
-            TagBattle_Team(j)==TagBattle_Team(actor)&&TagBattle_Target(j)==candidate)++pressure;
+            TagBattle_Allied(j,actor)&&TagBattle_Target(j)==candidate)++pressure;
         score=dx*dx+dy*dy+dz*dz+pressure*90000.0f;
         if(candidate==old){
             score-=22500.0f; /* hysteresis: do not oscillate between nearby foes */

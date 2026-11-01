@@ -675,6 +675,13 @@ void FlashSlot_Draw(FlashSlot *slot, FlashProp *parent, Flash *flash) {
             int moving = Port_MenuClipMoving(clip->name, (int)(prop.mtx.m[2] + (f32)flash->ofs[0]), parent == NULL);
             int freePrev = moving ? Port_MenuFree(1) : -1;
             int prev;
+            extern float Port_MenuLabelScale(const char *name);
+            float labelScale=Port_MenuLabelScale(clip->name);
+            if(labelScale!=1.0f){
+                prop.mtx.m[0]*=labelScale;prop.mtx.m[1]*=labelScale;
+                prop.mtx.m[3]*=labelScale;prop.mtx.m[4]*=labelScale;
+                prop.mtx.m[5]-=2.0f;
+            }
             if (part == -2) {
                 gPortFlashMeasure = 1;
                 gPortFlashBox[0] = 1e9f;

@@ -42,6 +42,7 @@ int Tt_TeamCount(const TtRoom *r,int team,int occupied){
 int Tt_SetTeams(TtRoom *r,uint32_t sender,uint32_t epoch,int left,int right){
     int i,a=1,b=1,total=left+right,rc=owner(r,sender,epoch,TT_LOBBY);
     if(rc)return rc;
+    if(r->free_for_all && (left!=3 || right!=3))return TT_BAD_CHOICE;
     if(left<1||right<1||total>TT_MAX_PLAYERS)return TT_BAD_CHOICE;
     for(i=total;i<capacity(r);++i)if(r->players[i].member && !r->players[i].cpu)return TT_NOT_READY;
     for(i=0;i<TT_MAX_PLAYERS;++i){
@@ -53,6 +54,14 @@ int Tt_SetTeams(TtRoom *r,uint32_t sender,uint32_t epoch,int left,int right){
         else{r->players[i].team=1;++b;}
     }
     r->slot_count=total;clear_choices(r);++r->epoch;++r->revision;
+    return TT_OK;
+}
+int Tt_SetMode(TtRoom *r,uint32_t sender,uint32_t epoch,int free_for_all){
+    int rc=owner(r,sender,epoch,TT_LOBBY);
+    if(rc)return rc;
+    if(free_for_all<0||free_for_all>1)return TT_BAD_CHOICE;
+    if(free_for_all && capacity(r)!=6)return TT_BAD_CHOICE;
+    if(r->free_for_all!=free_for_all){r->free_for_all=free_for_all;clear_choices(r);++r->epoch;++r->revision;}
     return TT_OK;
 }
 static uint32_t cpu_id(const TtRoom *r,int seat){
@@ -209,7 +218,7 @@ static uint64_t load_word(uint64_t hash,uint32_t value){
 }
 uint64_t Tt_LoadDigest(const TtRoom *r){
     uint64_t h=0xcbf29ce484222325ULL;int i,count=Tt_Capacity(r);
-    h=load_word(h,TT_PROTOCOL);h=load_word(h,(uint32_t)r->content);h=load_word(h,(uint32_t)(r->content>>32));
+    h=load_word(h,TT_PROTOCOL);h=load_word(h,(uint32_t)r->free_for_all);h=load_word(h,(uint32_t)r->content);h=load_word(h,(uint32_t)(r->content>>32));
     h=load_word(h,(uint32_t)r->team_size);h=load_word(h,(uint32_t)r->time);h=load_word(h,(uint32_t)r->delay);h=load_word(h,(uint32_t)count);
     if(count<0)count=0;if(count>TT_MAX_PLAYERS)count=TT_MAX_PLAYERS;
     for(i=0;i<count;++i){const TtPlayer *p=&r->players[i];

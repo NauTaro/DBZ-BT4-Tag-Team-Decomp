@@ -48,7 +48,7 @@ static void TagHud_Label(f32 x,f32 y,char *s,f32 scale,f32 width,u32 color) {
 static void TagHud_Seat(char *label,char *prefix,s32 actor) {
     s32 n;
     Ps_Copy(label,prefix,32);n=Ps_Len(label);
-    label[n]='0';label[n+1]='1'+TagBattle_TeamIndex(actor);label[n+2]=0;
+    label[n]='0';label[n+1]='1'+(TagBattle_FreeForAll()?actor:TagBattle_TeamIndex(actor));label[n+2]=0;
 }
 static void TagHud_Number(char *label,char *prefix,s32 value) {
     char reverse[12];s32 n=0,len;
@@ -96,7 +96,7 @@ static void TagHud_Bar(s32 actor,f32 x,f32 y,f32 w,f32 h) {
 }
 static void TagHud_RadarPoint(f32 cx,f32 cy,s32 actor,s32 target,f32 *own) {
     f32 pos[4],r[4],px,py; s32 far;
-    u32 color=(TagBattle_Team(actor)!=TagBattle_Team(TagBattle_ViewActor()))?TagHud_Color(255,118,94):TagHud_Color(104,230,255);
+    u32 color=!TagBattle_Allied(actor,TagBattle_ViewActor())?TagHud_Color(255,118,94):TagHud_Color(104,230,255);
     memcpy(pos,sTagHudPositions[actor],sizeof(pos));
     far=ThRadar(own,pos,sTagHudBasis,sTagHudRadarRange,30,r);
     px=cx+r[0]*PS_UNIT_X;py=cy+r[1];
@@ -108,7 +108,7 @@ static void TagHud_RadarPoint(f32 cx,f32 cy,s32 actor,s32 target,f32 *own) {
         TagHud_Hex(px-4,py-4.5f,8,9,color,color);
         TagHud_Hex(px-3,py-3.5f,6,7,TagHud_Color(3,29,28),TagHud_Color(3,29,28));
         Ps_Disc(px,py,1.4f,color,color);
-    }else if(TagBattle_Team(actor)!=TagBattle_Team(TagBattle_ViewActor())){
+    }else if(!TagBattle_Allied(actor,TagBattle_ViewActor())){
         TagHud_Arrow(px,py,0,-1,2.6f,color);
     }else Ps_Rect(px-1.6f,py-1.8f,px+1.6f,py+1.8f,color,color);
     if(r[3]>8){TagHud_Stroke(px-2,py-6,px,py-8,1,color);TagHud_Stroke(px,py-8,px+2,py-6,1,color);}
@@ -146,7 +146,7 @@ static void TagHud_WorldMarkers(s32 target) {
         memcpy(pos,sTagHudPositions[i],sizeof(pos));ThRadar(own,pos,sTagHudBasis,sTagHudRadarRange,30,rad);rad[4]=sTagHudRadarRange;
         x=left+scr[0]*(512-2*left)/512;y=scr[1];
         on=front && x>left+10 && x<right-10 && y>92 && y<417 && !TagHud_Blocked(x,y);
-        c=i==target?TagHud_Color(255,213,91):(TagBattle_Team(i)!=TagBattle_Team(TagBattle_ViewActor()))?TagHud_Color(255,118,94):TagHud_Color(104,230,255);
+        c=i==target?TagHud_Color(255,213,91):!TagBattle_Allied(i,TagBattle_ViewActor())?TagHud_Color(255,118,94):TagHud_Color(104,230,255);
         if(!on){
             if(i!=target){if(getenv("BT4_TAG_HUD_LOG"))Port_TagHudTrace(i,front,0,sTagHudBasis,own,pos,head,scr,scr,rad);continue;}
             if(front){dx=x-256;dy=y-224;}
@@ -179,7 +179,7 @@ static void TagHud_WorldMarkers(s32 target) {
         TagHud_Stroke(x,y-1,x+4,y-5,2.7f,TagHud_Color(3,12,18));
         TagHud_Stroke(x-4,y-5,x,y-1,1.2f,c);TagHud_Stroke(x,y-1,x+4,y-5,1.2f,c);
         if(i==target){
-            TagHud_Number(number,"",1+TagBattle_TeamIndex(i));
+            TagHud_Number(number,"",1+(TagBattle_FreeForAll()?i:TagBattle_TeamIndex(i)));
             Ps_Align(1);TagHud_Label(x,y-20,number,0.50f,22,c);Ps_Align(0);
         }
     }
@@ -189,6 +189,7 @@ void TagBattle_DrawRoster(void) {
     s32 i,slot,target=TagBattle_Target(TagBattle_ViewActor()),alive[2]={0,0},count=TagBattle_Count();
     f32 left,right,x,y,pitch,scale;
     s32 view=TagBattle_ViewActor(),allies=TagBattle_TeamCount(TagBattle_Team(view))-1,enemies=TagBattle_TeamCount(1-TagBattle_Team(view));
+    if(TagBattle_FreeForAll()){allies=0;enemies=count-1;}
     char label[32],score[8];
     u32 cyan=TagHud_Color(110,237,255),gold=TagHud_Color(255,211,90),white=TagHud_Color(240,249,252);
     if(!TagBattle_Active() || !gHud || !BtlSeq_IsFighting() || !(gHud->flags&HUD_SHOW_GAUGES) || (Battle_GetWork()->flags&BATTLE_FLAG_LOADING))return;
@@ -206,12 +207,13 @@ void TagBattle_DrawRoster(void) {
     TagHud_WorldMarkers(target);
     for(i=0;i<count;++i)if(BtlCharApi_GetHp(i)>0)++alive[TagBattle_Team(i)];
     /* Compact steel tabs repeat the angular frames of the original BT4 HUD. */
-    Ps_Align(1);TagHud_Label(sTagHudRects[3].x+40,sTagHudRects[3].y,"TAG TEAM",0.44f,80,gold);
-    score[0]='0'+alive[0];score[1]=' ';score[2]=':';score[3]=' ';score[4]='0'+alive[1];score[5]=0;
+    Ps_Align(1);TagHud_Label(sTagHudRects[3].x+40,sTagHudRects[3].y,TagBattle_FreeForAll()?"FREE FOR ALL":"TAG TEAM",0.44f,80,gold);
+    if(TagBattle_FreeForAll()){score[0]='0'+alive[0]+alive[1];score[1]=0;}
+    else {score[0]='0'+alive[0];score[1]=' ';score[2]=':';score[3]=' ';score[4]='0'+alive[1];score[5]=0;}
     TagHud_Label(sTagHudRects[3].x+40,sTagHudRects[3].y+13,score,0.54f,64,white);Ps_Align(0);
     if(allies>0)TagHud_Label(left+3,sTagHudRects[0].y,"ALLIES",0.43f,80,cyan);
     for(i=0,slot=0;i<count;++i){
-        if(i==view||TagBattle_Team(i)!=TagBattle_Team(view))continue;
+        if(i==view||!TagBattle_Allied(i,view))continue;
         s32 hp=BtlCharApi_GetHp(i),ki=BtlSide_GetKi(i);
         x=left;y=sTagHudRects[0].y+18+slot*pitch;
         Ps_Quad(x+14,y+2*scale,x+104,y+2*scale,x+14,y+25*scale,x+96,y+25*scale,Ps_Rgba(27,48,61,0x68),Ps_Rgba(22,36,46,0x58),Ps_Rgba(8,19,30,0x65),Ps_Rgba(8,19,30,0x45));
@@ -235,7 +237,7 @@ void TagBattle_DrawRoster(void) {
     Ps_Align(2);TagHud_Label(right,sTagHudRects[1].y,label,0.46f,140,gold);Ps_Align(0);
     y=sTagHudRects[1].y;
     for(i=0,slot=0;i<count;++i){
-        if(TagBattle_Team(i)==TagBattle_Team(view))continue;
+        if(TagBattle_Allied(i,view))continue;
         f32 sx=x+slot*28;
         u32 edge=i==target?gold:TagHud_Color(125,138,153);
         TagHud_Hex(sx,y+16,26,29,edge,edge);
@@ -253,5 +255,8 @@ void TagBattle_DrawRoster(void) {
         TagHud_Label(Ps_Left()+12,410,label,.46f,230,gold);
         TagHud_Label(Ps_Left()+12,427,"L1 / R1  SWITCH TEAMMATE",.40f,230,white);
     }else TagHud_Label(Ps_Left()+12,427,TagBattle_Network()?"TAG TEAM ONLINE":"CPU PRACTICE",0.40f,140,TagHud_Color(186,215,222));
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_WIDE_AUDIT")){
+        static s32 frames;if(++frames==90){extern void Port_TagUiCapture(s32);Port_TagUiCapture(73);}
+    }
     Port_GsMarker(0x13);
 }

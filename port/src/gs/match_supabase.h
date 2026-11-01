@@ -12,6 +12,8 @@ int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint64_t conten
 int Bt4Discovery_Poll(unsigned generation,Bt4DiscoveryStatus *out);
 void Bt4Discovery_End(unsigned generation);
 int Bt4Discovery_Counts(int protocol,uint64_t content,int counts[5]);
+int Port_OnlinePresence(int active); /* -1 until an authenticated aggregate is received */
+int Bt4Discovery_TagCounts(uint64_t content,int counts[3]);
 #ifdef __cplusplus
 }
 #endif

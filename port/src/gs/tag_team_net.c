@@ -404,6 +404,14 @@ static int tag_random(void *out,unsigned size){
 }
 
 static int cpu_fill,cpu_difficulty=2,local_room,ws_mode,ws_started,peer_mode;
+static int configured_ffa,configured_quick;
+void Port_TagModeOptions(int free_for_all,int quick){configured_ffa=free_for_all==1;configured_quick=quick==1;}
+int Port_TagFreeForAll(void){return state.free_for_all;}
+int Port_TagQueueWaiting(int queue){
+    extern int Bt4Discovery_TagCounts(uint64_t,int *);int counts[3];unsigned long long content;
+    if(queue<0||queue>=3||Port_TagDataFingerprint(&content)!=1||!Bt4Discovery_TagCounts(content,counts))return -1;
+    return counts[queue];
+}
 
 static char ws_endpoint[384];
 
@@ -447,6 +455,7 @@ static uint64_t tag_load_digest_word(uint64_t hash,uint32_t value){
 static uint64_t tag_load_digest(const TtRoom *r){
     uint64_t hash=0xcbf29ce484222325ULL;int i,count=Tt_Capacity(r);
     hash=tag_load_digest_word(hash,TT_PROTOCOL);
+    hash=tag_load_digest_word(hash,(uint32_t)r->free_for_all);
     hash=tag_load_digest_word(hash,(uint32_t)r->content);
     hash=tag_load_digest_word(hash,(uint32_t)(r->content>>32));
     hash=tag_load_digest_word(hash,(uint32_t)r->team_size);
@@ -624,10 +633,12 @@ static int ws_start(const char *code){
 
 void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content){
     delay=0; /* Tag Team no longer adds a user-configured simulation delay. */
+    if(configured_ffa)size=3;
 
     if(local_room){
 
         Tt_Open(&state,member,name,size,content);state.time=limit;state.delay=delay;
+        Tt_SetMode(&state,member,state.epoch,configured_ffa);
 
         if(cpu_fill)Tt_FillCPU(&state,member,state.epoch,cpu_difficulty);
 
@@ -651,11 +662,13 @@ void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content
 
     write64(b+24,content);if(name)snprintf((char*)b+32,20,"%s",name);
 
-    Ttw_Write(b+52,cpu_fill);Ttw_Write(b+56,cpu_difficulty);request(b);
+    Ttw_Write(b+52,cpu_fill);Ttw_Write(b+56,cpu_difficulty);
+    Ttw_Write(b+60,configured_ffa);Ttw_Write(b+64,configured_quick);request(b);
 
 }
 
 void Port_TagJoin(const char *code,const char *name,uint64_t content){
+    configured_quick=0;
 
     unsigned char b[TT_WIRE_BYTES];Ttw_Request(b,TTW_JOIN,0);if(!code||strlen(code)!=6)return;
 
@@ -1014,7 +1027,7 @@ void Port_TagArena(int stage,int bgm,int attacks){unsigned char p[512];Ttw_Reque
 
 
 
-int Port_TagCanStart(void){return !configure_pending && state.phase==TT_LOBBY && Tt_TeamCount(&state,0,1)>0 && Tt_TeamCount(&state,1,1)>0;}
+int Port_TagCanStart(void){return !configure_pending && state.phase==TT_LOBBY && (!configured_quick||Tt_Humans(&state)==Tt_Capacity(&state)) && Tt_TeamCount(&state,0,1)>0 && Tt_TeamCount(&state,1,1)>0;}
 
 
 

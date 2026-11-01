@@ -20,8 +20,8 @@ BT4decomp adapts **BT4 B14 Rev2** for Windows, Linux and Apple Silicon. It runs 
 
 | Mode | What it offers |
 | --- | --- |
-| **Tag Team** | Simultaneous battles with up to five fighter slots per team, human players and CPU fighters, room codes and individual targeting. |
-| **1 vs 1** | Peer rollback netplay, private rooms and Quick Match. |
+| **Tag Team** | Simultaneous battles with up to five fighter slots per team, six-player Free for All, room codes and individual targeting. Tag Team Quick Match gathers four players for 2 vs 2; Create Room offers team and Free for All presets. |
+| **1 vs 1** | Peer rollback netplay, custom rooms with configurable rollback and input delay, and duel Quick Match. |
 | **Tournaments** | Two to eight entrants, automatic byes, a live bracket and match rejoining. |
 | **Spectators** | Join without occupying a fighter slot; follow either side or use a split view. |
 
@@ -73,7 +73,7 @@ The launcher checks this repository for the latest signed package for its platfo
 
 Installations that predate the signed updater need one initial package installation. Subsequent published signed updates can install through the launcher.
 
-R7 recognizes patch-revision tags and can update to **R7 Hotfix** (`v0.1.39.2-R7.1`). Launchers that do not recognize patch-revision tags require one installation of the current package.
+Revision tags follow the upstream engine version, for example `v0.1.39.2-R8`. R7 and later recognize patch-revision tags as well. All Tag Team participants must use the same room protocol; update together when moving to R8.
 
 ## Source and online compatibility
 
@@ -90,7 +90,7 @@ Rooms and Quick Match use authenticated private Supabase signaling. Tag Team roo
 
 The Free signaling project has provider quotas, including concurrent Realtime connection limits. P2P reduces server traffic; it does not provide unlimited hosting capacity. R6 was validated with local native multi-client combat, tournaments and synthetic voice; this is not a cross-ISP or load-capacity benchmark.
 
-The active route supplies measured ping. A single human fighting CPU uses local input scheduling. If the native coordinator leaves, the round ends; live coordinator migration is not implemented. Geographic routes and network conditions still affect latency.
+The online hub shows an authenticated aggregate of players in the online menus, refreshed every five minutes. Entries expire after a missed refresh. The active route supplies measured ping. A single human fighting CPU uses local input scheduling. If the native coordinator leaves, the round ends; live coordinator migration is not implemented. Geographic routes and network conditions still affect latency.
 
 Voice and gameplay have separate queues. Native packages include the RTC SDK. SDP and ICE negotiation use private Supabase inboxes; Opus audio travels over peer media tracks. The default provider does not relay voice through WebSockets.
 

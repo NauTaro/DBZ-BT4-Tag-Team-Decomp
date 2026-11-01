@@ -35,6 +35,11 @@ extern void BtlScript_Init(void);
 extern void BtlScript_Restart(void);
 extern void BtlScript_Free(void);
 static s32 sTagActors = 2;
+static s32 sTagFreeForAll,sTagWinningActor=-1;
+s32 TagBattle_FreeForAll(void){return sTagFreeForAll && TagBattle_Active();}
+s32 TagBattle_Allied(s32 a,s32 b){return sTagFreeForAll?a==b:TagBattle_Team(a)==TagBattle_Team(b);}
+s32 TagBattle_WinningActor(void){return sTagWinningActor;}
+void TagBattle_SetWinningActor(s32 actor){sTagWinningActor=actor;}
 static BattleSide sTagSides[8];
 static s32 sTagLocal, sTagTargets[10],sTagTeams[10]={0,1,0,1,0,1,0,1,0,1};
 s32 TagBattle_Active(void){return sTagLocal || sTagActors>2;}
@@ -42,9 +47,9 @@ s32 TagBattle_Team(s32 a){return a>=0&&a<sTagActors?sTagTeams[a]:a&1;}
 s32 TagBattle_TeamIndex(s32 a){s32 i,n=0;for(i=0;i<a;++i)if(TagBattle_Team(i)==TagBattle_Team(a))++n;return n;}
 s32 TagBattle_TeamCount(s32 t){s32 i,n=0;for(i=0;i<sTagActors;++i)if(TagBattle_Team(i)==t)++n;return n;}
 static s32 TagBattle_FirstEnemy(s32 a){
-    s32 i,index=0,n=TagBattle_TeamCount(1-TagBattle_Team(a));
+    s32 i,index=0,n=sTagFreeForAll?sTagActors-1:TagBattle_TeamCount(1-TagBattle_Team(a));
     s32 wanted=n?TagBattle_TeamIndex(a)%n:0;
-    for(i=0;i<sTagActors;++i)if(TagBattle_Team(i)!=TagBattle_Team(a)&&index++==wanted)return i;
+    for(i=0;i<sTagActors;++i)if(!TagBattle_Allied(i,a)&&index++==wanted)return i;
     return a^1;
 }
 
@@ -62,7 +67,7 @@ void TagBattle_UpdateSpectator(s32 dir){
     if(dir || BtlCharApi_GetHp(start)<=0){
         if(!dir)dir=1;
         for(i=1;i<=sTagActors;++i){s32 a=(start+dir*i+sTagActors*2)%sTagActors;
-            if(TagBattle_Team(a)==TagBattle_Team(sTagLocalActor) && BtlCharApi_GetHp(a)>0){sTagViewActor=a;break;}}
+            if((sTagFreeForAll || TagBattle_Allied(a,sTagLocalActor)) && BtlCharApi_GetHp(a)>0){sTagViewActor=a;break;}}
     }
     if(old!=sTagViewActor && getenv("BT4_RENDER_TEST"))fprintf(stderr,"tag spectator: from=%d viewing=%d alive=1\n",old,sTagViewActor);
 }
@@ -111,7 +116,7 @@ s32 TagBattle_Pair(s32 a){return TagBattle_Active() && a>=0 && a<sTagActors?sTag
 s32 TagBattle_CanInteract(s32 a,s32 b){return !TagBattle_Active() || ((TagBattle_Pair(a)<0 || TagBattle_Pair(a)==b) && (TagBattle_Pair(b)<0 || TagBattle_Pair(b)==a));}
 s32 TagBattle_ReservePair(s32 a,s32 b){
     if(!TagBattle_Active())return 1;
-    if(a<0||b<0||a>=sTagActors||b>=sTagActors||TagBattle_Team(a)==TagBattle_Team(b)||!TagBattle_CanInteract(a,b))return 0;
+    if(a<0||b<0||a>=sTagActors||b>=sTagActors||TagBattle_Allied(a,b)||!TagBattle_CanInteract(a,b))return 0;
     sTagPairs[a]=b;sTagPairs[b]=a;sTagPairGrace[a]=sTagPairGrace[b]=6;
     sTagAttackers[a]=sTagAttackers[b]=a;sTagDamageTargets[a]=b;sTagDamageTargets[b]=-1;
     {extern void *BtlChar_Get(s32);extern void BtlMember_ClearQueuedDamage(void *);
@@ -140,13 +145,13 @@ s32 TagBattle_Target(s32 actor) {
     if(!TagBattle_Active() || actor<0 || actor>=sTagActors)return actor^1;
     if(sTagPairs[actor]>=0)return sTagPairs[actor];
     target=sTagTargets[actor];
-    if(target<0 || target>=sTagActors || TagBattle_Team(target)==TagBattle_Team(actor))target=TagBattle_FirstEnemy(actor);
+    if(target<0 || target>=sTagActors || TagBattle_Allied(target,actor))target=TagBattle_FirstEnemy(actor);
     return target;
 }
 s32 TagBattle_SetTarget(s32 actor,s32 target){
     extern void *BtlChar_Get(s32);extern s32 BtlAct_GetCurrent(void *);
     if(!TagBattle_Active()||actor<0||actor>=sTagActors||target<0||target>=sTagActors||
-       TagBattle_Pair(actor)>=0||TagBattle_Team(actor)==TagBattle_Team(target)||BtlCharApi_GetHp(target)<=0)return 0;
+       TagBattle_Pair(actor)>=0||TagBattle_Allied(actor,target)||BtlCharApi_GetHp(target)<=0)return 0;
     {s32 action=BtlAct_GetCurrent(BtlChar_Get(actor));if(action>=0xB4&&action<=0xBF)return 0;}
     sTagTargets[actor]=target;return 1;
 }
@@ -157,7 +162,7 @@ void TagBattle_CycleTarget(s32 actor) {
     if(actor<0||actor>=sTagActors)return;
     {s32 action=BtlAct_GetCurrent(BtlChar_Get(actor));if(action>=0xB4&&action<=0xBF)return;}
     for(i=1;i<=sTagActors;++i){s32 target=(old+i)%sTagActors;
-        if((TagBattle_Team(target)!=TagBattle_Team(actor)) && BtlCharApi_GetHp(target)>0){
+        if(!TagBattle_Allied(target,actor) && BtlCharApi_GetHp(target)>0){
             sTagTargets[actor]=target;
             if(actor==0 && target!=old && BtlCharApi_GetHp(old)<=0 && getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_KO_TEST"))
                 fprintf(stderr,"tag auto target: actor=0 old=%d target=%d\n",old,target);
@@ -175,6 +180,7 @@ s32 TagBattle_ConfigureLocal(void) {
     for(i=0;i<count;++i)if(!Port_TagConfirmed(i) || (!network && i!=Port_TagSeat() && !Port_TagCPU(i)))return 0;
     Battle_ClearWork();sTagActors=count;sTagLocal=1;sTagLocalActor=Port_TagSeat();
     if(network){sTagStage=Port_TagStage();sTagBgm=Port_TagBgm();}
+    {extern int Port_TagFreeForAll(void);sTagFreeForAll=Port_TagFreeForAll();sTagWinningActor=-1;}
     for(i=0;i<count;++i)sTagTeams[i]=Port_TagTeam(i);TagBattle_ResetPairs();memset(sTagSides,0,sizeof(sTagSides));
     sTagPresentation=1;
     /* Local development match. The network battle protocol is not enabled here. */
@@ -206,6 +212,7 @@ void TagBattle_Prepare(void) {
     const char *test = getenv("BT4_TAG_ACTOR_TEST");
     s32 i,n=test?atoi(test):2;
     if(sTagLocal)return;
+    sTagFreeForAll=0;sTagWinningActor=-1;
     TagBattle_ResetPairs();sTagPresentation=1;
     sTagActors = n>=4 && n<=10 && !(n&1) ? n : 2;
     for(i=0;i<sTagActors;++i){sTagTeams[i]=i&1;sTagTargets[i]=i^1;}
@@ -223,7 +230,7 @@ void TagBattle_Prepare(void) {
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CAMERA_VIEW")){s32 a=atoi(getenv("BT4_TAG_CAMERA_VIEW"));sTagTestView=a>=0&&a<sTagActors?a:-1;}
     if(sTagActors>2)fprintf(stderr,"tag actors: loading %d independent actors\n",sTagActors);
 }
-void TagBattle_End(void) { extern void Port_ActorAdxStopAll(void);Port_ActorAdxStopAll();extern void TagClash_Reset(void);TagClash_Reset();sTagActors=2;sTagLocal=0;sTagTestView=-1;memset(sTagSides,0,sizeof(sTagSides)); }
+void TagBattle_End(void) { extern void Port_ActorAdxStopAll(void);Port_ActorAdxStopAll();extern void TagClash_Reset(void);TagClash_Reset();sTagFreeForAll=0;sTagWinningActor=-1;sTagActors=2;sTagLocal=0;sTagTestView=-1;memset(sTagSides,0,sizeof(sTagSides)); }
 
 /* Returns the battle's shared state. */
 BattleWork *Battle_GetWork(void) {

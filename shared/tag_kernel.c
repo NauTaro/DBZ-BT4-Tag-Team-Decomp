@@ -94,8 +94,9 @@ int Kernel_Command(unsigned member){
     switch(cmd){
     case TTW_OPEN:
         if(room.phase)return TT_BAD_PHASE;
-        if(a<2||a>5||b<0||b>4||Ttw_Read(input+20)>12||Ttw_Read(input+52)>1||Ttw_Read(input+56)>4)return TT_BAD_CHOICE;
+        if(a<2||a>5||b<0||b>4||Ttw_Read(input+20)>12||Ttw_Read(input+52)>1||Ttw_Read(input+56)>4||Ttw_Read(input+60)>1||(Ttw_Read(input+60)&&a!=3))return TT_BAD_CHOICE;
         Tt_Open(&room,member,name,a,read64(input+24));room.time=b;room.delay=Ttw_Read(input+20);
+        Tt_SetMode(&room,member,room.epoch,Ttw_Read(input+60));
         if(Ttw_Read(input+52))Tt_FillCPU(&room,member,room.epoch,Ttw_Read(input+56));return TT_OK;
     case TTW_JOIN:return room.phase==TT_CLOSED?TT_BAD_MEMBER:Tt_Join(&room,member,name,read64(input+24));
     case TTW_PING:return TT_OK;

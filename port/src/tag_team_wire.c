@@ -26,6 +26,7 @@ void Ttw_Snapshot(unsigned char *p, const TtRoom *r, uint32_t member, int result
         Ttw_Write(o+36,v->difficulty);
     }
     Ttw_Write(p+472,r->slot_count);Ttw_Write(p+476,r->stage);Ttw_Write(p+480,r->bgm);Ttw_Write(p+484,r->attacks);Ttw_Write(p+488,r->seed);Ttw_Write(p+492,r->result_choice);
+    Ttw_Write(p+496,r->free_for_all);
 }
 int Ttw_Decode(const unsigned char *p, TtRoom *r, uint32_t *member, int *result, char *code) {
     TtRoom next;int i,phase=(int)Ttw_Read(p+28),size=(int)Ttw_Read(p+32);
@@ -35,6 +36,8 @@ int Ttw_Decode(const unsigned char *p, TtRoom *r, uint32_t *member, int *result,
     memset(&next,0,sizeof(next));
     next.epoch=Ttw_Read(p+8);next.revision=Ttw_Read(p+20);next.host=Ttw_Read(p+24);
     next.phase=phase;next.team_size=size;next.time=(int)Ttw_Read(p+36);
+    next.free_for_all=(int)Ttw_Read(p+496);
+    if(next.free_for_all<0||next.free_for_all>1||(next.free_for_all && Ttw_Read(p+472)!=6))return 0;
     next.slot_count=(int)Ttw_Read(p+472);next.stage=(int)Ttw_Read(p+476);next.bgm=(int)Ttw_Read(p+480);next.attacks=(int)Ttw_Read(p+484);next.seed=Ttw_Read(p+488);next.result_choice=(int32_t)Ttw_Read(p+492);
     if(next.stage<0||next.stage>=0x63||next.bgm<0||next.bgm>65535||next.attacks<0||next.attacks>1)return 0;
     next.delay=(int)Ttw_Read(p+40);next.rollback=(int)Ttw_Read(p+44);

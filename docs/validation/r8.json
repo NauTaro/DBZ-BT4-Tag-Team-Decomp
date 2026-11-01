@@ -1,0 +1,131 @@
+{
+  "version": "0.1.39.2 R8",
+  "tag": "v0.1.39.2-R8",
+  "upstream": "0.1.39.2",
+  "repository_tests_passed": 40,
+  "kernel_parity_scenarios": 8,
+  "kernel_frames_per_scenario": 2000,
+  "ffa_results": "All six survivor identities, pre-existing native KO flags, timeout, ties, loading/pause gates, team and duel regression checks",
+  "tag_timing": "Local CPU ping/delay zero; 240 local frames without network input packets; measured fixture RTT 40 ms",
+  "sql_contract": {
+    "passed": true,
+    "checks": [
+      "applied 202610300001_bt4_signaling.sql",
+      "applied 202610300002_discovery_members.sql",
+      "applied 202610300003_voice_negotiation.sql",
+      "applied 202610300004_direct_voice.sql",
+      "applied 202610310001_online_presence.sql",
+      "applied 202610310002_tag_quick_queues.sql",
+      "atomic R8 bundle can be applied again",
+      "four distinct authenticated players match once in one 2v2 room with ordered host and private notifications",
+      "only 2v2 enters the Tag quick queue",
+      "legacy duel queue still admits two players",
+      "custom six-player room enforces capacity and preserves admission",
+      "presence aggregate hides identities, expires stale entries and removes an explicit departure",
+      "anonymous presence and direct authenticated table reads are rejected",
+      "presence refresh budget is enforced"
+    ],
+    "scope": "Production SQL executed in local PostgreSQL WASM. Auth and Realtime delivery are test substitutes; this is not a hosted or concurrent load test."
+  },
+  "tag_captures": [
+    {
+      "ratio": "4x3",
+      "resolution": [
+        720,
+        540
+      ],
+      "states": [
+        "draft",
+        "costume",
+        "stage",
+        "combat"
+      ],
+      "actors": 10
+    },
+    {
+      "ratio": "16x9",
+      "resolution": [
+        960,
+        540
+      ],
+      "states": [
+        "draft",
+        "costume",
+        "stage",
+        "combat"
+      ],
+      "actors": 10
+    },
+    {
+      "ratio": "21x9",
+      "resolution": [
+        1260,
+        540
+      ],
+      "states": [
+        "draft",
+        "costume",
+        "stage",
+        "combat"
+      ],
+      "actors": 10
+    },
+    {
+      "ratio": "32x9",
+      "resolution": [
+        1920,
+        540
+      ],
+      "states": [
+        "draft",
+        "costume",
+        "stage",
+        "combat"
+      ],
+      "actors": 10
+    }
+  ],
+  "online": {
+    "native_instances": 4,
+    "same_room": true,
+    "last_common_frame": 900,
+    "mismatches": [],
+    "injected_start": true,
+    "shared_start_commands": [
+      [
+        [
+          "308",
+          "1"
+        ]
+      ],
+      [
+        [
+          "308",
+          "1"
+        ]
+      ],
+      [
+        [
+          "308",
+          "1"
+        ]
+      ],
+      [
+        [
+          "308",
+          "1"
+        ]
+      ]
+    ]
+  },
+  "scope": "Background Windows validation with isolated runtimes and no physical input/audio. Four local game processes in one hosted Supabase custom room; not a cross-ISP or capacity benchmark.",
+  "pending_before_publication": [
+    "Deploy both R8 Supabase migrations and run hosted presence/quick-queue checks",
+    "Build and verify the three signed platform packages"
+  ],
+  "limitations": [
+    "Native Linux/macOS gameplay is not tested on physical hardware here",
+    "Panoramic backgrounds use proportional cover and can crop source scenery; not every animation or menu transition has been certified",
+    "The new public Tag queue has local PostgreSQL contract coverage, not hosted validation yet"
+  ]
+}

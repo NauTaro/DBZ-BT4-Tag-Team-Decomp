@@ -43,7 +43,8 @@ void Port_GsMarker(int effect) {
    Which clip of a screen's movie receives an anchor is the table in Port_MenuClipPart. A screen that marks nothing
    is stretched as before. The renderer acts on these markers only with that layout chosen. */
 enum { PORT_MENU_NONE = -1, PORT_MENU_CENTER, PORT_MENU_FILL, PORT_MENU_LEFT, PORT_MENU_RIGHT, PORT_MENU_CENTER_ALL, PORT_MENU_LEFT_ALL,
-       PORT_MENU_RIGHT_ALL, PORT_MENU_PAGE, PORT_MENU_PAGE_TOP, PORT_MENU_PAGE_EDGE, PORT_MENU_CENTER_FREE };
+       PORT_MENU_RIGHT_ALL, PORT_MENU_PAGE, PORT_MENU_PAGE_TOP, PORT_MENU_PAGE_EDGE, PORT_MENU_CENTER_FREE,
+       PORT_MENU_FOOTER_LEFT, PORT_MENU_FOOTER_RIGHT };
 static int sMenuPart = PORT_MENU_NONE;
 static int sMenuMovie;               /* which of the screen's movies is being drawn (Port_MenuMovie) */
 static int sMenuScreen;              /* PORT_MENU_SCREEN_* of the page being drawn, 0: none */
@@ -64,7 +65,8 @@ int Port_MenuPart(int part) {
     int prev = sMenuPart;
     if (part != sMenuPart) {
         sMenuPart = part;
-        Port_GsMarker(part == PORT_MENU_NONE ? 0x13 : 0x22 + part); /* (0x13: the HUD's "end", no anchor) */
+        Port_GsMarker(part == PORT_MENU_NONE ? 0x13 : part >= PORT_MENU_FOOTER_LEFT ?
+                      0x30 + part - PORT_MENU_FOOTER_LEFT : 0x22 + part);
     }
     return prev;
 }
@@ -104,9 +106,10 @@ void Port_MenuPage(int screen) {
     /* (the character selects of Ultimate Battle and the World Tournament, 15, 19, 23, 24, 25, as character select) */
     Port_MenuPart(screen == 0 ? PORT_MENU_NONE : screen == 2 ? PORT_MENU_LEFT
                   : screen == 3 || screen == 37 || screen == 44 ? PORT_MENU_CENTER_ALL
-                                                : screen == 14 ? PORT_MENU_LEFT_ALL
+                                                : screen == 14 || screen == 16 ? PORT_MENU_LEFT_ALL
+                                                : screen == 17 ? PORT_MENU_RIGHT_ALL
                                                 : screen == 13 || screen == 42 || screen == 18 ? PORT_MENU_FILL : screen == 38 ? PORT_MENU_PAGE_TOP
-                                                : screen == 17 || screen == 20 ? PORT_MENU_PAGE_EDGE
+                                                : screen == 20 ? PORT_MENU_PAGE_EDGE
                                                 : screen >= 10 ? PORT_MENU_PAGE : PORT_MENU_CENTER);
 }
 
@@ -122,6 +125,20 @@ void Port_MenuFill(int on) {
 
 static int starts(const char *name, const char *prefix) {
     return strncmp(name, prefix, strlen(prefix)) == 0;
+}
+
+float Port_MenuReadableScale(void) {
+    extern int Port_MenusWide(void),Port_PageAspectMilli(void);
+    return sMenuScreen && Port_MenusWide() && Port_PageAspectMilli() >= 2000 ? 1.25f : 1.0f;
+}
+
+float Port_MenuLabelScale(const char *name) {
+    /* Raster labels already contain the game's outlined lettering. Enlarge
+       that complete label, never individual glyphs or its containing panel. */
+    if(starts(name,"mc_menu_text_") || starts(name,"mc_mode_text_") ||
+       starts(name,"mc_level_text_") || starts(name,"mc_battle_set_text_"))
+        return Port_MenuReadableScale();
+    return 1.0f;
 }
 
 /* The side of a measured clip that lies from x0 to x1 on the 4:3 screen: one touching its left edge (a guide on the
@@ -156,11 +173,20 @@ static int clip_part(const char *name, int x, int top);
    an edge keeps all of its pieces at their true shape, one as wide as the 4:3 screen too (the *_ALL parts): a
    plate's sprite sliding in is that wide for a frame, and would be taken for scenery and stretched. */
 int Port_MenuClipPart(const char *name, int x, int top) {
+    /* A message window is one composite. Its children must not be classified
+       again as scenery or as a separate page. Glyphs are anchored when queued. */
+    if (sMenuPart == PORT_MENU_FOOTER_LEFT || sMenuPart == PORT_MENU_FOOTER_RIGHT) return PORT_MENU_NONE;
     int part = clip_part(name, x, top);
     if (sMenuScreen < 10) { /* (the main menu keeps its look as approved: its selected plate's streak fills the width) */
         return part;
     }
     return part == PORT_MENU_LEFT ? PORT_MENU_LEFT_ALL : part == PORT_MENU_RIGHT ? PORT_MENU_RIGHT_ALL : part;
+}
+
+/* Message panels repeat their plain body across the extra width. Their end
+   ornaments and text keep the source scale. Zero outside native menu pages. */
+int Port_MenuFooter(int side) {
+    return sMenuScreen ? Port_MenuPart(side ? PORT_MENU_FOOTER_RIGHT : PORT_MENU_FOOTER_LEFT) : -1;
 }
 
 int Port_MenuClipPlace(int x0, int x1);

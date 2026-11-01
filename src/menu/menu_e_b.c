@@ -35,6 +35,7 @@ static s32 sPortStageRows = 11; /* rows of the stage reel: the game's 6, more wi
 #endif
 #ifdef PORT
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+extern void Port_MenuMovie(int index);
 extern void Port_MenuFill(int on);
 #endif
 
@@ -990,7 +991,10 @@ void TeamSel_Draw(void) {
             }
         }
 #ifdef PORT
-        Port_MenuPage(15); /* widescreen menus: this screen's page, its backdrop filling the width */
+        /* Tag draft uses both player movies, including their independent
+         * roster masks and costume panels. The solo selector's page 15 has
+         * only a left player and cannot anchor the second player's artwork. */
+        Port_MenuPage(sTagSelectActive ? 3 : 15);
         Port_MenuFill(1);
         Sprite_DrawPicture(gTeamSel->bg[i], 0, 0, gTeamSel->bgAlpha[i]);
         Port_MenuFill(0);
@@ -1394,9 +1398,13 @@ void TeamSel_Draw(void) {
     for (i = 0; i < TEAMSEL_FLASH_NUM; i++) {
 #ifdef PORT
         if(sTagSelectActive && (gTeamSel->flags&TEAMSEL_STAGE) && i>0)continue;
+        if(sTagSelectActive)Port_MenuMovie(i);
 #endif
         Flash_Draw(&gTeamSel->flash[i]);
     }
+#ifdef PORT
+    if(sTagSelectActive)Port_MenuMovie(0);
+#endif
     Font_FlushAll();
     IconWin_Draw();
     ItemPanel_Draw(0);

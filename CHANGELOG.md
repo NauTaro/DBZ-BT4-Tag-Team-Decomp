@@ -1,3 +1,11 @@
+# 0.1.39.2 R8
+
+- Separate Tag Team Quick Match (2 vs 2) from custom rooms, with 2 vs 2, 5 vs 5 and six-player Free for All presets.
+- Restore configurable duel creation and use a four-frame rollback limit for Quick Match.
+- Add an online-menu fighter count refreshed every five minutes.
+- Expand native message panels without stretching their decorations; align menu groups and enlarge ultrawide labels.
+- Synchronize Free for All rules, targeting and winner selection through the participant-hosted room protocol.
+
 # 0.1.39.2 R7 Hotfix
 
 - Load all 250 BT4 portrait sheets in tournament, Hero and Time Nest selectors, including alternate forms.

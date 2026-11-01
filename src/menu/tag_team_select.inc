@@ -16,6 +16,7 @@ extern int Port_TagStage(void),Port_TagBgm(void);
 extern int Port_TagPlayerChara(int seat), Port_TagPlayerCostume(int seat), Port_TagConfirmed(int seat);
 extern const char *Port_TagPlayerName(int seat), *Port_TagError(void);
 
+extern int Port_TagFreeForAll(void);
 extern int Port_TagTeam(int seat),Port_TagTeamIndex(int seat),Port_TagTeamCount(int team);
 static s32 sTagPage[2]={-1,-1};
 static void TeamSel_TagSetRoster(void){
@@ -187,24 +188,27 @@ static s32 TeamSel_TagAutoConfirm(s32 seat){
 }
 static void TeamSel_TagCaption(s32 seat,s32 pending){
     char line[128];s32 team,n,turn;
+    extern int Port_MenusWide(void);
+    f32 left;
     if(gTeamSel->flags&TEAMSEL_STAGE)return; /* native map/music UI owns this page */
-    Ps_PageSet();Ps_Align(0);Ps_Panel(TBO_KIT_WINDOW,10,1,502,29,0x78);
-    Ps_Text(24,7,sTagTransition?"TAG TEAM | PREPARING STAGE SELECT":"TAG TEAM | CHARACTER SELECT",.56f,365,3);
+    Ps_PageSet();left=Port_MenusWide()?Ps_Left():0;
+    Ps_Align(0);Ps_Panel(TBO_KIT_WINDOW,10+left,1,502-left,29,0x78);
+    Ps_Text(24+left,7,sTagTransition?"TAG TEAM | PREPARING STAGE SELECT":"TAG TEAM | CHARACTER SELECT",.56f,365-2*left,3);
     if(sTagTurnSeconds>0){
         sprintf(line,"%02d",sTagTurnSeconds);Ps_Align(2);
-        Ps_Text(486,3,line,.95f,65,sTagTurnSeconds<=10?1:0);
-        Ps_Rect(411,25,487,26,Ps_Rgba(23,50,60,0x80),Ps_Rgba(23,50,60,0x80));
-        Ps_Rect(411,25,411+76.0f*sTagTurnSeconds/60,26,Ps_Rgba(255,213,91,0x80),Ps_Rgba(255,213,91,0x80));
+        Ps_Text(486-left,3,line,.95f,65,sTagTurnSeconds<=10?1:0);
+        Ps_Rect(411-left,25,487-left,26,Ps_Rgba(23,50,60,0x80),Ps_Rgba(23,50,60,0x80));
+        Ps_Rect(411-left,25,411-left+76.0f*sTagTurnSeconds/60,26,Ps_Rgba(255,213,91,0x80),Ps_Rgba(255,213,91,0x80));
         Ps_Align(0);
     }
     for(team=0;team<2;++team){
         turn=-1;for(n=0;n<Port_TagCapacity();++n)if(Port_TagTeam(n)==team&&!Port_TagConfirmed(n)){turn=n;break;}
-        Ps_Panel(TBO_KIT_WINDOW,team?263:10,431,team?502:249,447,0x78);
-        Ps_Copy(line,team?(char *)PortOnline_Text("RED TEAM: "):(char *)PortOnline_Text("BLUE TEAM: "),128);
+        Ps_Panel(TBO_KIT_WINDOW,team?263:10+left,431,team?502-left:249,447,0x78);
+        Ps_Copy(line,(char*)PortOnline_Text(Port_TagFreeForAll()?"Fighters: ":team?"RED TEAM: ":"BLUE TEAM: "),128);
         if(turn<0)Ps_Cat(line,(char *)PortOnline_Text("READY"),128);else Ps_Cat(line,(char*)Port_TagPlayerName(turn),128);
         {char pageText[40];sprintf(pageText," | %d-%d/%d",sTagPage[team]*5+1,(sTagPage[team]+1)*5<Port_TagTeamCount(team)?(sTagPage[team]+1)*5:Port_TagTeamCount(team),Port_TagTeamCount(team));Ps_Cat(line,pageText,128);}
         if(turn==seat)Ps_Cat(line,pending?(char *)PortOnline_Text(" | CONFIRMING"):Port_TagCPU(seat)?(char *)PortOnline_Text(" | SELECT CPU"):(char *)PortOnline_Text(" | YOUR TURN"),128);
-        Ps_Text(team?273:20,433,line,.43f,217,team?1:3);
+        Ps_Text(team?273:20+left,433,line,.43f,217-left,team?1:3);
     }
     Ps_Align(1);Ps_Text(256,412,"TRIANGLE: BACK",.42f,180,0);Ps_Align(0);
 }
@@ -311,7 +315,7 @@ s32 TeamSel_TagRun(s32 section){
         if(!exit && sTagTransition && --sTagTransition==0){TeamSel_TagOpenMap();stageFrames=0;}
         if(!exit && (gTeamSel->flags&TEAMSEL_STAGE)){
             gPad[0]=savedPads[0];
-            if(getenv("BT4_TAG_LOCAL_TEST") && !getenv("BT4_TAG_STAGE_PREVIEW") && (!sTagSelectTest || !strcmp(sTagSelectTest,"timeout") || !strcmp(sTagSelectTest,"invalid")) && ++stageFrames>45){gPad[0].gamePressed=PADG_CROSS;gPad[0].gameRepeat=0;}
+            if(getenv("BT4_TAG_LOCAL_TEST") && !getenv("BT4_TAG_STAGE_PREVIEW") && (!sTagSelectTest || !strcmp(sTagSelectTest,"timeout") || !strcmp(sTagSelectTest,"invalid")) && ++stageFrames>(getenv("BT4_TAG_WIDE_AUDIT")?100:45)){gPad[0].gamePressed=PADG_CROSS;gPad[0].gameRepeat=0;}
             TeamSel_TagApplyArena();
             if(ColorFade_IsInDone()&&(!Port_TagNetwork()||Port_TagHost()))TeamSel_Input(&result);
             TeamSel_TagPublishArena();
@@ -327,6 +331,11 @@ s32 TeamSel_TagRun(s32 section){
         }
         gPad[0]=savedPads[0];gPad[1]=savedPads[1];
         TeamSel_Draw();Font_FlushAll();TeamSel_TagCaption(seat,pending);
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_WIDE_AUDIT")&&ColorFade_IsInDone()){
+            static s32 frames[3];
+            s32 kind=(gTeamSel->flags&TEAMSEL_STAGE)?2:gTeamSel->side[team]->state==TEAMSEL_ST_COLOR?1:0;
+            if(++frames[kind]==(kind==2?80:kind==1?60:20)){extern void Port_TagUiCapture(s32);Port_TagUiCapture(70+kind);}
+        }
         ColorFade_Draw();Gfx_EndFrame(1);Dma_Flush();File_Stub264D90();
     }
     while(gTeamSel->faceState!=TEAMSEL_LOAD_IDLE || gTeamSel->stageState!=TEAMSEL_LOAD_IDLE){TeamSel_UpdateFaceLoad();TeamSel_UpdateStageLoad();}

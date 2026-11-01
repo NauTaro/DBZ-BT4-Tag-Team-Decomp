@@ -7,7 +7,7 @@ from pathlib import Path
 import argparse,hashlib,json,os,shutil,struct,subprocess,tempfile
 
 ROOT=Path(__file__).resolve().parents[3]
-PROTOCOL=0x54540008
+PROTOCOL=0x54540009
 NEUTRAL=bytes([0,0,0,0,127,127]+[0]*12)
 
 def word(packet,offset,value):struct.pack_into('<I',packet,offset,value&0xffffffff)
@@ -123,9 +123,9 @@ def run(output,frame_count=2000):
     subprocess.run(command,env=env,check=True,**hidden)
     one_human=output/'one-human.armed';subprocess.run([str(native),'--fixture',str(one_human),'1','4'],check=True,**hidden)
     rows=[]
-    for humans,count in [(2,2),(2,4),(2,10),(4,4),(4,6),(4,10),(10,10)]:
-        name=f'{humans}-humans-{count-humans}-CPU';folder=output/name;folder.mkdir(exist_ok=True)
-        armed=folder/'armed.bin';subprocess.run([str(native),'--fixture',str(armed),str(humans),str(count)],check=True,**hidden)
+    for humans,count,ffa in [(2,2,0),(2,4,0),(2,10,0),(4,4,0),(4,6,0),(4,10,0),(10,10,0),(6,6,1)]:
+        name=f'{humans}-humans-{count-humans}-CPU'+('-FFA' if ffa else '');folder=output/name;folder.mkdir(exist_ok=True)
+        armed=folder/'armed.bin';subprocess.run([str(native),'--fixture',str(armed),str(humans),str(count),str(ffa)],check=True,**hidden)
         events,description=make_events(armed.read_bytes(),one_human.read_bytes(),humans,count,frame_count)
         path=folder/'events.bin';path.write_bytes(events)
         subprocess.run([str(native),str(path),str(folder/'native.trace'),str(folder/'native.wire')],check=True,**hidden)

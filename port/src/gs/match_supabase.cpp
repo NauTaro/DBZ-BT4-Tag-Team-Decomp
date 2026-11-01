@@ -20,10 +20,11 @@ std::mutex lock;unsigned serial=20000;
 std::string text(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
 unsigned number(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_number_unsigned()?p->get<unsigned>():0;}
 struct Discovery {
-    unsigned generation=0,init=0,countsRequest=0,reconcile=0;bool on=false,waiting=false;
+    unsigned generation=0,init=0,countsRequest=0,tagCountsRequest=0,reconcile=0;bool on=false,waiting=false;
     Bt4DiscoveryStatus status={};Dj descriptor,profile,localAddresses;std::string wire,content;
     std::map<unsigned,Dj> addresses;std::map<unsigned,bool> announced;
     Uint64 leaseAt=0,began=0,lastCounts=0;std::array<int,5> counts={};bool countsKnown=false;
+    Uint64 lastTagCounts=0;std::array<int,3> tagCounts={};bool tagCountsKnown=false;
 } d;
 bool rpc(const char *op,const Dj &args,unsigned id=0){return Bt4Signal_Command(0,id?id:++serial,op,args.dump().c_str());}
 void error(const std::string &code){
@@ -73,6 +74,7 @@ void pump(){
         if(kind=="reply"){
             unsigned reply=number(event,"serial");
             if(reply==d.countsRequest&&body->is_object()&&!body->contains("error")){const char *keys[]={"S","T","D10","D15","D20"};for(int i=0;i<5;++i)d.counts[i]=(int)number(*body,keys[i]);d.countsKnown=true;}
+            else if(reply==d.tagCountsRequest&&body->is_object()&&!body->contains("error")){const char *keys[]={"F6","T2","T5"};for(int i=0;i<3;++i)d.tagCounts[i]=(int)number(*body,keys[i]);d.tagCountsKnown=true;}
             else if((reply==d.init||reply==d.reconcile)&&body->is_object()){
                 if(body->contains("error")){error(text(*body,"error"));continue;}
                 if(text(*body,"state")=="waiting")d.waiting=true;else metadata(*body);
@@ -114,4 +116,39 @@ extern "C" int Bt4Discovery_Counts(int protocol,uint64_t content,int out[5]){
     if(!d.lastCounts||now-d.lastCounts>=30000){d.lastCounts=now;char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.countsRequest=++serial;
         rpc("counts",{{"wire","bt4-duel-"+std::to_string(protocol)},{"content",hash}},d.countsRequest);}
     for(int i=0;i<5;++i)out[i]=d.counts[i];return d.countsKnown;
+}
+extern "C" int Bt4Discovery_TagCounts(uint64_t content,int out[3]){
+    std::lock_guard<std::mutex> g(lock);if(!out)return 0;pump();Uint64 now=SDL_GetTicks();
+    if(!d.lastTagCounts||now-d.lastTagCounts>=30000){d.lastTagCounts=now;char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.tagCountsRequest=++serial;
+        rpc("counts",{{"wire","bt4-p2p-2"},{"content",hash}},d.tagCountsRequest);}
+    for(int i=0;i<3;++i)out[i]=d.tagCounts[i];return d.tagCountsKnown;
+}
+
+/* UI presence is not a room and does not hold a Realtime subscription. Only
+ * authenticated aggregate counts return to the menu, never identities/IPs. */
+extern "C" int Port_OnlinePresence(int active){
+    static bool wasActive=false,known=false;
+    static unsigned request=0,nextSerial=400000;
+    static Uint64 next=0;
+    static int count=0;
+    char buffer[1024];
+    while(Bt4Signal_Read(3,buffer,sizeof(buffer))>0){
+        Dj event=Dj::parse(buffer,nullptr,false);
+        if(!event.is_object()||number(event,"serial")!=request)continue;
+        auto body=event.find("body");
+        if(body!=event.end()&&body->is_object()&&body->contains("online")&&(*body)["online"].is_number_unsigned()){
+            count=(int)std::min(100000u,number(*body,"online"));known=true;
+        }
+    }
+    Uint64 now=SDL_GetTicks();
+    if(active&&(!wasActive||now>=next)){
+        request=++nextSerial;
+        Bt4Signal_Command(3,request,"presence","{\"active\":true}");
+        next=now+300000;
+    }else if(!active&&wasActive){
+        request=++nextSerial;
+        Bt4Signal_Command(3,request,"presence","{\"active\":false}");
+    }
+    wasActive=active!=0;
+    return known?count:-1;
 }

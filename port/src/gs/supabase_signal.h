@@ -8,7 +8,8 @@ extern "C" {
 int Bt4Signal_Open(void);
 int Bt4Signal_Status(void); /* 0 connecting, 1 subscribed, -1 failed */
 void Bt4Signal_Listen(int consumer,int enabled);
-/* consumer 0 room/duel, 1 Tag, 2 voice; serial correlates an RPC reply. */
+/* consumer 0 room/duel, 1 Tag, 2 voice, 3 HTTP-only presence.
+ * Presence does not subscribe to Realtime. Serial correlates an RPC reply. */
 int Bt4Signal_Command(int consumer,unsigned serial,const char *operation,const char *args_json);
 int Bt4Signal_Read(int consumer,char *json,size_t capacity);
 void Bt4Signal_Close(void);

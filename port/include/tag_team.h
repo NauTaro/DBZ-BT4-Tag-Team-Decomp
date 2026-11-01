@@ -9,7 +9,7 @@
 #define TT_TEAM_MAX 5
 #define TT_PAD_BYTES 18 /* bytes 0..3 fighter buttons, 4..5 stick, 6 target, 7 status, 8 sequence START */
 #define TT_INPUT_HISTORY 512
-#define TT_PROTOCOL 0x54540008u
+#define TT_PROTOCOL 0x54540009u
 #define TT_CPU_MEMBER 0x80000000u
 enum { TT_CLOSED, TT_LOBBY, TT_SELECT, TT_LOADING, TT_ARMED, TT_FIGHT, TT_ABORTED };
 enum { TT_OK, TT_BAD_PHASE, TT_BAD_MEMBER, TT_FULL, TT_NOT_OWNER,
@@ -22,7 +22,7 @@ typedef struct TtPlayer {
 typedef struct TtRoom {
     uint32_t epoch, revision, host;
     int phase, team_size, time, delay, rollback, slot_count;
-    int stage,bgm,attacks,result_choice;
+    int stage,bgm,attacks,result_choice,free_for_all;
     uint32_t seed;
     uint64_t content, load_digest;
     TtPlayer players[TT_MAX_PLAYERS]; /* Team identity is explicit and independent of the seat. */
@@ -41,6 +41,7 @@ int Tt_Count(const TtRoom *r);
 int Tt_Capacity(const TtRoom *r);
 int Tt_TeamCount(const TtRoom *r,int team,int occupied);
 int Tt_SetTeams(TtRoom *r,uint32_t sender,uint32_t epoch,int left,int right);
+int Tt_SetMode(TtRoom *r,uint32_t sender,uint32_t epoch,int free_for_all);
 int Tt_SetSlot(TtRoom *r,uint32_t sender,uint32_t epoch,int seat,int cpu,int difficulty);
 int Tt_MovePlayer(TtRoom *r,uint32_t sender,uint32_t epoch,int from,int to);
 int Tt_SetArena(TtRoom *r,uint32_t sender,uint32_t epoch,int stage,int bgm,int attacks);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createSessionClass} from '../session.mjs';
 
-const PROTOCOL=0x54540008,MAGIC=0x314b4c54;
+const PROTOCOL=0x54540009,MAGIC=0x314b4c54;
 const liveFixtures=new Set();
 afterEach(()=>{for(const f of liveFixtures)f.clean();liveFixtures.clear();});
 class Socket {
