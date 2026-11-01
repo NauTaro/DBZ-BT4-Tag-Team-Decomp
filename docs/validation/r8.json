@@ -127,5 +127,6 @@
     "Native Linux/macOS gameplay is not tested on physical hardware here",
     "Panoramic backgrounds use proportional cover and can crop source scenery; not every animation or menu transition has been certified",
     "The new public Tag queue has local PostgreSQL contract coverage, not hosted validation yet"
-  ]
+  ],
+  "legacy_negotiation_checks_passed": 35
 }

@@ -2,7 +2,7 @@
 // never both. Voice and microphone settings do not participate in this channel.
 import {VoiceHub} from './voice.mjs';
 
-const PROTOCOL=0x54540008, MAGIC=0x314b4c54, BYTES=528;
+const PROTOCOL=0x54540009, MAGIC=0x314b4c54, BYTES=528;
 const STATE=100, FRAME=101, INPUT=11, PING=107, PONG=108;
 const ARMED=4, FIGHT=5, HISTORY=512;
 const hex=bytes=>Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
