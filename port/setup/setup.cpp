@@ -477,7 +477,7 @@ static bool eu_field() {
 
 static void page_pick() {
     static const SDL_DialogFileFilter filters[]={{"BT4 ISO","iso;bin;img"},{"All files","*"}};
-    static const SDL_DialogFileFilter zipFilters[]={{"ZIP packages","zip"},{"All files","*"}};
+    static const SDL_DialogFileFilter zipFilters[]={{"BT4 packages","zip;bt4lang"},{"All files","*"}};
     ImGui::SetNextItemWidth(160);
     int ui=sUiEnglish?1:0;
     if(ImGui::Combo("##interface-language",&ui,"Español\0English\0"))sUiEnglish=ui!=0;
@@ -517,9 +517,9 @@ static void page_pick() {
             ImGui::PopStyleColor();
             if(sInstallTexturePack&&!sTexturePackPath.empty()&&!file_exists(sTexturePackPath.c_str()))packsReady=false;
 
-            ImGui::TextUnformatted("Português (Brasil) v1.2 (59.6 MB)");
+            ImGui::TextUnformatted("Português (Brasil) v1.2 (59.1 MB)");
             ImGui::SameLine();
-            if(ImGui::Button(L("Elegir ZIP##ptbr","Choose ZIP##ptbr"),ImVec2(120,0)))
+            if(ImGui::Button(L("Elegir pack##ptbr","Choose pack##ptbr"),ImVec2(120,0)))
                 SDL_ShowOpenFileDialog(dialog_done,(void *)3,sWindow,zipFilters,2,NULL,false);
             std::string ptbrName=sPtbrPackPath;
             size_t ptbrSlash=ptbrName.find_last_of("/\\");
@@ -951,9 +951,10 @@ int main(int argc, char **argv) {
         bool hasSpanish=Native_SpanishInstalled(sRoot),hasEnglish=Native_EnglishInstalled(sRoot);
         sInstallMask=hasSpanish&&hasEnglish?3:hasEnglish?2:1;
         const std::string textureCandidate=sRoot+"textures/dbz bt4 HD v1.07.zip";
-        const std::string ptbrCandidate=sRoot+"BT4_PT-BR_v1.2.zip";
+        const std::string ptbrCandidate=sRoot+"portuguese-b14rev2.bt4lang";
         if(file_exists(textureCandidate.c_str()))sTexturePackPath=textureCandidate;
         if(file_exists(ptbrCandidate.c_str()))sPtbrPackPath=ptbrCandidate;
+        else if(file_exists((sRoot+"BT4_PT-BR_v1.2.zip").c_str()))sPtbrPackPath=sRoot+"BT4_PT-BR_v1.2.zip";
     }
 #ifdef __APPLE__
     if (sRelease) {

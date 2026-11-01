@@ -33,6 +33,7 @@
 #include "../include/bt4_build_identity.h"
 #include "../src/gs/update_sign.h"
 #include <SDL3/SDL.h>
+#include "language_packages.h"
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -227,6 +228,7 @@ void check_cancel() {
 void step(const char *title);
 bool installed_language(const std::string &root,bool english);
 std::string download_optional(const std::string &root,bool portuguese);
+static std::string sha256_file(const std::string &path);
 
 void ensure_directories(const std::string &path) {
     std::string normalized=path;
@@ -301,9 +303,9 @@ std::string unique_backup_path(const std::string &root,const std::string &relati
 struct ZipReader {
     mz_zip_archive zip{};
     bool open=false;
-    explicit ZipReader(const std::string &path) {
+    explicit ZipReader(const std::string &path,Uint64 offset=0,Uint64 size=0) {
         mz_zip_zero_struct(&zip);
-        open=mz_zip_reader_init_file(&zip,path.c_str(),0)!=0;
+        open=(offset?mz_zip_reader_init_file_v2(&zip,path.c_str(),0,offset,size):mz_zip_reader_init_file(&zip,path.c_str(),0))!=0;
     }
     ~ZipReader(){if(open)mz_zip_reader_end(&zip);}
     ZipReader(const ZipReader&)=delete;
@@ -433,13 +435,25 @@ void install_ptbr_pack(const std::string &root,std::string source) {
     if(!SDL_GetPathInfo(source.c_str(),&fi)||fi.type!=SDL_PATHTYPE_FILE||fi.size>120000000ULL)
         throw Stop{"PTBR_ARCHIVE_INVALID"};
     const std::string marker=root+"tbo/setup/PTBR_v1.2.native-installed";
-    ZipReader reader(source);
+    Uint64 archiveOffset=0,archiveSize=0;
+    { Uint8 header[64];SDL_IOStream *file=SDL_IOFromFile(source.c_str(),"rb");
+      if(!file)throw Stop{"PTBR_ARCHIVE_INVALID"};
+      size_t count=SDL_ReadIO(file,header,sizeof(header));SDL_CloseIO(file);
+      if(count>=8&&!memcmp(header,"BT4PTP01",8)){
+          const Uint8 expected[8]={1,0,0,0,64,0,0,0};
+          if(count!=64||memcmp(header+8,expected,8)||fi.size!=kPortuguesePackage.bytes||sha256_file(source)!=kPortuguesePackage.sha256)
+              throw Stop{"PTBR_ARCHIVE_INVALID"};
+          for(int i=0;i<8;++i)archiveSize|=(Uint64)header[16+i]<<(i*8);
+          archiveOffset=64;if(archiveSize!=fi.size-64)throw Stop{"PTBR_ARCHIVE_INVALID"};
+      }else if(source.size()>=8&&source.substr(source.size()-8)==".bt4lang")throw Stop{"PTBR_ARCHIVE_INVALID"};
+    }
+    ZipReader reader(source,archiveOffset,archiveSize);
     if(!reader.open)throw Stop{"PTBR_ARCHIVE_INVALID"};
+    say("@activity ptbr-unpack");
     mz_uint count=mz_zip_reader_get_num_files(&reader.zip);
     if(count<500||count>1000)throw Stop{"PTBR_ARCHIVE_INVALID"};
     std::vector<ZipEntry> entries;entries.reserve(count);
     Uint64 total=0;unsigned fileCount=0,ptbrData=0,fonts=0,languageText=0,ptbrTextures=0;
-    bool hasLauncher=false,hasChoose=false,hasPrepareFonts=false,hasPrepareFolders=false;
     for(mz_uint i=0;i<count;i++) {
         ZipEntry entry;
         if(mz_zip_reader_get_filename(&reader.zip,i,NULL,0)>sizeof(entry.stat.m_filename)-1||
@@ -456,18 +470,13 @@ void install_ptbr_pack(const std::string &root,std::string source) {
             total+=entry.stat.m_uncomp_size;fileCount++;
             std::string lower=entry.path;for(char &c:lower)c=(char)tolower((unsigned char)c);
             if(lower.rfind("ptbr/",0)==0)ptbrData++;
-            if(lower.rfind("fonts/",0)==0)fonts++;
-            if(lower.rfind("gamedata/game-text/",0)==0)languageText++;
-            if(lower.rfind("textures/ptbr/",0)==0)ptbrTextures++;
-            if(lower=="jogar em portugues.cmd")hasLauncher=true;
-            if(lower=="escolher idioma.cmd")hasChoose=true;
-            if(lower=="ptbr/preparar-fontes.ps1")hasPrepareFonts=true;
-            if(lower=="ptbr/preparar-pastas.ps1")hasPrepareFolders=true;
+            if(lower.rfind("fonts/",0)==0||lower.rfind("ptbr/fonts/",0)==0)fonts++;
+            if(lower.rfind("gamedata/game-text/",0)==0||lower.rfind("ptbr/game-text/",0)==0)languageText++;
+            if(lower.rfind("textures/ptbr/",0)==0||lower.rfind("ptbr/textures/",0)==0)ptbrTextures++;
         }
         entries.push_back(entry);
     }
-    if(fileCount<500||total<60000000ULL||ptbrData<200||fonts<5||languageText<1||ptbrTextures<200||
-       !hasLauncher||!hasChoose||!hasPrepareFonts||!hasPrepareFolders)
+    if(fileCount<500||total<60000000ULL||ptbrData<200||fonts<5||languageText<1||ptbrTextures<200)
         throw Stop{"PTBR_ARCHIVE_INVALID"};
 
     struct Changed {std::string destination,backup;bool hadOriginal=false;};
@@ -485,7 +494,7 @@ void install_ptbr_pack(const std::string &root,std::string source) {
             std::string output=entry.path;
             if(output.rfind("fonts/",0)==0)output="PTBR/"+output;
             else if(output.rfind("textures/PTBR/",0)==0)output="PTBR/textures/"+output.substr(14);
-            else if(output!="PTBR/fontes-sem-conflito.txt"&&output.rfind("PTBR/gamedata/mods/",0)!=0&&output.rfind("PTBR/game-text/",0)!=0)continue;
+            else if(output!="PTBR/fontes-sem-conflito.txt"&&output.rfind("PTBR/gamedata/mods/",0)!=0&&output.rfind("PTBR/game-text/",0)!=0&&output.rfind("PTBR/fonts/",0)!=0&&output.rfind("PTBR/textures/",0)!=0)continue;
             std::string destination=root+output;
             size_t slash=output.find_last_of('/');
             std::string parent=slash==std::string::npos?root:root+output.substr(0,slash);
@@ -975,16 +984,16 @@ void step_eu(const std::string &root, const std::string &path) {
 std::string download_optional(const std::string &root,bool portuguese){
     const std::string folder=root+"tbo/setup/cache/";
     ensure_directories(folder);
-    const std::string name=portuguese?"BT4_PT-BR_v1.2.zip":"dbz bt4 HD v1.07.zip",path=folder+name;
-    const char *digest=portuguese?"64366f583fd3a09068cd6692bc607dea7ca600be58f8d6172400e30fb64f9ffd":"f129248fcd0d508a5e901e6901109726fd2b38e1d57812b9f8ba743aafdd4129";
-    const Uint64 bytes=portuguese?59570177ULL:3690378076ULL;
+    const std::string name=portuguese?kPortuguesePackage.name:"dbz bt4 HD v1.07.zip",path=folder+name;
+    const char *digest=portuguese?kPortuguesePackage.sha256:"f129248fcd0d508a5e901e6901109726fd2b38e1d57812b9f8ba743aafdd4129";
+    const Uint64 bytes=portuguese?kPortuguesePackage.bytes:3690378076ULL;
     SDL_PathInfo info;
     if(SDL_GetPathInfo(path.c_str(),&info)&&info.size==bytes&&sha256_file(path)==digest)return path;
     say("@activity download");say("@package 0");
     try{cli_run(root,{"auth","status","--hostname","github.com"});}
     catch(const Stop &){say("@github login");cli_run(root,{"auth","login","--web","--hostname","github.com","--git-protocol","https","--scopes","repo"},"",0,true);}
     if(portuguese){
-        cli_run(root,{"release","download","v0.1.39.2-R9","--repo",kLanguageRepository,"--pattern",name,"--dir",folder,"--clobber"},path,bytes);
+        cli_run(root,{"release","download",kLanguageRelease,"--repo",kLanguageRepository,"--pattern",name,"--dir",folder,"--clobber"},path,bytes);
     }else{
         const std::string temp=path+".part";SDL_IOStream *output=SDL_IOFromFile(temp.c_str(),"wb");
         if(!output)throw Stop{"Could not create the texture download. Check free disk space."};
@@ -1044,7 +1053,7 @@ void work(std::string root, std::string path, std::string eu, std::string textur
         if(!texturePack.empty())install_texture_pack(root,texturePack);
         if(!ptbrPack.empty())install_ptbr_pack(root,ptbrPack);
         if(texturePack=="@download")SDL_RemovePath((root+"tbo/setup/cache/dbz bt4 HD v1.07.zip").c_str());
-        if(ptbrPack=="@download")SDL_RemovePath((root+"tbo/setup/cache/BT4_PT-BR_v1.2.zip").c_str());
+        if(ptbrPack=="@download")SDL_RemovePath((root+"tbo/setup/cache/"+kPortuguesePackage.name).c_str());
         say("@activity finalize");
         SDL_CreateDirectory((root+"tbo").c_str());
         std::string options=std::to_string(sInstallMask|((!ptbrPack.empty()||SDL_GetPathInfo((root+"tbo/setup/PTBR_v1.2.native-installed").c_str(),NULL))?4:0))+"\n";
