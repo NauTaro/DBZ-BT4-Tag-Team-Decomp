@@ -131,12 +131,39 @@
     "last_common_frame": 900,
     "mismatches": [],
     "injected_start": true,
+    "windows_executable_sha256": "5abc648ba889915a6ef4f59ded1955eb45daa9f6b8ff3ccc48caf7717c2cf571",
     "shared_start_commands": [
-      [["308", "1"]], [["308", "1"]], [["308", "1"]], [["308", "1"]]
+      [["309", "1"]], [["309", "1"]], [["309", "1"]], [["309", "1"]]
     ]
   },
   "scope": "Background Windows validation with isolated runtimes and no physical input/audio. Four local game processes joined one hosted Supabase quick-match room and reached 900 common frames. This is not a cross-ISP or capacity benchmark.",
-  "pending_before_publication": ["Build and verify the three signed platform packages from the final R8 commit"],
+  "ci": {
+    "release_run": "41267810252",
+    "release_checks": {
+      "prepare-release": "success",
+      "build": "success",
+      "native-linux": "success",
+      "native-macos": "success"
+    },
+    "repository_checks_run": "41267810141",
+    "portable_layout": {
+      "ubuntu-latest": "success",
+      "windows-latest": "success"
+    }
+  },
+  "published_release": {
+    "id": 430333795,
+    "url": "https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/v0.1.39.2-R8",
+    "published_at": "2026-11-01T03:18:18Z",
+    "assets_verified": {
+      "windows-x64": "01d7ab79cd93b541eb66f58227f36fce13ae00e00aa495dede884e9b7e4edd1e",
+      "linux-x64": "b3ed122955a69529ac01e32e812f6fa46df1479ef660ea673dbeeaa13d765876",
+      "macos-arm64": "b32328f76b5206975165abfc5ae8abd9a1b42cc6db7a1553a4dfb7820ade8f88"
+    },
+    "all_signatures_verified": true,
+    "all_zip_crc_checks_passed": true
+  },
+  "pending_before_publication": [],
   "limitations": [
     "Native Linux/macOS gameplay is not tested on physical hardware here",
     "Panoramic backgrounds use proportional cover and can crop source scenery; not every animation or menu transition has been certified"
