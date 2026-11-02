@@ -121,7 +121,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TITLE: ${{ needs.build.outputs.title }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "$RELEASE_TITLE" --notes-file CHANGELOG.md \
+          python3 - <<'PY'
+          import os, pathlib
+          section = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
+          heading, body = section.split('\n', 1)
+          assert heading == '# ' + os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
+          pathlib.Path('release-assets/notes.md').write_text(body.strip() + '\n')
+          PY
+          gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "$RELEASE_TITLE" --notes-file release-assets/notes.md \
             release-assets/BT4decomp-windows-x64.zip \
             release-assets/BT4decomp-windows-x64.zip.sig \
             release-assets/BT4decomp-linux-x64.zip \
