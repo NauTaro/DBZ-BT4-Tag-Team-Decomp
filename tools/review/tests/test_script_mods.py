@@ -33,6 +33,7 @@ assert(sCamOut && sCam.zoom==.75f && sCam.collide==1 && sCam.pos[0]==120);in.col
                 out=Path(tmp);package.take_example_mods(out)
                 for name in ('modern_camera','modern_hud','modern_look','skill_list','example_camera','example_hud'):
                     self.assertEqual((out/'mods'/name/'mod.lua').read_bytes(),(ROOT/'port/examples/mods'/name/'mod.lua').read_bytes())
+                    self.assertEqual((out/'tbo/bundled-mods'/name/'mod.lua').read_bytes(),(out/'mods'/name/'mod.lua').read_bytes())
         finally:sys.path.pop(0)
         update=(ROOT/'port/src/gs/net_update.c').read_text(encoding='utf8')
         self.assertIn('if (user_file(rel) && !new_bundled_mod(rel))',update)

@@ -184,11 +184,12 @@ def take_fonts(out, lic):
 
 def take_example_mods(out):
     """The example script mods (port/examples/mods) into mods/, each in its own folder. A mod starts switched off, so
-    they change nothing until the player switches one on in F1 > Mods. (The automatic update leaves mods/ alone: a
-    player who updates keeps their own mods and gets these from a fresh download.)"""
+    they change nothing until the player switches one on in F1 > Mods. The reserved copy reaches older BT4
+    updaters that protect mods/ entirely; startup installs missing scripts without overwriting player files."""
     src = ROOT / "port/examples/mods"
     for d in sorted(p for p in src.iterdir() if p.is_dir() and (p / "mod.lua").exists()):
         shutil.copytree(d, out / "mods" / d.name)
+        shutil.copytree(d, out / "tbo/bundled-mods" / d.name)
 
 def take_tbo_art(out, lic):
     """The pictures of the Tenkaichi Budokai Online screens, and who made them (port/tbo/ui/CREDITS.md)."""

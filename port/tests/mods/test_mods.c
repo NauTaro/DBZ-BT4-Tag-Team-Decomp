@@ -313,6 +313,30 @@ int main(void) {
     }
     CHECK(Mods_HudRead(&sRead) && sRead.count >= 4);
 
+    /* An update from a launcher that omits mods/: recover all six scripts
+       from the reserved package copy, off by default, and preserve an edit. */
+    {
+        char destination[512], path[600];
+        snprintf(destination, sizeof(destination), "%s/upgrade-mods", sDir);
+        seed_bundled("port/examples/mods", destination);
+        setenv("BT3_MODS", destination, 1);
+        setenv("BT3_MODS_SETTINGS", "", 1);
+        Mods_ReloadAsk(); Mods_Tick();
+        CHECK(Mods_Count() == 6);
+        for (i = 0; i < Mods_Count(); i++) CHECK(!Mods_Info(i)->enabled && !Mods_Info(i)->error[0]);
+        snprintf(path, sizeof(path), "%s/modern_hud/mod.lua", destination);
+        fp = fopen(path, "w"); CHECK(fp != NULL);
+        if (fp != NULL) { fputs("return { name='My own HUD' }", fp); fclose(fp); }
+        seed_bundled("port/examples/mods", destination);
+        Mods_ReloadAsk(); Mods_Tick();
+        CHECK(mod("modern_hud") != NULL && !strcmp(mod("modern_hud")->name, "My own HUD"));
+        /* An empty existing script is also the player's file. */
+        fp = fopen(path, "w"); CHECK(fp != NULL); if (fp != NULL) fclose(fp);
+        seed_bundled("port/examples/mods", destination);
+        fp = fopen(path, "r"); CHECK(fp != NULL);
+        if (fp != NULL) { CHECK(fgetc(fp) == EOF); fclose(fp); }
+    }
+
     Mods_Lock();
     unload_all();
     Mods_Unlock();

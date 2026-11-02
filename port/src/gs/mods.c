@@ -23,13 +23,21 @@
  * Nothing in this file is game state (port/tools/make_state.py).
  */
 #include <dirent.h>
+#include <fcntl.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "../../third_party/lua/lua.h"
 #include "../../third_party/lua/lauxlib.h"
@@ -1331,6 +1339,47 @@ static int by_name(const void *a, const void *b) {
     return strcmp((const char *)a, (const char *)b);
 }
 
+/* Older BT4 updaters protect mods/ in its entirety. Their signed update can
+ * deliver this reserved copy, which the new runtime installs without replacing
+ * any file the player already has. No script is enabled by installing it. */
+static void seed_bundled(const char *source, const char *destination) {
+    static const char *const names[] = {
+        "example_camera", "example_hud", "modern_camera", "modern_hud", "modern_look", "skill_list"
+    };
+    char path[1024], directory[1024], target[1100];
+    size_t i;
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        char *data;
+        long size = 0;
+        FILE *fp;
+        int ok, descriptor;
+        if (snprintf(path, sizeof(path), "%s/%s/mod.lua", source, names[i]) >= (int)sizeof(path) ||
+            snprintf(directory, sizeof(directory), "%s/%s", destination, names[i]) >= (int)sizeof(directory) ||
+            snprintf(target, sizeof(target), "%s/mod.lua", directory) >= (int)sizeof(target)) continue;
+        data = read_file(path, &size);
+        if (data == NULL) continue;
+#ifdef _WIN32
+        _mkdir(destination); _mkdir(directory);
+        descriptor = _open(target, _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
+        fp = descriptor < 0 ? NULL : _fdopen(descriptor, "wb");
+        if (descriptor >= 0 && fp == NULL) { _close(descriptor); remove(target); }
+#else
+        mkdir(destination, 0755); mkdir(directory, 0755);
+        descriptor = open(target, O_WRONLY | O_CREAT | O_EXCL, 0644);
+        fp = descriptor < 0 ? NULL : fdopen(descriptor, "wb");
+        if (descriptor >= 0 && fp == NULL) { close(descriptor); remove(target); }
+#endif
+        /* Exclusive creation keeps existing scripts, including empty ones. */
+        if (fp != NULL) {
+            ok = fwrite(data, 1, (size_t)size, fp) == (size_t)size;
+            if (fclose(fp) != 0) ok = 0;
+            if (!ok) remove(target); /* Only the incomplete file this call created. */
+            else say(-1, "installed bundled %s", names[i]);
+        }
+        free(data);
+    }
+}
+
 static void unload_all(void) {
     int i;
 
@@ -1349,6 +1398,10 @@ static void load_all(void) {
     struct dirent *e;
     int n = 0, i;
 
+    /* A custom mod directory is owned entirely by its caller. */
+    if (getenv("BT3_MODS") == NULL || getenv("BT3_MODS")[0] == '\0') {
+        seed_bundled("tbo/bundled-mods", Mods_Folder());
+    }
     Mods_Lock();
     unload_all();
     sImgCount = 0; /* (the render thread lets its pictures go: Mods_ImageGen) */
