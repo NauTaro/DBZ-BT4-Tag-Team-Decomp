@@ -575,9 +575,8 @@ void BtlChar_ResetObjWork(BtlMgrChr *chr) {
     BtlObj_InitChains(BtlChar_GetObj(chr));
 }
 
-/* Shared simulation choice, independent of the local camera. Simultaneous
- * default cinematics are serialized by priority and actor index. Throws are
- * outside this action range and never request a full-roster cinematic stop. */
+/* Shared preparation owner for the script camera bookkeeping. Each actor keeps
+ * its own control and view; this owner never requests a full-roster stop. */
 #include "battle/tag_team_native.h"
 #include "tag_team_cut_audit.inc"
 static s32 sTagDefaultCutOwner=-1;
@@ -613,17 +612,17 @@ void BtlChars_UpdateFreeze(void) {
         } else if (BtlChar_TestFlag(chr, 0x126)) {
             level[i] = 1;
         }
-        if(cutOwner>=0 && i!=cutOwner)level[i]=0;
         if (max < level[i]) {
             max = level[i];
         }
     }
-    if (max > 0 && TagBattle_Active() && cutOwner<0) {
+    if (max > 0 && TagBattle_Active()) {
         /* Preserve finite impact stop, but never let a cinematic owner freeze
            the entire roster or a second owner executing its own action. */
         extern s32 TagBattle_Target(s32 actor);
         for(i=0;i<BtlChar_GetCount();++i)if(level[i]){
             s32 target=TagBattle_Target(i);
+            if(TagBattle_Preparing(i)&&TagBattle_Pair(i)<0)continue;
             if(target>=0 && target<BtlChar_GetCount() && !level[target]){
                 BtlMgrChr *other=BtlChar_Get(target);
                 other->freezeNext=1;other->freezeDelay=0;
@@ -654,12 +653,8 @@ void BtlChars_UpdateFreeze(void) {
     }
     for (i = 0; i < BtlChar_GetCount(); i++) {
         chr = BtlChar_Get(i);
-        if(cutOwner>=0 && i!=cutOwner){
-            extern s32 TagBattle_Target(s32 actor);
-            /* Existing private pairs continue; everyone else holds their pose
-             * during this shared preparation. */
-            if(TagBattle_PairAttacker(i)<0){chr->freezeNext=1;chr->freezeDelay=0;}
-        }
+        /* Special preparation is local to its participants. Unrelated actors
+           retain their own finite impact stop and continue their actions. */
         if(cutOwner>=0&&TagBattle_PairAttacker(i)>=0){chr->freezeNext=0;chr->freezeDelay=0;chr->freeze=0;}
         if (chr->freeze > 0) {
             s32 v = chr->freeze - 1;

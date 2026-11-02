@@ -1,5 +1,9 @@
 // English, Spanish and Brazilian Portuguese labels for the bundled mod UI.
         {"Mods", "Mods", "Mods"},
+        {"Special-move cinematic cameras", "Cámaras cinematográficas de ataques especiales", "Câmeras cinematográficas de ataques especiais"},
+        {"Turn off to keep the regular fight framing during special and ultimate moves. Attack animations, damage and timing are unchanged.", "Desactívalo para mantener el encuadre de combate durante ataques especiales y definitivos. Conserva las animaciones, el daño y los tiempos del ataque.", "Desative para manter o enquadramento de luta durante ataques especiais e supremos. As animações, o dano e os tempos dos ataques são preservados."},
+        {"Right stick enemy targeting", "Apuntar a enemigos con la palanca derecha", "Selecionar inimigos com o analógico direito"},
+        {"Flick toward an enemy to switch targets in Tag Team. In a duel, lock onto your opponent. Release the stick before switching again. Original right-stick actions remain available when this is off.", "Mueve la palanca hacia un enemigo para cambiar de objetivo en Tag Team. En un duelo, fija al rival. Suelta la palanca antes de cambiar de nuevo. Desactivado conserva los controles originales.", "Mova o analógico na direção de um inimigo para trocar de alvo no Tag Team. Em um duelo, mira no adversário. Solte o analógico antes de trocar novamente. Desativado mantém os controles originais."},
         {"Tech", "Mecánicas", "Mecânicas"},
         {"Manage Lua presentation mods from %s. Each mod has its own folder and settings.", "Gestiona los mods de presentación Lua de %s. Cada mod tiene su carpeta y sus ajustes.", "Gerencie os mods de apresentação Lua de %s. Cada mod tem sua pasta e suas configurações."},
         {"Reload the scripts", "Recargar scripts", "Recarregar scripts"},
@@ -36,6 +40,8 @@
         {"Size", "Tamaño", "Tamanho"},
         {"Only during a combo", "Sólo durante un combo", "Somente durante um combo"},
         {"Always shown", "Mostrar siempre", "Mostrar sempre"},
+        {"Show buttons", "Mostrar botones", "Mostrar botões"},
+        {"The buttons (and stick directions) that use each move, beside it.", "Muestra junto a cada técnica sus botones y direcciones de palanca.", "Mostra os botões e as direções do analógico ao lado de cada técnica."},
         {"Show the list all the time, not only while charge is held.", "Muestra la lista también cuando no estás cargando ki.", "Mostra a lista também quando você não está carregando ki."},
         {"How see-through the panels are.", "Transparencia de los paneles.", "Transparência dos painéis."},
         {"0: the game's camera exactly. More: the camera takes longer to catch up.", "0: cámara original. Un valor mayor aumenta la suavidad y el tiempo de seguimiento.", "0: câmera original. Um valor maior aumenta a suavidade e o tempo de acompanhamento."},

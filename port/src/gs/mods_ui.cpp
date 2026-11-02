@@ -234,8 +234,13 @@ static void portrait_face(ImDrawList *dl, SDL_GPUTexture *tex, const ModsCmd &c,
             float a = 1.0f;
             if (r1 > r0) {
                 float d = sqrtf((x - mx) * (x - mx) + (y - my) * (y - my)), t = clamp01((d - r0) / (r1 - r0));
-                a = t < 0.55f ? 1.0f - 0.15f * t / 0.55f : 0.85f * (1.0f - (t - 0.55f) / 0.45f);
+                a = 1.0f-t*t*(3.0f-2.0f*t);
             }
+            /* Feather the photo's rectangular crop as well as its round mask.
+               This keeps the window and screen edges from cutting the art. */
+            float edge=fminf(fminf(x-wx0,wx1-x),fminf(y-wy0,wy1-y));
+            float feather=clamp01(edge/8.0f);
+            a*=feather*feather*(3.0f-2.0f*feather);
             float uu = (x - left) / pw, vv = (y - top) / ph;
             if (uu < 0.0f || uu > 1.0f || vv < 0.0f || vv > 1.0f) {
                 a = 0.0f;

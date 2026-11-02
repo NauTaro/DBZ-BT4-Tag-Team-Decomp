@@ -33,6 +33,7 @@ typedef struct {
 const char *Update_Version(void);          /* this build's full number */
 void Update_Cleanup(void);                 /* at start: the files the last update left (*.old) go */
 void Update_Check(void);                   /* asks GitHub once (in a thread of its own) */
+void Update_Recheck(void);                 /* manual retry; leaves an active download/install alone */
 void Update_Status(UpdateStatus *out);
 const char *Update_Notes(void);            /* the release's notes (its body on GitHub), "" if none */
 void Update_Download(void);                /* downloads the verified release in a thread */

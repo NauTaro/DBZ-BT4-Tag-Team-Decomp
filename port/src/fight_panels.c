@@ -27,6 +27,7 @@
 #endif
 
 extern int gPortResim; /* gs/state.c: blanks being run again */
+extern int gsSkipFrame;
 
 /* src/battle/btl_char_mgr.c / btl_seq.c: there from Battle_Init to Battle_Term, NULL outside (see a11y_game.c) */
 extern void GAME_PTR gBtlChars;
@@ -44,8 +45,8 @@ extern int BtlChar_TestFlag(void GAME_PTR chr, unsigned n);
 #define CHR_POWERED_UP 6
 
 extern int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size); /* plat_file.c */
-#define FACE_FILE 0x2F9 /* the large portraits (the character select's): file FACE_FILE + character of partition 1 */
-#define CHARA_MAX 0xA1 /* the grid's marker cells and up are not characters */
+#define FACE_FILE 0x71C /* BT4: TS_FACE_FILE / UB_FACE_FILE, the character select's portraits */
+#define CHARA_MAX 0x100 /* BT4 includes forms beyond BT3's 161 base character ids */
 
 /* include/battle/btl_char_member.h: BtlMemberChr */
 #define CHR_ACTIVE 0x994
@@ -65,6 +66,7 @@ extern int Port_FilePath(int ptid, int flid, const char *fname, char *out, int s
    index), parsed as BtlText_FindEntry does but without its shared state (the menu's script pointer). */
 extern int BtlAct_GetCurrent(void GAME_PTR chr);
 extern int BtlInput_IsHeld(void GAME_PTR chr, unsigned mask);
+extern int BattleSide_IsCpu(int side); /* (a side's control word: 2 the computer; read only) */
 extern int BtlSuper_GetKiCost(void GAME_PTR chr, int slot);
 extern int BtlSkill_GetBlastCost(void GAME_PTR chr, int slot);
 extern void GAME_PTR BtlChar_GetObj(void GAME_PTR chr);
@@ -204,6 +206,7 @@ static void read_side(FpState *st, int side) {
     }
     s->action = BtlAct_GetCurrent(chr);
     s->chargeHeld = BtlInput_IsHeld(chr, BTLB_CHARGE) != 0;
+    s->cpu = BattleSide_IsCpu(actor) != 0;
     {
         uint8_t GAME_PTR obj = (uint8_t GAME_PTR)BtlChar_GetObj(chr);
         uint32_t at = obj != NULL ? (uint32_t)rd(obj, OBJ_NAMES) : 0;
@@ -251,7 +254,7 @@ void PortPanels_GameTick(void) {
     static FpState st;
     FpHud GAME_PTR h;
 
-    if (gPortResim) {
+    if (gPortResim || gsSkipFrame) {
         return;
     }
     memset(&st, 0, sizeof(st));

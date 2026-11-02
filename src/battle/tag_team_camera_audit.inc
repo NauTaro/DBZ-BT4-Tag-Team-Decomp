@@ -22,8 +22,8 @@ static s32 TagAudit_CameraPolicy(void){
     BtlChar_Get(0)->action=0x105;BtlSuper_RequestHitStop(BtlChar_Get(0),0);BtlChars_UpdateFreeze();
     TagAudit_Check("shared_preparation_owner",TagBattle_DefaultCutOwner()==0);
     for(i=0;i<BtlChar_GetCount();++i){
-        TagAudit_Check("shared_preparation_camera",TagBattle_CameraActor(i)==0);
-        TagAudit_Check("preparation_holds_outsiders",(BtlChar_Get(i)->freeze>0)==(i!=0));
+        TagAudit_Check("preparation_camera_remains_private",TagBattle_CameraActor(i)==i);
+        TagAudit_Check("preparation_keeps_outsiders_active",!BtlChar_Get(i)->freeze);
     }
     TagAudit_Clear();TagBattle_ReservePair(0,1);
     BtlChar_Get(0)->action=0x12E;BtlChar_Get(1)->action=0x13A;BtlChars_UpdateFreeze();
@@ -36,7 +36,7 @@ static s32 TagAudit_CameraPolicy(void){
     }
     BtlChar_Get(2)->action=0x105;BtlSuper_RequestHitStop(BtlChar_Get(2),0);BtlChars_UpdateFreeze();
     TagAudit_Check("second_preparation_preserves_existing_pair",TagBattle_CameraActor(0)==0&&TagBattle_CameraActor(1)==0&&!BtlChar_Get(0)->freeze&&!BtlChar_Get(1)->freeze);
-    TagAudit_Check("second_preparation_shared_with_free_fighters",TagBattle_CameraActor(3)==2&&BtlChar_Get(3)->freeze);
+    TagAudit_Check("second_preparation_keeps_free_fighters_independent",TagBattle_CameraActor(3)==3&&!BtlChar_Get(3)->freeze);
     TagAudit_Clear();for(i=0;i<BtlChar_GetCount();++i)BtlChar_Get(i)->action=0xB;
     for(k=0;k<7;++k)TagBattle_UpdatePairs();BtlChars_UpdateFreeze();
     TagAudit_Check("released_pair_and_camera",TagBattle_Pair(0)<0&&TagBattle_CameraActor(1)==1);

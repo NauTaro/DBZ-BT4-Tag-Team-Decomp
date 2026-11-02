@@ -617,7 +617,7 @@ static void page_pick() {
         ImGui::Dummy(ImVec2(0,4));
         ImGui::Separator();
         ImGui::TextUnformatted(L("Paquetes adicionales","Additional packs","Pacotes adicionais"));
-        ImGui::Checkbox(L("DBZ BT4 HD v1.07 (3.69 GB)","DBZ BT4 HD v1.07 (3.69 GB)","DBZ BT4 HD v1.07 (3,69 GB)"),&sInstallTexturePack);
+        ImGui::Checkbox(L("DBZ BT4 HD (3,15 GB)","DBZ BT4 HD (3.15 GB)","DBZ BT4 HD (3,15 GB)"),&sInstallTexturePack);
         ImGui::PushStyleColor(ImGuiCol_Text,kDim);
         ImGui::TextWrapped("%s",L("Descarga e instalación automáticas desde GitHub.","Downloads and installs automatically from GitHub.","Download e instalação automáticos pelo GitHub."));
         ImGui::PopStyleColor();
@@ -766,7 +766,7 @@ static const char *error_text(){
     if(sError=="LANGUAGE_VERIFY_FAILED")return L("La descarga no se pudo verificar. Volvé a intentarlo.","The download could not be verified. Try again.","Não foi possível verificar o download. Tente novamente.");
     if(sError=="PTBR_REQUIRES_ENGLISH")return L("El paquete portugués requiere los datos ingleses de BT4.","The Portuguese pack requires the English BT4 data.","O pacote em português requer os dados de BT4 em inglês.");
     if(sError=="PTBR_ARCHIVE_INVALID")return L("El ZIP de Português (Brasil) está incompleto o no es compatible.","The Português (Brasil) ZIP is incomplete or unsupported.","O ZIP de Português (Brasil) está incompleto ou não é compatível.");
-    if(sError=="TEXTURE_PACK_INVALID")return L("El ZIP seleccionado no es DBZ BT4 HD v1.07 o está dañado.","The selected ZIP is not DBZ BT4 HD v1.07 or is damaged.","O ZIP selecionado não é DBZ BT4 HD v1.07 ou está corrompido.");
+    if(sError=="TEXTURE_PACK_INVALID")return L("El paquete de texturas HD no coincide con la versión verificada o está dañado.","The HD texture pack does not match the verified version or is damaged.","O pacote de texturas HD não corresponde à versão verificada ou está corrompido.");
     return L("No se pudo completar la instalación. Revisá el archivo ISO, la conexión y el espacio disponible.","Installation could not complete. Check the ISO, your connection and available disk space.","Não foi possível concluir a instalação. Confira a ISO, a conexão e o espaço disponível no disco.");
 }
 static void page_failed() {

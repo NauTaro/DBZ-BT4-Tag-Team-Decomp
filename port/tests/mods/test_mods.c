@@ -22,6 +22,7 @@ unsigned gPortVBlanks;
 volatile int gUiPresentW = 1280, gUiPresentH = 896; /* (448 high in HUD units, 640 wide) */
 int Port_NetSession(void) { return 0; }
 int Port_NetActive(void) { return 0; }
+int Port_NetMe(void) { return 0; }
 int Port_TagNetwork(void) { return 0; }
 int Port_TagLocalBattle(void) { return 0; }
 int Port_HudSwap(void) { return 0; }
@@ -233,6 +234,26 @@ int main(void) {
     CHECK(!sSet);
 
     /* switched off from the window: no shapes; the choice is written to the file with the other mod's line */
+    /* Upgrade the known old script without replacing the installed file or
+       mistaking a customized/empty script for a stock copy. */
+    {
+        char *text = malloc(sizeof(kSkillList0394) + 1);
+        long size = sizeof(kSkillList0394), expectedSize = 0;
+        char *expected = read_file("port/examples/mods/skill_list/mod.lua", &expectedSize);
+        memcpy(text, kSkillList0394, sizeof(kSkillList0394)); text[size] = 0;
+        upgrade_bundled_text("port/examples/mods", "skill_list", &text, &size);
+        CHECK(expected && size == expectedSize && !memcmp(text, expected, size));
+        free(text); free(expected);
+        text = malloc(sizeof(kSkillList0394) + 1); size = sizeof(kSkillList0394);
+        memcpy(text, kSkillList0394, size); text[0] ^= 1; text[size] = 0;
+        upgrade_bundled_text("port/examples/mods", "skill_list", &text, &size);
+        CHECK(size == sizeof(kSkillList0394) && text[0] == (kSkillList0394[0] ^ 1));
+        free(text);
+        text = malloc(1); text[0] = 0; size = 0;
+        upgrade_bundled_text("port/examples/mods", "skill_list", &text, &size);
+        CHECK(size == 0 && text[0] == 0); free(text);
+    }
+
     Mods_Lock();
     mod("hud")->enabled = 0;
     mod("hud")->set[0].value = 33.0;

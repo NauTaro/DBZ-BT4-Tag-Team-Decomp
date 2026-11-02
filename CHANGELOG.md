@@ -1,3 +1,17 @@
+# 0.1.39.5 R1
+
+- Integrate upstream 0.1.39.5 Skill List changes while retaining BT4 and Tag Team presentation mappings.
+- Add F1 > Updates with manual checks, retry, download progress and a confirmed restart from the offline main menu.
+- Read ADX version 3 and 4 loop points for combat music, restore the predictor at loop boundaries and correct shared music timing metadata.
+- Skip Lua presentation work during rollback resimulation and discarded display frames.
+- Add optional right-stick enemy targeting and a local special-move camera preference.
+- Keep unrelated Tag Team fighters active during another pair's special-move preparation.
+- Score both human players' correct button-clash answers independently.
+- Restore scripted Parallel Quest setup and descriptions; load all BT4 roster chips in the remaining mission and ranking selectors.
+- Center Modern HUD portraits with artwork-specific eye anchors and soften portrait borders.
+- Replace the optional HD download with the supplied 3.15 GB pack, support its DX10 DDS files and repair ZIP64 local-offset handling for large archives.
+- Preserve installed language profiles, custom scripts, saves, setup ISO selection and signed update checks. The online simulation family advances to sim3; participants need compatible builds.
+
 # 0.1.39.4 R1
 
 - Integrate upstream 0.1.39.4 Lua presentation mods, animated matchmaking radar and widescreen message alignment.

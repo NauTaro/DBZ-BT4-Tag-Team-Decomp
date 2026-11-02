@@ -14,23 +14,17 @@ static void TagAudit_Clear(void){s32 i;
 }
 static s32 TagAudit_DefaultCuts(void){
     extern void BtlSuper_RequestHitStop(BtlMgrChr *,s32);
-    s32 i,other=2,style=TagBattle_Presentation();TagAuditVec before,after;
+    s32 i,other=2;
     sTagAuditChecks=sTagAuditFailures=0;
     TagAudit_Clear();TagBattle_ResetPairs();
     for(i=0;i<BtlChar_GetCount();++i)BtlChar_Get(i)->action=0;
     BtlChar_Get(0)->action=0x105;
     BtlSuper_RequestHitStop(BtlChar_Get(0),0);BtlChars_UpdateFreeze();
     TagAudit_Check("startup_owner_advances",!BtlChar_Get(0)->freeze);
-    for(i=1;i<BtlChar_GetCount();++i)TagAudit_Check("default_only_stops_outsiders",(BtlChar_Get(i)->freeze>0)==style);
-    if(style){
-        BtlCharApi_GetBasePos(other,&before);
-        BtlChar_BeginFrame(BtlChar_Get(other));BtlChar_UpdateMotion(BtlChar_Get(other));BtlChar_UpdateStage7(BtlChar_Get(other));
-        BtlCharApi_GetBasePos(other,&after);
-        TagAudit_Check("frozen_actor_cannot_move",memcmp(&before,&after,12)==0);
-        BtlChar_Get(other)->action=0x105;BtlChar_SetHeldFlag(BtlChar_Get(other),0x125);
-        BtlChars_UpdateFreeze();
-        TagAudit_Check("second_startup_waits_for_current_owner",TagBattle_DefaultCutOwner()==0 && !BtlChar_Get(0)->freeze && BtlChar_Get(other)->freeze>0);
-    }
+    for(i=1;i<BtlChar_GetCount();++i)TagAudit_Check("startup_does_not_freeze_outsiders",!BtlChar_Get(i)->freeze);
+    BtlChar_Get(other)->action=0x105;BtlChar_SetHeldFlag(BtlChar_Get(other),0x125);
+    BtlChars_UpdateFreeze();
+    TagAudit_Check("simultaneous_startups_both_advance",!BtlChar_Get(0)->freeze&&!BtlChar_Get(other)->freeze);
     TagAudit_Clear();for(i=0;i<BtlChar_GetCount();++i)BtlChar_Get(i)->action=0;
     BtlChars_UpdateFreeze();
     TagAudit_Check("cinematic_stop_releases_without_a_timer",TagBattle_DefaultCutOwner()<0);
@@ -56,7 +50,7 @@ static s32 TagAudit_RushCuts(void){
             TagAudit_Check("bystander_camera_is_private",!TagBattle_CutVisible(actor,i));
             TagAudit_Check("bystander_keeps_simulating",!BtlChar_Get(i)->freeze);
         }
-        if(k)TagAudit_Check("victim_sees_attacker_and_attacker_sees_victim",TagBattle_CutVisible(victim,actor));
+        if(k)TagAudit_Check("victim_cannot_replace_attacker_camera",!TagBattle_CutVisible(victim,actor));
     }
     TagAudit_Clear();TagBattle_ResetPairs();
     for(i=0;i<BtlChar_GetCount();++i)BtlChar_Get(i)->action=0xB;

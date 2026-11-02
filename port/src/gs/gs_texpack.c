@@ -31,6 +31,7 @@
 #include "../../third_party/xxhash/xxhash.h"
 #include "gs_internal.h"
 #include "gs_texpack.h"
+#include "texture_dds.h"
 /* The updater already links miniz's read-only API. Supply bounded SDL I/O
    here so multi-gigabyte packs need neither a RAM copy nor disk extraction. */
 #define MINIZ_NO_ARCHIVE_WRITING_APIS
@@ -465,6 +466,10 @@ static int load(const Entry *entry, TexPackImage *img) {
     memcpy(&flags, f + 80, 4);
     memcpy(&fourcc, f + 84, 4);
     memcpy(&bpp, f + 88, 4);
+    if ((flags & 4) && fourcc == 0x30315844 && !TextureDds_Dx10(f,size,&fourcc,&at)) {
+        SDL_free(f);
+        return 0;
+    }
     if (w == 0 || h == 0 || w > 8192 || h > 8192) {
         SDL_free(f);
         return 0;

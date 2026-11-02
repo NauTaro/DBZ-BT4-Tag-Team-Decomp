@@ -555,8 +555,12 @@ void BtlInput_Init(BtlInputChr *chr) {
 void BtlInput_Sample(BtlInputChr *chr) {
     Pad *pad = BtlChar_GetPad(chr);
     BtlCharInput *in = &chr->input;
-    u32 targetPressed=TagBattle_Network()?(TagBattle_NetPad(chr->player)[6]?PAD_L3:0):pad->pressed;
+    u32 targetPressed=TagBattle_Network()?((TagBattle_NetPad(chr->player)[6]&1)?PAD_L3:0):pad->pressed;
+    s32 targetDirection=TagBattle_Network()?((TagBattle_NetPad(chr->player)[6]>>1)&7):
+        (pad->data[17]&0x80)?pad->data[17]&7:0;
     if(TagBattle_Active() && !chr->injectOn){
+        extern s32 TagBattle_TargetDirection(s32 actor,s32 direction);
+        if(targetDirection)TagBattle_TargetDirection(chr->player,targetDirection);
         extern char *getenv(const char *name);
         static s32 tested;
         if(!tested && getenv("BT4_TAG_TARGET_TEST") && BtlChar_TestFlag(chr,3) && BtlChar_FrameMod(240)==0){targetPressed|=PAD_L3;tested=1;}
@@ -572,6 +576,11 @@ void BtlInput_Sample(BtlInputChr *chr) {
     in->padLastStatus = pad->lastStatus;
     if(TagBattle_Network()){in->padLastStatus=in->padStatus;in->padStatus=TagBattle_NetPad(chr->player)[7];}
     in->rawHeld = pad->held;
+    if(!TagBattle_Active() && !chr->injectOn && targetDirection){
+        /* Find the configured raw lock-on button rather than assuming L1.
+           The resulting battle button is recorded/replayed normally. */
+        in->rawHeld |= in->mask[14];
+    }
     in->rawStickX = BtlInput_StickToByte(pad->left[0]);
     in->rawStickY = BtlInput_StickToByte(pad->left[1]);
 #ifdef PORT

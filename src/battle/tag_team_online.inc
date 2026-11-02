@@ -88,7 +88,9 @@ static s32 TagOnline_Tick(void){
         /* Input is mapped on its owner's machine; another player's key config
          * cannot reinterpret it. Commands/double taps use shared fighter state. */
         memcpy(packet,&buttons,4);packet[4]=BtlInput_StickToByte(pad->left[0]);packet[5]=BtlInput_StickToByte(pad->left[1]);
-        packet[6]=(sTagOnlinePressed&PAD_L3)!=0;packet[7]=pad->status==0||pad->status==1?pad->status:2;
+        packet[6]=(sTagOnlinePressed&PAD_L3)!=0;
+        if(pad->data[17]&0x80)packet[6]|=(pad->data[17]&7)<<1;
+        packet[7]=pad->status==0||pad->status==1?pad->status:2;
         packet[8]=sequence!=3 && (sTagOnlinePressed&PAD_START)?1:0;
         if(sTagOnlinePausePending||(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)){memset(packet,0,sizeof(packet));packet[4]=packet[5]=127;}
         if(!sTagOnlinePausePending&&!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")){

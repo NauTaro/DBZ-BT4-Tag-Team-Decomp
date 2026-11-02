@@ -503,9 +503,11 @@ void BtlCam_Term(void) {
 
 #ifdef PORT
 static void BtlCam_PortMods(BtlCamView *view,s32 side,s32 objId) {
+        extern void Port_NaturalFightCamera(s32,s32,s32);
         extern void Port_ModsCamera(s32 side, s32 objId, s32 pos, s32 rot); /* (addresses in game memory) */
         extern s32 Port_ModsCamZoom(s32 side);
         extern s32 Port_ModsCamCollide(s32 side);
+        Port_NaturalFightCamera(objId,(s32)(u32)&view->pos,(s32)(u32)&view->rot);
         Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot);
         sPortZoomView[view->index & 1] = Port_ModsCamZoom(side); /* (the zoom, the stage: what they also asked) */
         if (Port_ModsCamCollide(side)) {
@@ -758,7 +760,8 @@ s32 BtlCam_UpdateOverride(void) {
         BtlCam_BuildView(gBtlCam->cur,1);
         own=BtlObj_Get(BattleSide_GetObjId(0));
         if(DemoCam_IsActive()) {
-            s32 local=demoOwner>=0 && demoOwner==focus;
+            extern s32 Port_SpecialMoveCameras(s32 change);
+            s32 local=demoOwner>=0 && demoOwner==focus && Port_SpecialMoveCameras(-1);
             DemoCam_Update();
             if(!local) { BtlCam_SelectView(0); BtlCam_ApplyView(1); }
         }
@@ -808,6 +811,18 @@ s32 BtlCam_UpdateOverride(void) {
         ret = 1;
     }
 #ifdef PORT
+    {
+        extern s32 Port_SpecialMoveCameras(s32 change);
+        extern s32 Battle_GetHumanSide(void);
+        extern void *BtlChar_Get(s32 actor);
+        extern s32 BtlAct_GetCurrent(void *chr),ChrCam_IsCutActive(void *chr);
+        s32 side=Port_NetView(),i,special=0;
+        if(side<0)side=Battle_GetHumanSide();if(side<0||side>1)side=0;
+        for(i=0;i<2;++i){s32 a=BtlAct_GetCurrent(BtlChar_Get(i));if(a>=0xFD&&a<=0x13B)special=1;}
+        if(special&&!Port_SpecialMoveCameras(-1)){
+            BtlCam_SelectView(side);BtlCam_SetLayout(0,1);BtlCam_UpdateView(side);ret=1;
+        }
+    }
     if (BtlCam_PortFreeCamera(ret)) {
         ret = 1;
     }

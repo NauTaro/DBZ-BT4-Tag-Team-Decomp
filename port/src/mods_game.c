@@ -30,6 +30,7 @@
 #endif
 
 extern int gPortResim; /* gs/state.c: blanks being run again */
+extern int gsSkipFrame; /* gs_draw.c: a presentation frame deliberately discarded */
 extern void GAME_PTR gBtlChars;
 extern void GAME_PTR gBtlSeq;
 extern void GAME_PTR BtlChar_FindByObjId(int objId);
@@ -57,6 +58,19 @@ int PortMods_ViewActor(int side) {
 static ModsGame sGame;
 static ModsCam sCam;
 static int sCamOut;
+struct NaturalPose { int valid,obj; float pos[3],rot[3],anchor[3]; };
+static struct NaturalPose sNatural[10];
+int PortMods_InBattle(void) { return sGame.battle; }
+
+/* Host presentation preference, never included in gameplay snapshots. */
+int Port_SpecialMoveCameras(int change) {
+    extern int Port_Setting(const char *,int);
+    extern void Port_SettingSave(const char *,int),Port_SettingsWrite(void);
+    static int enabled=-1;
+    if(enabled<0)enabled=Port_Setting("special_move_cameras",1)!=0;
+    if(change>=0){enabled=change!=0;Port_SettingSave("special_move_cameras",enabled);Port_SettingsWrite();}
+    return enabled;
+}
 
 static void rdf(float *out, uint8_t GAME_PTR p, int off, int n) {
     int i;
@@ -76,11 +90,30 @@ static void wra(uint32_t addr, const float *in, int n) {
     memcpy(Port_Ptr(addr), in, (size_t)n * 4);
 }
 
+/* Keep a regular chase framing during special-move cuts. The cached pose and
+   its anchor are presentation data; no fighter camera or input is changed. */
+void Port_NaturalFightCamera(int objId,int pos,int rot) {
+    extern int BtlAct_GetCurrent(void GAME_PTR);
+    uint8_t GAME_PTR chr=(uint8_t GAME_PTR)BtlChar_FindByObjId(objId);
+    float anchor[3],p[3],r[3];int action,cut,i,slot=objId>=0?objId%10:0;
+    struct NaturalPose *s=&sNatural[slot];
+    if(gPortResim||gsSkipFrame)return;
+    if(!chr)return;
+    action=BtlAct_GetCurrent(chr);
+    cut=ChrCam_IsCutActive(chr)||(action>=0xFD && action<=0x13B);
+    rdf(anchor,chr,CHR_POSE,3);rda(p,(uint32_t)pos,3);rda(r,(uint32_t)rot,3);
+    if(!cut){s->valid=1;s->obj=objId;memcpy(s->pos,p,sizeof(p));memcpy(s->rot,r,sizeof(r));memcpy(s->anchor,anchor,sizeof(anchor));}
+    else if(!Port_SpecialMoveCameras(-1)&&s->valid&&s->obj==objId){
+        for(i=0;i<3;++i)p[i]=s->pos[i]+anchor[i]-s->anchor[i];
+        wra((uint32_t)pos,p,3);wra((uint32_t)rot,s->rot,3);
+    }
+}
+
 void PortMods_GameTick(void) {
     int side;
     uint8_t GAME_PTR chr;
 
-    if (gPortResim) {
+    if (gPortResim || gsSkipFrame) {
         return;
     }
     memset(&sGame, 0, sizeof(sGame));
@@ -95,7 +128,7 @@ void PortMods_GameTick(void) {
         }
         sGame.battle = sGame.f[0].found && sGame.f[1].found;
         sGame.split = sGame.battle && Battle_IsSplitScreen();
-    }
+    } else memset(sNatural,0,sizeof(sNatural));
     Mods_Tick();
 }
 
@@ -140,7 +173,7 @@ void Port_ModsCamera(int side, int objId, int pos, int rot) {
     if (synctest < 0) {
         synctest = getenv("BT3_SYNCTEST") != NULL;
     }
-    if (gPortResim || synctest || PortSpectator_Mode() || side < 0 || side > 1 || !Mods_WantCamera()) {
+    if (gPortResim || gsSkipFrame || synctest || PortSpectator_Mode() || side < 0 || side > 1 || !Mods_WantCamera()) {
         return;
     }
     chr = (uint8_t GAME_PTR)BtlChar_FindByObjId(objId);

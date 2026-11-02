@@ -44,6 +44,7 @@
 #include "../../third_party/lua/lualib.h"
 #include "fight_panels.h"
 #include "mods.h"
+#include "bundled_skill_list_0394.h"
 
 extern unsigned gPortVBlanks;                     /* plat_stub.c */
 extern volatile int gUiPresentW, gUiPresentH;     /* gs_draw.c: the game's picture in the window */
@@ -924,6 +925,14 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
     set_bool(L, "battle", fp->battle && g->battle);
     set_bool(L, "hud_shown", fp->gauges);
     set_bool(L, "online", Port_NetSession() || Port_NetActive() || (Port_TagNetwork()&&!Port_TagLocalBattle()));
+    if (Port_NetSession() || Port_NetActive()) {
+        extern int Port_NetMe(void);
+        set_int(L, "me", Port_NetMe() + 1);
+    } else if (Port_TagNetwork() && !Port_TagLocalBattle()) {
+        /* The two presentation slots are already remapped to the local actor
+           and its target by PortMods_ViewActor. game.me indexes those slots. */
+        set_int(L, "me", 1);
+    }
     set_bool(L, "split", g->split);
     set_bool(L, "swapped", Port_HudSwap());
     if (fp->battle && fp->timerSet) {
@@ -964,6 +973,7 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
         set_int(L, "message_seq", s->msgSeq);
         set_bool(L, "charging", s->action == 0x37);   /* (ki charge: action 0x37) */
         set_bool(L, "charge_held", s->chargeHeld);    /* (the charge button held) */
+        set_bool(L, "cpu", s->cpu);                   /* (played by the computer) */
         {   /* the moves: 1, 2 the skills (Blast 1), 3, 4 the techniques (Blast 2), 5 the ultimate; buttons with the
                charge button held (src/battle/btl_input.c, inputs 113, 114, 108..110) */
             static const char *const kind[FP_MOVES] = {"skill", "skill", "special", "special", "ultimate"};
@@ -1268,6 +1278,22 @@ static int has_fn(lua_State *L, int t, const char *k) {
 }
 
 /* Loads the script of mods/<folder> into the next slot. 1 = the slot is used (a mod, running or stopped). */
+/* Updaters preserve mods/. Only substitute the exact, unmodified old bundled
+ * Skill List in memory; edited scripts and the user's file/settings stay intact. */
+static void upgrade_bundled_text(const char *source, const char *folder, char **text, long *size) {
+    char path[512], *replacement;
+    long count = 0;
+    if (strcmp(folder, "skill_list") || *size != (long)sizeof(kSkillList0394) ||
+        memcmp(*text, kSkillList0394, sizeof(kSkillList0394))) return;
+    snprintf(path, sizeof(path), "%s/skill_list/mod.lua", source);
+    replacement = read_file(path, &count);
+    if (replacement && count > 0) {
+        free(*text);
+        *text = replacement;
+        *size = count;
+    } else free(replacement);
+}
+
 static int load_one(const char *folder) {
     int i = sCount;
     Mod *m = &sMod[i];
@@ -1287,6 +1313,7 @@ static int load_one(const char *folder) {
     if (text == NULL) {
         return 0; /* (a folder without a script: not a script mod) */
     }
+    upgrade_bundled_text("tbo/bundled-mods", folder, &text, &size);
     m->table = m->game = LUA_NOREF;
     m->L = lua_newstate(mod_alloc, m);
     if (m->L == NULL) {

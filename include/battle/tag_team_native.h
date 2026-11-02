@@ -12,6 +12,7 @@ s32 TagBattle_TeamIndex(s32 actor);
 s32 TagBattle_TeamCount(s32 team);
 s32 TagBattle_Target(s32 actor);
 void TagBattle_CycleTarget(s32 actor);
+s32 TagBattle_TargetDirection(s32 actor,s32 direction);
 s32 TagBattle_SetTarget(s32 actor,s32 target);
 s32 TagBattle_ConfigureLocal(void);
 s32 TagBattle_Local(void);

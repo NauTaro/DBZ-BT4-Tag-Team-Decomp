@@ -11,6 +11,7 @@ void PortA11y_StreamStart(const char *p){(void)p;}
 int Port_FilePath(int a,int b,const char *c,char *d,int n){(void)a;(void)b;(void)c;(void)d;(void)n;assert(0);return 0;}
 int Port_Setting(const char *name,int def){(void)name;return def;}
 int PortSongs_IsFile(const char *p){(void)p;return 0;}
+#ifndef BT4_REAL_MA
 int PortMa_Format(const char *p){(void)p;return 0;}int PortMa_Blanks(const char *p){(void)p;return 0;}
 void *PortMa_Start(const char *p,int loop){(void)p;(void)loop;assert(0);return NULL;}
 void PortMa_Stop(void *p){(void)p;}void PortMa_SetPan(void *p,int a,int b){(void)p;(void)a;(void)b;}
@@ -18,11 +19,14 @@ void PortMa_Pause(void *p,int b){(void)p;(void)b;}int PortMa_AtEnd(void *p){(voi
 void PortMa_SetMono(int m){(void)m;}void PortMa_SetVolume(void *p,float v){(void)p;(void)v;}
 void *PortPcm_Open(const char *p,unsigned c,unsigned r,unsigned long long n){(void)p;(void)c;(void)r;(void)n;return NULL;}
 void PortPcm_Close(void *p){(void)p;}
+#endif
 static int speed=1000;
 int Port_SpeedMilli(void){return speed;}
 float PortAudio_Gain(int actor,int voice){(void)actor;(void)voice;return 1;}
+#ifndef BT4_REAL_MA
 unsigned PortPcm_Read(void *p,int16_t *out,unsigned n){(void)p;(void)out;(void)n;return 0;}
 int PortPcm_Seek(void *p,unsigned n){(void)p;(void)n;return 0;}
+#endif
 
 static unsigned render(const char *path,int channel,int loop,int follows,int pace,int16_t *out,int bytes){
     FILE *fp=fopen(path,"rb");long size;Player *p=&sPlayers[channel];SDL_AudioSpec spec={SDL_AUDIO_S16,2,24000};

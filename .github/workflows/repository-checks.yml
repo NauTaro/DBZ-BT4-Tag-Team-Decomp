@@ -29,5 +29,11 @@ jobs:
           python-version: '3.12'
       - name: Test portable layout checker without game data
         run: python -m unittest discover -s tools/review/tests -v
+      - name: Test DDS formats and large texture archive offsets
+        if: runner.os == 'Linux'
+        run: python port/tests/texture_pack/run.py
+      - name: Test ADX version 3 and 4 music loops
+        if: runner.os == 'Linux'
+        run: python port/tests/audio_loop/run.py
       - name: Test authenticated Tag Team negotiation and recovery
         run: node --test cloudflare/tests/tag_link.test.mjs cloudflare/tests/voice_hibernation.test.mjs

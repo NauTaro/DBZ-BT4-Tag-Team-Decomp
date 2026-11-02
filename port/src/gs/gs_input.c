@@ -62,7 +62,7 @@ extern int gPortTboTyping;
 /* Per player: the deadzone of the left and of the right stick (-1 = the game's own, as the pad's bytes always were
    passed; 0..PORT_DEADZONE_MAX = a round one of that many percent, stick_bytes below), and vibration (on, strength
    in percent). */
-static int sDeadzone[2][2], sVib[2][2];
+static int sDeadzone[2][2], sVib[2][2], sTargetStick[2], sTargetLatch[2];
 /* What opens and closes the settings window: a key (F1) and a controller button (none), both of the settings
    window's list; and START + SELECT of any controller together, always. */
 static int sOverlayKey = SDL_SCANCODE_F1, sOverlayPad = -1;
@@ -86,6 +86,7 @@ static void defaults(int player) {
         sPadSlot[player] = 0; /* BT3_PAD_SHARED: both players on controller 1 (testing 1P vs 2P with one pad) */
     }
     sDeadzone[player][0] = sDeadzone[player][1] = -1;
+    sTargetStick[player] = sTargetLatch[player] = 0;
     sVib[player][0] = 1;
     sVib[player][1] = 100;
 }
@@ -114,6 +115,8 @@ static void load(void) {
             snprintf(name, sizeof(name), "deadzone_p%d_%s", p + 1, a == 0 ? "ls" : "rs");
             sDeadzone[p][a] = range(Port_Setting(name, -1), -1, PORT_DEADZONE_MAX);
         }
+        snprintf(name, sizeof(name), "target_stick_p%d", p + 1);
+        sTargetStick[p] = Port_Setting(name, 0) != 0;
         snprintf(name, sizeof(name), "vibration_p%d", p + 1);
         sVib[p][0] = Port_Setting(name, 1) != 0;
         snprintf(name, sizeof(name), "vibration_p%d_strength", p + 1);
@@ -129,6 +132,7 @@ int *PortInput_Keys(int player) { pthread_once(&sLoadOnce, load); return sKeys[p
 int *PortInput_PadButtons(int player) { pthread_once(&sLoadOnce, load); return sPadBtn[player]; }
 int *PortInput_PadSlot(int player) { pthread_once(&sLoadOnce, load); return &sPadSlot[player]; }
 int *PortInput_Deadzone(int player) { pthread_once(&sLoadOnce, load); return sDeadzone[player]; }
+int *PortInput_TargetStick(int player) { pthread_once(&sLoadOnce, load); return &sTargetStick[player]; }
 int *PortInput_Vibration(int player) { pthread_once(&sLoadOnce, load); return sVib[player]; }
 int *PortInput_OverlayKey(void) { pthread_once(&sLoadOnce, load); return &sOverlayKey; }
 int *PortInput_OverlayPad(void) { pthread_once(&sLoadOnce, load); return &sOverlayPad; }
@@ -392,6 +396,8 @@ void PortInput_Save(void) {
             snprintf(name, sizeof(name), "deadzone_p%d_%s", p + 1, a == 0 ? "ls" : "rs");
             Port_SettingSave(name, sDeadzone[p][a]);
         }
+        snprintf(name, sizeof(name), "target_stick_p%d", p + 1);
+        Port_SettingSave(name, sTargetStick[p]);
         snprintf(name, sizeof(name), "vibration_p%d", p + 1);
         Port_SettingSave(name, sVib[p][0]);
         snprintf(name, sizeof(name), "vibration_p%d_strength", p + 1);
@@ -1170,5 +1176,18 @@ int Port_PadRead(int socket, unsigned char *data) {
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);
     data[2] = rx; data[3] = ry; data[4] = lx; data[5] = ly;
+    {
+        extern int PortMods_InBattle(void);
+        if (sTargetStick[socket] && PortMods_InBattle() && !PortSpectator_ConsumesInput()) {
+            float axes[2]; int dir;
+            unsigned char b[2]={rx,ry};
+            game_stick(b,axes,&dir);
+            /* Byte 17 is otherwise unused by this port. It travels with the
+               original pad report, including rollback input history. */
+            data[17]=(unsigned char)(0x80 | (dir && !sTargetLatch[socket] ? dir : 0));
+            sTargetLatch[socket]=dir!=0;
+            data[2]=data[3]=0x80;
+        } else sTargetLatch[socket]=0;
+    }
     return 18;
 }

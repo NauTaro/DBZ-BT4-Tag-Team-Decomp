@@ -316,13 +316,17 @@ struct ZipEntry { mz_zip_archive_file_stat stat{}; std::string path; };
 
 void validate_texture_archive(const std::string &path) {
     SDL_PathInfo fi;
-    if(!SDL_GetPathInfo(path.c_str(),&fi)||fi.type!=SDL_PATHTYPE_FILE||fi.size!=3690378076ULL)
+    if(!SDL_GetPathInfo(path.c_str(),&fi)||fi.type!=SDL_PATHTYPE_FILE||
+       (fi.size!=kTexturePackage.bytes&&fi.size!=3690378076ULL))
+        throw Stop{"TEXTURE_PACK_INVALID"};
+    bool current=fi.size==kTexturePackage.bytes;
+    if(sha256_file(path)!=(current?kTexturePackage.sha256:"f129248fcd0d508a5e901e6901109726fd2b38e1d57812b9f8ba743aafdd4129"))
         throw Stop{"TEXTURE_PACK_INVALID"};
     ZipReader reader(path);
     if(!reader.open)throw Stop{"TEXTURE_PACK_INVALID"};
     mz_uint count=mz_zip_reader_get_num_files(&reader.zip);
-    if(count!=24639)throw Stop{"TEXTURE_PACK_INVALID"};
-    mz_uint png=0,ini=0;Uint64 total=0;
+    if(count!=(current?28488:24639))throw Stop{"TEXTURE_PACK_INVALID"};
+    mz_uint png=0,dds=0,ini=0;Uint64 total=0;
     for(mz_uint i=0;i<count;i++) {
         mz_zip_archive_file_stat st{};
         if(mz_zip_reader_get_filename(&reader.zip,i,NULL,0)>sizeof(st.m_filename)-1||
@@ -335,26 +339,37 @@ void validate_texture_archive(const std::string &path) {
         std::string ext=dot==std::string::npos?"":name.substr(dot);
         for(char &c:ext)c=(char)tolower((unsigned char)c);
         if(ext==".png")png++;
+        else if(ext==".dds")dds++;
         else if(ext==".ini")ini++;
         else throw Stop{"TEXTURE_PACK_INVALID"};
-        if(st.m_uncomp_size>50000000ULL||total>5000000000ULL-st.m_uncomp_size)
+        if(st.m_uncomp_size>128*1024*1024ULL||total>30*1024*1024*1024ULL-st.m_uncomp_size)
             throw Stop{"TEXTURE_PACK_INVALID"};
         total+=st.m_uncomp_size;
     }
-    if(png!=24638||ini!=1||total!=3998269861ULL)throw Stop{"TEXTURE_PACK_INVALID"};
+    if(current?(dds!=28487||png!=0||ini!=1||total!=20856608978ULL):
+               (png!=24638||dds!=0||ini!=1||total!=3998269861ULL))throw Stop{"TEXTURE_PACK_INVALID"};
 }
 
 void install_texture_pack(const std::string &root,std::string source) {
     step("Texture pack");
-    if(source=="@download")source=download_optional(root,false);
+    bool downloaded=source=="@download";
+    if(downloaded)source=download_optional(root,false);
     say("@activity texture-copy");
     validate_texture_archive(source);
-    const std::string relative="dbz bt4 HD v1.07.zip";
+    const std::string relative=kTexturePackage.name;
     const std::string destination=root+"textures/"+relative;
     SDL_PathInfo sourceInfo,destInfo;
     if(!SDL_GetPathInfo(source.c_str(),&sourceInfo)||sourceInfo.type!=SDL_PATHTYPE_FILE)
         throw Stop{"TEXTURE_PACK_INVALID"};
+    auto retireLegacy=[&](){
+        const std::string legacy=root+"textures/dbz bt4 HD v1.07.zip";
+        if(sourceInfo.size==kTexturePackage.bytes&&SDL_GetPathInfo(legacy.c_str(),NULL)){
+            const std::string backup=unique_backup_path(root,"textures/dbz bt4 HD v1.07.zip","texture-pack-originals");
+            if(!SDL_RenamePath(legacy.c_str(),backup.c_str()))throw Stop{"Could not preserve the previous HD pack."};
+        }
+    };
     if(normalized_path(source)==normalized_path(destination)) {
+        retireLegacy();
         say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
         say("@ok HD texture pack is already in textures");
         return;
@@ -365,14 +380,30 @@ void install_texture_pack(const std::string &root,std::string source) {
     if(destinationExists&&destInfo.size==sourceInfo.size) {
         try {
             validate_texture_archive(destination);
+            retireLegacy();
             say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
-            say("@skip DBZ BT4 HD v1.07 is already installed");
+            say("@skip HD texture pack is already installed");
             return;
         } catch(const Stop &) {
             // The destination has the expected size but is damaged; replace it from the validated source.
         }
     }
     ensure_directories(root+"textures");
+    if(downloaded){
+        /* Cache and textures are below the same install root. Renaming avoids
+           another multi-gigabyte copy and keeps installation disk use bounded. */
+        std::string previous,legacyBackup;
+        const std::string legacy=root+"textures/dbz bt4 HD v1.07.zip";
+        try{
+            if(destinationExists){previous=unique_backup_path(root,"textures/"+relative,"texture-pack-originals");
+                if(!SDL_RenamePath(destination.c_str(),previous.c_str()))throw Stop{"Could not preserve the existing HD pack."};}
+            if(SDL_GetPathInfo(legacy.c_str(),NULL)){legacyBackup=unique_backup_path(root,"textures/dbz bt4 HD v1.07.zip","texture-pack-originals");
+                if(!SDL_RenamePath(legacy.c_str(),legacyBackup.c_str()))throw Stop{"Could not preserve the previous HD pack."};}
+            if(!SDL_RenamePath(source.c_str(),destination.c_str()))throw Stop{"Could not finish installing the texture pack. Check available disk space."};
+        }catch(...){if(!previous.empty())SDL_RenamePath(previous.c_str(),destination.c_str());if(!legacyBackup.empty())SDL_RenamePath(legacyBackup.c_str(),legacy.c_str());throw;}
+        say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
+        say("@ok HD texture pack installed");return;
+    }
     const std::string temp=destination+".part";
     SDL_IOStream *in=SDL_IOFromFile(source.c_str(),"rb");
     SDL_IOStream *out=SDL_IOFromFile(temp.c_str(),"wb");
@@ -405,7 +436,8 @@ void install_texture_pack(const std::string &root,std::string source) {
         throw Stop{"Could not finish installing the texture pack. Check available disk space."};
     }
     say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
-    say("@ok DBZ BT4 HD v1.07 copied to textures");
+    retireLegacy();
+    say("@ok HD texture pack copied to textures");
 }
 
 bool bytes_match_file(const std::string &path,const void *data,size_t size) {
@@ -984,9 +1016,9 @@ void step_eu(const std::string &root, const std::string &path) {
 std::string download_optional(const std::string &root,bool portuguese){
     const std::string folder=root+"tbo/setup/cache/";
     ensure_directories(folder);
-    const std::string name=portuguese?kPortuguesePackage.name:"dbz bt4 HD v1.07.zip",path=folder+name;
-    const char *digest=portuguese?kPortuguesePackage.sha256:"f129248fcd0d508a5e901e6901109726fd2b38e1d57812b9f8ba743aafdd4129";
-    const Uint64 bytes=portuguese?kPortuguesePackage.bytes:3690378076ULL;
+    const std::string name=portuguese?kPortuguesePackage.name:kTexturePackage.name,path=folder+name;
+    const char *digest=portuguese?kPortuguesePackage.sha256:kTexturePackage.sha256;
+    const Uint64 bytes=portuguese?kPortuguesePackage.bytes:kTexturePackage.bytes;
     SDL_PathInfo info;
     if(SDL_GetPathInfo(path.c_str(),&info)&&info.size==bytes&&sha256_file(path)==digest)return path;
     say("@activity download");say("@package 0");
@@ -997,8 +1029,10 @@ std::string download_optional(const std::string &root,bool portuguese){
         if(!output)throw Stop{"Could not create the texture download. Check free disk space."};
         try{
             for(int part=1;part<=2;++part){
-                check_cancel();const std::string partName=std::string("BT4-HD-v1.07.zip.00")+std::to_string(part),piece=folder+partName;
-                download_public_asset(root,kTextureRelease,partName,piece,part==1?1850000000ULL:1840378076ULL,(part-1)*27,part==1?27:28);
+                check_cancel();const LanguagePackage &pieceInfo=kTexturePieces[part-1];
+                const std::string piece=folder+pieceInfo.name;
+                download_public_asset(root,kTextureRelease,pieceInfo.name,piece,pieceInfo.bytes,(part-1)*27,part==1?27:28);
+                if(sha256_file(piece)!=pieceInfo.sha256){SDL_RemovePath(piece.c_str());throw Stop{"LANGUAGE_VERIFY_FAILED"};}
                 SDL_IOStream *input=SDL_IOFromFile(piece.c_str(),"rb");if(!input)throw Stop{"LANGUAGE_DOWNLOAD_INCOMPLETE"};
                 std::vector<Uint8> buffer(1024*1024);Sint64 remaining=SDL_GetIOSize(input);
                 try{while(remaining>0){check_cancel();size_t n=(size_t)std::min<Sint64>(remaining,buffer.size());
@@ -1052,7 +1086,7 @@ void work(std::string root, std::string path, std::string eu, std::string textur
         }else if(!installed_language(root,sInstallMask==2))throw Stop{"ISO_REQUIRED"};
         if(!texturePack.empty())install_texture_pack(root,texturePack);
         if(!ptbrPack.empty())install_ptbr_pack(root,ptbrPack);
-        if(texturePack=="@download")SDL_RemovePath((root+"tbo/setup/cache/dbz bt4 HD v1.07.zip").c_str());
+        if(texturePack=="@download")SDL_RemovePath((root+"tbo/setup/cache/"+kTexturePackage.name).c_str());
         if(ptbrPack=="@download")SDL_RemovePath((root+"tbo/setup/cache/"+kPortuguesePackage.name).c_str());
         say("@activity finalize");
         SDL_CreateDirectory((root+"tbo").c_str());

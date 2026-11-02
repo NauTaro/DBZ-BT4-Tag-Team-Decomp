@@ -594,7 +594,21 @@ void Port_Trace(unsigned vblanks) {
         extern int TagClash_RunRegression(void);
         int failed=TagClash_RunRegression();fflush(stdout);exit(failed?3:0);
     }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_CLASH_ANSWER_TEST")&&gBtlSeq&&gBtlSeq->state==3&&BtlSeq_GetClock()[0]>=60){
+        extern int ClashAnswers_RunRegression(void);int failed=ClashAnswers_RunRegression();fflush(stdout);exit(failed?3:0);
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MISSION_TEST")&&gBtlSeq&&gBtlSeq->state==3){
+        static int checked;
+        if(!checked){int a=BtlCharApi_GetHp(0),b=BtlCharApi_GetHp(1);checked=1;
+            fprintf(stderr,"mission-start index=%s hp=%d,%d %s\n",getenv("BT4_MISSION_TEST"),a,b,a>0&&b>0?"PASS":"FAIL");
+            if(a<=0||b<=0)exit(3);
+        }
+        if(BtlSeq_GetClock()[0]>=60){fprintf(stderr,"mission-play index=%s tick=%d PASS\n",getenv("BT4_MISSION_TEST"),BtlSeq_GetClock()[0]);exit(0);}
+    }
 
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_STICK_AUDIT")&&gBtlSeq&&gBtlSeq->state==3&&BtlSeq_GetClock()[0]>=60){
+        extern int TagBattle_RunTargetAudit(void);int failed=TagBattle_RunTargetAudit();fflush(stdout);exit(failed?3:0);
+    }
     if(getenv("BT4_TAG_COMBAT_AUDIT") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=60){
         extern int TagBattle_RunCombatAudit(void);int failed=TagBattle_RunCombatAudit();fflush(stdout);exit(failed?3:0);
     }

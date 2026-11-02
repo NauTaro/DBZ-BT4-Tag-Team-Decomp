@@ -652,9 +652,8 @@ static int SDLCALL check_thread(void *arg) {
     (void)arg;
     SDL_snprintf(url, sizeof(url), "%s/repos/" PORT_UPDATE_REPO "/releases/latest", api_base());
     if (!http_get(url, 1, NULL, &json, &len, JSON_MAX) || !js_string(js_get(json, "tag_name"), tag, sizeof(tag))) {
-        fprintf(stderr, "bt3: update check: no answer\n");
         SDL_free(json);
-        SDL_SetAtomicInt(&sU.state, UPD_NONE);
+        fail("Could not check for updates. Check your connection and try again.");
         return 0;
     }
     cmp = UpdateVer_Compare(PORT_VERSION, tag);
@@ -719,25 +718,37 @@ static void folders(void) {
     }
 }
 
-void Update_Check(void) {
+static void check_start(int manual) {
     SDL_Thread *t;
-    if (SDL_GetAtomicInt(&sU.state) != UPD_IDLE) {
+    int st = SDL_GetAtomicInt(&sU.state);
+    if ((st != UPD_IDLE && !(manual && (st == UPD_NONE || st == UPD_FAILED))) ||
+        SDL_GetAtomicInt(&sU.busy) || !SDL_CompareAndSwapAtomicInt(&sU.state, st, UPD_CHECKING)) {
         return;
     }
     folders();
+    lock();
+    sU.latest[0] = sU.page[0] = sU.why[0] = sU.cannot[0] = '\0';
+    sU.canInstall = 0;
+    SDL_zero(sU.zip);
+    SDL_zero(sU.sig);
+    SDL_free(sU.notes);
+    sU.notes = NULL;
+    unlock();
     if (UpdateVer_Compare(PORT_VERSION, PORT_VERSION) == -2) { /* a "dev" build: nothing to compare with */
         fprintf(stderr, "bt3: update check: this is a development build (%s): no updates are offered\n", PORT_VERSION);
         SDL_SetAtomicInt(&sU.state, UPD_NONE);
         return;
     }
-    SDL_SetAtomicInt(&sU.state, UPD_CHECKING);
     t = SDL_CreateThread(check_thread, "bt3-update", NULL);
     if (t == NULL) {
-        SDL_SetAtomicInt(&sU.state, UPD_NONE);
+        fail("Could not check for updates. Check your connection and try again.");
     } else {
         SDL_DetachThread(t);
     }
 }
+
+void Update_Check(void) { check_start(0); }
+void Update_Recheck(void) { check_start(1); }
 
 /* ---- the download and its checks ---- */
 static int SDLCALL download_thread(void *arg) {

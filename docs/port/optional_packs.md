@@ -17,22 +17,26 @@ pack and uses the package's font-conflict list. Spanish and English do not load
 the isolated Portuguese texture directory. Switching full game languages takes
 effect at the next launch, as for the other disc profiles.
 
-The optional **DBZ BT4 HD v1.07 (3.69 GB)** pack remains compressed in `textures/`
+The optional **DBZ BT4 HD (3.15 GB)** pack remains compressed in `textures/`
 and is read on demand. GitHub's per-asset size restriction requires two download
-parts; setup joins them and verifies the complete ZIP with SHA-256. Local ZIP
-selection remains available for both packs. The installer shows download and
+parts; setup verifies each part, joins them and verifies the complete ZIP with SHA-256.
+Setup asks only for the compatible ISO; optional packs download from GitHub.
+The installer shows download and
 installation progress, removes successful download caches, and backs up files
 that it replaces. Reinstallation compares files and repairs missing entries.
 
 Language downloads are grouped under **BT4 Language Packs**, using the names
 `spanish-b14rev2.bt4lang`, `english-b14rev2.bt4lang` and
-`portuguese-b14rev2.bt4lang`. R9's HD texture download parts are attached to R9.
+`portuguese-b14rev2.bt4lang`. HD texture parts have their own release,
+`bt4-hd-textures-v2`, separate from the game and language assets. Older pinned
+texture releases remain available for older installers. Replacing the HD pack
+preserves the previous verified pack under `tbo/setup/texture-pack-originals/`.
 The Portuguese overlay container has a 64-byte `BT4PTP01` versioned header followed
 by a ZIP of 560 resources with normalized relative paths. The installer verifies
 its pinned size and SHA-256 before opening the embedded archive. It contains no
 executable, command or PowerShell files. `port/tools/package_ptbr.py` builds it
-deterministically from the original archive. Legacy local ZIP selection remains
-supported; script files in such archives are not installed or run.
+deterministically from the original archive. Script files in the source archive
+are not installed or run.
 
 Draft assets require repository access until the release is published. Credentials are
 obtained through the existing GitHub CLI authorization flow and are never embedded

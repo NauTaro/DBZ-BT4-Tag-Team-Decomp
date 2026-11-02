@@ -4,6 +4,7 @@
 #endif
 #include "battle/battle_work.h"
 #include "battle/battle_setup.h"
+#include "sys/math3d.h"
 #include "battle/tag_team_native.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -86,7 +87,7 @@ s32 TagBattle_Preparing(s32 actor){
     extern void *BtlChar_Get(s32);extern s32 BtlAct_GetCurrent(void *),BtlChar_TestFlag(void *,s32);
     extern s32 BtlAnim_GetId(void *);
     void *chr; s32 a,m;
-    if(!TagBattle_Active()||actor<0||actor>=sTagActors||TagBattle_Pair(actor)>=0)return 0;
+    if(!TagBattle_Active()||actor<0||actor>=sTagActors||TagBattle_Pair(actor)>=0||TagBattle_RushAction(actor))return 0;
     chr=BtlChar_Get(actor);a=BtlAct_GetCurrent(chr);m=BtlAnim_GetId(chr);
     if(a<0xFD||a>0x129)return 0;
     return a==0x105||BtlChar_TestFlag(chr,0x125)||m==0x105||m==0x106||m==0x127||m==0x128||m==0x149||m==0x14A;
@@ -101,7 +102,8 @@ s32 TagBattle_CameraActor(s32 viewer){
         s32 a=BtlAct_GetCurrent(BtlChar_Get(viewer)),b=BtlAct_GetCurrent(BtlChar_Get(pair));
         if((a>=0x12A&&a<=0x13B)||(b>=0x12A&&b<=0x13B))return sTagAttackers[viewer];
     }
-    if(owner>=0)return owner;
+    /* An unrelated fighter's preparation never takes this actor's view. */
+    if(owner==viewer)return owner;
     /* Only a reserved rush victim shares the attacker's impact camera.
      * Projectile damage alone must not transfer ownership of the view. */
     return viewer;
@@ -168,6 +170,35 @@ void TagBattle_CycleTarget(s32 actor) {
                 fprintf(stderr,"tag auto target: actor=0 old=%d target=%d\n",old,target);
             return;}}
 }
+s32 TagBattle_TargetDirection(s32 actor,s32 direction) {
+    extern void BtlCharApi_GetPos(s32 objId,Vec4 *out);
+    extern void BtlCharApi_GetCamPose(s32 objId,Vec4 *pos,Vec4 *rot);
+    extern f32 sinf(f32),cosf(f32);
+    Vec4 eye,rot,origin,p;f32 sy,cy,sp,cp,best=-1.0f;
+    s32 i,target,chosen=-1;
+    if(!TagBattle_Active()||actor<0||actor>=sTagActors||direction<1||direction>4||TagBattle_Pair(actor)>=0)return 0;
+    target=TagBattle_Target(actor);
+    BtlCharApi_GetCamPose(BattleSide_GetObjId(actor),&eye,&rot);
+    BtlCharApi_GetPos(BattleSide_GetObjId(target),&origin);
+    sy=sinf(rot.y);cy=cosf(rot.y);sp=sinf(rot.x);cp=cosf(rot.x);
+    for(i=0;i<sTagActors;++i){
+        f32 x,y,z,dx,dy,along,cross,dist,score;
+        if(i==target||TagBattle_Allied(actor,i)||BtlCharApi_GetHp(i)<=0)continue;
+        BtlCharApi_GetPos(BattleSide_GetObjId(i),&p);
+        x=p.x-origin.x;y=p.y-origin.y;z=p.z-origin.z;
+        dx=x*cy-z*sy;dy=-y*cp+(x*sy+z*cy)*sp;
+        along=direction==1?dy:direction==2?-dy:direction==3?-dx:dx;
+        cross=direction<=2?dx:dy;
+        dist=along*along+cross*cross;
+        if(along<=0.01f||dist<0.0001f)continue;
+        score=along*along/dist;
+        if(score<0.25f)continue;
+        score-=dist*0.00000001f;
+        if(score>best){best=score;chosen=i;}
+    }
+    return chosen>=0?TagBattle_SetTarget(actor,chosen):0;
+}
+#include "tag_team_target_audit.inc"
 s32 TagBattle_ConfigureLocal(void) {
     extern int Port_TagHumans(void),Port_TagCapacity(void),Port_TagConfirmed(int seat),Port_TagCPU(int seat);
     extern int Port_TagDifficulty(int seat),Port_TagPlayerChara(int seat),Port_TagPlayerCostume(int seat),Port_TagTime(void);

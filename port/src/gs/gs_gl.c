@@ -1249,6 +1249,23 @@ static void frame_end(void) {
         free(wp);
     }
     Ui_DrawGL(); /* the overlay, over the presented picture */
+    /* Same isolated UI capture hook as the SDL GPU backend, after mod HUDs. */
+    {
+        static int captured;
+        const char *request=getenv("BT3_UI_SHOT"),*path=request?strchr(request,':'):NULL;
+        if(!captured&&path&&atoi(request)>0&&gGsFrame>=(unsigned)atoi(request)){
+            int w,h,x,y;uint8_t *pixels;FILE *file;
+            captured=1;SDL_GetWindowSizeInPixels(sWindow,&w,&h);
+            pixels=malloc((size_t)w*h*4);file=fopen(path+1,"wb");
+            if(pixels&&file){
+                glBindFramebuffer(GL_READ_FRAMEBUFFER,0);glReadBuffer(GL_BACK);
+                glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+                fprintf(file,"P6\n%d %d\n255\n",w,h);
+                for(y=h-1;y>=0;--y)for(x=0;x<w;++x)fwrite(pixels+((size_t)y*w+x)*4,1,3,file);
+            }
+            if(file)fclose(file);free(pixels);
+        }
+    }
     {
         Uint64 start = SDL_GetTicksNS();
         if (sAngleApi && getenv("BT4_RENDER_TEST") && getenv("BT4_ANGLE_TEST_NO_SWAP")) {

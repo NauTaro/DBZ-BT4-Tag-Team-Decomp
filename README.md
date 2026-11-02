@@ -6,7 +6,7 @@
   <p>
     <a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/latest"><img src="https://img.shields.io/badge/Download-Latest%20release-ef8b24?style=flat-square" alt="Download the latest published release"></a>
     <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-1f6feb?style=flat-square" alt="Windows, Linux and macOS">
-    <img src="https://img.shields.io/badge/upstream-0.1.39.4-7c3aed?style=flat-square" alt="Tenkaichi3Decomp engine 0.1.39.4">
+    <img src="https://img.shields.io/badge/upstream-0.1.39.5-7c3aed?style=flat-square" alt="Tenkaichi3Decomp engine 0.1.39.5">
     <a href="https://ko-fi.com/nautaro"><img src="https://img.shields.io/badge/Ko--fi-Support%20NauTaro-ff5e5b?style=flat-square&amp;logo=ko-fi&amp;logoColor=white" alt="Support NauTaro on Ko-fi"></a>
   </p>
   <p><strong><a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/latest">Download</a> &nbsp; · &nbsp; <a href="#installation">Install</a> &nbsp; · &nbsp; <a href="docs/README.md">Documentation</a> &nbsp; · &nbsp; <a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/issues/new/choose">Report an issue</a></strong></p>
@@ -45,7 +45,7 @@ Game menus support **English and Spanish**, with an optional Brazilian Portugues
 
 ## Script mods
 
-F1 > Mods manages the included Modern HUD, Modern Camera, Modern Look and Skill List scripts. Mods start disabled. Each player can choose their own presentation settings; existing scripts and settings are preserved by automatic updates. See the [Lua mod guide](docs/port/mods.md). F1 > Tech offers optional mechanics adjustments for offline duels; online matches, Tag Team and replays retain their original rules.
+F1 > Mods manages the included Modern HUD, Modern Camera, Modern Look and Skill List scripts. Mods start disabled. Each player can choose their own presentation settings; existing scripts and settings are preserved by automatic updates. F1 > Controls offers optional right-stick enemy targeting. F1 > Spectator can keep the normal camera during special attacks. See the [Lua mod guide](docs/port/mods.md). F1 > Tech offers optional mechanics adjustments for offline duels; online matches, Tag Team and replays retain their original rules.
 
 ## Installation
 
@@ -73,15 +73,15 @@ For Linux permissions, macOS download handling and source builds, see [native pl
 
 ## Automatic updates
 
-The launcher checks this repository for the latest signed package for its platform. It verifies the archive SHA-256 and Ed25519 signature, then applies the update at the offline main menu. Saves, settings, installed game data and custom content remain outside the replacement list. Updating does not restart an active battle or online session.
+Open **F1 > Updates > Check for updates** to look for a new version. The game also checks this repository automatically for the latest signed package for its platform. It verifies the archive SHA-256 and Ed25519 signature, then asks for a game restart to apply the update at the offline main menu. Saves, settings, installed game data and custom content remain outside the replacement list. Updating does not restart an active battle or online session.
 
 Installations that predate the signed updater need one initial package installation. Subsequent published signed updates can install through the launcher.
 
-Revision tags follow the upstream engine version, for example `v0.1.39.4-R1`. A new upstream adaptation starts at R1; subsequent BT4 changes increment the revision. Patch revisions are also supported. All Tag Team participants must use the same room protocol and a compatible published build.
+Revision tags follow the upstream engine version, for example `v0.1.39.5-R1`. A new upstream adaptation starts at R1; subsequent BT4 changes increment the revision. Patch revisions are also supported. All Tag Team participants must use the same room protocol and a compatible published build.
 
 ## Source and online compatibility
 
-The source integrates **Tenkaichi3Decomp 0.1.39.4**, with BT4 revisions tracked separately as **R1, R2, R3** and onward. The `main` branch can contain changes awaiting release; the Download button points to the published package. See the [changelog](CHANGELOG.md) for source changes and [release notes](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) for packaged builds.
+The source integrates **Tenkaichi3Decomp 0.1.39.5**, with BT4 revisions tracked separately as **R1, R2, R3** and onward. The `main` branch can contain changes awaiting release; the Download button points to the published package. See the [changelog](CHANGELOG.md) for source changes and [release notes](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) for packaged builds.
 
 Use compatible BT4 data and the same published launcher on every participating computer. The selected language does not define the online compatibility family.
 

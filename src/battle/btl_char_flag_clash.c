@@ -519,8 +519,14 @@ s32 BtlClash_UpdateC(s32 state) {
             BtlClash_SetPathCut(c->path);
         }
         if (BtlChar_TestFlag(chr0, 0xC4) && BtlChar_TestFlag(chr1, 0xC4)) {
-            /* BT4 0x26BCC0: actual and injected inputs can score independently. */
-            if (!*(s32 *)((u8 *)chr0 + 0x1278)) {
+            /* Two human players each answer the same exchange. A valid later
+               answer still earns its point; arrival order does not consume
+               the other player's opportunity. Retain the CPU difficulty rule
+               when an injected fighter is taking part. */
+            if (!*(s32 *)((u8 *)chr0 + 0x1278) && !*(s32 *)((u8 *)chr1 + 0x1278)) {
+                if (chr0->unkE58 >= 0) BtlAct_CountAndMarkOpponent(chr0);
+                if (chr1->unkE58 >= 0) BtlAct_CountAndMarkOpponent(chr1);
+            } else if (!*(s32 *)((u8 *)chr0 + 0x1278)) {
                 if (chr0->unkE58 >= 0) BtlAct_CountAndMarkOpponent(chr0);
                 else if (*(s32 *)((u8 *)chr1 + 0x1278) || chr1->unkE58 >= 0)
                     BtlAct_CountAndMarkOpponent(chr1);
@@ -652,16 +658,16 @@ void BtlClash_Update(void) {
 s32 TagClash_RunRegression(void) {
     s32 i,ok=1;
     if(TagBattle_Count()!=10)return 1;
-    TagClash_Reset();gBtlChars->clashState=0;
+    TagClash_Reset();TagBattle_ResetPairs();gBtlChars->clashState=0;
     for(i=0;i<10;++i){
         BtlFlagChr *chr=BtlChar_Get(i);
         *(s32 *)((u8 *)chr+0x948)=0xB;
         BtlChar_ClearFlag(chr,0xBF);BtlChar_ClearFlag(chr,0xC0);
         chr->clashCountB=0;
     }
-    {extern void TagBattle_CycleTarget(s32 actor);
-    TagBattle_CycleTarget(0);TagBattle_CycleTarget(0);
-    TagBattle_CycleTarget(5);TagBattle_CycleTarget(5);TagBattle_CycleTarget(5);}
+    /* Real CPUs may already have retargeted before the fixture starts. */
+    TagBattle_SetTarget(0,5);TagBattle_SetTarget(5,0);
+    TagBattle_SetTarget(6,7);TagBattle_SetTarget(7,6);
     for(i=0;i<10;++i)if(i==0||i==5||i==6||i==7)*(s32 *)((u8 *)BtlChar_Get(i)+0x948)=0xFA;
     BtlChar_Get(0)->clashCountB=30;BtlChar_Get(7)->clashCountB=40;
     ok &= TagBattle_Target(0)==5 && TagBattle_Target(5)==0;
@@ -671,5 +677,27 @@ s32 TagClash_RunRegression(void) {
     ok &= BtlChar_TestFlag(BtlChar_Get(6),0xC0) && BtlChar_TestFlag(BtlChar_Get(7),0xBF);
     for(i=1;i<5;++i)ok &= !BtlChar_TestFlag(BtlChar_Get(i),0xBF) && !BtlChar_TestFlag(BtlChar_Get(i),0xC0);
     printf("tag clash regression: independent pairs 0/5 and 6/7, winners and bystanders %s\n",ok?"PASS":"FAIL");
+    return !ok;
+}
+
+/* Hidden native fixture: exercise the production end-of-exchange code with
+   two humans, including a correct answer that arrives later, errors and ties. */
+s32 ClashAnswers_RunRegression(void) {
+    static const s32 cases[][6]={{2,9,3,3,4,4},{9,2,3,3,4,4},{-2,8,3,3,3,4},
+        {8,-2,3,3,4,3},{-1,-2,3,3,3,3},{12,2,5,2,6,3},{2,12,2,5,3,6}};
+    BtlFlagChr *a=BtlChar_Get(0),*b=BtlChar_Get(1);s32 n,ok=1;
+    for(n=0;n<(s32)(sizeof(cases)/sizeof(cases[0]));++n){
+        const s32 *c=cases[n];
+        *(s32 *)((u8 *)a+0x948)=*(s32 *)((u8 *)b+0x948)=0xFC;
+        *(s32 *)((u8 *)a+0x1278)=*(s32 *)((u8 *)b+0x1278)=0;
+        a->unkE58=c[0];b->unkE58=c[1];a->clashCountB=c[2];b->clashCountB=c[3];
+        BtlChar_ClearFlag(a,0xC7);BtlChar_ClearFlag(a,0xC8);BtlChar_ClearFlag(b,0xC7);BtlChar_ClearFlag(b,0xC8);
+        BtlChar_SetFlag(a,0xC4);BtlChar_SetFlag(b,0xC4);gBtlChars->clashC.count=6;
+        BtlClash_UpdateC(10);
+        ok &= a->clashCountB==c[4] && b->clashCountB==c[5];
+        if(c[4]==c[5])ok &= BtlChar_TestFlag(a,0xC7)&&BtlChar_TestFlag(b,0xC7);
+        else ok &= BtlChar_TestFlag(c[4]>c[5]?a:b,0xC7)&&BtlChar_TestFlag(c[4]>c[5]?b:a,0xC8);
+    }
+    printf("clash answers regression: seven scoring/arrival-order/error/tie cases %s\n",ok?"PASS":"FAIL");
     return !ok;
 }

@@ -4,8 +4,8 @@
  *
  * The game owns a few "players" (ADXT_Create), starts a file on one (ADXT_StartAfs: a file of an archive;
  * ADXT_StartFname: a loose file next to the movies), and controls it with pause, volume and pan. Every ADX file of
- * the game is the plain kind: type 3, 4-bit ADPCM in 18-byte frames, version 4, not encrypted, mono or stereo at
- * 16 / 24 / 48 kHz (measured over all 65,201 files of the third archive and the two movie tracks).
+ * the game is the plain kind: type 3, 4-bit ADPCM in 18-byte frames, version 3 or 4, not encrypted, mono or stereo at
+ * 16 / 24 / 48 kHz. BT4 also contains version 3 music with an earlier loop block.
  *
  * Format (big-endian): 0x8000, u16 header size - 4, u8 type, u8 frame size, u8 bits, u8 channels, u32 sample rate,
  * u32 samples, u16 high-pass frequency, u8 version, u8 flags. Version 4 with a loop: flag at 0x24, loop start
@@ -26,6 +26,7 @@
 #include <string.h>
 #include "gs_internal.h"
 #include "music_cache.h"
+#include "adx_loop.h"
 #include "spatial_audio.h"
 
 enum { ADXT_STAT_STOP = 0, ADXT_STAT_PLAYING = 3, ADXT_STAT_PLAYEND = 5 };
@@ -52,6 +53,7 @@ typedef struct Player {
     uint32_t pos;           /* next sample */
     int c1, c2;
     int hist[2][2];
+    int loopHist[2][2], loopHistSet;
     int stat, paused;
     float proximity;
     int vol;                /* 0.1 dB, 0 = full, -960 and below = silent */
@@ -89,9 +91,9 @@ static int by_ticks(void) {
 /* The length of an ADX file in vertical blanks (59.94 a second), -1 if it loops, 0 if it cannot be read. */
 static int adx_blanks(const char *path) {
     uint8_t h[0x40];
-    FILE *fp = fopen(path, "rb");
+    FILE *fp;
     size_t got;
-    uint32_t header, rate, total;
+    uint32_t rate, total, loopStart, loopEnd;
 
     {
         /* Not ADX at all: an mp3/wav/flac stream (snd_ma.c). An added song is played round and round, so it never
@@ -103,6 +105,7 @@ static int adx_blanks(const char *path) {
             return PortSongs_IsFile(path) ? -1 : PortMa_Blanks(path);
         }
     }
+    fp = fopen(path, "rb");
     if (fp == NULL) {
         return 0;
     }
@@ -111,10 +114,9 @@ static int adx_blanks(const char *path) {
     if (got < sizeof(h) || ((uint32_t)h[0] << 8 | h[1]) != 0x8000) {
         return 0;
     }
-    header = ((uint32_t)h[2] << 8 | h[3]) + 4;
     rate = (uint32_t)h[8] << 24 | (uint32_t)h[9] << 16 | (uint32_t)h[10] << 8 | h[11];
     total = (uint32_t)h[12] << 24 | (uint32_t)h[13] << 16 | (uint32_t)h[14] << 8 | h[15];
-    if (h[0x12] == 4 && header >= 0x38 && (h[0x24] | h[0x25] | h[0x26] | h[0x27]) != 0) {
+    if (bt4_adx_loop(h, got, total, &loopStart, &loopEnd)) {
         return -1;
     }
     {
@@ -274,9 +276,9 @@ static int decode(Player *p, int16_t *out, int frames) {
         }
     }
     for (f = 0; f < frames; f++) {
-        uint32_t end = p->loop ? p->loopEnd : p->total, index = p->pos / 32;
+        uint32_t end = p->loop ? p->loopEnd : p->total, index;
         int16_t pcm[2][32];
-        const uint8_t *src = p->file + p->data + (size_t)index * FRAME * p->channels;
+        const uint8_t *src;
         int count;
 
         if (p->pos >= end) {
@@ -284,7 +286,13 @@ static int decode(Player *p, int16_t *out, int frames) {
                 break;
             }
             p->pos = p->loopStart & ~31u; /* loop starts are frame-aligned by the encoder */
-            continue;
+            if (p->loopHistSet) memcpy(p->hist, p->loopHist, sizeof(p->hist));
+        }
+        index = p->pos / 32;
+        src = p->file + p->data + (size_t)index * FRAME * p->channels;
+        if (p->loop && !p->loopHistSet && p->pos == (p->loopStart & ~31u)) {
+            memcpy(p->loopHist, p->hist, sizeof(p->hist));
+            p->loopHistSet = 1;
         }
         if (p->lossless) {
             int16_t raw[64];
@@ -640,12 +648,7 @@ static void start(Player *p, const char *path) {
     p->rate = be32(p->file + 8);
     p->total = be32(p->file + 12);
     highpass = be16(p->file + 16);
-    p->loop = 0;
-    if (p->file[0x12] == 4 && header >= 0x38 && be32(p->file + 0x24) != 0) {
-        p->loopStart = be32(p->file + 0x28);
-        p->loopEnd = be32(p->file + 0x30);
-        p->loop = p->loopEnd > p->loopStart && p->loopEnd <= p->total;
-    }
+    p->loop = bt4_adx_loop(p->file, p->size, p->total, &p->loopStart, &p->loopEnd);
     if (!p->loop && p->total >= 64) {
         /* A song added from outside the disc: the disc's music has its loop in the file and goes on for as long as
            the fight does; a file made from an mp3 has none and stopped after one play, leaving the rest of the fight
@@ -659,6 +662,8 @@ static void start(Player *p, const char *path) {
     }
     adx_coefs(highpass, p->rate, &p->c1, &p->c2);
     memset(p->hist, 0, sizeof(p->hist));
+    memset(p->loopHist, 0, sizeof(p->loopHist));
+    p->loopHistSet = 0;
     p->pos = 0;
     if(p==sPlayers && !getenv("BT4_MUSIC_NO_CACHE")){
         char cached[256];bt4_music_path(cached,sizeof(cached),bt4_music_key(p->file,p->size));

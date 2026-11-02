@@ -91,7 +91,12 @@ s32 Ub_Main(void) {
             break;
         case 14:
             Bgm_Play(PORT_V(UB_BGM, 0x84A));
-            if (MisSel_Run(2)) {
+            r=MisSel_Run(2);
+            if (r>=2) {
+                /* BT4 scripted parallel mission, native DBZP 0x3BE7B4:
+                   no player/team selector and no zero-member setup. */
+                done=1;UO_PROG->mode=16;
+            } else if (r) {
                 UO_PROG->mode = 15;
             } else {
                 UO_PROG->mode = 13;
@@ -100,11 +105,21 @@ s32 Ub_Main(void) {
             break;
         case 15:
             Bgm_Play(PORT_V(UB_BGM, 0x83F));
+#ifdef PORT
+            {extern char *getenv(const char *);
+            if(getenv("BT4_RENDER_TEST") && getenv("BT4_MISSION_TEST")){
+                s32 i;for(i=0;i<5;++i){UO_PROG->team[i].chara=i;UO_PROG->team[i].color=0;memset(UO_PROG->team[i].items,0,sizeof(UO_PROG->team[i].items));}
+                r=1;
+            }else
+#endif
             if (UO_PROG->teamSize >= 2) {
                 r = UbTeamSel_Run(4);
             } else {
                 r = SoloSel_Run(4);
             }
+#ifdef PORT
+            }
+#endif
             if (r) {
                 Ub_SetupTeam();
                 done = 1;

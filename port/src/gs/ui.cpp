@@ -27,6 +27,7 @@ extern "C" int GsGl_DirectXVersion(void);
 #include "menu_text.h"
 #include "game_profile.h"
 extern "C" int GsDraw_PerformanceMode(void);
+extern "C" int Port_SpecialMoveCameras(int change);
 #include "menu_translation.h"
 #include "online_language.h"
 #include "../quit_dialog.h"
@@ -434,6 +435,14 @@ static const char *f1_text(const char *english) {
         {"Restart the update from the offline main menu.", "Reinicia la actualización desde el menú principal sin conexión.", "Reinicie a atualização no menu principal offline."},
         {"The update is installed, but the new version could not be started: close the game and start it again.", "La actualización se instaló, pero no se pudo iniciar la nueva versión. Cierra el juego y vuelve a abrirlo.", "A atualização foi instalada, mas não foi possível iniciar a nova versão. Feche o jogo e abra-o novamente."},
         {"Updated to %s.", "Actualizado a %s.", "Atualizado para %s."},
+        {"Updates", "Actualizaciones", "Atualizações"},
+        {"Installed version: %s", "Versión instalada: %s", "Versão instalada: %s"},
+        {"Check for updates", "Buscar actualizaciones", "Verificar atualizações"},
+        {"Checking for updates...", "Buscando actualizaciones...", "Verificando atualizações..."},
+        {"No newer release is available for this build.", "No hay una versión más reciente disponible para esta compilación.", "Não há uma versão mais recente disponível para esta compilação."},
+        {"Could not check for updates. Check your connection and try again.", "No se pudieron buscar actualizaciones. Revisa la conexión e inténtalo de nuevo.", "Não foi possível verificar as atualizações. Verifique a conexão e tente novamente."},
+        {"Retry download", "Reintentar descarga", "Tentar baixar novamente"},
+        {"Return to the offline main menu to apply the update.", "Vuelve al menú principal sin conexión para aplicar la actualización.", "Volte ao menu principal offline para aplicar a atualização."},
         {"Update %s found. Downloading automatically.", "Se encontró la actualización %s. Se descargará automáticamente.", "Atualização %s encontrada. O download será feito automaticamente."},
         {"Downloading %s: %d%% (%.1f of %.1f MB). You can go on playing.", "Descargando %s: %d%% (%.1f de %.1f MB). Puedes seguir jugando.", "Baixando %s: %d%% (%.1f de %.1f MB). Você pode continuar jogando."},
         {"Checking the download of %s (its signature)...", "Verificando la descarga de %s (firma digital)...", "Verificando o download de %s (assinatura)..."},
@@ -1067,6 +1076,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
             PortQuit_Request();
         }
         if (!strcmp(getenv("BT3_UI_OPEN"), "spectator")) sForceTab = 8;
+        if (!strcmp(getenv("BT3_UI_OPEN"), "updates")) sForceTab = 11;
         sOpen = !sQuit;
         gPortOverlayOpen = 1;
     }
@@ -2173,9 +2183,13 @@ static void update_panel(void) {
         ImGui::ProgressBar(1.0f, ImVec2(-1.0f, 0.0f), "");
     } else if (u.state == UPD_READY) {
         ImGui::TextColored(green, "%s", f1_text("Restart required to finish installing the update."));
+        bool safe = !upd_online() && Port_GameMode() == 4;
+        ImGui::BeginDisabled(!safe);
         if (ImGui::Button(f1_text("Restart now"))) {
             upd_apply();
         }
+        ImGui::EndDisabled();
+        if (!safe) ImGui::TextWrapped("%s", f1_text("Return to the offline main menu to apply the update."));
         ImGui::SameLine();
         if (ImGui::Button(f1_text("Later"))) {
             sUpdPromptDismissed = true;
@@ -2184,17 +2198,18 @@ static void update_panel(void) {
         ImGui::TextColored(gold, f1_text("Installing %s..."), u.latest);
     } else if (u.state == UPD_FAILED) {
         ImGui::PushStyleColor(ImGuiCol_Text, red);
-        ImGui::TextWrapped(f1_text("The update to %s was not installed: %s"), u.latest, u.why);
+        if (u.latest[0]) ImGui::TextWrapped(f1_text("The update to %s was not installed: %s"), u.latest, u.why);
+        else ImGui::TextWrapped("%s", f1_text(u.why));
         ImGui::PopStyleColor();
     }
     if (u.state == UPD_AVAILABLE && !u.canInstall && u.cannot[0] != '\0') {
         ImGui::TextWrapped(f1_text("Automatic installation is unavailable: %s"), u.cannot);
     }
-    if (ImGui::Button(f1_text(sUpdNotes ? "Hide what's new" : "What's new"))) {
+    if (u.page[0] && ImGui::Button(f1_text(sUpdNotes ? "Hide what's new" : "What's new"))) {
         sUpdNotes = !sUpdNotes;
     }
-    ImGui::SameLine();
-    if (ImGui::Button(f1_text("Release page"))) {
+    if (u.page[0]) ImGui::SameLine();
+    if (u.page[0] && ImGui::Button(f1_text("Release page"))) {
         SDL_OpenURL(u.page);
     }
     ImGui::SetItemTooltip(f1_text("Opens the release page. A verified update is applied only after you confirm a restart from the offline main menu."));
@@ -2220,6 +2235,35 @@ static void update_panel(void) {
         ImGui::EndChild();
     }
     ImGui::Separator();
+}
+
+static void updates_tab(void) {
+    UpdateStatus u;
+    Update_Status(&u);
+    ImGui::Text(f1_text("Installed version: %s"), Update_Version());
+    ImGui::TextWrapped("%s", f1_text("The updater checks for signed releases and downloads them in the background. At the offline main menu, it asks before restarting to apply an update."));
+    ImGui::Spacing();
+    if (u.state == UPD_IDLE || u.state == UPD_NONE || u.state == UPD_FAILED) {
+        if (ImGui::Button(f1_text("Check for updates"))) {
+            sUpdAsked = true;
+            sUpdAttempts = 0;
+            sUpdNotes = sUpdPromptDismissed = false;
+            sUpdWhy[0] = '\0';
+            Update_Recheck();
+        }
+        if (u.state == UPD_FAILED && u.canInstall) {
+            ImGui::SameLine();
+            if (ImGui::Button(f1_text("Retry download"))) {
+                sUpdAttempts = 1;
+                sUpdRetryAt = SDL_GetTicks() + 15000;
+                Update_Download();
+            }
+        }
+    } else if (u.state == UPD_CHECKING) {
+        ImGui::TextWrapped("%s", f1_text("Checking for updates..."));
+    }
+    if (u.state == UPD_NONE) ImGui::TextWrapped("%s", f1_text("No newer release is available for this build."));
+    update_panel();
 }
 
 static void misc_tab(void) {
@@ -2333,6 +2377,10 @@ static void online_tab(void) {
 
 // The existing free, tracking and overview camera controls.
 static void spectator_tab(void) {
+    bool cinematic=Port_SpecialMoveCameras(-1)!=0;
+    if(ImGui::Checkbox(f1_text("Special-move cinematic cameras"),&cinematic))Port_SpecialMoveCameras(cinematic);
+    ImGui::SetItemTooltip(f1_text("Turn off to keep the regular fight framing during special and ultimate moves. Attack animations, damage and timing are unchanged."));
+    ImGui::Separator();
     int mode=PortSpectator_Mode();
     const char *modes[]={"Game camera","Free camera","Follow fighter","Fight overview"};
     for(int n=0;n<4;n++)if(ImGui::RadioButton(f1_text(modes[n]),mode==n)){PortSpectator_SetMode(n);mode=n;}
@@ -2756,6 +2804,13 @@ static void controls_tab(void) {
     if (ImGui::CollapsingHeader(f1_text("Sticks, triggers and vibration"), ImGuiTreeNodeFlags_DefaultOpen)) {
         sticks_panel(player);
     }
+    {
+        int *setting=PortInput_TargetStick(player);bool enabled=*setting!=0;
+        if(ImGui::Checkbox(f1_text("Right stick enemy targeting"),&enabled)){
+            *setting=enabled;PortInput_Save();
+        }
+        ImGui::SetItemTooltip(f1_text("Flick toward an enemy to switch targets in Tag Team. In a duel, lock onto your opponent. Release the stick before switching again. Original right-stick actions remain available when this is off."));
+    }
     ImGui::TextDisabled("%s", f1_text("Choose a binding, then press the new key or button. Esc keeps it, Delete clears it;"));
     ImGui::TextDisabled("%s", f1_text("with a controller, press nothing for five seconds to keep it."));
     // (never lower than a few rows: in a small window the tab scrolls as a whole instead)
@@ -2843,7 +2898,7 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 10 : 1)) % 11;
+        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 11 : 1)) % 12;
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -2895,7 +2950,6 @@ static void build(void) {
             ImGui::TextDisabled(f1_text("View: %s"), f1_text(spec_view_name(Port_NetSpecView())));
             ImGui::Separator();
         }
-        update_panel();
         // the tabs in a region of their own, above a last line that is always there
         ImGui::BeginChild("body", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing() - ImGui::GetStyle().ItemSpacing.y), ImGuiChildFlags_NavFlattened);
         if (ImGui::BeginTabBar("tabs")) {
@@ -2915,10 +2969,16 @@ static void build(void) {
             if (tab(f1_text("Spectator"), 8)) { spectator_tab(); ImGui::EndTabItem(); }
             if (tab(f1_text("Mods"), 9)) { ModsUi_Tab(); ImGui::EndTabItem(); }
             if (tab(f1_text("Tech"), 10)) { tech_tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Updates"), 11)) { updates_tab(); ImGui::EndTabItem(); }
             ImGuiTabBar *bar=ImGui::GetCurrentContext()->CurrentTabBar;
             if(bar && bar->WidthAllTabsIdeal>bar->BarRect.GetWidth()+0.5f){
                 ImGuiWindow *parent=ImGui::GetCurrentWindow()->ParentWindow;
-                if(parent)ImGui::SetWindowSize(parent,ImVec2(ImMin(parent->Size.x+bar->WidthAllTabsIdeal-bar->BarRect.GetWidth()+U(4),io.DisplaySize.x*0.96f),parent->Size.y));
+                if(parent){
+                    float width=ImMin(parent->Size.x+bar->WidthAllTabsIdeal-bar->BarRect.GetWidth()+U(4),io.DisplaySize.x*0.96f);
+                    float x=ImClamp(parent->Pos.x-(width-parent->Size.x)*0.5f,0.0f,ImMax(0.0f,io.DisplaySize.x-width));
+                    ImGui::SetWindowSize(parent,ImVec2(width,parent->Size.y));
+                    ImGui::SetWindowPos(parent,ImVec2(x,parent->Pos.y));
+                }
             }
             ImGui::EndTabBar();
         }
