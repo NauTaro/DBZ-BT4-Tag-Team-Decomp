@@ -16,8 +16,8 @@
     "spv_sha256": "7fbf9ee7212eb56f4944bcc1a731d7431798144fd69e135d4f4cc1ecef94930c"
   },
   "vu0.vert": {
-    "source_sha256": "6c1597fbc55f2f3ee40fc1b5d428d63ecd608e839c0329fa47d5c88e6675c6c3",
-    "spv_sha256": "ad3c44aafba33537d0fc1b37f981e7fb18aee28f928f09e46b3883f9337a9dec"
+    "source_sha256": "99b3dec435e0202247b0dbf5edd577321803ee000381307dfe07a5cb5ccc7841",
+    "spv_sha256": "272e252cbe44d14bf738516c01df6ef1c400c1fbfadd0b50a9183154c87efb71"
   },
   "vu4.vert": {
     "source_sha256": "e6a76cfcae39d10b10a039c88700b17d69b374fca1ab124903729ea1627c8a7a",
@@ -42,5 +42,13 @@
   "dclut.frag": {
     "source_sha256": "1d28c6df9af61c003fd293d26aeedbc775a0cecaf8e53f12a37956d748e7d2df",
     "spv_sha256": "99d584df3317bc1b8f9a3fef72499e240c9b0781bb8098a6143b103c2d215e5c"
+  },
+  "avg.frag": {
+    "source_sha256": "052d84fce22da90cfd7d3eaea87e34e0b99126b21f64b97da71d769e3cefc464",
+    "spv_sha256": "85c665c6362eaecc9eaa83aad858cd3c2e951d74b77e6cb10a56fb02556e9e95"
+  },
+  "grade.frag": {
+    "source_sha256": "11e7b5a45b3018020bdfde9f1f0dc45aee2cee9f2344fc8bcf6ae8d851f4f43b",
+    "spv_sha256": "c0db37913bcccc250e146d3445e720468c2fd12bae27a3da1aa52e99587c6842"
   }
 }

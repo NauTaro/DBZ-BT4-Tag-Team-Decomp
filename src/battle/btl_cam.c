@@ -414,31 +414,28 @@ f32 Port_CamCull(void) {
    nearer limit is taken at once (eased), a farther one only after the way has been clear for 15 frames, then eased
    out; the game's camera sways, and a limit that came and went with it made the view wobble. The trace only reads
    the stage; the collision's query mode it sets (which the game's effect queries also use) is put back. */
+static f32 SpecCamera_StageRay(const f32 *from,const f32 *to);
 static void BtlCam_PortCollide(BtlCamView *view, s32 objId) {
     extern void *BtlChar_FindByObjId(s32 objId);
-    extern s32 gStgColMode;
     static f32 sHeld[2] = {1.0f, 1.0f};
     static s32 sClear[2];
     u8 *chr = BtlChar_FindByObjId(objId);
-    s32 v = view->index & 1, mode, hit, i;
-    Vec4 target, at;
+    s32 v = view->index & 1, i;
+    Vec4 target;
     f32 f = 1.0f, len = 0.0f, got = 0.0f;
 
     if (chr == NULL) {
         return;
     }
     target = *(Vec4 *)(chr + 0x450); /* (ChrCam.target, include/battle/btl_char_cam.h) */
-    mode = gStgColMode;
-    gStgColMode = 0;
-    hit = BtlCam_TraceStage(&at, &view->pos, &target, NULL, NULL);
-    gStgColMode = mode;
-    if (hit) {
+    /* Presentation collision reads the stage BVH without changing simulation scratch globals. */
+    f = SpecCamera_StageRay((const f32 *)&target,(const f32 *)&view->pos);
+    if (f < 1.0f) {
         for (i = 0; i < 3; i++) {
-            f32 a = ((f32 *)&view->pos)[i] - ((f32 *)&target)[i], b = ((f32 *)&at)[i] - ((f32 *)&target)[i];
+            f32 a = ((f32 *)&view->pos)[i] - ((f32 *)&target)[i];
             len += a * a;
-            got += b * b;
         }
-        f = len > 0.0001f ? (__builtin_sqrtf(got) - 4.0f) / __builtin_sqrtf(len) : 0.0f;
+        f = len > 0.0001f ? f - 4.0f / __builtin_sqrtf(len) : 0.0f;
         f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
     }
     if (f < sHeld[v]) {

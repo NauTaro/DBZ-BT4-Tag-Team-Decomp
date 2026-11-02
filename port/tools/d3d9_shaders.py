@@ -32,6 +32,7 @@ def generate(root,gen,header,manifest):
     records=[]
     for spv in sorted((gen).glob('*.spv')):
         name=spv.stem;stage=name.split('.')[1];src=root/'port/src/gs/shaders'/name
+        if name not in NAMES:continue # GPU-only grading passes have no SM3 pipeline.
         if not src.exists():src=gen/name
         text=src.read_text();vertex=stage=='vert'
         if name=='fx.vert':

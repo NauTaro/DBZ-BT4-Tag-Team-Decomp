@@ -13,7 +13,12 @@ typedef struct SpecStageObject { s32 state;u8 unused[0x4c]; } SpecStageObject;
 typedef struct SpecStage {
     u8 unused[0x38];u32 count;SpecStageZone *zones;void *bounds;u32 objectCount;SpecStageObject *objects;
 } SpecStage;
+#ifdef BATTLE_STG_A_H
+#define SPEC_CAMERA_STAGE ((SpecStage *)gBtlStage)
+#else
 extern SpecStage *gBtlStage;
+#define SPEC_CAMERA_STAGE gBtlStage
+#endif
 static s32 SpecCamera_Box(const ColBox *box,const f32 *from,const f32 *to,f32 end) {
     f32 begin=0;int k;
     for(k=0;k<3;k++) {
@@ -44,14 +49,14 @@ static void SpecCamera_Mesh(ColMesh *mesh,const f32 *from,const f32 *to,f32 *fra
 }
 static f32 SpecCamera_StageRay(const f32 *from,const f32 *to) {
     f32 fraction=1;u32 i;int j;
-    if(!gBtlStage || !gBtlStage->zones || (Battle_GetWork()->flags&BATTLE_FLAG_LOADING))return 1;
-    for(i=0;i<gBtlStage->count;i++) {
-        SpecStageZone *zone=&gBtlStage->zones[i];
+    if(!SPEC_CAMERA_STAGE || !SPEC_CAMERA_STAGE->zones || (Battle_GetWork()->flags&BATTLE_FLAG_LOADING))return 1;
+    for(i=0;i<SPEC_CAMERA_STAGE->count;i++) {
+        SpecStageZone *zone=&SPEC_CAMERA_STAGE->zones[i];
         SpecCamera_Mesh(zone->mesh,from,to,&fraction);
         for(j=0;j<zone->recCount;j++) {
             SpecStageRec *rec=&zone->recs[j];
-            if(rec->obj<0 || (u32)rec->obj>=gBtlStage->objectCount || !gBtlStage->objects)continue;
-            if((rec->broken!=0)!=((gBtlStage->objects[rec->obj].state&1)!=0))continue;
+            if(rec->obj<0 || (u32)rec->obj>=SPEC_CAMERA_STAGE->objectCount || !SPEC_CAMERA_STAGE->objects)continue;
+            if((rec->broken!=0)!=((SPEC_CAMERA_STAGE->objects[rec->obj].state&1)!=0))continue;
             SpecCamera_Mesh(rec->mesh,from,to,&fraction);
         }
     }
