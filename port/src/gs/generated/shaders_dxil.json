@@ -67,7 +67,17 @@
       "spv_sha256": "99d584df3317bc1b8f9a3fef72499e240c9b0781bb8098a6143b103c2d215e5c",
       "dxil_sha256": "b1b98c85c4ea06c60d26464d1a5c2ee5dd99aaf7532e218e27a1dfb3f33e0c9d",
       "bytes": 2872
+    },
+    "avg.frag": {
+      "spv_sha256": "85c665c6362eaecc9eaa83aad858cd3c2e951d74b77e6cb10a56fb02556e9e95",
+      "dxil_sha256": "9cce79520f168f9dcdd62d441ef63a0bc8219e6568ad0a17ae7aea5eb7eeec6e",
+      "bytes": 2348
+    },
+    "grade.frag": {
+      "spv_sha256": "c0db37913bcccc250e146d3445e720468c2fd12bae27a3da1aa52e99587c6842",
+      "dxil_sha256": "0f1564d86691cd21d917c670829780ab4e1851bc6fb4b309afd6c3dec08c0bce",
+      "bytes": 6076
     }
   },
-  "header_sha256": "f003a71ae1e02e20c194f37ab772821e97b7764f70de48cbcf4ee74236f05214"
+  "header_sha256": "7d57b935216a5274d23320e6adb6b87c23e6bd2387578ed290e364cb4c66891a"
 }

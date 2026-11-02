@@ -13,7 +13,8 @@ import subprocess
 import sys
 
 NAMES = ('gs.vert', 'gs.frag', 'gsnz.frag', 'gswb.frag', 'vu0.vert',
-         'vu4.vert', 'vu6.vert', 'fx.vert', 'outline.frag', 'alphakey.frag', 'dclut.frag')
+         'vu4.vert', 'vu6.vert', 'fx.vert', 'outline.frag', 'alphakey.frag', 'dclut.frag',
+         'avg.frag', 'grade.frag')
 
 def inputs(root):
     folder = root / 'port/src/gs/shaders'
