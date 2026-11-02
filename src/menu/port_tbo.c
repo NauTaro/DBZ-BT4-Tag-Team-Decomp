@@ -4261,13 +4261,16 @@ static s32 Tb_HelpWrap(char *text,char lines[3][128],f32 scale,f32 width){
         s32 end=at,k,n=used;
         while(text[at]==' ')++at;if(!text[at])break;end=at;
         while(text[end]&&text[end]!=' ')++end;
-        Ps_Copy(trial,lines[row],128);
+        if(end-at+used+(used!=0)>=128){
+            if(!used||++row>=3)return 4;used=0;continue;
+        }
+        for(k=0;k<used;++k)trial[k]=lines[row][k];trial[used]=0;
         if(n&&n<127)trial[n++]=' ';
         for(k=at;k<end&&n<127;++k)trial[n++]=text[k];trial[n]=0;
-        if(used&&Ps_MsgWidth(trial,scale)>width){
+        if(used&&Ps_MsgWidthLiteral(trial,scale)>width){
             if(++row>=3)return 4;used=0;continue;
         }
-        Ps_Copy(lines[row],trial,128);used=n;at=end;
+        for(k=0;k<=n;++k)lines[row][k]=trial[k];used=n;at=end;
     }
     return row+1;
 }
@@ -4276,17 +4279,21 @@ static void Tb_DrawHelpCaption(void){
     static unsigned generation;
     static s32 count;
     static f32 scale,lastWidth;
-    char *text=(char *)PortOnline_Text(Tb_Help());f32 width=(512.0f-2.0f*Ps_Left())*.72f;
+    char *text=(char *)PortOnline_Text(Tb_Help());static char translated[TB_BOX_LINE];
+    extern int Port_TrLine(const char *,char *,int);
+    if(Port_TrLine(text,translated,sizeof(translated)))text=translated;
+    f32 width=(512.0f-2.0f*Ps_Left())*.72f;
     unsigned current=PortTbo_TextGeneration();s32 i,same=1;
     for(i=0;text[i]||previous[i];++i)if(text[i]!=previous[i]){same=0;break;}
     if(!same||current!=generation||width!=lastWidth||!count){
-        Ps_Copy(previous,text,TB_BOX_LINE);generation=current;lastWidth=width;
+        for(i=0;text[i]&&i<TB_BOX_LINE-1;++i)previous[i]=text[i];previous[i]=0;
+        generation=current;lastWidth=width;
         for(scale=1.08f;scale>.80f;scale-=.04f){count=Tb_HelpWrap(text,lines,scale,width);if(count<=3)break;}
         if(count>3)count=3;
         if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TEXT_CAPTURE"))
             fprintf(stderr,"tag typography caption: lines=%d scale=%.2f width=%.1f\n",count,scale,width);
     }
-    for(i=0;i<count;++i)Ps_Msg(Ps_Left()+34.0f,344.0f+i*22.0f,lines[i],scale,0x80);
+    for(i=0;i<count;++i)Ps_MsgLiteral(Ps_Left()+34.0f,344.0f+i*22.0f,lines[i],scale,0x80);
 }
 
 /* What a page draws comes in from the left as it opens, as the hub's bars do (the hub moves its own: Tb_DrawHub);

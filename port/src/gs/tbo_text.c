@@ -69,8 +69,8 @@ static int line_measure(TboLine *l, uint32_t generation) {
 }
 
 /* The number of a line (TBO_TEXT_BASE and on), -1 if it cannot be written (no font, no text, no room). */
-int PortTbo_TextId(const char *text, int kind) {
-    text=PortOnline_Text(text);
+static int text_id(const char *text, int kind, int translate) {
+    if(translate)text=PortOnline_Text(text);
     uint32_t generation = MenuText_LineGeneration();
     uint64_t now = SDL_GetTicks();
     int i, spare = -1, id = -1;
@@ -80,7 +80,7 @@ int PortTbo_TextId(const char *text, int kind) {
     }
     {   /* a line of the menu in the chosen language (translations/port/<language>.json; as it is without one), here
            where each is drawn and measured, so the two always agree */
-        const char *t = MenuTranslation_Line(text);
+        const char *t = translate ? MenuTranslation_Line(text) : NULL;
         if (t != NULL) {
             text = t;
         }
@@ -112,17 +112,19 @@ int PortTbo_TextId(const char *text, int kind) {
     pthread_mutex_unlock(&sLock);
     return id;
 }
+int PortTbo_TextId(const char *text,int kind){return text_id(text,kind,1);}
+int PortTbo_TextIdLiteral(const char *text,int kind){return text_id(text,kind,0);}
 
 /* How far the pen goes for a line, in thousandths of its capitals' height, without keeping it (for laying out:
    where to break a line). 0 without a font. */
-int PortTbo_TextMeasure(const char *text, int kind) {
-    text=PortOnline_Text(text);
+static int text_measure(const char *text, int kind, int translate) {
+    if(translate)text=PortOnline_Text(text);
     int w, h, base, cap, adv;
     if (text == NULL || text[0] == '\0' || kind < 0 || kind > 1) {
         return 0;
     }
     {
-        const char *t = MenuTranslation_Line(text); /* (as PortTbo_TextId) */
+        const char *t = translate ? MenuTranslation_Line(text) : NULL;
         if (t != NULL) {
             text = t;
         }
@@ -131,6 +133,8 @@ int PortTbo_TextMeasure(const char *text, int kind) {
     adv = MenuText_LineMeasure(kind, text, cap, 0, &w, &h, &base);
     return (int)((int64_t)adv * 1000 / cap);
 }
+int PortTbo_TextMeasure(const char *text,int kind){return text_measure(text,kind,1);}
+int PortTbo_TextMeasureLiteral(const char *text,int kind){return text_measure(text,kind,0);}
 
 /* A measure of a line, in thousandths of its capitals' height: 0 how far the pen goes, 1 the picture's width,
    2 its height (of one of its two halves; a heading's: all of it), 3 the baseline from its top, 4 the room left of

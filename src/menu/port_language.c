@@ -27,7 +27,9 @@ extern void Font_PrintAt(s32,s32,u16 *);
 extern void Font_FlushAll(void);
 extern int MenuText_GetSharedFont(void);
 extern void MenuText_SetSharedFont(int);
+extern void Port_MenuPage(int);
 static u16 sLines[6][128];
+static s32 sEmphasizedLine=-1;
 /* Keep strings alive through Font_FlushAll. The glyphs come directly from
  * BT4's boot archive, using the same outline and alpha as the card dialog. */
 static void original_line(s32 line,const char *text,s32 x,s32 y,f32 scaleX,f32 scaleY,s32 width,s32 alpha){
@@ -39,7 +41,8 @@ static void original_line(s32 line,const char *text,s32 x,s32 y,f32 scaleX,f32 s
     Font_SetScaleXY(scaleX*fit,scaleY);
     Font_SetShadowMode(2);Font_SetShadowOffset(1,2);
     Font_SetShadowColor(((u32)(alpha/2)<<24)|0x202020);
-    Font_SetColorRGBA(255,255,255,alpha);Font_PrintAt(x,y,sLines[line]);Font_PopStyle();
+    Font_SetColorRGBA(255,line==sEmphasizedLine?230:255,line==sEmphasizedLine?96:255,alpha);
+    Font_PrintAt(x,y,sLines[line]);Font_PopStyle();
 }
 static void original_text(s32 english,s32 alpha){
     original_line(0,english?"Select language":"Selecciona el idioma",256,210,1.20f,1.85f,416,alpha);
@@ -94,12 +97,20 @@ void PortLanguage_Run(void){
         Dialog_Draw(1);
         Flash_FindLabel(gDialog->flash,NULL,"mc_dummy_text_1",&anchor);
         alpha=anchor.id<0?0:(s32)(Flash_ClipGetAlpha(gDialog->flash,&anchor)*128.0f);
-        Port_GameProfileMenuSet(1,choice,alpha);if(three){
-            original_line(0,choice==2?"Selecione o idioma":choice?"Select language":"Selecciona el idioma",256,210,1.2f,1.85f,416,alpha);
-            original_line(1,choice==0?"> Espa\xF1ol <":"Espa\xF1ol",115,290,.85f,1.5f,130,alpha);
-            original_line(2,choice==1?"> English <":"English",256,290,.85f,1.5f,130,alpha);
-            original_line(3,choice==2?"> Portugu\xEAs <":"Portugu\xEAs",397,290,.85f,1.5f,130,alpha);Font_FlushAll();
+        /* The frame is a centred 4:3 page. Keep its labels on that same page
+         * after Dialog_Draw restores the enclosing menu's anchor. */
+        Port_GameProfileMenuSet(1,choice,alpha);Port_MenuPage(50);if(three){
+            s32 count=0,i,slot=0;const char *names[3]={"Espa\xF1ol","English","Portugu\xEAs"};
+            for(i=0;i<3;++i)count+=Port_GameProfileAvailable(i)!=0;
+            sEmphasizedLine=choice+1;
+            original_line(0,choice==2?"Selecione o idioma":choice?"Select language":"Selecciona el idioma",256,198,1.15f,1.75f,376,alpha);
+            for(i=0;i<3;++i)if(Port_GameProfileAvailable(i)){
+                s32 x=count==3?128+128*slot:176+160*slot;
+                original_line(i+1,names[i],x,282,.85f,1.5f,112,alpha);++slot;
+            }
+            Font_FlushAll();sEmphasizedLine=-1;
         }else original_text(choice,alpha);
+        Port_MenuPage(0);
         ColorFade_Draw();Gfx_EndFrame(1);Dma_Flush();File_Stub264D90();
         if(getenv("BT4_PROFILE_PICKER_TEST")&&frame==60){extern int gPortTagUiCaptureRequest;gPortTagUiCaptureRequest=1;}
         frame++;

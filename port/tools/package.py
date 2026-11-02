@@ -148,6 +148,9 @@ def take_translations(out):
         for source in sorted((ROOT / "port/translations" / kind).glob("*.json")):
             if re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z]{2,3})?", source.stem):
                 shutil.copy2(source, target / kind / source.name)
+    bindings = ROOT / "port/translations/labels/pt-BR-native.tsv"
+    if bindings.is_file():
+        shutil.copy2(bindings, target / "labels" / bindings.name)
 
 def take_fonts(out, lic):
     """The fonts the settings offer, and their licences next to them and in licenses/. Only what is in the

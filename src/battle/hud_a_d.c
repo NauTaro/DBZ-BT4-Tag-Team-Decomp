@@ -86,6 +86,7 @@ void HudGauge_UpdateHp(void) {
     s32 bars;
     s32 rem2;
     s32 bars2;
+    s32 underBars;
     s32 w;
 
     rem = gHudGauge->hpShown[side] % HUD_GAUGE_BAR;
@@ -158,13 +159,16 @@ void HudGauge_UpdateHp(void) {
         }
     }
     bar = &gHudGauge->sprites[3];
-    if (bars - 1 >= 4) {
+    /* At an exact full tier the backing bar has the same colour. Its bevel
+       remains visible around the alpha mask, including with HD artwork. */
+    underBars = rem == HUD_GAUGE_BAR && rem2 == HUD_GAUGE_BAR && bars == bars2 ? bars : bars - 1;
+    if (underBars >= 4) {
         HudSprite_SetTex(bar, 8, 5);
-    } else if (bars - 1 >= 2) {
+    } else if (underBars >= 2) {
         HudSprite_SetTex(bar, 8, 1);
-    } else if (bars - 1 > 0) {
+    } else if (underBars > 0) {
         HudSprite_SetTex(bar, 8, 4);
-    } else if (bars - 1 >= 0) {
+    } else if (underBars >= 0) {
         HudSprite_SetTex(bar, 8, 3);
     } else {
         HudSprite_Show(bar, 0);

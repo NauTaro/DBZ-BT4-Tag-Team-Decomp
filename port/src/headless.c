@@ -57,7 +57,7 @@ extern void Save_UnlockAll(void *opt);
 extern int Port_NetSession(void); /* gs/net.c */
 extern int Port_NetWarp(void);
 extern void Port_NetArrived(void);
-extern struct { int unk0[2]; int loadPack, loadRes, loadSprites; int flags; int mode; } GAME_PTR gProgress; /* include/menu/menu_a.h */
+extern struct { int unk0[2]; int loadPack, loadRes, loadSprites; int flags; int mode,prevMode,reserved[5],subMenu,subMenuItem; } GAME_PTR gProgress; /* include/menu/menu_a.h */
 static int sNetEntered;
 /* The vertical blank at which the session's start-up was over (0: not yet). Part of the game's state like the rest
    of this file's variables, so it goes back with a rollback: it is always what the blanks as they were last run
@@ -132,6 +132,11 @@ int __wrap_Progress_Main(int arg) {
                 static int testEntered;
                 if (!testEntered) {
                     gProgress->mode = atoi(getenv("BT4_TEST_MODE"));
+                    if(getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_SUBMENU")) {
+                        Save_UnlockAll(gSaveData);
+                        gProgress->subMenu=atoi(getenv("BT4_TEST_SUBMENU"));
+                        gProgress->subMenuItem=0;
+                    }
                     if (!getenv("BT4_TAG_VIDEO_TEST") && (getenv("BT4_RENDER_TBO") != NULL || getenv("BT4_TAG_DRAFT_TEST") != NULL || getenv("BT4_TAG_PREVIEW") != NULL)) {
                         extern int gPortScreen;
                         gProgress->mode=80;gPortScreen=1;
@@ -572,7 +577,8 @@ void Port_Trace(unsigned vblanks) {
         int side;
         for(side=0;side<2;++side) {
             int GAME_PTR gauge=BtlMember_GetActiveGauge(BtlChar_Get(side));
-            gauge[0]=side ? 5000 : 42000;
+            const char *health=getenv("BT4_TEST_HEALTH");
+            gauge[0]=getenv("BT4_RENDER_TEST") && health ? atoi(health) : side ? 5000 : 42000;
             gauge[3]=side ? 60000 : 0;
             gauge[5]=side ? 400000 : 0;
         }

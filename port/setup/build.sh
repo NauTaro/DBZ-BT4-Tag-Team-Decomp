@@ -53,6 +53,8 @@ $CC -O2 -DMINIZ_NO_ARCHIVE_WRITING_APIS -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES -DMINIZ
 $CC -O2 $SDL -c port/src/gs/update_sign.c -o "$O/update_sign.o"
 # -Wl,-Bdynamic for SDL3 only: the rest (C++ runtime, threads) is linked in
 if [ "${1:-linux}" = win ]; then
+    WINDRES=$(echo "$CC" | sed 's/gcc/windres/')
+    (cd port/release && "$WINDRES" -O coff -i game_icon.rc -o "../../$O/game_icon.res.o")
     $CXX -o $OUT $O/*.o $SDL -Wl,-Bdynamic -lSDL3 -Wl,-Bstatic -lstdc++ -lwinpthread -lz -static-libgcc -mwindows && echo "built $OUT"
 else
     $CXX -o $OUT $O/*.o $SDL $LIBS && echo "built ./$OUT"

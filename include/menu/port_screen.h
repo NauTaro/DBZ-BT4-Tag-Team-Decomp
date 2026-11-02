@@ -67,6 +67,9 @@ void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width
 void Ps_Heading(f32 x, f32 y, char *str, f32 scale, f32 width, s32 alpha);
 f32 Ps_MsgWidth(char *str, f32 scale);
 void Ps_Msg(f32 x, f32 y, char *str, f32 scale, s32 alpha);
+/* Already-localized fragments: measure and draw without another catalog lookup. */
+f32 Ps_MsgWidthLiteral(char *str, f32 scale);
+void Ps_MsgLiteral(f32 x, f32 y, char *str, f32 scale, s32 alpha);
 s32 Ps_ButtonPic(s32 kind);
 f32 Ps_ButtonW(s32 kind, f32 size);
 void Ps_Button(s32 kind, f32 cx, f32 cy, f32 size);

@@ -1,3 +1,11 @@
+# 0.1.39.3 R1.1
+
+- Center installed-language choices and download optional packages directly from GitHub; setup only asks for the ISO.
+- Fix Portuguese menu captions, restore high-resolution font rendering and keep localized lettering ahead of generic HD artwork.
+- Recognize matching HD portraits across texture alpha modes while preserving palette and size checks.
+- Align the Potara Shop scroll bar, restore the screen-position preview and correct full health-bar backing colors.
+- Refresh the HUD editor preview and run Windows game and setup executables without requesting elevation.
+
 # 0.1.39.3 R1
 
 - Integrate upstream 0.1.39.3 widescreen menus, replay loading and screen reader support.

@@ -127,6 +127,14 @@ static int find(uint64_t tex, uint64_t clut, uint32_t bits, int pal) {
     return -1;
 }
 
+/* TCC controls whether a draw uses texture alpha, not the texture's pixels.
+   PCSX2 packs may record the same image with the opposite TCC. Prefer the
+   exact entry and keep palette, format and dimensions mandatory in both cases. */
+static int find_image(uint64_t tex, uint64_t clut, uint32_t bits, int pal) {
+    int id = find(tex, clut, bits, pal);
+    return id >= 0 ? id : find(tex, clut, bits ^ 0x4000u, pal);
+}
+
 /* "1dd4c76113969303-56e3d4469d2ad392-00005e54.dds" */
 static void add(const char *dir, const char *name, int archive, mz_uint member) {
     size_t n = strlen(name);
@@ -333,7 +341,7 @@ int TexPack_Lookup(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32
     while ((1u << hl) < th) { hl++; }
     bits = psm | wl << 6 | hl << 10 | (tcc & 1) << 14;
     if (!pal) {
-        return find(tex, 0, bits, 0);
+        return find_image(tex, 0, bits, 0);
     }
     if (cpsm != 0) {
         return -1; /* 16-bit palettes are expanded with TEXA there: not seen in this game */
@@ -353,9 +361,9 @@ int TexPack_Lookup(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32
                 *maxAlpha = clut[i] >> 24;
             }
         }
-        id = find(tex, XXH3_64bits(&clut[lo], (hi - lo + 1) * 4), bits, 1);
+        id = find_image(tex, XXH3_64bits(&clut[lo], (hi - lo + 1) * 4), bits, 1);
         if (id < 0) {
-            id = find(tex, XXH3_64bits(clut, count * 4), bits, 1);
+            id = find_image(tex, XXH3_64bits(clut, count * 4), bits, 1);
         }
         if (getenv("BT3_TEX_LOG") != NULL) { /* which textures a pack has and which it has not, by the name it would need */
             fprintf(stderr, "texpack: %s %ux%u %u-bit %llx-%llx-%08x%s%s\n", id >= 0 ? "found  " : "missing", tw, th, psm == 0x13 ? 8u : 4u,

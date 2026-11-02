@@ -521,16 +521,22 @@ f32 Ps_MsgWidth(char *str, f32 scale) {
     return (f32)PortTbo_TextMeasure(str, 1) / 1000.0f * PS_MSG_CAP * scale * PS_UNIT_X * Port_MenuTextNarrow();
 }
 
-void Ps_Msg(f32 x, f32 y, char *str, f32 scale, s32 alpha) {
+extern int PortTbo_TextIdLiteral(const char *,int),PortTbo_TextMeasureLiteral(const char *,int);
+f32 Ps_MsgWidthLiteral(char *str,f32 scale){
+    return (f32)PortTbo_TextMeasureLiteral(str,1)/1000.0f*PS_MSG_CAP*scale*PS_UNIT_X*Port_MenuTextNarrow();
+}
+static void Ps_MsgDraw(f32 x, f32 y, char *str, f32 scale, s32 alpha,s32 literal) {
     s32 id;
 
-    if (str[0] == 0 || (id = PortTbo_TextId(str, 1)) < 0) {
+    if (str[0] == 0 || (id = literal?PortTbo_TextIdLiteral(str,1):PortTbo_TextId(str, 1)) < 0) {
         return;
     }
     Ps_Line(id, x, y + PS_MSG_BASE * scale, PS_MSG_CAP * scale, 1.0f, 0, 0, Ps_Rgba(16, 20, 40, 255), 0, alpha);
     Ps_Line(id, x, y + PS_MSG_BASE * scale, PS_MSG_CAP * scale, 1.0f, Ps_Rgba(255, 255, 255, 255),
             Ps_Rgba(255, 255, 255, 255), 0, 1, alpha);
 }
+void Ps_Msg(f32 x,f32 y,char *str,f32 scale,s32 alpha){Ps_MsgDraw(x,y,str,scale,alpha,0);}
+void Ps_MsgLiteral(f32 x,f32 y,char *str,f32 scale,s32 alpha){Ps_MsgDraw(x,y,str,scale,alpha,1);}
 
 /* ---- the pad's buttons ---- */
 /* kind: 0 cross, 1 square, 2 triangle, 3 left / right, 4 circle, 7 START */

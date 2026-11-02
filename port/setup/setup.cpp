@@ -64,7 +64,6 @@ static bool sPackage=false;
 static int sUiLanguage=0; // Spanish, English, Portuguese (Brazil)
 static int sInstallMask=1,sPackagePercent=0;
 static std::string sGithubCode, sActivity;
-static std::string sTexturePackPath, sPtbrPackPath;
 static bool sInstallTexturePack=false, sInstallPtbrPack=false;
 static const char *L(const char *es,const char *en,const char *pt){
     return sUiLanguage==2?pt:sUiLanguage==1?en:es;
@@ -94,7 +93,7 @@ static char sIso[1024];
 // install.py --eu-iso).
 static char sIsoEu[1024];
 static bool sEuOnly;    // only the languages are added (the game was set up before: the "Listo para jugar" page)
-static int sDialogFor;  // 0 USA ISO, 1 European ISO, 2 HD textures ZIP, 3 Portuguese ZIP
+static int sDialogFor;  // 0 BT4 ISO, 1 optional European ISO
 static std::string sRoot, sError, sLauncher, sLine;
 static std::vector<StepRow> sRows;
 static std::vector<Missing> sMissing;
@@ -224,8 +223,8 @@ static void start_install() {
         sRunStart = SDL_GetTicks();
         sNative = true;
         Native_Start(sRoot,sEuOnly?"":sIso,"",sInstallMask,
-                     sInstallTexturePack?(sTexturePackPath.empty()?"@download":sTexturePackPath):"",
-                     sInstallPtbrPack?(sPtbrPackPath.empty()?"@download":sPtbrPackPath):"");
+                     sInstallTexturePack?"@download":"",
+                     sInstallPtbrPack?"@download":"");
         sPage = PAGE_RUN;
         return;
     }
@@ -471,7 +470,7 @@ static void SDLCALL dialog_done(void *userdata, const char *const *files, int fi
     std::lock_guard<std::mutex> lock(sDialogLock);
     if (files != NULL && files[0] != NULL) {
         sDialogResult = files[0];
-        sDialogFor = userdata == (void *)1 ? 1 : userdata == (void *)2 ? 2 : userdata == (void *)3 ? 3 : 0;
+        sDialogFor = userdata == (void *)1 ? 1 : 0;
         sDialogReady = true;
     }
 }
@@ -564,12 +563,7 @@ static void page_pick() {
         {{"BT4 ISO","iso;bin;img"},{"Todos los archivos","*"}},
         {{"BT4 ISO","iso;bin;img"},{"All files","*"}},
         {{"BT4 ISO","iso;bin;img"},{"Todos os arquivos","*"}}};
-    static const SDL_DialogFileFilter packageFilters[3][2]={
-        {{"Paquetes BT4","zip;bt4lang"},{"Todos los archivos","*"}},
-        {{"BT4 packages","zip;bt4lang"},{"All files","*"}},
-        {{"Pacotes BT4","zip;bt4lang"},{"Todos os arquivos","*"}}};
     const auto *filters=isoFilters[sUiLanguage];
-    const auto *zipFilters=packageFilters[sUiLanguage];
     // Reserve the footer so long translations and selected file paths can scroll
     // without overlapping the installation buttons.
     ImGui::BeginChild("installation-options",ImVec2(0,-58),ImGuiChildFlags_None);
@@ -612,19 +606,6 @@ static void page_pick() {
     if(sInstallPtbrPack){
         ImGui::TextWrapped("%s",L("El paquete PT-BR se descarga y verifica automáticamente. Si elegís una ISO latina, se agregan los datos ingleses necesarios.","The PT-BR pack downloads and verifies automatically. If you select a Spanish ISO, setup adds the required English data.","O pacote PT-BR é baixado e verificado automaticamente. Se você selecionar uma ISO em espanhol, o instalador adicionará os dados em inglês necessários."));
         ImGui::TextUnformatted("Português (Brasil) v1.2  •  59.1 MB");
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0.95f,0.96f,0.98f,1));
-        if(ImGui::Button(L("Elegir paquete local","Choose local package","Selecionar pacote local")))
-            SDL_ShowOpenFileDialog(dialog_done,(void *)3,sWindow,zipFilters,2,NULL,false);
-        ImGui::PopStyleColor();
-        if(!sPtbrPackPath.empty()){
-            std::string ptbrName=sPtbrPackPath;
-            const size_t slash=ptbrName.find_last_of("/\\");
-            if(slash!=std::string::npos)ptbrName=ptbrName.substr(slash+1);
-            ImGui::PushStyleColor(ImGuiCol_Text,kGreen);
-            ImGui::TextUnformatted(ptbrName.c_str());
-            ImGui::PopStyleColor();
-        }
     }else if(sInstallMask==3){
         ImGui::TextWrapped("%s",L("El perfil adicional se descarga y verifica automáticamente.","The additional profile downloads and verifies automatically.","O perfil adicional é baixado e verificado automaticamente."));
     }else{
@@ -637,23 +618,15 @@ static void page_pick() {
         ImGui::Separator();
         ImGui::TextUnformatted(L("Paquetes adicionales","Additional packs","Pacotes adicionais"));
         ImGui::Checkbox(L("DBZ BT4 HD v1.07 (3.69 GB)","DBZ BT4 HD v1.07 (3.69 GB)","DBZ BT4 HD v1.07 (3,69 GB)"),&sInstallTexturePack);
-        ImGui::SameLine();
-        if(ImGui::Button(L("Elegir ZIP##texture","Choose ZIP##texture","Selecionar ZIP##texture")))
-            SDL_ShowOpenFileDialog(dialog_done,(void *)2,sWindow,zipFilters,2,NULL,false);
-        std::string textureName=sTexturePackPath;
-        size_t textureSlash=textureName.find_last_of("/\\");
-        if(textureSlash!=std::string::npos)textureName=textureName.substr(textureSlash+1);
         ImGui::PushStyleColor(ImGuiCol_Text,kDim);
-        ImGui::TextWrapped("%s",sTexturePackPath.empty()?L("Se descarga desde GitHub (3.69 GB). También podés elegir el ZIP local.","Downloads from GitHub (3.69 GB). You can also choose a local ZIP.","Download pelo GitHub (3,69 GB). Você também pode selecionar um ZIP local."):textureName.c_str());
+        ImGui::TextWrapped("%s",L("Descarga e instalación automáticas desde GitHub.","Downloads and installs automatically from GitHub.","Download e instalação automáticos pelo GitHub."));
         ImGui::PopStyleColor();
     }
-    if(sInstallTexturePack&&!sTexturePackPath.empty()&&!file_exists(sTexturePackPath.c_str()))packsReady=false;
     const bool portugueseSourceReady=Native_Installed(sRoot)||file_exists(sIso);
     if(sInstallPtbrPack&&!portugueseSourceReady){
         packsReady=false;
         ImGui::TextColored(kRed,"%s",L("Seleccioná una ISO compatible de BT4 o una instalación existente.","Select a supported BT4 ISO or an existing installation.","Selecione uma ISO compatível de BT4 ou use uma instalação existente."));
     }
-    if(sInstallPtbrPack&&!sPtbrPackPath.empty()&&!file_exists(sPtbrPackPath.c_str()))packsReady=false;
     ImGui::TextUnformatted(L("Tu ISO de BT4 B14 Rev2","Your BT4 B14 Rev2 ISO","Sua ISO de BT4 B14 Rev2"));
     const char *isoLabel=L("Elegir ISO","Choose ISO","Selecionar ISO");
     const float isoButtonWidth=ImGui::CalcTextSize(isoLabel).x+24;
@@ -1100,11 +1073,6 @@ int main(int argc, char **argv) {
     if(sRelease&&!sRoot.empty()){
         bool hasSpanish=Native_SpanishInstalled(sRoot),hasEnglish=Native_EnglishInstalled(sRoot);
         sInstallMask=hasSpanish&&hasEnglish?3:hasEnglish?2:1;
-        const std::string textureCandidate=sRoot+"textures/dbz bt4 HD v1.07.zip";
-        const std::string ptbrCandidate=sRoot+"portuguese-b14rev2.bt4lang";
-        if(file_exists(textureCandidate.c_str()))sTexturePackPath=textureCandidate;
-        if(file_exists(ptbrCandidate.c_str()))sPtbrPackPath=ptbrCandidate;
-        else if(file_exists((sRoot+"BT4_PT-BR_v1.2.zip").c_str()))sPtbrPackPath=sRoot+"BT4_PT-BR_v1.2.zip";
     }
 #ifdef __APPLE__
     if (sRelease) {
@@ -1185,8 +1153,6 @@ int main(int argc, char **argv) {
                 const int selected=sDialogFor;
                 if(selected==0)SDL_strlcpy(sIso,sDialogResult.c_str(),sizeof(sIso));
                 else if(selected==1)SDL_strlcpy(sIsoEu,sDialogResult.c_str(),sizeof(sIsoEu));
-                else if(selected==2)sTexturePackPath=sDialogResult;
-                else if(selected==3)sPtbrPackPath=sDialogResult;
                 sDialogReady = false;
                 news(file_name(sDialogResult.c_str()));
                 if (selected==1 && sPage == PAGE_DONE && sRelease && !Native_Running()) { // "Add languages...": only that step

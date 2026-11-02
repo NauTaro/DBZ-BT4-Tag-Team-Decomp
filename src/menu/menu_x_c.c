@@ -238,6 +238,21 @@ s32 Option_Input(void) {
     if (!(gOption->flash[0].flags & MFLASH_PAD)) {
         return 1;
     }
+#ifdef PORT
+    /* Exercise the real native navigation without touching desktop input. */
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_SCREEN_POSITION_TEST")) {
+        static s32 testTick;
+        if(++testTick % 15 == 0) {
+            if(gOption->state==OPT_ST_TOP) {
+                if(gOption->cursor==OPT_ITEM_SCREEN)gPad[0].gamePressed=PADG_CROSS;
+                else gPad[0].gameRepeat=PADG_DOWN;
+            }else if(gOption->state==OPT_ITEM_SCREEN) {
+                if(gOption->cursor==OPT_ITEM_ADJUST)gPad[0].gamePressed=PADG_CROSS;
+                else gPad[0].gameRepeat=PADG_DOWN;
+            }
+        }
+    }
+#endif
     switch (gOption->state) {
     case OPT_ST_START:
         if (gOption->started == 0) {
@@ -1957,6 +1972,20 @@ void Option_Draw(void) {
     for (i = 0; i < OPTION_FLASH_NUM; i++) {
         Flash_Draw(&gOption->flash[i]);
     }
+#ifdef PORT
+    if(gOption->state==YOPT_ADJUST || gOption->state==YOPT_ADJUST_RESET) {
+        /* The original calibration picture is 4:3. Mask the exposed sides
+           instead of leaving pieces of the preceding menu around it. */
+        extern int Port_PageAspectMilli(void);
+        f32 inset=256.0f*(1.0f-1333.333333f/Port_PageAspectMilli());
+        if(inset>0) {
+            Port_MenuFill(1);
+            Ps_ScreenQuad(0,0,inset,0,0,448,inset,448,0x80000000,0x80000000,0x80000000,0x80000000);
+            Ps_ScreenQuad(512-inset,0,512,0,512-inset,448,512,448,0x80000000,0x80000000,0x80000000,0x80000000);
+            Port_MenuFill(0);
+        }
+    }
+#endif
     IconWin_Draw();
     if(gOption->page==1 && gOption->cursor==OPT_ITEM_TAG_HUD && gOption->state==OPT_ITEM_SCREEN)
         TagHudScreen_Description();

@@ -808,15 +808,17 @@ static void menu_text_name_styles(const char *dir) {
 static void menu_text_labels(void) {
     char path[1200], line[1024];
     FILE *fp;
-    int i, k;
+    int i, k, pass;
 
     if (sLabelsLoaded) { return; }
     sLabelsLoaded = 1;
     menu_text_fonts();
     if (!sLabelsThere) { return; }
-    snprintf(path, sizeof(path), "%s/labels.tsv", sLabelDir);
+    for(pass=0;pass<2;++pass){
+    if(pass==0)snprintf(path, sizeof(path), "%s/labels.tsv", sLabelDir);
+    else if(!MenuTranslation_NativeLabelsPath(path,sizeof(path)))continue;
     fp = fopen(path, "rb");
-    if (fp == NULL) { return; }
+    if (fp == NULL)continue;
     while (sCount < MENU_TEXT_MAX && fgets(line, sizeof(line), fp) != NULL) {
         MenuLabel label;
         unsigned long long hash;
@@ -851,6 +853,10 @@ static void menu_text_labels(void) {
         if (line[pos + end] != '\n' && line[pos + end] != '\r' && line[pos + end] != '\0') continue;
         translated = MenuTranslation_Text(id);
         original = MenuTranslation_Original(id);
+        if(pass && id[0]=='@') {
+            original=id+1;translated=MenuTranslation_Line(original);
+            if(!translated)translated=original;
+        }
         if (translated == NULL || original == NULL || strlen(translated) >= sizeof(label.text) ||
             strpbrk(translated, "\t\r") != NULL) continue;
         newline = strchr(translated, '\n');
@@ -890,6 +896,7 @@ static void menu_text_labels(void) {
         }
     }
     fclose(fp);
+    }
     for (i = 0; i < sCount; i++) {
         for (k = 0; k < sSizeCount && (sSizes[k].width != sLabels[i].width || sSizes[k].height != sLabels[i].height); k++) {
         }
@@ -1808,18 +1815,53 @@ static void battle_art_fit(uint8_t *dst, int stride, const uint8_t *original, in
     free(copy);
 }
 
+/* This English-disc instruction card has no label records in the BT4 pack.
+   Keep its original frame and controller icons; redraw only its two captions.
+   A full decoded-image hash prevents applying it to any other menu texture. */
+static uint8_t *position_help_ptbr(const uint8_t *rgba,int width,int height,int scale,int *outWidth,int *outHeight) {
+    uint8_t *result;int rw=width*scale,x,y,i;
+    static const char *const text[2]={"Posi\xC3\xA7\xC3\xA3o da tela","Restaurar padr\xC3\xA3o"};
+    if(!getenv("BT4_PTBR_ROOT")||!sFontChoice||width!=512||height!=256||
+       texture_hash(rgba,width,height)!=UINT64_C(0x98de7824933b42f7))return NULL;
+    result=malloc((size_t)rw*height*scale*4);if(!result)return NULL;
+    for(y=0;y<height*scale;++y)for(x=0;x<rw;++x)
+        memcpy(result+((size_t)y*rw+x)*4,rgba+((size_t)(y/scale)*width+x/scale)*4,4);
+    for(i=0;i<2;++i){
+        MenuLabel label;Row row;int top=i?134:86;
+        memset(&label,0,sizeof(label));label.rowWidth=330;label.rowHeight=42;
+        label.cap=21;label.baseline=31;label.margin=4;label.widthMilli=1000;
+        label.top=0xffffff;label.bottom=0xe7eeee;label.outline=0x101919;label.outlineBottom=0x101919;
+        label.outlineMilli=1300;label.shadow=1;strcpy(label.text,text[i]);
+        if(!menu_text_row(&sFont,&label,scale,&row)){free(result);return NULL;}
+        for(y=0;y<42*scale;++y)for(x=0;x<330*scale;++x)
+            memcpy(result+((size_t)(top*scale+y)*rw+116*scale+x)*4,
+                   rgba+((size_t)(top+y/scale)*width+450)*4,4);
+        for(y=0;y<row.h;++y)for(x=0;x<row.w;++x){
+            uint8_t *d=result+((size_t)(top*scale+row.y+y)*rw+116*scale+row.x+x)*4;
+            const uint8_t *p=row.px+((size_t)y*row.w+x)*4;unsigned a=p[3]>128?128:p[3],c;
+            for(c=0;c<3;++c)d[c]=(uint8_t)((p[c]*a+d[c]*(128-a)+64)/128);
+            d[3]=(uint8_t)(a+d[3]*(128-a)/128);
+        }
+        free(row.px);
+    }
+    *outWidth=rw;*outHeight=height*scale;return result;
+}
+
 uint8_t *MenuText_Render(const uint8_t *rgba, int width, int height, int indexed, int scale, int *outWidth, int *outHeight) {
     uint64_t hash;
     int n, x, y, changed = 0, rw, rh;
     uint8_t *result = NULL;
     if ((sFontChoice == 0 && sBattleChoice == 0) || !indexed) { return NULL; }
     pthread_mutex_lock(&sLock);
-    if ((sFontChoice == 0 && sBattleChoice == 0) || sCount == 0 || rgba == NULL || !label_size(width, height) || scale < 1 || scale > 4 ||
+    if ((sFontChoice == 0 && sBattleChoice == 0) || sCount == 0 || rgba == NULL || scale < 1 || scale > 4 ||
         outWidth == NULL || outHeight == NULL) {
         pthread_mutex_unlock(&sLock);
         return NULL;
     }
     rw = width * scale; rh = height * scale;
+    result=position_help_ptbr(rgba,width,height,scale,outWidth,outHeight);
+    if(result){pthread_mutex_unlock(&sLock);return result;}
+    if(!label_size(width,height)){pthread_mutex_unlock(&sLock);return NULL;}
     if (!label_could_be(rgba, width, height, 0)) {
         pthread_mutex_unlock(&sLock);
         return NULL;

@@ -780,6 +780,9 @@ static GsTex texture_get(int ctx, int menuHd) {
     TexPackImage pack;
     uint32_t packMaxAlpha = 255, rw = tw, rh = th;
     int replaced = 0, menuText = 0, sharedText = 0, battleText = 0, hdPending = 0, packWait = -1;
+    /* Language labels are composed before a generic HD pack's menu artwork.
+     * A pack must not replace Portuguese lettering with its English bitmap. */
+    int localizedMenu = gPortMenuMode && getenv("BT4_PTBR_ROOT") != NULL && bits <= 8;
     uint64_t hdKey = 0;
 
     if (tw > 1024) { tw = 1024; }
@@ -880,7 +883,7 @@ static GsTex texture_get(int ctx, int menuHd) {
         }
     }
     /* A texture pack still uses the game's source pixels to identify Battle text for widescreen geometry. */
-    px = !replaced || MenuText_MayHaveBattleTexture((int)tw, (int)th, bits <= 8) ?
+    px = !replaced || localizedMenu || MenuText_MayHaveBattleTexture((int)tw, (int)th, bits <= 8) ?
          malloc((size_t)tw * th * 4) : NULL;
     if (!replaced && px == NULL) { return gsWhite; }
     {   /* a palette's colours read and expanded once, by the index as stored (8-bit: the GS's order of the 256 entries
@@ -908,11 +911,11 @@ static GsTex texture_get(int ctx, int menuHd) {
         MenuText_NewTexture(); /* (its label hash is worked out once, for this check and MenuText_Render below) */
         battleText = MenuText_IsBattleTexture((const uint8_t *)px, (int)tw, (int)th, bits <= 8);
     }
-    if (replaced) {
+    if (replaced && !localizedMenu) {
         free(px);
         px = NULL;
     }
-    if (!replaced && px != NULL) {
+    if ((!replaced || localizedMenu) && px != NULL) {
         int mw, mh;
         uint64_t font_t0 = gpu_now();
         int textScale = MenuText_RasterScale(SCALE);
@@ -923,13 +926,14 @@ static GsTex texture_get(int ctx, int menuHd) {
             free(px);
             px = (uint32_t *)text;
             rw = (uint32_t)mw; rh = (uint32_t)mh;
-            menuText = 1;
+            menuText = 1;replaced=0;packWait=-1;
         }
         if (getenv("BT3_FONT_LOG") != NULL) { /* what a font setting costs: every decoded texture, and the time the text took */
             fprintf(stderr, "font: frame %u: %ux%u %s %.3f ms\n", gGsFrame, (unsigned)tw, (unsigned)th, text != NULL ? "drawn" : "left",
                     (double)(gpu_now() - font_t0) / 1e6);
         }
     }
+    if(replaced && px != NULL){free(px);px=NULL;}
     if (menuHd && !replaced && !menuText && px != NULL) {
         uint32_t n;
         hdKey = (14695981039346656037ull ^ tw ^ ((uint64_t)th << 16) ^ ((uint64_t)sMenuHD << 32));
@@ -1943,7 +1947,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
                 pivot = 512.0f; /* (a page's piece from the top edge, in the right half against the edge: the corner's clouds;
                                    17: any in the top 120 lines starting in the right half, the shop's counters with their
                                    icons and frames) */
-            } else if (gsAnchor == 17 && y1 - y0 > 100.0f) {
+            } else if (gsAnchor == 17 && y1 - y0 > 100.0f && x1 - x0 > 260.0f) {
                 pivot = -1.0f; /* (17, the item shop: its room, scenery in big pieces, fills the width; its list's rows,
                                   tabs and price bar, short pieces, keep their true shape in the middle with their text) */
             } else if (gsAnchor == 18 && sEdgeTop == 1 && y1 <= 70.0f && (x0 <= 0.5f || x1 >= 511.5f)) {
@@ -2709,7 +2713,11 @@ renderer_ready:
     gsGlarePercent = getenv("BT3_GLARE") != NULL ? atoi(getenv("BT3_GLARE")) : Port_Setting("glare", gsGlowPercent);
     gsSharpBlur = (getenv("BT3_SHARP_BLUR") != NULL ? atoi(getenv("BT3_SHARP_BLUR")) : Port_Setting("sharp_blur", 1)) != 0;
     MenuText_SetFontId(Port_Setting("menu_font_id", 0));
+    if(getenv("BT4_PTBR_ROOT") && Port_Setting("menu_font_id",0)==0)
+        MenuText_SetFontId(MenuText_FirstFontId(MENU_TEXT_MENU));
     MenuText_SetBattleFontId(Port_Setting("battle_font_id", 0));
+    if(getenv("BT4_PTBR_ROOT") && Port_Setting("battle_font_id",0)==0)
+        MenuText_SetBattleFontId(MenuText_FirstFontId(MENU_TEXT_BATTLE));
     MenuText_SetSharedFontId(Port_Setting("text_font_id", 0));
     sTexPackOn = Port_Setting("texture_pack", 1) != 0;
     sSmooth2d = getenv("BT3_2D_SMOOTH") != NULL ? atoi(getenv("BT3_2D_SMOOTH")) != 0 : Port_Setting("smooth_2d", 1) != 0;

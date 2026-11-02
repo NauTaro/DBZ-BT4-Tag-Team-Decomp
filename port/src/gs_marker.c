@@ -430,6 +430,11 @@ static int clip_part(const char *name, int x, int top) {
     if (sMenuScreen == 39 && top && starts(name, "mc_bottom_plate_")) {
         return PORT_MENU_LEFT; /* (Options: "EXIT" below them, from the left) */
     }
+    if (sMenuScreen == 39 && starts(name, "mc_layout_")) {
+        /* The screen-position preview is one picture, split into texture
+           tiles. Keep its background and instruction frame in one space. */
+        return PORT_MENU_CENTER_ALL;
+    }
     if ((sMenuScreen >= 10 || sMenuScreen == 3) && sMenuScreen != 54 && top && (starts(name, "mc_title") || strcmp(name, "mc_icon") == 0)) {
         return PORT_MENU_LEFT; /* (the title row against the left edge, as on the main menu) */
     }

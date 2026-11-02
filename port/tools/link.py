@@ -81,7 +81,7 @@ def link(objs, extra):
         # Keep the supplied game icon in every Windows build, including rebuilds.
         icon_dir = ROOT / "port/release"
         icon_obj = B / "game_icon.res.o"
-        icon_inputs = [icon_dir / "game_icon.rc", icon_dir / "icon_game.ico"]
+        icon_inputs = [icon_dir / "game_icon.rc", icon_dir / "icon_game.ico", icon_dir / "app.manifest"]
         if not all(p.is_file() for p in icon_inputs):
             raise RuntimeError("The BT4 Windows icon resources are missing")
         if not icon_obj.exists() or any(p.stat().st_mtime_ns > icon_obj.stat().st_mtime_ns for p in icon_inputs):

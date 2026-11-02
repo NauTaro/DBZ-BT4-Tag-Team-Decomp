@@ -11,6 +11,19 @@ int main(int argc,char **argv){
     assert(!excluded(UINT64_C(0xc3b168f19eccae01),0x13,512,512));
     assert(!excluded(UINT64_C(0xc3b168f19eccae01),0x14,256,512));
     assert(argc==2);SDL_setenv_unsafe("BT3_TEXTURES",argv[1],1);TexPack_Init();assert(sCount>0);
+    /* Lookup keeps every content key except draw-time TCC. Exact variants
+       still win when a pack intentionally supplies both alpha modes. */
+    for(uint32_t i=0;i<sCount;i++) {
+        Entry *e=&sEntries[i];
+        int exact=find(e->tex,e->clut,e->bits,e->pal);
+        assert(exact>=0 && find_image(e->tex,e->clut,e->bits,e->pal)==exact);
+        int alternate=find(e->tex,e->clut,e->bits^0x4000u,e->pal);
+        assert(find_image(e->tex,e->clut,e->bits^0x4000u,e->pal)==(alternate<0?exact:alternate));
+        if(find(e->tex,e->clut^1,e->bits,e->pal)<0 && find(e->tex,e->clut^1,e->bits^0x4000u,e->pal)<0)
+            assert(find_image(e->tex,e->clut^1,e->bits,e->pal)<0);
+        if(find(e->tex,e->clut,e->bits^0x40u,e->pal)<0 && find(e->tex,e->clut,e->bits^0x4040u,e->pal)<0)
+            assert(find_image(e->tex,e->clut,e->bits^0x40u,e->pal)<0);
+    }
     for(uint32_t i=0;i<sCount;i++) assert(!excluded(sEntries[i].tex,sEntries[i].bits&63,
         1u<<((sEntries[i].bits>>6)&15),1u<<((sEntries[i].bits>>10)&15)));
     unsigned checked=0;int beyond2gb=0;
