@@ -44,3 +44,5 @@ Technical references distinguish verified findings from inferred behavior.
 
 See the [presentation credits](presentation/CREDITS.md),
 [AGPL license](../LICENSE) and [MIT license](../LICENSE-MIT).
+
+- [Lua script mods](port/mods.md): installation, settings and the presentation API.

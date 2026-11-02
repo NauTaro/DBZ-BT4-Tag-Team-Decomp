@@ -1,3 +1,11 @@
+# 0.1.39.4 R1
+
+- Integrate upstream 0.1.39.4 Lua presentation mods, animated matchmaking radar and widescreen message alignment.
+- Include Modern HUD, Modern Camera, Modern Look, Skill List and two examples, disabled by default; preserve existing scripts during updates.
+- Adapt mod camera and fighter data to Tag Team targeting; keep free-camera priority and Hide HUD behavior.
+- Add English, Spanish and Brazilian Portuguese controls for Mods and optional offline duel mechanics.
+- Preserve BT4 language setup, HD textures, HUD colors, signed updates and native Windows, Linux and macOS packages.
+
 # 0.1.39.3 R1.1
 
 - Center installed-language choices and download optional packages directly from GitHub; setup only asks for the ISO.

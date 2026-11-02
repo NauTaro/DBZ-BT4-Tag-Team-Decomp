@@ -1,6 +1,6 @@
 {
-  "commit": "49e3e61f0d177cb5fb52e261da8bd6d581eac81c",
-  "source_zip_sha256": "ebccb9196fd87483c51e98524e22f5c14dd8c8248046f82e537784d74e5dd8de",
-  "tag": "v0.1.39.3",
+  "commit": "be4c75b367fb859f088cc74126c8067bc6987d29",
+  "source_zip_sha256": "49b9844680b2e5892a281f803eff7f55c215fb36c3a7867afcd3e5f65c133636",
+  "tag": "v0.1.39.4",
   "repository": "https://github.com/z3xox/Tenkaichi3Decomp"
 }

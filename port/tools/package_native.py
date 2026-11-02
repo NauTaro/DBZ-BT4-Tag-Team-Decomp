@@ -82,17 +82,18 @@ def main(p,mac=False):
         shutil.rmtree(out)
     p.take_program(exe,out);p.take_lang(out);p.take_translations(out)
     shutil.copy2(setup,out/'BT4decomp-setup');shutil.copy2(root/'port/release/BT4_VERSION.txt',out/'BT4_VERSION.txt')
-    for name in ('lib','licenses','textures','stages','songs'):(out/name).mkdir()
+    for name in ('lib','licenses','textures','stages','songs','mods'):(out/name).mkdir()
     licenses=out/'licenses'
     for source,target in [('LICENSE','bt4decomp-agpl.txt'),('LICENSE-MIT','bt4decomp-mit.txt'),
       ('port/third_party/imgui/LICENSE.txt','dear-imgui.txt'),('port/third_party/newlib_libm/COPYING.NEWLIB','newlib.txt'),
       ('port/third_party/xxhash/LICENSE','xxhash.txt'),('port/third_party/miniaudio/LICENSE','miniaudio.txt'),
-      ('port/third_party/miniz/LICENSE','miniz.txt'),('port/third_party/monocypher/LICENCE.md','monocypher.txt'),
+      ('port/third_party/miniz/LICENSE','miniz.txt'),('port/third_party/lua/LICENSE','lua.txt'),('port/third_party/monocypher/LICENCE.md','monocypher.txt'),
       ('port/third_party/voice/LICENSE-opus','opus.txt')]:shutil.copy2(root/source,licenses/target)
     (licenses/'sdl3.txt').write_text('SDL3: zlib license. https://www.libsdl.org/license.php\n')
     (licenses/'curl.txt').write_text('curl license: https://curl.se/docs/copyright.html\n')
     p.take_fonts(out,licenses);p.take_tbo_art(out,licenses)
-    for name,note in [('textures',p.TEXTURES_NOTE),('stages',p.STAGES_NOTE),('songs',p.SONGS_NOTE)]:
+    p.take_example_mods(out)
+    for name,note in [('textures',p.TEXTURES_NOTE),('stages',p.STAGES_NOTE),('songs',p.SONGS_NOTE),('mods',p.MODS_NOTE)]:
         (out/name/'README.txt').write_text(note,encoding='utf8')
     readme=p.README.replace('(Linux, 64-bit)','(macOS, Apple Silicon arm64)' if mac else '(Linux, x86-64)')
     readme+='\nThe native package includes RTC media and SCTP DataChannels. TLS WebSocket transport remains available for relay connections.\n'

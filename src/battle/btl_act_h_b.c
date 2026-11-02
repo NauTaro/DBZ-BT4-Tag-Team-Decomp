@@ -4,6 +4,10 @@ extern void Bt4_SpendTransformKi(void *chr, s32 amount);
 extern s32 Bt4_HasRecoveryVariant(void *chr);
 #include "battle/btl_act_h.h"
 extern void Bt4_ClearThrowRecoveryFlag(void *chr, s32 flag) __asm__("BtlChar_ClearFlag");
+#ifdef PORT
+#include "bt3_zcounter2.h"
+#include "bt3_gameplay_rules.h"
+#endif
 
 /*
  * Fighter action handlers, second file: 0x1FC598..0x203168 (see btl_act_h.c for the overview and for how a
@@ -2340,6 +2344,12 @@ s32 BtlDecide_Main(BtlActIChr *chr, s32 mask) {
         return 1;
     }
     if ((mask & 1) && TEST(1)) {
+#ifdef PORT
+        /* Capture before the successful movement input changes the action. */
+        if (Bt3Gameplay_ZCounter2Enabled()) {
+            Bt3ZCounter2_Capture(chr);
+        }
+#endif
         if (BtlChar_TestFlag(chr, 0x13)) {
             if (BtlAct_GetCurrent(chr) != 0xE) {
                 BtlAct_SetQueue(chr, 0, 0xE);

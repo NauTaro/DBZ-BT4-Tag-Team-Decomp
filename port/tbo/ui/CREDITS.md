@@ -9,6 +9,7 @@ packages.
   (CC BY 4.0). Adaptations include extracting individual buttons, removing
   their backgrounds, resizing them and combining the left and right arrows
   into `btn_leftright.png`.
+- **Dragon Radar** (`radar.png`): fan art by **chestergreen**. Adapted into a scaled animation sheet for the port.
 
 After replacing an image with one of a different size, run:
 

@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "imgui.h"
+#include "imgui_internal.h" // ImGuiTabBar: the settings window as wide as its tabs
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_opengl3.h"
@@ -129,6 +130,9 @@ extern "C" volatile int gPortSpecMenuAsk;
 volatile int gPortSpecMenuAsk;
 extern "C" void Port_UiNotice(const char *text);
 static void spec_view_next(void);               // watching a match: the next view (player 1, player 2, both)
+void ModsUi_Tab(void);                          // gs/mods_ui.cpp: the settings window's Mods tab
+void ModsUi_Draw(void);                         // ... the script mods' shapes over the picture
+extern "C" int Mods_HudActive(void);            // gs/mods.c: they drew something at the last blank
 static const char *spec_view_name(int view);
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
@@ -162,6 +166,7 @@ static void f1_language_set(int language) {
 static const char *f1_text(const char *english) {
     struct Row { const char *en, *es, *pt; };
     static const Row rows[] = {
+#include "mods_locale.inc"
         {"Settings", "Ajustes", "Configurações"},
         {"Video", "Vídeo", "Vídeo"},
         {"Effects", "Efectos", "Efeitos"},
@@ -567,6 +572,7 @@ static const char *f1_text(const char *english) {
     }
     return english;
 }
+extern "C" const char *Port_F1Text(const char *text) { return f1_text(text); }
 // The online chat (net_chat.c): its key opens a line to type, Enter sends it, Esc puts it away.
 static bool sChat;                             // a line is being typed
 static bool sChatFocus;                        // ... and its field takes the keyboard next frame
@@ -1051,7 +1057,11 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
             sForceTab = -1;
             gPortNetMenuRequest = 1;
         }
-        if (sForceTab == 8) { // testing: the exit question
+        if (sForceTab == 10) { // testing: the Tech tab (8 is the exit question's)
+            sForceTab = 10;
+        } else if (sForceTab == 11) { // testing: the Mods tab
+            sForceTab = 9;
+        } else if (sForceTab == 8) { // testing: the exit question
             sForceTab = -1;
             sQuit = true;
             PortQuit_Request();
@@ -2534,6 +2544,19 @@ extern "C" int Port_GameSpeed(void);          // plat_stub.c: the player's own g
 extern "C" void Port_GameSpeedSet(int percent);
 extern "C" void Port_AudioRefresh(void);
 
+// The community's fixes of the game's fighting mechanics (port/src/bt3_zcounter2.c, bt3_bombardment.c): each one on or
+// off, read when a fight starts (src/battle/btl_char_mgr.c). Off, the game's own code runs, unchanged. Never online
+// (both players would have to agree on them) and never in a replay (it was recorded with the game's own rules).
+static void tech_tab(void) {
+    ImGui::TextWrapped("%s",f1_text("Optional mechanics adjustments for offline duels. Disabled by default; not applied to online play, Tag Team or replays."));
+    bool z=Port_Setting("tech_zcounter2",0)!=0,b=Port_Setting("tech_bombardment",0)!=0;
+    if(ImGui::Checkbox(f1_text("Z Counter fix"),&z)){Port_SettingSave("tech_zcounter2",z);Port_SettingsWrite();}
+    ImGui::SetItemTooltip("%s",f1_text("Retains a correctly timed Z Counter when movement changes the hitbox on the same frame."));
+    if(ImGui::Checkbox(f1_text("Bombardment fix"),&b)){Port_SettingSave("tech_bombardment",b);Port_SettingsWrite();}
+    ImGui::SetItemTooltip("%s",f1_text("Keeps a valid chain of smash Ki blasts from stopping one frame too early."));
+    ImGui::TextDisabled("BT3 PS2 Port Gameplay Source v0.3.1 | Z Counter 2 v0.9.0 | Bombardment v2.2");
+}
+
 static void cheats_tab(void) {
     {
         int speed = Port_GameSpeed();
@@ -2820,7 +2843,7 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 8 : 1)) % 9;
+        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 10 : 1)) % 11;
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -2890,6 +2913,13 @@ static void build(void) {
             if (tab(f1_text("Misc"), 6)) { misc_tab(); ImGui::EndTabItem(); }
             if (tab(f1_text("Online"), 7)) { online_tab(); ImGui::EndTabItem(); }
             if (tab(f1_text("Spectator"), 8)) { spectator_tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Mods"), 9)) { ModsUi_Tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Tech"), 10)) { tech_tab(); ImGui::EndTabItem(); }
+            ImGuiTabBar *bar=ImGui::GetCurrentContext()->CurrentTabBar;
+            if(bar && bar->WidthAllTabsIdeal>bar->BarRect.GetWidth()+0.5f){
+                ImGuiWindow *parent=ImGui::GetCurrentWindow()->ParentWindow;
+                if(parent)ImGui::SetWindowSize(parent,ImVec2(ImMin(parent->Size.x+bar->WidthAllTabsIdeal-bar->BarRect.GetWidth()+U(4),io.DisplaySize.x*0.96f),parent->Size.y));
+            }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();
@@ -3449,10 +3479,11 @@ static bool frame_build(void) {
     bool watched = sReady && Port_NetWatchers() > 0 && !sOpen;  // a player's: who watches the match
     if(PortHud_Hidden() && !gPortMenuMode)voice=banner=saving=false;
     if(PortHud_Hidden() && !gPortMenuMode)watched=false;
+    bool mods = sReady && Mods_HudActive() && !PortHud_Hidden();
     meter_count();
     sBuilt = false;
     UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit);
-    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !tagMenu && !voice && !watched && !updateAvailable)) {
+    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -3499,6 +3530,7 @@ static bool frame_build(void) {
     if (bars) {
         bars_draw();
     }
+    if(mods)ModsUi_Draw(); // The player's Hide HUD choice also hides script overlays.
     if (sOpen) {
         if (sNet) {
             build_net();

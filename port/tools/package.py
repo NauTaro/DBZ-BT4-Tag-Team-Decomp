@@ -106,6 +106,24 @@ Added songs are not written to your save, and they are not offered in an online 
 """
 
 
+MODS_NOTE = """Script mods.
+
+Each mod is a folder here with a file mod.lua in it (a Lua script): mods/<name>/mod.lua. A mod can draw over the
+game's picture, read the fight (health, ki, positions) and change how the fight camera is shown. It cannot change a
+fight, read or write files or reach the network, so mods can be used in an online match.
+
+In the game, F1 > Mods lists them: switch each on or off, change its settings, see why one stopped, and load them all
+again after adding or changing one. Your choices are kept in bt3_mods.txt. A mod starts switched off.
+
+The ones that come with the game: modern_hud (a HUD in the style of later games), modern_camera (inertia, tilt, hit
+reactions, distance, height and zoom), modern_look (anime shading, rim light, colours, ambient shadows), skill_list
+(your moves and their buttons while you hold charge), and two small examples to start from (example_hud,
+example_camera).
+
+How to write one: docs/port/mods.md in the source repository.
+"""
+
+
 def take_program(exe, out):
     """The program without the game's data, and its list, into the release folder. A program built from the blank
     tables (port/data) is that already; one built with the tables' values has them taken out by strip_data.py."""
@@ -163,6 +181,14 @@ def take_fonts(out, lic):
             shutil.copy2(p, out / "fonts" / p.relative_to(src))
             if p.name == "LICENSE":
                 shutil.copy2(p, lic / f"{p.parent.name}-fonts.txt")
+
+def take_example_mods(out):
+    """The example script mods (port/examples/mods) into mods/, each in its own folder. A mod starts switched off, so
+    they change nothing until the player switches one on in F1 > Mods. (The automatic update leaves mods/ alone: a
+    player who updates keeps their own mods and gets these from a fresh download.)"""
+    src = ROOT / "port/examples/mods"
+    for d in sorted(p for p in src.iterdir() if p.is_dir() and (p / "mod.lua").exists()):
+        shutil.copytree(d, out / "mods" / d.name)
 
 def take_tbo_art(out, lic):
     """The pictures of the Tenkaichi Budokai Online screens, and who made them (port/tbo/ui/CREDITS.md)."""
@@ -252,15 +278,17 @@ def main_win():
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
     shutil.copy2(ROOT / "port/third_party/miniaudio/LICENSE", lic / "miniaudio.txt")
     shutil.copy2(ROOT / "port/third_party/miniz/LICENSE", lic / "miniz.txt")
+    shutil.copy2(ROOT / "port/third_party/lua/LICENSE", lic / "lua.txt")  # (the script mods)
     shutil.copy2(ROOT / "port/third_party/monocypher/LICENCE.md", lic / "monocypher.txt")  # (the update's signature check)
 
     take_fonts(out, lic)
     take_tbo_art(out, lic)
     (out / "textures").mkdir()
     (out / "textures/README.txt").write_text(TEXTURES_NOTE.replace("\n", "\r\n"))
-    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE)):
+    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
         (out / kind).mkdir()
         (out / kind / "README.txt").write_text(note.replace("\n", "\r\n"))
+    take_example_mods(out)
     (lic / "sdl3.txt").write_text("SDL3 (SDL3.dll) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
     for f in (out / "BT4decomp.exe", out / "BT4decomp-setup.exe"):
         subprocess.run([toolchain.PREFIX + "strip", "--strip-debug", str(f)], check=False)
@@ -305,15 +333,17 @@ def main():
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
     shutil.copy2(ROOT / "port/third_party/miniaudio/LICENSE", lic / "miniaudio.txt")
     shutil.copy2(ROOT / "port/third_party/miniz/LICENSE", lic / "miniz.txt")
+    shutil.copy2(ROOT / "port/third_party/lua/LICENSE", lic / "lua.txt")  # (the script mods)
     shutil.copy2(ROOT / "port/third_party/monocypher/LICENCE.md", lic / "monocypher.txt")  # (the update's signature check)
 
     take_fonts(OUT, lic)
     take_tbo_art(OUT, lic)
     (OUT / "textures").mkdir()
     (OUT / "textures/README.txt").write_text(TEXTURES_NOTE)
-    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE)):
+    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
         (OUT / kind).mkdir()
         (OUT / kind / "README.txt").write_text(note)
+    take_example_mods(OUT)
     (lic / "sdl3.txt").write_text("SDL3 (lib/libSDL3.so.0) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
     for f in (OUT / "BT4decomp", OUT / "BT4decomp-setup"):
         subprocess.run(["strip", "--strip-debug", str(f)], check=False)  # the symbol names stay (crash reports use them)

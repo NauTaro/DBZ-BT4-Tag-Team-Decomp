@@ -28,6 +28,7 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {640, 64, 0}, /* tag_hud_faces */
     {160, 100, 50}, /* compact keyboard bar */
     {160, 107, 54}, /* compact keyboard selection */
+    {2420, 2728, 0}, /* radar */
 };
 
 #endif
