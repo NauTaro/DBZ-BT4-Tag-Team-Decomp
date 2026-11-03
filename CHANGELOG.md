@@ -1,4 +1,4 @@
-# 0.1.39.5 R1.1
+# 0.1.39.5 R2
 
 - Align health-bar alpha clearing with widescreen HUD scaling, so the remaining blue tier and the exposed green tier use the same mask on both sides.
 - Reuse exact matching resident HD textures across GS writes and read every entry of native 16-color palettes when caching textures.
@@ -12,7 +12,7 @@
 - Align the native Team Battle stage reel and honor an explicitly selected installation data folder during setup validation.
 - Upgrade unmodified bundled presentation scripts while preserving customized scripts and saved settings.
 
-- Update the online simulation family to sim4 for the Tag Team effect changes. All players in a room need a compatible R1.1 build.
+- Update the online simulation family to sim4 for the Tag Team effect changes. All players in a room need a compatible R2 build.
 
 - Show localized update highlights beside Restart now throughout menus, excluding battles and character selection.
 
