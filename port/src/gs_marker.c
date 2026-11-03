@@ -64,6 +64,8 @@ void Port_MenuDuelSettings(int on) {
 }
 static int sMenuMovie;               /* which of the screen's movies is being drawn (Port_MenuMovie) */
 static int sMenuScreen;              /* PORT_MENU_SCREEN_* of the page being drawn, 0: none */
+static volatile int sUpdateMenuScreen;
+int Port_UpdateMenuScreen(void){return sUpdateMenuScreen;}
 
 int Port_MenuPart(int part);
 
@@ -104,6 +106,7 @@ static int sMoveDraw; /* converted screens' draws so far (Port_MenuPage): Port_M
 void Port_MenuPage(int screen) {
     if (screen != 0 && sPageDepth == 0) {
         sMoveDraw++; /* (a draw of a converted screen: Port_MenuClipMoving's clock) */
+        sUpdateMenuScreen=screen;
     }
     if (screen != 0) {
         if (screen == sMenuScreen) {

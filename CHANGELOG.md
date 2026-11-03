@@ -14,6 +14,30 @@
 
 - Update the online simulation family to sim4 for the Tag Team effect changes. All players in a room need a compatible R1.1 build.
 
+- Show localized update highlights beside Restart now throughout menus, excluding battles and character selection.
+
+<!-- bt4-update:en
+- Correct widescreen health-bar colors and HD texture stability.
+- Reduce retained texture memory and queued GPU frames.
+- Improve camera smoothing, lighting and Tag Team effects.
+- Add stick rotation in clashes and maximum-power readiness.
+- Show translated update highlights in menus before restarting.
+-->
+<!-- bt4-update:es
+- Corrige los colores de las barras de vida en panorámica y la estabilidad de las texturas HD.
+- Reduce la memoria retenida por texturas y los fotogramas pendientes de la GPU.
+- Mejora el suavizado de cámara, la iluminación y los efectos de Tag Team.
+- Añade giro de palanca en los choques e indicador de máximo poder.
+- Muestra las mejoras de las actualizaciones en los menús antes de reiniciar.
+-->
+<!-- bt4-update:pt
+- Corrige as cores das barras de vida em tela panorâmica e a estabilidade das texturas HD.
+- Reduz a memória retida por texturas e os quadros pendentes da GPU.
+- Melhora a suavização da câmera, a iluminação e os efeitos de Tag Team.
+- Adiciona rotação do analógico nos confrontos e indicador de poder máximo.
+- Mostra as novidades das atualizações nos menus antes de reiniciar.
+-->
+
 # 0.1.39.5 R1
 
 - Integrate upstream 0.1.39.5 Skill List changes while retaining BT4 and Tag Team presentation mappings.

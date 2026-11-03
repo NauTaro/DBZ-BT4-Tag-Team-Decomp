@@ -2,6 +2,7 @@
    from the render thread (gs/ui.cpp). gs/net.c uses the online gate while an update is ready. */
 #ifndef PORT_NET_UPDATE_H
 #define PORT_NET_UPDATE_H
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,6 +37,7 @@ void Update_Check(void);                   /* asks GitHub once (in a thread of i
 void Update_Recheck(void);                 /* manual retry; leaves an active download/install alone */
 void Update_Status(UpdateStatus *out);
 const char *Update_Notes(void);            /* the release's notes (its body on GitHub), "" if none */
+void Update_NotesFor(const char *locale,char *out,size_t size); /* bounded localized release summary */
 void Update_Download(void);                /* downloads the verified release in a thread */
 void Update_Install(void);                 /* swaps files in a thread -> UPD_INSTALLED or UPD_FAILED */
 int Update_Relaunch(void);                 /* UPD_INSTALLED: starts the new version (the caller then exits); 0 failed */

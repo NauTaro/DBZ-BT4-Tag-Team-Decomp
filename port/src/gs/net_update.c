@@ -48,6 +48,7 @@
 #include <unistd.h>
 #endif
 #include "net_update.h"
+#include "update_notes.h"
 #include "update_sign.h"
 #include "port_version.h" /* internal bridge/canonical update identifier */
 #include "../../include/bt4_version.h"
@@ -840,6 +841,13 @@ void Update_Download(void) {
 void Update_Status(UpdateStatus *out) {
     memset(out, 0, sizeof(*out));
     out->current = BT4_DISPLAY_VERSION;
+    /* Hidden UI-only fixture. The real state stays idle, so this cannot swap
+       files or relaunch even if the preview button is activated. */
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_UPDATE_NOTICE_TEST")){
+        out->state=UPD_READY;out->canInstall=1;
+        SDL_strlcpy(out->latest,BT4_DISPLAY_VERSION,sizeof(out->latest));
+        return;
+    }
     out->state = SDL_GetAtomicInt(&sU.state);
     if (out->state < UPD_AVAILABLE) {
         return;
@@ -867,6 +875,18 @@ void Update_Status(UpdateStatus *out) {
 
 const char *Update_Notes(void) {
     return sU.notes != NULL ? sU.notes : "";
+}
+
+void Update_NotesFor(const char *locale,char *out,size_t size) {
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_UPDATE_NOTICE_TEST")){
+        size_t n;
+        const char *file=getenv("BT4_UPDATE_NOTES_FILE");
+        char *body=file?(char*)SDL_LoadFile(file,&n):NULL;
+        UpdNotes_Select(body,locale,out,size);SDL_free(body);return;
+    }
+    lock();
+    UpdNotes_Select(sU.notes,locale,out,size);
+    unlock();
 }
 
 int Update_BlocksOnline(void) {

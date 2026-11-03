@@ -47,6 +47,9 @@ jobs:
           title = release_title
           marker = pathlib.Path('port/release/BT4_VERSION.txt').read_text().splitlines()[0]
           assert marker.endswith(title), 'Package marker and BT4 version disagree'
+          notes = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
+          for locale in ('en', 'es', 'pt'):
+              assert '<!-- bt4-update:' + locale + '\n' in notes, 'Missing localized updater notes: ' + locale
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('title=' + title + '\n')
           PY

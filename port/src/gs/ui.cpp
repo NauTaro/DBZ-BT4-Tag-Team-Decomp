@@ -35,6 +35,7 @@ extern "C" int Port_SpecialMoveCameras(int change);
 #include "voice.h"
 #include "net_lobby.h"
 #include "net_update.h"
+#include "update_notes.h"
 
 static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
 static bool meter_on(void);
@@ -54,6 +55,8 @@ extern "C" int gPortTboTyping;                     // gs_input.c: a keypad of Te
 extern "C" int PortInput_TboEvent(const SDL_Event *ev);
 extern "C" void PortInput_TboClipboard(void);      // ... and its "Copy Code": onto the clipboard, from this thread
 int Port_GameMode(void);                       // a11y_game.c: the game's progress mode (4 the main menu, 80 the port's screens)
+int Port_UpdateMenuScreen(void);               // gs_marker.c: last outer menu actually drawn
+extern int gPortMenuMode;
 const char *Port_OnlineBlocked(void);          // gs/net.c: an update is under way, no new online session (the line), or NULL
 int Lobby_Active(void);                        // gs/net_lobby.c: this copy is in a lobby
 int Port_Menus43(void);                       // plat_stub.c: the menus are shown at 4:3 in a wider picture
@@ -126,6 +129,7 @@ static int sLanguageCount, sLanguageChoice;
 static bool sLanguageRestartPending;
 static int sF1Language = -1;                 // independent of the installed disc's text and voice profile
 static bool sUpdPromptQueued, sUpdPromptOpen, sUpdPromptDismissed;
+static volatile int sSaving;
 static bool sNet;                              // the open window is the online screen (Dragon Net Battle), not the settings
 // A spectator's own pause menu is the game's (src/menu/port_tbo.c, PortTbo_SpecDraw): Esc, or the test's moment, asks
 // for it here; the controller's START and the key bound to it reach it through the pad.
@@ -154,7 +158,7 @@ static int f1_language(void) {
     if (!strcmp(saved, "es")) sF1Language = 0;
     else if (!strcmp(saved, "en")) sF1Language = 1;
     else if (!strcmp(saved, "pt")) sF1Language = 2;
-    else sF1Language = Port_GameProfileEnglish() ? 1 : 0;
+    else sF1Language = Port_GameProfileLanguage();
     return sF1Language;
 }
 
@@ -436,7 +440,7 @@ static const char *f1_text(const char *english) {
         {"The blur of the scenery while the view turns or moves fast.", "Desenfoque del escenario cuando la cámara gira o se mueve rápido.", "Desfoque do cenário quando a câmera gira ou se move rapidamente."},
         {"Weather", "Clima", "Clima"},
         {"The haze of dust or mist that drifts over some stages (Desert and Rocky Area at noon, Rocky Area\nin the evening, Kami's Lookout; Glacier, Muscle Tower and the Time Chamber have a little of it too).\nA faint tint, made of big soft sprites over the whole picture: off, those stages run as fast as the\nothers (a fifth faster at 3x).", "Neblina de polvo o bruma presente en algunos escenarios (Desierto y Área rocosa al mediodía, Área rocosa\nal atardecer, Torre de Karin; también aparece un poco en Glaciar, Torre Muscle y Sala del Tiempo).\nEs un tinte leve creado con sprites grandes y suaves sobre toda la imagen. Al desactivarlo, esos escenarios\nfuncionan igual de rápido que los demás (un quinto más rápido en 3x).", "Névoa de poeira ou bruma presente em alguns cenários (Deserto e Área Rochosa ao meio-dia, Área Rochosa\nao entardecer, Torre de Karin; também aparece um pouco na Geleira, Torre Muscle e Sala do Tempo).\nÉ uma tonalidade suave criada por sprites grandes sobre toda a imagem. Desativada, esses cenários\nfuncionam tão rápido quanto os outros (um quinto mais rápido em 3x)."},
-        {"Restart the update from the offline main menu.", "Reinicia la actualización desde el menú principal sin conexión.", "Reinicie a atualização no menu principal offline."},
+        {"Restart the update from an offline menu.", "Reinicia la actualización desde un menú sin conexión.", "Reinicie a atualização em um menu offline."},
         {"The update is installed, but the new version could not be started: close the game and start it again.", "La actualización se instaló, pero no se pudo iniciar la nueva versión. Cierra el juego y vuelve a abrirlo.", "A atualização foi instalada, mas não foi possível iniciar a nova versão. Feche o jogo e abra-o novamente."},
         {"Updated to %s.", "Actualizado a %s.", "Atualizado para %s."},
         {"Updates", "Actualizaciones", "Atualizações"},
@@ -446,7 +450,7 @@ static const char *f1_text(const char *english) {
         {"No newer release is available for this build.", "No hay una versión más reciente disponible para esta compilación.", "Não há uma versão mais recente disponível para esta compilação."},
         {"Could not check for updates. Check your connection and try again.", "No se pudieron buscar actualizaciones. Revisa la conexión e inténtalo de nuevo.", "Não foi possível verificar as atualizações. Verifique a conexão e tente novamente."},
         {"Retry download", "Reintentar descarga", "Tentar baixar novamente"},
-        {"Return to the offline main menu to apply the update.", "Vuelve al menú principal sin conexión para aplicar la actualización.", "Volte ao menu principal offline para aplicar a atualização."},
+        {"Return to an offline menu to apply the update.", "Vuelve a un menú sin conexión para aplicar la actualización.", "Volte a um menu offline para aplicar a atualização."},
         {"Update %s found. Downloading automatically.", "Se encontró la actualización %s. Se descargará automáticamente.", "Atualização %s encontrada. O download será feito automaticamente."},
         {"Downloading %s: %d%% (%.1f of %.1f MB). You can go on playing.", "Descargando %s: %d%% (%.1f de %.1f MB). Puedes seguir jugando.", "Baixando %s: %d%% (%.1f de %.1f MB). Você pode continuar jogando."},
         {"Checking the download of %s (its signature)...", "Verificando la descarga de %s (firma digital)...", "Verificando o download de %s (assinatura)..."},
@@ -457,8 +461,8 @@ static const char *f1_text(const char *english) {
         {"(The release has no notes.)", "(Esta versión no tiene notas.)", "(Esta versão não tem notas.)"},
         {"Automatic updates: %s", "Actualizaciones automáticas: %s", "Atualizações automáticas: %s"},
         {"The launcher checks for signed releases, downloads them in the background, and installs them at the main menu.", "El juego busca versiones firmadas y las descarga en segundo plano. En el menú principal, te pregunta antes de reiniciar e instalarlas.", "O jogo procura versões assinadas e as baixa em segundo plano. No menu principal, pede confirmação antes de reiniciar e instalá-las."},
-        {"Opens the release page. A verified update is applied only after you confirm a restart from the offline main menu.", "Abre la página de la versión. La actualización verificada solo se aplica después de que confirmes el reinicio desde el menú principal sin conexión.", "Abre a página da versão. A atualização verificada só é aplicada depois que você confirma a reinicialização no menu principal offline."},
-        {"The updater checks for signed releases and downloads them in the background. At the offline main menu, it asks before restarting to apply an update.", "El actualizador busca versiones firmadas y las descarga en segundo plano. En el menú principal sin conexión, pregunta antes de reiniciar para aplicar la actualización.", "O atualizador procura versões assinadas e as baixa em segundo plano. No menu principal offline, pede confirmação antes de reiniciar para aplicar a atualização."},
+        {"Opens the release page. A verified update is applied only after you confirm a restart from an offline menu.", "Abre la página de la versión. La actualización verificada solo se aplica después de que confirmes el reinicio desde un menú sin conexión.", "Abre a página da versão. A atualização verificada só é aplicada depois que você confirma a reinicialização em um menu offline."},
+        {"The updater checks for signed releases and downloads them in the background. In an offline menu, it asks before restarting to apply an update.", "El actualizador busca versiones firmadas y las descarga en segundo plano. En un menú sin conexión, pregunta antes de reiniciar para aplicar la actualización.", "O atualizador procura versões assinadas e as baixa em segundo plano. Em um menu offline, pede confirmação antes de reiniciar para aplicar a atualização."},
         {"Update {version} found. Downloading automatically.", "Se encontró la actualización {version}. Se descargará automáticamente.", "Atualização {version} encontrada. O download será feito automaticamente."},
         {"Downloading update {version}: {percent}%", "Descargando actualización {version}: {percent}%", "Baixando atualização {version}: {percent}%"},
         {"How fast the game runs outside online play (the sound keeps its pitch). 100%% is the game's own;\n114%% is what competitive play uses. An online match never uses this value:\nits speed is the host's or the queue's.", "Velocidad del juego fuera de las partidas en línea (el sonido conserva su tono). 100%% es el valor original;\nel modo competitivo usa 114%%. Las partidas en línea usan la velocidad del anfitrión o de la cola.", "Velocidade do jogo fora das partidas online (o som mantém o tom). 100%% é o padrão do jogo;\no modo competitivo usa 114%%. Partidas online usam a velocidade do anfitrião ou da fila."},
@@ -2031,9 +2035,11 @@ static void effects_tab(PortVideo &v) {
 
 // ---- the automatic update (gs/net_update.c) ----
 // Check GitHub after startup, download and verify a signed release, then ask before restarting to apply it.
-// Never restart during a battle, lobby, spectator session, or while the settings window is open.
+// Restart only after confirmation in an eligible offline menu, outside saves and fighter selection.
 // BT3_UPDATE_CHECK=0 is reserved for offline build and renderer tests.
 static bool sUpdAsked;       // the check was started (or decided against)
+static bool sUpdAutomatic;
+static Uint64 sUpdNextCheck;
 static Uint64 sUpdSince;     // when the game was first ready (the check waits a few seconds after it)
 static bool sUpdNotes;       // "What's new" is open
 static bool sUpdTold;        // the result of the last start's update was put over the picture
@@ -2072,10 +2078,24 @@ static bool upd_online(void) { // an online session or a lobby is on: it is neve
     return Port_NetActive() || Lobby_Active() || Port_NetSpectating();
 }
 
+static bool upd_menu(void) {
+    return UpdUi_MenuAllowed(gPortMenuMode,Port_UpdateMenuScreen())!=0&&sSaving<=0;
+}
+
+static void update_summary_draw(void) {
+    char summary[4096];
+    static const char *const locales[]={"es","en","pt"};
+    Update_NotesFor(locales[f1_language()],summary,sizeof(summary));
+    ImGui::TextDisabled("%s",f1_text("What's new"));
+    ImGui::BeginChild("update-summary",ImVec2(0,U(112.0f)),ImGuiChildFlags_Borders);
+    ImGui::TextWrapped("%s",summary[0]?summary:f1_text("(The release has no notes.)"));
+    ImGui::EndChild();
+}
+
 static void upd_apply(void) {
     sUpdWhy[0] = '\0';
-    if (upd_online() || Port_GameMode() != 4) {
-        SDL_strlcpy(sUpdWhy, "Restart the update from the offline main menu.", sizeof(sUpdWhy));
+    if (upd_online() || !upd_menu()) {
+        SDL_strlcpy(sUpdWhy, "Restart the update from an offline menu.", sizeof(sUpdWhy));
         return;
     }
     sUpdPromptDismissed = true;
@@ -2118,7 +2138,9 @@ static void update_tick(void) {
             const char *drv = SDL_GetCurrentVideoDriver(), *env = SDL_getenv("BT3_UPDATE_CHECK");
             bool seen = drv == NULL || (SDL_strcmp(drv, "offscreen") != 0 && SDL_strcmp(drv, "dummy") != 0);
             sUpdAsked = true;
-            if (env != NULL ? SDL_atoi(env) != 0 : seen) {
+            sUpdAutomatic=env != NULL ? SDL_atoi(env) != 0 : seen&&Port_Setting("update_check",1)!=0;
+            sUpdNextCheck=SDL_GetTicks()+300000;
+            if (sUpdAutomatic) {
                 Update_Check();
             }
         }
@@ -2126,6 +2148,11 @@ static void update_tick(void) {
     {
         UpdateStatus u;
         Update_Status(&u);
+        if(sUpdAutomatic&&upd_menu()&&!upd_online()&&SDL_GetTicks()>=sUpdNextCheck&&
+           (u.state==UPD_NONE||(u.state==UPD_FAILED&&!u.canInstall))){
+            sUpdNextCheck=SDL_GetTicks()+300000;
+            sUpdAttempts=0;Update_Recheck();
+        }
         if (u.state == UPD_AVAILABLE && u.canInstall && sUpdAttempts == 0) {
             ++sUpdAttempts;
             sUpdRetryAt = SDL_GetTicks() + 5000;
@@ -2134,20 +2161,19 @@ static void update_tick(void) {
             ++sUpdAttempts;
             sUpdRetryAt = SDL_GetTicks() + 15000;
             Update_Download();
-        } else if (u.state == UPD_READY && !upd_online() && !sOpen && !sQuit && Port_GameMode() == 4 &&
+        } else if (u.state == UPD_READY && !upd_online() && !sOpen && !sQuit && upd_menu() &&
                    !sUpdPromptOpen && !sUpdPromptDismissed) {
             sUpdPromptQueued = true;
         }
     }
 }
 
-// The line over the main menu and the online screens (empty: none now).
+// Update status only over eligible menus, never over fighter selection or gameplay.
 static void update_line(char *out, size_t size) {
     UpdateStatus u;
-    int mode = Port_GameMode();
 
     out[0] = '\0';
-    if (!sReady || sOpen || (mode != 4 && mode != 80)) {
+    if (!sReady || sOpen || sUpdPromptOpen || !upd_menu()) {
         return;
     }
     Update_Status(&u);
@@ -2187,13 +2213,14 @@ static void update_panel(void) {
         ImGui::ProgressBar(1.0f, ImVec2(-1.0f, 0.0f), "");
     } else if (u.state == UPD_READY) {
         ImGui::TextColored(green, "%s", f1_text("Restart required to finish installing the update."));
-        bool safe = !upd_online() && Port_GameMode() == 4;
+        update_summary_draw();
+        bool safe = !upd_online() && upd_menu();
         ImGui::BeginDisabled(!safe);
         if (ImGui::Button(f1_text("Restart now"))) {
             upd_apply();
         }
         ImGui::EndDisabled();
-        if (!safe) ImGui::TextWrapped("%s", f1_text("Return to the offline main menu to apply the update."));
+        if (!safe) ImGui::TextWrapped("%s", f1_text("Return to an offline menu to apply the update."));
         ImGui::SameLine();
         if (ImGui::Button(f1_text("Later"))) {
             sUpdPromptDismissed = true;
@@ -2216,7 +2243,7 @@ static void update_panel(void) {
     if (u.page[0] && ImGui::Button(f1_text("Release page"))) {
         SDL_OpenURL(u.page);
     }
-    ImGui::SetItemTooltip(f1_text("Opens the release page. A verified update is applied only after you confirm a restart from the offline main menu."));
+    ImGui::SetItemTooltip(f1_text("Opens the release page. A verified update is applied only after you confirm a restart from an offline menu."));
     if (!u.canInstall && u.cannot[0] != '\0') {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s", f1_text(u.cannot));
@@ -2233,7 +2260,9 @@ static void update_panel(void) {
         ImGui::PopStyleColor();
     }
     if (sUpdNotes) {
-        const char *notes = Update_Notes();
+        char notes[8192];
+        static const char *const locales[]={"es","en","pt"};
+        Update_NotesFor(locales[f1_language()],notes,sizeof(notes));
         ImGui::BeginChild("notes", ImVec2(0.0f, U(180.0f)), ImGuiChildFlags_Borders);
         ImGui::TextWrapped("%s", notes[0] != '\0' ? notes : f1_text("(The release has no notes.)"));
         ImGui::EndChild();
@@ -2245,7 +2274,7 @@ static void updates_tab(void) {
     UpdateStatus u;
     Update_Status(&u);
     ImGui::Text(f1_text("Installed version: %s"), Update_Version());
-    ImGui::TextWrapped("%s", f1_text("The updater checks for signed releases and downloads them in the background. At the offline main menu, it asks before restarting to apply an update."));
+    ImGui::TextWrapped("%s", f1_text("The updater checks for signed releases and downloads them in the background. In an offline menu, it asks before restarting to apply an update."));
     ImGui::Spacing();
     if (u.state == UPD_IDLE || u.state == UPD_NONE || u.state == UPD_FAILED) {
         if (ImGui::Button(f1_text("Check for updates"))) {
@@ -2273,7 +2302,7 @@ static void updates_tab(void) {
 static void misc_tab(void) {
     {
         ImGui::TextDisabled(f1_text("Automatic updates: %s"), Update_Version());
-        ImGui::SetItemTooltip(f1_text("The updater checks for signed releases and downloads them in the background. At the offline main menu, it asks before restarting to apply an update."));
+        ImGui::SetItemTooltip(f1_text("The updater checks for signed releases and downloads them in the background. In an offline menu, it asks before restarting to apply an update."));
     }
     // the start of the game (PR #50): read by FirstRun_Main, so they count from the next start
     static int sSkipLogos = -1, sSkipIntro = -1, sSkipCopy = -1;
@@ -2409,9 +2438,13 @@ static void spectator_tab(void) {
 
 static void update_prompt_draw(void) {
     const char *popup = "###update-restart-required";
+    if(sUpdPromptOpen&&(!upd_menu()||upd_online())){
+        ImGui::ClosePopupToLevel(0,true);
+        sUpdPromptOpen=false;input_owner();return;
+    }
     if (sUpdPromptQueued) {
         sUpdPromptQueued = false;
-        if (!upd_online() && !sOpen && !sQuit && Port_GameMode() == 4) {
+        if (!upd_online() && !sOpen && !sQuit && upd_menu()) {
             sUpdPromptOpen = true;
             if (sChat) chat_close();
             input_owner();
@@ -2427,8 +2460,12 @@ static void update_prompt_draw(void) {
         return;
     }
     ImGui::TextWrapped("%s", f1_text("New update available. Restart required."));
+    UpdateStatus status;Update_Status(&status);
+    ImGui::TextDisabled("%s",status.latest);
     ImGui::Spacing();
     ImGui::TextWrapped("%s", f1_text("This update is ready. Restart now to apply it, or choose Later to install it another time."));
+    ImGui::Spacing();
+    update_summary_draw();
     ImGui::Spacing();
     bool close = false;
     if (ImGui::Button(f1_text("Restart now"), ImVec2(U(180.0f), 0.0f))) {
@@ -3068,7 +3105,6 @@ extern "C" void Port_UiBanner(const char *text, int ms) {
 // The save icon (quick saving, src/sys/mcflow_a.c): a small memory card in the bottom right corner of the picture
 // while the game saves, at least a second, then it fades. Set from the game's thread: 1 saving, 0 saved, -1 the
 // game's own window took over (an error: the icon goes at once).
-static volatile int sSaving;
 static Uint64 sSaveFrom, sSaveEnd; // (0: not shown; the end, 0 while it saves)
 extern "C" void Port_UiSaving(int state) {
     sSaving = state;
