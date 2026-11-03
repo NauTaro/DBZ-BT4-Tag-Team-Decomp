@@ -17,6 +17,10 @@ class UpdateNoticeTests(unittest.TestCase):
         cc = shutil.which('cc') or shutil.which('gcc')
         if not cc:
             self.skipTest('A C compiler is required')
+        ui = (ROOT/'port/src/gs/ui.cpp').read_text(encoding='utf8')
+        def function(name):
+            start = ui.index(name)
+            return ui[start:ui.index('\n}',start)+3]
         code = r'''#include <assert.h>
 #include "update_notes.h"
 int main(void){
@@ -41,6 +45,25 @@ int main(void){
  return 0;
 }
 '''
+        helpers = '''#include <stdbool.h>
+static int sF1Language=-1,profile=1,gPortMenuMode,mode,page,sSaving;
+static char requested[16];
+int Port_GameProfileLanguage(void){return profile;}
+int Port_GameMode(void){return mode;}
+int Port_UpdateMenuScreen(void){return page;}
+void Port_SettingText(const char *key,const char *fallback,char *out,int size){strcpy(out,requested);}
+''' + function('static int f1_language(void) {') + function('static bool upd_menu(void) {')
+        code = code.replace('int main(void){',helpers+'\nint main(void){')
+        code = code.replace(' return 0;', '''
+ assert(f1_language()==1);profile=2;assert(f1_language()==2);
+ strcpy(requested,"es");sF1Language=-1;assert(f1_language()==0);
+ profile=1;assert(f1_language()==0); /* preserve an explicit settings language */
+ mode=60;page=53;assert(upd_menu()); /* 3D model viewer is still a menu */
+ mode=4;page=2;assert(!upd_menu()); /* stale progress mode during gameplay */
+ gPortMenuMode=1;assert(upd_menu());
+ sSaving=1;assert(!upd_menu());sSaving=0;
+ mode=39;page=3;assert(!upd_menu());
+ return 0;''')
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder)
             src = path / 'notice.c'

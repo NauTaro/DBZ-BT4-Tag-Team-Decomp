@@ -153,12 +153,13 @@ static SDL_GPUDevice *sDevice;
 
 static int f1_language(void) {
     char saved[16];
+    if(sF1Language==-2)return Port_GameProfileLanguage();
     if (sF1Language >= 0) return sF1Language;
     Port_SettingText("f1_language", "", saved, sizeof(saved));
     if (!strcmp(saved, "es")) sF1Language = 0;
     else if (!strcmp(saved, "en")) sF1Language = 1;
     else if (!strcmp(saved, "pt")) sF1Language = 2;
-    else sF1Language = Port_GameProfileLanguage();
+    else {sF1Language=-2;return Port_GameProfileLanguage();}
     return sF1Language;
 }
 
@@ -2079,7 +2080,8 @@ static bool upd_online(void) { // an online session or a lobby is on: it is neve
 }
 
 static bool upd_menu(void) {
-    return UpdUi_MenuAllowed(gPortMenuMode,Port_UpdateMenuScreen())!=0&&sSaving<=0;
+    // Character Reference's 3D viewer changes projection, but remains a menu.
+    return UpdUi_MenuAllowed(gPortMenuMode||Port_GameMode()==60,Port_UpdateMenuScreen())!=0&&sSaving<=0;
 }
 
 static void update_summary_draw(void) {
