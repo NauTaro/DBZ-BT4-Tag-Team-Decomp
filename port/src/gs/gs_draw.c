@@ -30,6 +30,7 @@
 #include <SDL3/SDL.h>   /* the one window both back ends share */
 #include "gs_internal.h"
 #include "gs_draw.h"
+#include "../../include/port_render_markers.h"
 #include "menu_wide_layout.h"
 #include "menu_panel_layout.h"
 static uint32_t sPresentationObject;
@@ -269,7 +270,9 @@ static int menu_piece_moving(const Vtx *v, const Vtx *last, float x0, float x1, 
 }
 
 static void menu_hd_trim(uint64_t incoming);
+static void texture_cache_trim(void);
 void GsGpu_ListStart(void) {
+    texture_cache_trim();
     menu_hd_trim(0);
     sMenuFree = 0;
     gDrawStartNs = SDL_GetTicksNS(); /* (gs_gpu.c's clock, where it is compared) */
@@ -295,8 +298,10 @@ typedef struct Tex {
     int replaced;  /* 1: texture pack, 2: vector menu labels, 3: packed shared glyphs, 4: enlarged menu artwork */
     int battleText; /* the source texture has Battle font artwork, even with Original selected */
     uint32_t ow, oh, rw, rh; /* then: the original's size and the replacement's */
+    uint64_t bytes; /* uploaded levels, preserving compressed-pack accounting */
     uint32_t amax;           /* and the largest alpha byte of the original */
-    int pack;                /* a texture pack's replacement still being read (gs_texpack.c), or -1 */
+    int pack; /* pending replacement (gs_texpack.c), or -1 */
+    int packIdentity; /* exact replacement identity, retained after upload */
     uint32_t packAlpha;      /* and the amax it will have */
     float avg[3];            /* its average colour, weighted by alpha, 0..1 (an energy light's colour is in its texture) */
 } Tex;
@@ -445,17 +450,16 @@ static uint32_t tex_bucket(uint64_t t0, uint64_t texa, uint32_t gen) {
    written again. The page hashes are too coarse here: a page holds up to 32 palettes, and the game rewrites some
    of them every frame (lit palettes, the fighters' palettes painted for the see-through pass), which made every
    texture with a palette in the same page count as new and be decoded again, hundreds per frame on some stages. */
+#include "gs_palette.h"
 static uint32_t clut_hash(uint32_t cbp, uint32_t cpsm, uint32_t count) {
     static struct { uint32_t key, gen0, gen1, hash; } memo[1024];
-    uint32_t key = cbp << 5 | cpsm << 1 | (count == 256), slot = (key * 2654435761u) >> 22, h = 2166136261u, i;
+    uint32_t key = cbp << 5 | cpsm << 1 | (count == 256), slot = (key * 2654435761u) >> 22, h;
     uint32_t g0 = gGsPageGen[(cbp / 32) & 511], g1 = gGsPageGen[(cbp / 32 + 1) & 511];
 
     if (memo[slot].key == key + 1 && memo[slot].gen0 == g0 && memo[slot].gen1 == g1) {
         return memo[slot].hash;
     }
-    for (i = 0; i < count; i++) {
-        h = (h ^ Gs_VramRead(cbp, 1, cpsm, i & 15, i >> 4)) * 16777619u;
-    }
+    h=Gs_PaletteHash(cbp,cpsm,count,Gs_VramRead);
     memo[slot].key = key + 1;
     memo[slot].gen0 = g0;
     memo[slot].gen1 = g1;
@@ -696,6 +700,47 @@ static void menu_hd_trim(uint64_t incoming) {
     }
 }
 
+/* The count limit alone can retain gigabytes of superseded GS generations.
+   Bound all decoded textures, including ordinary gameplay without a pack.
+   Four completed frames are retained for the interpolation draw lists. */
+static void texture_cache_trim(void) {
+    static unsigned swept;
+    uint64_t bytes=0, budget=256ull<<20, target;
+    unsigned i,n,pass;
+    int changed=0;
+    if(gGsFrame-swept<30)return;
+    swept=gGsFrame;
+    for(i=0;i<(unsigned)gsTexCount;++i)
+        bytes+=sTex[i].bytes;
+    if(getenv("BT3_TEXTURE_CACHE_MB")) {
+        int mb=atoi(getenv("BT3_TEXTURE_CACHE_MB"));
+        if(mb>=32&&mb<=2048)budget=(uint64_t)mb<<20;
+    }
+    if(bytes<=budget)return;
+    target=budget*3/4;
+    for(pass=0;pass<2&&bytes>target;++pass) {
+        unsigned age=pass?4:120;
+        for(i=0,n=0;i<(unsigned)gsTexCount;++i) {
+            Tex *t=&sTex[i];
+            if(bytes>target&&gGsFrame-t->last>age) {
+                bytes-=t->bytes;
+                sBackend->texDestroy(t->tex);changed=1;
+            } else sTex[n++]=*t;
+        }
+        gsTexCount=n;
+    }
+    if(!changed)return;
+    sLast=NULL;
+    memset(sHdAlias,0,sizeof(sHdAlias));
+    memset(sTexBucket,0,sizeof(sTexBucket));
+    for(i=0;i<(unsigned)gsTexCount;++i) {
+        unsigned h=tex_bucket(sTex[i].tex0,sTex[i].texa,sTex[i].gen);
+        while(sTexBucket[h])h=(h+1)&(TEX_BUCKETS-1);
+        sTexBucket[h]=(uint16_t)(i+1);
+    }
+    if(getenv("BT3_MEMORY_LOG"))fprintf(stderr,"texture cache: frame=%u entries=%d estimated-MiB=%llu\n",gGsFrame,gsTexCount,(unsigned long long)(bytes>>20));
+}
+
 /* How much of a texture pack's pictures a frame takes in (BT3_PACK_FRAME_MB, 4 MB; 0: no limit). Each one in is
    copied in the frame (pack_texture) and again into the upload at its end, and the driver then takes it over: with a
    large pack (18 597 DXT5 pictures, mostly 512 x 512 and 1024 x 1024 with their smaller copies) a fight's new
@@ -742,6 +787,15 @@ static GsTex pack_texture(const TexPackImage *pack) {
 /* A texture made from the original while its replacement was still being read: once the file is in, it is made
    again from that, at its first use in a frame. The one it replaces may still be in the lists of the frames before
    (Smooth motion draws the last one again while the game makes the next): it is released a few frames later. */
+static Tex *pack_resident(int id,uint64_t texa,uint32_t w,uint32_t h,uint32_t alpha) {
+    if(id<0)return NULL;
+    for(unsigned i=0;i<(unsigned)gsTexCount;++i){
+        Tex *c=&sTex[i];
+        if(c->replaced==1&&c->packIdentity==id&&c->texa==texa&&c->ow==w&&c->oh==h&&c->packAlpha==alpha)return c;
+    }
+    return NULL;
+}
+
 static void pack_arrived(Tex *c) {
     static struct { GsTex tex; unsigned frame; } old[256];
     static unsigned oldHead, oldTail;
@@ -770,6 +824,8 @@ static void pack_arrived(Tex *c) {
     c->replaced = 1;
     c->rw = pack.w;
     c->rh = pack.h;
+    c->bytes=0;
+    for(int level=0;level<pack.levels;++level)c->bytes+=pack.bytes[level];
     c->amax = c->packAlpha;
     c->pack = -1;
     gGpuTexReplaced++;
@@ -794,6 +850,7 @@ static void menu_hd_arrived(Tex *c) {
     sBackend->texUpload(tex, 0, w, h, GS_TEXFMT_RGBA8, pixels, w * h * 4);
     old[head & 255].tex = c->tex; old[head++ & 255].frame = gGsFrame;
     c->tex = tex; c->rw = w; c->rh = h; c->replaced = 4; c->hdPending = 0;
+    c->bytes=(uint64_t)w*h*4;
 }
 
 /* Decoding a texture's rows: a large one is shared among worker threads (and the caller), which only read GS memory
@@ -901,6 +958,7 @@ static GsTex texture_get(int ctx, int menuHd) {
     uint64_t tex_t0;
     TexPackImage pack;
     uint32_t packMaxAlpha = 255, rw = tw, rh = th;
+    int packIdentity = -1;
     int replaced = 0, menuText = 0, sharedText = 0, battleText = 0, hdPending = 0, packWait = -1;
     /* Language labels are composed before a generic HD pack's menu artwork.
      * A pack must not replace Portuguese lettering with its English bitmap. */
@@ -938,6 +996,8 @@ static GsTex texture_get(int ctx, int menuHd) {
         }
     }
     if (sLast != NULL && sLast->tex0 == t0 && sLast->texa == texa && sLast->gen == gen) {
+        Tex *ready=sTexPackOn?pack_resident(sLast->pack,texa,tw,th,sLast->packAlpha):NULL;
+        if(ready){ready->last=gGsFrame;sLast=ready;return ready->tex;}
         if (sLast->hdPending && sLast->last != gGsFrame) menu_hd_arrived(sLast);
         if (sLast->pack >= 0 && sLast->last != gGsFrame) {
             pack_arrived(sLast);
@@ -950,6 +1010,8 @@ static GsTex texture_get(int ctx, int menuHd) {
         while (sTexBucket[h] != 0) {
             Tex *c = &sTex[sTexBucket[h] - 1];
             if (c->tex0 == t0 && c->texa == texa && c->gen == gen) {
+                Tex *ready=sTexPackOn?pack_resident(c->pack,texa,tw,th,c->packAlpha):NULL;
+                if(ready){ready->last=gGsFrame;sLast=ready;return ready->tex;}
                 if (c->hdPending && c->last != gGsFrame) menu_hd_arrived(c);
                 if (c->pack >= 0 && c->last != gGsFrame) {
                     pack_arrived(c);
@@ -965,10 +1027,10 @@ static GsTex texture_get(int ctx, int menuHd) {
         return gsWhite;
     }
     if (gsTexCount == MAX_TEX) {
-        /* full: drop everything not used for two seconds (or, failing that, not used this frame) in one sweep */
+        /* Full: prefer textures unused for two seconds, then retain the four most recent frames. */
         unsigned keep = gGsFrame > 120 ? gGsFrame - 120 : 0;
         int pass, n;
-        for (pass = 0; pass < 2 && gsTexCount == MAX_TEX; pass++, keep = gGsFrame) {
+        for (pass = 0; pass < 2 && gsTexCount == MAX_TEX; pass++, keep = gGsFrame > 4 ? gGsFrame - 4 : 0) {
             for (n = 0, i = 0; i < (uint32_t)gsTexCount; i++) {
                 if (sTex[i].last >= keep) {
                     sTex[n++] = sTex[i];
@@ -995,7 +1057,18 @@ static GsTex texture_get(int ctx, int menuHd) {
     /* a texture pack's replacement for this texture, if there is one (gs_texpack.c) */
     if (sTexPackOn && TexPack_Count() != 0) {
         int id = TexPack_Lookup(tbp, tbw, psm, tw, th, (uint32_t)((t0 >> 34) & 1), cbp, cpsm, &packMaxAlpha);
-        int got = id >= 0 ? TexPack_Get(id, &pack) : -1;
+        int got;
+        packIdentity=id;
+        if(id >= 0) {
+            for (i=0;i<(uint32_t)gsTexCount;++i) {
+                Tex *cached=&sTex[i];
+                if(cached->replaced==1 && cached->packIdentity==id && cached->texa==texa &&
+                   cached->ow==tw && cached->oh==th && cached->packAlpha==packMaxAlpha) {
+                    cached->last=gGsFrame;sLast=cached;return cached->tex;
+                }
+            }
+        }
+        got = id >= 0 ? TexPack_Get(id, &pack) : -1;
         if (got > 0 && sBackend->texSlotsLeft() >= pack.levels && pack_budget_take(&pack)) {
             replaced = 1;
             gGpuTexReplaced++;
@@ -1010,6 +1083,25 @@ static GsTex texture_get(int ctx, int menuHd) {
     px = !replaced || localizedMenu || MenuText_MayHaveBattleTexture((int)tw, (int)th, bits <= 8) ?
          malloc((size_t)tw * th * 4) : NULL;
     if (!replaced && px == NULL) { return gsWhite; }
+    if(replaced && px==NULL && Mods_Look()->energy_light>0) {
+        /* HD uploads skip full source decoding. Still sample the source colour
+           for energy lights, instead of treating every coloured ki orb as white.
+           Bounded to 256 samples, only on a texture cache miss. */
+        double sr=0,sg=0,sb=0,sa=0;
+        uint32_t sx=tw/16?tw/16:1,sy=th/16?th/16:1;
+        for(y=sy/2;y<th;y+=sy)for(x=sx/2;x<tw;x+=sx){
+            uint32_t c=Gs_VramRead(tbp,tbw,psm,x,y);
+            if(bits<=8){
+                uint32_t index=bits==8?c&255:c&15;
+                uint32_t n=bits==8?((index&0xE7)|((index&8)<<1)|((index&16)>>1)):index;
+                c=Gs_Expand(Gs_VramRead(cbp,1,cpsm,bits==8?n&15:n&7,bits==8?n>>4:n>>3),cpsm);
+            }else c=Gs_Expand(c,psm);
+            double a=c>>24;sr+=(c&255)*a;sg+=((c>>8)&255)*a;sb+=((c>>16)&255)*a;sa+=a;
+        }
+        sTexAvg[0]=sa>0?(float)(sr/sa/255):1;
+        sTexAvg[1]=sa>0?(float)(sg/sa/255):1;
+        sTexAvg[2]=sa>0?(float)(sb/sa/255):1;
+    }
     {   /* a palette's colours read and expanded once, by the index as stored (8-bit: the GS's order of the 256 entries
            undone), instead of again for every pixel: most of a fight's effects are 4- and 8-bit */
         uint32_t lut[256];
@@ -1146,8 +1238,11 @@ static GsTex texture_get(int ctx, int menuHd) {
     t->oh = th;
     t->rw = rw;
     t->rh = rh;
+    t->bytes=(uint64_t)rw*rh*4;
+    if(replaced){t->bytes=0;for(int level=0;level<pack.levels;++level)t->bytes+=pack.bytes[level];}
     t->amax = replaced ? packMaxAlpha : 255u;
     t->pack = packWait;
+    t->packIdentity = packIdentity;
     t->packAlpha = packMaxAlpha;
     memcpy(t->avg, sTexAvg, sizeof(t->avg));
     sTexAvg[0] = sTexAvg[1] = sTexAvg[2] = 1.0f;
@@ -1661,7 +1756,12 @@ static uint32_t sWallSeq; /* patches handed over so far */
 /* With the render thread (BT3_GS_THREAD) the game hands patches over while the thread may be reading them for the
    tick before's in-between pictures: one patch is written, and the ring read, under this lock. */
 static pthread_mutex_t sWallLock = PTHREAD_MUTEX_INITIALIZER;
-static uint64_t sWallTex0; /* TEX0 of the wall's texture: the triangles drawn with it are the wall's */
+static uint64_t sWallTex0; /* telemetry only; texture addresses can be reused by attacks and other maps */
+/* Packet-construction state belongs to the host, outside gameplay snapshots. */
+static int sBoundaryBuildDepth;
+void Port_BoundaryBegin(void){++sBoundaryBuildDepth;}
+void Port_BoundaryEnd(void){if(sBoundaryBuildDepth>0)--sBoundaryBuildDepth;}
+int Port_BoundaryDrawing(void){return sBoundaryBuildDepth>0;}
 static float sWallUs = 1.0f, sWallVs = 1.0f;
 extern int gsInterp;
 extern int Port_TagBattleRenderActive(void);
@@ -1923,7 +2023,9 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
            its letters stepped one after the other while a piece glided (BT3_TEX_GRID=1: the grid rule, to compare). */
         d.orig[3] = getenv("BT3_TEX_GRID") != NULL && atoi(getenv("BT3_TEX_GRID")) != 0 ? 0.0f : 1.0f;
     }
-    if (type == 3 && sWallTex0 != 0 && t0 == sWallTex0) { /* the wall at the edge of the map (Port_WallMesh) */
+    if (type == 3 && (prim & PORT_PRIM_BOUNDARY) && !Port_TagBattleRenderActive()) {
+        /* Boundary geometry is marked in its sorted packet. A reused TEX0 is
+           insufficient: unrelated attack quads could inherit the old mesh. */
         d.wall = 1;
         sWallUs = us;
         sWallVs = vs;
@@ -2078,7 +2180,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     int hudPanel = presentation_hud() && gsAnchor >= 1 && gsAnchor <= 6;
     if (gsAnchor != 20 && Port_IsWide() && (!gPortMenuMode || ((gsAnchor == 9 || (gsAnchor >= 11 && gsAnchor <= 19) || gsAnchor == 23) && Port_MenusWide()) || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
                           (battleText && Port_PageAspectMilli() > 1340)) &&
-        !sWholeFrame && (!d.tex_is_target || hudPanel) && !tbo && (type == 6 || fst || battleText || gsAnchor == 8 || (gPortMenuMode && gsAnchor >= 9)) &&
+        !sWholeFrame && (!d.tex_is_target || hudPanel) && !tbo && (hudPanel || type == 6 || fst || battleText || gsAnchor == 8 || (gPortMenuMode && gsAnchor >= 9)) &&
         gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
         /* HUD quads keep their layout even when their sheet comes from a render target
            or an animated mask spans most of the page. World effects keep their own rules. */
@@ -2533,7 +2635,7 @@ static void grade_add(void) {
     float k = lk->vivid / 100.0f;
     int ls;
 
-    if ((lk->vivid <= 0 && lk->ambient <= 0 && lk->energy_light <= 0) || sBackend != &sVulkanBackend ||
+    if ((lk->vivid <= 0 && lk->ambient <= 0 && lk->energy_light <= 0) || !sBackend || sBackend->frameEnd != sVulkanBackend.frameEnd ||
         sGradeFrame == gGsFrame || gsDrawCount >= MAX_DRAWS || gGsMainFbp < 0) {
         return;
     }
@@ -3993,14 +4095,14 @@ blend:
                something else: how bright the piece is drawn. A piece of scenery paired with another one that stands
                like it (the second chance above) got the average of two brightnesses: the grey veil over a whole
                in-between picture, whenever the pieces on screen changed. */
-            for (k = 0; k < ((sInterpKind[i] >> 6) == 1 && c->misc[3] <= 1.0f ? 60 : 56); k++) {
+            for (k = 0; k < ((sInterpKind[i] >> 6) == 1 && (c->misc[3] <= 1.0f || c->misc[3] == 6.0f) ? 60 : 56); k++) {
                 of[k] = pf[k] + (cf[k] - pf[k]) * t;
             }
             if (memcmp(c->boneA, q->boneA, 40 * sizeof(float)) == 0) {
                 /* it stands as it stood: its bones are this picture's to the last bit (pieces of scenery laid over
                    each other must come out at exactly the same depth) */
                 memcpy(o->boneA, c->boneA, 40 * sizeof(float));
-            } else if (sInterpSig[i] != 0x53484457u && (c->misc[3] <= 1.0f || c->misc[3] == 5.0f)) { /* (a model's two bones: not the shadow's and other programs' use of these slots) */
+            } else if (sInterpSig[i] != 0x53484457u && (c->misc[3] <= 1.0f || c->misc[3] == 5.0f || c->misc[3] == 6.0f)) { /* model, reflection and rim must share the same interpolated bones */
                 /* Layer 5 is the reflection of a shiny model (program 1's second texture), drawn over the same
                    triangles as its layer 0. With the plain average of the matrices above, its triangles were a
                    little smaller and elsewhere than the layer's under it, in the in-between pictures only: the

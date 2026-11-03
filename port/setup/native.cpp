@@ -834,6 +834,10 @@ void step_tables(const std::string &root) {
 
 void step_test(const std::string &root) {
     std::string exe = root + kGame, saves = root + "gamedata/.selftest";
+    size_t oldCrashSize=0;
+    char *oldCrash=(char *)SDL_LoadFile((root+"bt3_crash.txt").c_str(),&oldCrashSize);
+    std::string previousCrash=oldCrash?std::string(oldCrash,oldCrashSize):"";
+    SDL_free(oldCrash);
     const char *args[2] = {exe.c_str(), NULL};
     step("Self-test");
     say("@note the game's demo fight, no window");
@@ -891,7 +895,7 @@ void step_test(const std::string &root) {
         size_t n = 0;
         char *crash = (char *)SDL_LoadFile((root + "bt3_crash.txt").c_str(), &n);
         if (crash != NULL) {
-            text += "[setup] bt3_crash.txt:\n" + std::string(crash, n);
+            if(std::string(crash,n)!=previousCrash)text += "[setup] bt3_crash.txt:\n" + std::string(crash, n);
             SDL_free(crash);
         }
     }

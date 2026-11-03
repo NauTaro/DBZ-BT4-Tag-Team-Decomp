@@ -1259,6 +1259,9 @@ void EftBound_BuildWall(EftBoundChar *work, EftBoundChar *src) {
     }
 }
 
+#ifdef PORT
+#include "port_render_markers.h"
+#endif
 /* Queues one triangle of the wall: builds three clip vertices, takes the whole texture repeats off the
    coordinates and hands them to the shared clipper (EftGfx_DrawPolyScaledZ). The matrix argument is not used. */
 void EftBound_DrawTri(EftMtxArg m, EftVecArg p0, EftVecArg p1, EftVecArg p2, EftVecArg st0, EftVecArg st1,
@@ -1279,7 +1282,13 @@ void EftBound_DrawTri(EftMtxArg m, EftVecArg p0, EftVecArg p1, EftVecArg p2, Eft
     v[0].st[1] -= ft;
     v[1].st[1] -= ft;
     v[2].st[1] -= ft;
+#ifdef PORT
+    Port_BoundaryBegin();
+#endif
     EftGfx_DrawPolyScaledZ(v, otZ, 1, 0, 0, 0, tex0, 2.0f);
+#ifdef PORT
+    Port_BoundaryEnd();
+#endif
 }
 
 #ifdef PORT

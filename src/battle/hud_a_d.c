@@ -159,9 +159,12 @@ void HudGauge_UpdateHp(void) {
         }
     }
     bar = &gHudGauge->sprites[3];
-    /* At an exact full tier the backing bar has the same colour. Its bevel
-       remains visible around the alpha mask, including with HD artwork. */
-    underBars = rem == HUD_GAUGE_BAR && rem2 == HUD_GAUGE_BAR && bars == bars2 ? bars : bars - 1;
+    /* A partially consumed blue tier reveals the green tier beneath it.
+       Only an exactly full tier uses its own colour around the outer bevel. */
+    underBars = bars - 1;
+    if (rem == HUD_GAUGE_BAR && rem2 == HUD_GAUGE_BAR && bars == bars2) {
+        underBars = bars;
+    }
     if (underBars >= 4) {
         HudSprite_SetTex(bar, 8, 5);
     } else if (underBars >= 2) {

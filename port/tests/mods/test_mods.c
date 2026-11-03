@@ -311,6 +311,9 @@ int main(void) {
         setenv("BT3_MODS_SETTINGS", ex, 1);
     }
     sFp.gauges = 1;
+    sFp.side[0].chargeHeld=1;
+    strcpy(sFp.side[0].moves[4].name,"Ultimate regression");
+    sFp.side[0].moves[4].cost=100000;
     sFp.side[0].comboHits = 3;
     sFp.side[1].poweredUp = 1;
     Mods_ReloadAsk();
@@ -328,7 +331,7 @@ int main(void) {
     CHECK(moved >= 90);
     }
     CHECK(Mods_Count() == 6); /* (example_camera, example_hud, modern_camera, modern_hud, modern_look, skill_list) */
-    CHECK(Mods_Look()->shading == 100 && Mods_Look()->energy_light == 0); /* (modern_look at its defaults) */
+    CHECK(Mods_Look()->shading == 100 && Mods_Look()->energy_light == 50); /* (modern_look at its defaults) */
     for (i = 0; i < Mods_Count(); i++) {
         CHECK(Mods_Info(i)->error[0] == '\0');
     }
@@ -356,6 +359,25 @@ int main(void) {
         seed_bundled("port/examples/mods", destination);
         fp = fopen(path, "r"); CHECK(fp != NULL);
         if (fp != NULL) { CHECK(fgetc(fp) == EOF); fclose(fp); }
+    }
+
+    /* Translation of a chase target must not create increasing camera lag.
+       Exercise both side caches, maximum inertia and a moving world anchor. */
+    setenv("BT3_MODS", "port/examples/mods", 1);
+    fp=fopen(settings,"w");CHECK(fp!=NULL);
+    if(fp){fputs("modern_camera=1\nmodern_camera.lag=100\nmodern_camera.tilt=0\nmodern_camera.react=0\nmodern_camera.distance=50\n",fp);fclose(fp);}
+    setenv("BT3_MODS_SETTINGS",settings,1);Mods_ReloadAsk();
+    sG.battle=1;sFp.battle=1;
+    for(i=0;i<120;++i){
+        ++gPortVBlanks;Mods_Tick();
+        for(int side=0;side<2;++side){
+            memset(&sIn,0,sizeof(sIn));sIn.side=side;sIn.zoom=1;
+            sIn.pos[0]=i*3.0f;sIn.pos[2]=-100;
+            sIn.target[0]=i*3.0f;
+            sSet=0;Mods_Camera();
+            CHECK(sSet && fabsf(sOut.pos[0]-sIn.pos[0])<0.001f);
+            CHECK(fabsf(sOut.pos[2]+150)<0.001f);
+        }
     }
 
     Mods_Lock();

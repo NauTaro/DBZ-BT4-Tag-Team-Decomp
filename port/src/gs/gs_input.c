@@ -596,6 +596,36 @@ static unsigned script_buttons(void) {
  * This is done to the pad's own bytes, before they reach the game or the other player of an online match: the
  * game sees an ordinary pad, so the two copies of an online match compute the same fight whoever has it on. */
 static int sClashSquare = -1;
+static int sClashStick = -1;
+int Port_ClashStick(void) {
+    if(sClashStick<0)sClashStick=Port_Setting("clash_stick",0)!=0;
+    return sClashStick;
+}
+void Port_ClashStickSet(int on) {
+    sClashStick=on!=0;Port_SettingSave("clash_stick",sClashStick);Port_SettingsWrite();
+}
+
+/* Adapt only local pad bytes before networking/recording. Keep the original
+ * BT4 scoring and let peers replay ordinary button presses. One sector change
+ * earns one tap, with a release between taps, never one tap per held frame. */
+static void clash_stick(int socket,unsigned *btn,unsigned char lx,unsigned char ly) {
+    extern void *BtlChar_FindByObjId(int), *BtlChar_FindBySide(int);
+    extern int BtlAct_GetCurrent(void *),Port_NetActive(void),Port_NetMe(void);
+    extern int PortMods_ViewActor(int);
+    static int sector[2]={-1,-1},pulse[2];
+    int side=Port_NetActive()?Port_NetMe():socket;
+    void *chr=BtlChar_FindBySide(PortMods_ViewActor(side));
+    int action=chr?BtlAct_GetCurrent(chr):-1;
+    int in=(action>=0x130&&action<=0x132)||action==0xFA||action==0xFB||action==0xFC;
+    int x=(int)lx-128,y=(int)ly-128,next=-1;
+    if(!Port_ClashStick()||!in){sector[socket]=-1;pulse[socket]=0;return;}
+    if(abs(x)>80||abs(y)>80)next=abs(x)>abs(y)?(x>0?1:3):(y>0?2:0);
+    if(pulse[socket]){pulse[socket]=0;return;}
+    if(next>=0&&next!=sector[socket]){
+        *btn|=B_SQUARE|B_TRIANGLE;pulse[socket]=1;
+    }
+    sector[socket]=next;
+}
 
 int Port_ClashSquare(void) {
     if (sClashSquare < 0) {
@@ -1165,6 +1195,7 @@ int Port_PadRead(int socket, unsigned char *data) {
             fprintf(stderr, "sticks: the game's pad 1 has left %+.4f %+.4f, right %+.4f %+.4f, held %08X\n", f[0], f[1], f[2], f[3], held);
         }
     }
+    clash_stick(socket, &btn, lx, ly);
     clash_square(socket, &btn, &lx, &ly);
     press_age(socket, btn);
     /* Filter captured local input before it is sent or recorded. Applying this

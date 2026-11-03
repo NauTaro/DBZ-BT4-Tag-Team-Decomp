@@ -14,6 +14,7 @@ static void TagAudit_Clear(void){s32 i;
 }
 static s32 TagAudit_DefaultCuts(void){
     extern void BtlSuper_RequestHitStop(BtlMgrChr *,s32);
+    extern s32 BtlScene_IsEffectStopped(s32,s32);
     s32 i,other=2;
     sTagAuditChecks=sTagAuditFailures=0;
     TagAudit_Clear();TagBattle_ResetPairs();
@@ -22,6 +23,7 @@ static s32 TagAudit_DefaultCuts(void){
     BtlSuper_RequestHitStop(BtlChar_Get(0),0);BtlChars_UpdateFreeze();
     TagAudit_Check("startup_owner_advances",!BtlChar_Get(0)->freeze);
     for(i=1;i<BtlChar_GetCount();++i)TagAudit_Check("startup_does_not_freeze_outsiders",!BtlChar_Get(i)->freeze);
+    for(i=1;i<BtlChar_GetCount();++i)TagAudit_Check("startup_does_not_stop_outsider_effects",!BtlScene_IsEffectStopped(BtlChar_Get(i)->objId,0));
     BtlChar_Get(other)->action=0x105;BtlChar_SetHeldFlag(BtlChar_Get(other),0x125);
     BtlChars_UpdateFreeze();
     TagAudit_Check("simultaneous_startups_both_advance",!BtlChar_Get(0)->freeze&&!BtlChar_Get(other)->freeze);
@@ -31,6 +33,8 @@ static s32 TagAudit_DefaultCuts(void){
     for(i=0;i<BtlChar_GetCount();++i)TagAudit_Check("all_actors_can_resume",!BtlChar_Get(i)->freeze);
     BtlChar_Get(0)->action=0xB7;BtlChar_SetHeldFlag(BtlChar_Get(0),0x125);BtlChars_UpdateFreeze();
     TagAudit_Check("throw_does_not_stop_an_unrelated_actor",TagBattle_DefaultCutOwner()<0 && !BtlChar_Get(other)->freeze);
+    {extern s32 BtlCharApi_IsCamShown(s32);s32 actions[3]={0x130,0xFA,0xFC};
+     for(i=0;i<3;++i){BtlChar_Get(0)->action=actions[i];TagAudit_Check("clash_keeps_external_effect_framing",!BtlCharApi_IsCamShown(BtlChar_Get(0)->objId));}}
     printf("tag combat audit: checks=%d failures=%d\n",sTagAuditChecks,sTagAuditFailures);return sTagAuditFailures;
 }
 static s32 TagAudit_RushCuts(void){

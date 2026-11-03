@@ -1,3 +1,19 @@
+# 0.1.39.5 R1.1
+
+- Align health-bar alpha clearing with widescreen HUD scaling, so the remaining blue tier and the exposed green tier use the same mask on both sides.
+- Reuse exact matching resident HD textures across GS writes and read every entry of native 16-color palettes when caching textures.
+- Bound decoded texture memory and queued GPU frames, including hidden or minimized windows.
+- Keep Lua camera smoothing relative to a moving fighter and preserve camera preferences during rollback. Apply the Tag Team camera mod once to the selected view.
+- Interpolate rim lighting with the fighter model and sample colored HD ki effects for energy lighting on SDL GPU renderers.
+- Track arena-boundary geometry by its own packets instead of reused texture addresses.
+- Keep unrelated Tag Team effects running during another pair's cinematics and use external framing rules for clashes.
+- Add an optional left-stick rotation control for beam and melee clashes under F1 > Controls. Button controls remain available.
+- Show the ultimate technique and maximum-power readiness in Skill List.
+- Align the native Team Battle stage reel and honor an explicitly selected installation data folder during setup validation.
+- Upgrade unmodified bundled presentation scripts while preserving customized scripts and saved settings.
+
+- Update the online simulation family to sim4 for the Tag Team effect changes. All players in a room need a compatible R1.1 build.
+
 # 0.1.39.5 R1
 
 - Integrate upstream 0.1.39.5 Skill List changes while retaining BT4 and Tag Team presentation mappings.

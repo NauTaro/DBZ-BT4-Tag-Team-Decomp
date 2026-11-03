@@ -90,6 +90,8 @@ void Port_SettingTextSave(const char *name, const char *value);
 void Port_SettingsWrite(void);
 int Port_ClashSquare(void);                    // gs_input.c: Square counts as a direction in clashes
 void Port_ClashSquareSet(int on);
+int Port_ClashStick(void);
+void Port_ClashStickSet(int on);
 int Port_ClashSquareX(void);                   // what a press is worth, in quarters of a point (4, 6, 7, 8)
 void Port_ClashSquareXSet(int quarters);
 extern int gsInterp;                           // gs_draw.c: in-between pictures on (1) / off (0); -1 before the first frame
@@ -360,6 +362,8 @@ static const char *f1_text(const char *english) {
         {"Large", "Grande", "Grande"},
         {"How wide the online chat is and how many lines it shows (while typing / otherwise).\nCompact: 4 / 2, narrower.\nNormal: 6 / 4.\nLarge: 8 / 6, wider, for large screens.", "Ancho del chat y cantidad de líneas visibles (al escribir / en reposo).\nCompacto: 4 / 2, más estrecho.\nNormal: 6 / 4.\nGrande: 8 / 6, más ancho, para pantallas grandes.", "Largura do chat e quantidade de linhas exibidas (digitando / em repouso).\nCompacto: 4 / 2, mais estreito.\nNormal: 6 / 4.\nGrande: 8 / 6, mais largo, para telas grandes."},
         {"Shows the entry beside Tenkaichi Budokai Online the next time the main menu is opened.", "Muestra esta opción junto a Tenkaichi Budokai Online la próxima vez que abras el menú principal.", "Mostra esta opção ao lado de Tenkaichi Budokai Online na próxima vez que o menu principal for aberto."},
+        {"Use stick rotation in clashes", "Girar la palanca en los choques", "Girar o analógico nos confrontos"},
+        {"Rotate the left stick during beam or melee clashes. Button controls remain available.", "Gira la palanca izquierda durante los choques de poderes o cuerpo a cuerpo. También puedes usar los botones.", "Gire o analógico esquerdo nos confrontos de poderes ou corpo a corpo. Os botões continuam disponíveis."},
         {"BT4 clashes use repeated button presses. Follow the on-screen prompt.", "Los choques de BT4 requieren pulsar los botones repetidamente. Sigue las indicaciones en pantalla.", "Os choques de BT4 exigem pressionar os botões repetidamente. Siga as instruções na tela."},
         {"Choose a binding, then press the new key or button. Esc keeps it, Delete clears it;", "Elige una asignación y pulsa la nueva tecla o botón. Esc la conserva y Supr la borra;", "Escolha uma atribuição e pressione a nova tecla ou botão. Esc mantém e Delete apaga;"},
         {"with a controller, press nothing for five seconds to keep it.", "con un mando, no pulses nada durante cinco segundos para conservarla.", "com um controle, não pressione nada por cinco segundos para manter."},
@@ -2958,7 +2962,9 @@ static void build(void) {
             if (tab(f1_text("Audio"), 2)) { audio_tab(v); ImGui::EndTabItem(); }
             if (tab(f1_text("UI"), 3)) { ui_tab(v); ImGui::EndTabItem(); }
             if (tab(f1_text("Controls"), 4)) {
-                ImGui::TextWrapped("%s", f1_text("BT4 clashes use repeated button presses. Follow the on-screen prompt."));
+                bool stickClash=Port_ClashStick()!=0;
+                if(ImGui::Checkbox(f1_text("Use stick rotation in clashes"),&stickClash))Port_ClashStickSet(stickClash);
+                ImGui::TextWrapped("%s", f1_text("Rotate the left stick during beam or melee clashes. Button controls remain available."));
                 ImGui::Separator();
                 controls_tab();
                 ImGui::EndTabItem();

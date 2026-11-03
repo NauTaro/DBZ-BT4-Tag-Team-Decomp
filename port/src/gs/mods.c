@@ -45,6 +45,7 @@
 #include "fight_panels.h"
 #include "mods.h"
 #include "bundled_skill_list_0394.h"
+#include "bundled_mods_r1.h"
 
 extern unsigned gPortVBlanks;                     /* plat_stub.c */
 extern volatile int gUiPresentW, gUiPresentH;     /* gs_draw.c: the game's picture in the window */
@@ -1283,9 +1284,16 @@ static int has_fn(lua_State *L, int t, const char *k) {
 static void upgrade_bundled_text(const char *source, const char *folder, char **text, long *size) {
     char path[512], *replacement;
     long count = 0;
-    if (strcmp(folder, "skill_list") || *size != (long)sizeof(kSkillList0394) ||
-        memcmp(*text, kSkillList0394, sizeof(kSkillList0394))) return;
-    snprintf(path, sizeof(path), "%s/skill_list/mod.lua", source);
+    int match = !strcmp(folder,"skill_list") && *size == sizeof(kSkillList0394) && !memcmp(*text,kSkillList0394,*size);
+    struct Stock { const char *name; const unsigned char *data; long size; } stock[] = {
+        {"modern_camera", kR1_modern_camera, sizeof(kR1_modern_camera)},
+        {"modern_look", kR1_modern_look, sizeof(kR1_modern_look)},
+        {"skill_list", kR1_skill_list, sizeof(kR1_skill_list)}
+    };
+    for (unsigned i=0;i<sizeof(stock)/sizeof(stock[0]);++i)
+        if (!strcmp(folder,stock[i].name) && *size==stock[i].size && !memcmp(*text,stock[i].data,*size)) match=1;
+    if (!match) return;
+    snprintf(path, sizeof(path), "%s/%s/mod.lua", source,folder);
     replacement = read_file(path, &count);
     if (replacement && count > 0) {
         free(*text);

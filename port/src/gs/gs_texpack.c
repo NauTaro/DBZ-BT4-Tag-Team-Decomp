@@ -59,7 +59,7 @@ typedef struct Entry {
 static Entry *sEntries;
 static uint32_t sCount, sCap, *sBucket, sBuckets;
 
-#define TEXPACK_BUDGET ((size_t)1024 << 20) /* the files kept in memory: one session's two fights took 289 MB */
+#define TEXPACK_BUDGET ((size_t)512 << 20) /* bounded CPU cache, separate from uploaded GPU textures */
 #define QUEUE 4096                          /* files waiting for the reader (a power of two) */
 static SDL_Mutex *sLock;
 static SDL_Condition *sWake;

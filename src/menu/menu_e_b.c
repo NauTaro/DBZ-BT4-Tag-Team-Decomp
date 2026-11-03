@@ -991,10 +991,9 @@ void TeamSel_Draw(void) {
             }
         }
 #ifdef PORT
-        /* Tag draft uses both player movies, including their independent
-         * roster masks and costume panels. The solo selector's page 15 has
-         * only a left player and cannot anchor the second player's artwork. */
-        Port_MenuPage(sTagSelectActive ? 3 : 15);
+        /* Native team selection and Tag draft share the two-player movie
+         * layout, including the stage reel. Keep masks and pictures together. */
+        Port_MenuPage(3);
         Port_MenuFill(1);
         Sprite_DrawPicture(gTeamSel->bg[i], 0, 0, gTeamSel->bgAlpha[i]);
         Port_MenuFill(0);
@@ -1398,12 +1397,12 @@ void TeamSel_Draw(void) {
     for (i = 0; i < TEAMSEL_FLASH_NUM; i++) {
 #ifdef PORT
         if(sTagSelectActive && (gTeamSel->flags&TEAMSEL_STAGE) && i>0)continue;
-        if(sTagSelectActive)Port_MenuMovie(i);
+        Port_MenuMovie(i);
 #endif
         Flash_Draw(&gTeamSel->flash[i]);
     }
 #ifdef PORT
-    if(sTagSelectActive)Port_MenuMovie(0);
+    Port_MenuMovie(0);
 #endif
     Font_FlushAll();
     IconWin_Draw();
@@ -1512,13 +1511,13 @@ f32 TeamSel_Input(s32 *result) {
         static int selected,tick;
         gPad[0].gamePressed=gPad[0].gameRepeat=gPad[0].gameHeld=0;
         if(!selected&&(gTeamSel->flash[0].flags&MFLASH_PAD)){
-            for(idx=0;idx<gTeamSel->stageCount;++idx)if(gTeamSel->stageIds[idx]==99){
+            for(idx=0;idx<gTeamSel->stageCount;++idx)if(gTeamSel->stageIds[idx]==0){
                 Flash_GotoLabel(&gTeamSel->flash[0],"fl_map",1);
                 gTeamSel->flags|=TEAMSEL_STAGE|TEAMSEL_STARTED;
                 gTeamSel->faceMask=1;gTeamSel->stage->state=TEAMSEL_STAGE_GRID;
-                gTeamSel->stage->row=idx/TS_STAGE_COLS;gTeamSel->stage->col=idx%TS_STAGE_COLS;gTeamSel->stage->stage=99;
+                gTeamSel->stage->row=idx/TS_STAGE_COLS;gTeamSel->stage->col=idx%TS_STAGE_COLS;gTeamSel->stage->stage=0;
                 TeamSel_SetStageChips();TeamSel_ClipGoto(0,0,TEAMSEL_CLIP_STAGE_CHIP,"fl_on_start");TeamSel_RequestStage();
-                fprintf(stderr,"team map selector fixture: stage=99 index=%d count=%d\n",idx,gTeamSel->stageCount);selected=1;break;
+                fprintf(stderr,"team map selector fixture: stage=0 index=%d count=%d\n",idx,gTeamSel->stageCount);selected=1;break;
             }
         }
         if(selected&&++tick>=170&&(tick-170)%40==0){

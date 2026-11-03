@@ -166,14 +166,14 @@ void Port_ModsCamera(int side, int objId, int pos, int rot) {
     static int synctest = -1;
     uint8_t GAME_PTR chr;
 
-    if (side >= 0 && side < 2) {
-        sZoom[side] = 1000;
-        sCollide[side] = 0;
-    }
     if (synctest < 0) {
         synctest = getenv("BT3_SYNCTEST") != NULL;
     }
-    if (gPortResim || gsSkipFrame || synctest || PortSpectator_Mode() || side < 0 || side > 1 || !Mods_WantCamera()) {
+    /* Rollback and discarded frames must not reset presentation preferences.
+       The same view may be rebuilt many times without a new shown frame. */
+    if (gPortResim || gsSkipFrame || side < 0 || side > 1) return;
+    sZoom[side]=1000;sCollide[side]=0;
+    if (synctest || PortSpectator_Mode() || !Mods_WantCamera()) {
         return;
     }
     chr = (uint8_t GAME_PTR)BtlChar_FindByObjId(objId);

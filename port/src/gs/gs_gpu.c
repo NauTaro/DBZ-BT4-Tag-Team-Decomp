@@ -35,6 +35,11 @@ extern int Port_AspectMilli(void);
 
 static SDL_Window *sWindow; /* the shared window (GsDraw_WindowCreate) */
 static SDL_GPUDevice *sDev;
+/* Hidden/minimized windows have no swapchain acquisition to throttle the GPU.
+   Bound queued frames explicitly so cyclic upload buffers cannot grow with an
+   arbitrarily long backlog on a busy or integrated GPU. */
+static SDL_GPUFence *sFrameFences[3];
+static unsigned sFrameFenceCursor;
 static SDL_GPUTextureFormat sDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 static int sShadowStencil;
 static SDL_GPUShader *sVs, *sFs, *sFsNz, *sFsWb; /* (Nz: gs.frag without its depth output, key bit 23; Wb: and with the glow chain's sampling, bit 25) */
@@ -1303,6 +1308,10 @@ static void vk_frame_end(void) {
         return;
     }
     sEndT[0] = gpu_now();
+    {
+        SDL_GPUFence **old=&sFrameFences[sFrameFenceCursor%3];
+        if(*old){SDL_WaitForGPUFences(sDev,true,old,1);SDL_ReleaseGPUFence(sDev,*old);*old=NULL;}
+    }
     cmd = SDL_AcquireGPUCommandBuffer(sDev);
     /* uploads: this frame's vertices and the textures decoded for it */
     copy = SDL_BeginGPUCopyPass(cmd);
@@ -2041,7 +2050,8 @@ static void vk_frame_end(void) {
         Port_LagMark('S');
         lag_fence(f);
     } else {
-        SDL_SubmitGPUCommandBuffer(cmd); { extern void Port_LagMark(int what); Port_LagMark('S'); }
+        sFrameFences[sFrameFenceCursor++%3]=SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+        { extern void Port_LagMark(int what); Port_LagMark('S'); }
     }
     {   /* BT3_DRAW_LOG=<ms>: each picture whose drawing took longer, from the start of its list to the driver, in parts:
            to find what makes a drawing slow now and then (a laptop: 1 in 10 took 10 to 20 ms instead of 2) */

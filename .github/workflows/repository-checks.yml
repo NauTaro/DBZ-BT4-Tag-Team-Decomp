@@ -35,5 +35,8 @@ jobs:
       - name: Test ADX version 3 and 4 music loops
         if: runner.os == 'Linux'
         run: python port/tests/audio_loop/run.py
+      - name: Test health tiers and native palette cache identities
+        if: runner.os == 'Linux'
+        run: python port/tests/palette/run.py
       - name: Test authenticated Tag Team negotiation and recovery
         run: node --test cloudflare/tests/tag_link.test.mjs cloudflare/tests/voice_hibernation.test.mjs

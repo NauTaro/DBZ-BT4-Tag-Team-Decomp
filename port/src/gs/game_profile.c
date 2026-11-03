@@ -83,6 +83,10 @@ void Port_GameProfileInit(void){
      if(f){if(fscanf(f,"%d",&mask)!=1||mask<1||mask>7)mask=3;fclose(f);}
      SDL_snprintf(sPortuguese,sizeof(sPortuguese),"%sPTBR",base?base:"");
      sReady[2]=(mask&4)&&sReady[1]&&readable(sPortuguese,"game-text/translations/labels/pt-BR.json");
+     /* An explicit data root is also used to verify each installer profile.
+        A launcher's visibility mask must not redirect that root into a second,
+        nested languages/ directory during the self-test. */
+     if(sExternal)mask|=1<<installed;
      for(i=0;i<2;++i)if(!(mask&(1<<i)))sReady[i]=0;}
     Port_SettingText("game_language",installed?"en":"es",saved,sizeof(saved));
     sLanguage=!strcmp(saved,"pt-BR")?2:!strcmp(saved,"en");

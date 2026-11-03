@@ -1,4 +1,5 @@
 // English, Spanish and Brazilian Portuguese labels for the bundled mod UI.
+        {"Maximum power", "Máximo poder", "Poder máximo"},
         {"Mods", "Mods", "Mods"},
         {"Special-move cinematic cameras", "Cámaras cinematográficas de ataques especiales", "Câmeras cinematográficas de ataques especiais"},
         {"Turn off to keep the regular fight framing during special and ultimate moves. Attack animations, damage and timing are unchanged.", "Desactívalo para mantener el encuadre de combate durante ataques especiales y definitivos. Conserva las animaciones, el daño y los tiempos del ataque.", "Desative para manter o enquadramento de luta durante ataques especiais e supremos. As animações, o dano e os tempos dos ataques são preservados."},

@@ -526,7 +526,10 @@ void BtlCam_UpdateView(s32 side) {
     }
     BtlCharApi_GetCamPose(objId, &view->pos, &view->rot);
 #ifdef PORT
-    BtlCam_PortMods(view,side,objId);
+    /* Tag selects its actual viewer in UpdateOverride. Applying the Lua
+       camera here as well advances side 0's inertia for two different actors
+       in one tick, before the local actor's final camera is known. */
+    if(!TagBattle_Active())BtlCam_PortMods(view,side,objId);
 #endif
     view->priority = BtlCharApi_HasCamPriority(objId);
     BtlCam_BuildView(view, 1);

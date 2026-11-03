@@ -222,7 +222,7 @@ int __wrap_Progress_Main(int arg) {
             return r;
         }
     }
-    if (sBattles++ > 0) {
+    if (sBattles++ > 0 && !(getenv("BT4_RENDER_TEST") && getenv("BT4_MEMORY_BATTLES") && sBattles<=atoi(getenv("BT4_MEMORY_BATTLES")))) {
         printf("bt3: battle finished\n");
         exit(0);
     }
@@ -256,6 +256,10 @@ int __wrap_Progress_Main(int arg) {
             *(int GAME_PTR)(setup + 0xC0 + 0x270 + 0x208) = 0;
         }
         printf("bt3: attract-demo battle\n");
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_NATIVE_DUEL_TEST")) {
+            extern unsigned char GAME_PTR Battle_GetSetup(void);
+            *(int GAME_PTR)(Battle_GetSetup()+8)=0;
+        }
         /* BT3_CHARA=<id> (and BT3_COSTUME=<n>, BT3_VARIANT=1 for the damaged model): side 0's fighter of the demo
            battle, for looking at one character's model without going through the menus */
         extern struct { int chara, costume, variant; } GAME_PTR BattleSide_GetMember(int side, int index);
@@ -579,8 +583,26 @@ void Port_Trace(unsigned vblanks) {
             int GAME_PTR gauge=BtlMember_GetActiveGauge(BtlChar_Get(side));
             const char *health=getenv("BT4_TEST_HEALTH");
             gauge[0]=getenv("BT4_RENDER_TEST") && health ? atoi(health) : side ? 5000 : 42000;
+            if(getenv("BT4_RENDER_TEST")&&getenv("BT4_HEALTH_SWEEP")) {
+                static const int hp[]={50000,48000,45000,42000,40000,35000,30000,20000,10000,5000};
+                gauge[0]=hp[(BtlSeq_GetClock()[0]/90)%10];
+            }
             gauge[3]=side ? 60000 : 0;
             gauge[5]=side ? 400000 : 0;
+        }
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_WALL_SCENE_TEST")&&!Port_NetSession()&&gBtlSeq&&gBtlSeq->state==3) {
+        extern float BtlStage_GetInnerRadius(void);
+        extern unsigned char GAME_PTR BtlChar_Get(int);
+        extern void BtlChar_Place(void *,const float *,const float *,int);
+        extern int BtlStage_FindZoneNear(int,const float *);
+        int tick=BtlSeq_GetClock()[0],side;
+        float radius=BtlStage_GetInnerRadius()-8.f;
+        for(side=0;side<2;++side){
+            float a=tick*.002f+side*.015f;
+            float pos[4]={radius*cosf(a),-100.f,radius*sinf(a),1.f};
+            float rot[4]={0.f,1.5707963f-a+side*3.14159265f,0.f,0.f};
+            BtlChar_Place(BtlChar_Get(side),pos,rot,BtlStage_FindZoneNear(0,pos));
         }
     }
     if (getenv("BT4_TEST_RULES") != NULL && !Port_NetSession() && gBtlSeq != NULL &&
@@ -644,7 +666,8 @@ void Port_Trace(unsigned vblanks) {
         int simultaneous=getenv("BT4_TEST_TECH_SIMULTANEOUS")!=NULL;
         int victim=getenv("BT4_TEST_TARGET")?atoi(getenv("BT4_TEST_TARGET")):(actor^1);
         unsigned char GAME_PTR chr = BtlChar_Get(actor);
-        unsigned char GAME_PTR other = simultaneous?BtlChar_Get(actor==0?2:0):chr;
+        int support=getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_SUPPORT_ACTOR")?atoi(getenv("BT4_TEST_SUPPORT_ACTOR")):(actor==0?2:0);
+        unsigned char GAME_PTR other = simultaneous?BtlChar_Get(support):chr;
         int tick = BtlSeq_GetClock()[0];
         if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_CONTACT")&&!started&&tick>=100){
             extern void BtlChar_Place(void *,const float *,const float *,int);
@@ -656,7 +679,7 @@ void Port_Trace(unsigned vblanks) {
                 float rot[4]={0.f,0.f,0.f,0.f};
                 *(int GAME_PTR)(BtlChar_Get(n)+0x1278)=0;
                 if(!placed)BtlAct_Request(BtlChar_Get(n),0xB);
-                if(n==actor){pos[0]=0.f;pos[2]=-40.f;}
+                if(n==actor){pos[0]=0.f;pos[2]=getenv("BT4_TEST_BEAM_SCENE")?-800.f:-40.f;}
                 if(n==victim){pos[0]=0.f;pos[2]=0.f;rot[1]=3.14159265f;}
                 BtlChar_Place(BtlChar_Get(n),pos,rot,BtlStage_FindZoneNear(-1,pos));
             }
@@ -686,7 +709,7 @@ void Port_Trace(unsigned vblanks) {
                 TagBattle_ReservePair(0,1);TagBattle_ReservePair(2,3);
                 int otherSlot=getenv("BT4_TEST_SUPPORT_TECH")?atoi(getenv("BT4_TEST_SUPPORT_TECH")):slot;
                 BtlAct_Request(other,BtlAct_GetTechniqueAction(other,otherSlot));
-                fprintf(stderr,"bt4: concurrent tech start actors=0,2 slot=%d\n",slot);
+                fprintf(stderr,"bt4: concurrent tech start actors=%d,%d slot=%d\n",actor,support,slot);
             }
             fprintf(stderr,"bt4: requested tech actor=%d\n",actor);
             started = 1; began = vblanks;

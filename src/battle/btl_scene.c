@@ -443,10 +443,8 @@ void BtlScene_CreateChar(s32 chr) {
 /* Tells a task of the given kind (0..6) attached to an object whether its time is stopped this frame. */
 s32 BtlScene_IsEffectStopped(s32 objId, s32 kind) {
     s32 result = 0;
-    if(TagBattle_Active()){
-        s32 owner=TagBattle_DefaultCutOwner();
-        if(owner>=0 && BtlCharApi_IsFighter(objId) && objId!=BattleSide_GetObjId(owner) && objId!=BattleSide_GetObjId(TagBattle_Target(owner)))return 1;
-    }
+    /* An unrelated cinematic does not stop this actor's effect tasks. The
+       kind's own hit-stop/pause rule below still applies. */
 
     switch (kind) {
     case 0:
