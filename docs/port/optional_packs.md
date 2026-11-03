@@ -17,7 +17,7 @@ pack and uses the package's font-conflict list. Spanish and English do not load
 the isolated Portuguese texture directory. Switching full game languages takes
 effect at the next launch, as for the other disc profiles.
 
-The optional **DBZ BT4 HD (3.15 GB)** pack remains compressed in `textures/`
+The optional **DBZ BT4 HD v1.07 (3.69 GB)** pack remains compressed in `textures/`
 and is read on demand. GitHub's per-asset size restriction requires two download
 parts; setup verifies each part, joins them and verifies the complete ZIP with SHA-256.
 Setup asks only for the compatible ISO; optional packs download from GitHub.
@@ -28,9 +28,8 @@ that it replaces. Reinstallation compares files and repairs missing entries.
 Language downloads are grouped under **BT4 Language Packs**, using the names
 `spanish-b14rev2.bt4lang`, `english-b14rev2.bt4lang` and
 `portuguese-b14rev2.bt4lang`. HD texture parts have their own release,
-`bt4-hd-textures-v2`, separate from the game and language assets. Older pinned
-texture releases remain available for older installers. Replacing the HD pack
-preserves the previous verified pack under `tbo/setup/texture-pack-originals/`.
+`bt4-hd-textures-v1.07`, separate from the game and language assets. Setup
+installs the verified original pack at `textures/dbz bt4 HD v1.07.zip`.
 The Portuguese overlay container has a 64-byte `BT4PTP01` versioned header followed
 by a ZIP of 560 resources with normalized relative paths. The installer verifies
 its pinned size and SHA-256 before opening the embedded archive. It contains no

@@ -9,7 +9,7 @@
 - Score both human players' correct button-clash answers independently.
 - Restore scripted Parallel Quest setup and descriptions; load all BT4 roster chips in the remaining mission and ranking selectors.
 - Center Modern HUD portraits with artwork-specific eye anchors and soften portrait borders.
-- Replace the optional HD download with the supplied 3.15 GB pack, support its DX10 DDS files and repair ZIP64 local-offset handling for large archives.
+- Fix the automatic GitHub download and installation flow for the existing DBZ BT4 HD v1.07 pack.
 - Preserve installed language profiles, custom scripts, saves, setup ISO selection and signed update checks. The online simulation family advances to sim3; participants need compatible builds.
 
 # 0.1.39.4 R1
