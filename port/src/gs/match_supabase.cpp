@@ -31,17 +31,26 @@ void error(const std::string &code){
     if(d.status.state==3)return;d.status.state=-1;
     const char *message=code=="ROOM_FULL"?"Someone has already joined that room.":code=="ROOM_NOT_FOUND"?"No room with that code.":
         code=="INCOMPATIBLE_DATA"?"The host's game uses incompatible battle data.":code=="RATE_LIMITED"?"Too many requests. Wait a moment, then try again.":
+        code=="ROOM_BUSY"?"That room has started and is no longer accepting players.":code=="ALREADY_IN_ROOM"?"Leave the current online room before joining another.":
+        code=="BAD_CODE"?"Enter the six-character room code again.":
         "The matchmaking service could not be reached (is the network up?).";
     snprintf(d.status.error,sizeof(d.status.error),"%s",message);
 }
 void refreshStatus(){
     if(!d.descriptor.is_object())return;unsigned self=number(d.descriptor,"self");bool host=self==1;
-    d.status.role=host?1:2;d.status.lobby=text(d.descriptor,"mode")!="duel";
+    /* The request profile is the client's authoritative mode. Older deployed
+     * signaling descriptors may omit mode and role in their member records. */
+    std::string mode=text(d.profile,"mode");
+    if(mode.empty())mode=text(d.descriptor,"mode");
+    d.status.role=host?1:2;d.status.lobby=mode!="duel";
     snprintf(d.status.code,sizeof(d.status.code),"%s",text(d.descriptor,"code").c_str());
     auto members=d.descriptor.find("members");if(members==d.descriptor.end()||!members->is_array())return;
     unsigned target=0;
     if(!host)target=1;
-    else if(!d.status.lobby)for(const auto &member:*members)if(number(member,"peer")!=self&&text(member,"role")=="player"){target=number(member,"peer");break;}
+    else if(!d.status.lobby)for(const auto &member:*members){
+        std::string memberRole=text(member,"role");
+        if(number(member,"peer")!=self&&(memberRole=="player"||memberRole.empty())){target=number(member,"peer");break;}
+    }
     auto remote=d.addresses.find(target);
     if(target&&remote!=d.addresses.end()&&remote->second.is_array()&&!remote->second.empty()){
         d.status.peerCount=0;for(const auto &value:remote->second)if(value.is_string()&&value.get_ref<const std::string&>().size()<64&&d.status.peerCount<4)
@@ -95,10 +104,11 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     d.generation=generation;d.on=true;d.waiting=false;d.status={};d.status.state=1;d.descriptor=Dj();d.addresses.clear();d.announced.clear();d.localAddresses=local;
     char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.content=hash;d.wire="bt4-duel-"+std::to_string(protocol);
     d.profile={{"mode",role==5?"lobby":"duel"},{"wire",d.wire},{"content",d.content},{"rules",queue&&*queue?queue:"S"},{"name",std::string(name).substr(0,19)},{"capacity",8}};
-    d.init=++serial;d.began=SDL_GetTicks();d.leaseAt=d.began+60000;
+    d.began=SDL_GetTicks();d.leaseAt=d.began+60000;
     if(!Bt4Signal_Open())return 0;
     // Explicit reset precedes the new admission in the single HTTP queue.
-    rpc("leave",Dj::object());
+    if(!rpc("leave",Dj::object()))return 0;
+    d.init=++serial;
     if(role==1||role==5)return rpc("create",d.profile,d.init);
     if(role==3)return rpc("queue",d.profile,d.init);
     return rpc("join",{{"code",code?code:""},{"wire",d.wire},{"content",d.content},{"name",d.profile["name"]},{"role",role==4?"spectator":"player"}},d.init);

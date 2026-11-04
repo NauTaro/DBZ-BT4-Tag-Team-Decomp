@@ -1,3 +1,28 @@
+# 0.1.39.5 R2 Hotfix
+
+- Avoid scanning the full texture cache every frame for HD menu artwork. Keep the existing memory caps and retry eviction in bounded intervals when all artwork is still in use.
+- Reduce Tag Team online input delay. Start without an extra network frame, add a small adaptive cushion only after repeated late inputs, and reduce it sooner after clean frames.
+- Fix 1v1 room discovery when a signaling descriptor omits its mode, keep admission requests in sequence, report specific rejections, and cover the actual duel profile in the hosted test.
+- Show the exact failed base-data check when local online compatibility validation rejects an installation. A Dev label does not change the online family; the supported game data and simulation ABI still have to match.
+
+- Release the 0.1.39.5 R2 Hotfix package for Windows, Linux and macOS.
+
+<!-- bt4-update:en
+- Reduce recurring HD cache work in paused and story scenes while retaining memory limits.
+- Lower Tag Team online input delay and recover faster after network jitter.
+- Fix 1v1 room discovery with older signaling descriptors and show clearer compatibility details.
+-->
+<!-- bt4-update:es
+- Reduce el trabajo repetido de la caché HD en pausas y en el modo historia, manteniendo los límites de memoria.
+- Disminuye el retraso de entrada de Tag Team online y recupera antes tras fluctuaciones de red.
+- Corrige la detección de salas 1 vs 1 con descriptores antiguos y muestra detalles más claros de compatibilidad.
+-->
+<!-- bt4-update:pt
+- Reduz o trabalho repetido do cache HD nas pausas e no modo história, mantendo os limites de memória.
+- Diminui o atraso de entrada do Tag Team online e se recupera mais rápido após oscilações de rede.
+- Corrige a detecção de salas 1 vs 1 com descritores antigos e mostra detalhes mais claros de compatibilidade.
+-->
+
 # 0.1.39.5 R2
 
 - Align health-bar alpha clearing with widescreen HUD scaling, so the remaining blue tier and the exposed green tier use the same mask on both sides.

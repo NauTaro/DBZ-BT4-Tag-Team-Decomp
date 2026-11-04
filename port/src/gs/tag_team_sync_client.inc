@@ -36,8 +36,8 @@ static void tag_ping_sample(unsigned sample){
     for(i=0;i<tag_ping_count;++i)if(tag_ping_samples[i]<best)best=tag_ping_samples[i];
     tag_ping=(int)best;
 }
-static int tag_delay_margin=1;
-static unsigned tag_delay_clean_frames;
+static int tag_delay_margin;
+static unsigned tag_delay_clean_frames,tag_delay_late_streak;
 static void tag_delay_feedback(unsigned frame,unsigned late_mask){
     int seat=Tt_Seat(&state,member);
     if(!tag_paced||seat<0||!tag_input_sent||tag_input_epoch!=state.epoch||frame<tag_input_first||frame>tag_input_latest)return;
@@ -46,14 +46,18 @@ static void tag_delay_feedback(unsigned frame,unsigned late_mask){
      * backlog compensation already schedules the next input on the live clock. */
     if(late_mask&(1u<<seat)){
         tag_delay_clean_frames=0;
-        /* Startup padding and a burst of old notices must not ratchet the
-         * input lead on every received packet. */
-        if(tag_delay_margin<8&&(!tag_delay_adjusted||frame-tag_delay_last_adjust_frame>=8)){
-            ++tag_delay_margin;tag_delay_last_adjust_frame=frame;tag_delay_adjusted=1;
+        if(tag_delay_late_streak<2)++tag_delay_late_streak;
+        /* Start without an extra frame. Add a small cushion only after
+         * consecutive late inputs, with space between adjustments. */
+        if(tag_delay_late_streak>=2&&tag_delay_margin<4&&(!tag_delay_adjusted||frame-tag_delay_last_adjust_frame>=8)){
+            ++tag_delay_margin;tag_delay_last_adjust_frame=frame;tag_delay_adjusted=1;tag_delay_late_streak=0;
         }
-    }else if(++tag_delay_clean_frames>=342){
-        if(tag_delay_margin>1)--tag_delay_margin;
-        tag_delay_clean_frames=0;
+    }else{
+        tag_delay_late_streak=0;
+        if(++tag_delay_clean_frames>=120){
+            if(tag_delay_margin>0)--tag_delay_margin;
+            tag_delay_clean_frames=0;
+        }
     }
 }
 void Port_TagHashActor(int actor,unsigned x,unsigned y,unsigned z,unsigned hp,unsigned ki,unsigned action,unsigned target,unsigned team,unsigned chara,unsigned costume){

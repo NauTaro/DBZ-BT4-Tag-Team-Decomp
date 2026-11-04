@@ -507,9 +507,14 @@ static int lan_address(int localPort, char *out, size_t size) {
 
 static int supabase_match_loop(const char *name,const char *addrs){
     unsigned generation=(unsigned)(uintptr_t)SDL_GetTLS(&sMine);
-    unsigned long long content=0;char addresses[192];Bt4DiscoveryStatus status;
+    unsigned long long content=0;char addresses[192],identityError[256];Bt4DiscoveryStatus status;
     extern int Port_BuildIdentity(unsigned long long *);
-    if(Port_BuildIdentity(&content)!=1){set_state(-1,"The installed battle data is incompatible with this build.");return 0;}
+    extern const char *Port_BuildIdentitySummary(void);
+    if(Port_BuildIdentity(&content)!=1){
+        const char *reason=Port_BuildIdentitySummary();
+        SDL_snprintf(identityError,sizeof(identityError),"The installed battle data is incompatible with this build: %.180s",reason?reason:"unknown compatibility error");
+        set_state(-1,identityError);return 0;
+    }
     SDL_snprintf(addresses,sizeof(addresses),"[%s]",addrs);
     if(!Bt4Discovery_Begin(generation,sM.role,sM.version,content,name,sM.code,addresses,sM.queue)){
         set_state(-1,"The matchmaking could not be started.");return 0;

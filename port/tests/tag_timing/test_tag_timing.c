@@ -45,17 +45,17 @@ static void room(int humans){
     state.phase=TT_FIGHT;state.delay=0;
     Tt_InputsReset(&received,state.epoch,Tt_Count(&state));
     ws_mode=ws_started=1;local_room=0;tag_paced=0;tag_ping=170;
-    tag_input_sent=0;tag_delay_margin=1;tag_delay_clean_frames=0;
+    tag_input_sent=0;tag_delay_margin=0;tag_delay_clean_frames=tag_delay_late_streak=0;
     tag_received_valid=0;request_serial=0;
     memset(&sTagWs,0,sizeof(sTagWs));InitializeCriticalSection(&sTagWs.lock);sTagWs.lockReady=1;
 }
 static void end(void){DeleteCriticalSection(&sTagWs.lock);memset(&sTagWs,0,sizeof(sTagWs));}
 int main(void){
     unsigned char pad[18]={0,0,0,0,127,127},taken[10][18];
-    int cpu_delay,cpu_ping,cpu_take,holes=0,i;unsigned previous=0;
+    int cpu_delay,cpu_ping,cpu_take,network_delay,holes=0,i;unsigned previous=0;
     room(1);cpu_delay=Port_TagDelay();cpu_ping=Port_TagPing();
     Port_TagSendInput(cpu_delay,pad);cpu_take=Port_TagTakeFrame(taken);end();
-    room(2);tag_paced=1;
+    room(2);tag_paced=1;network_delay=Port_TagDelay();
     Port_TagSendInput(3,pad);
     pad[0]=0x20;pad[6]=pad[8]=1;Port_TagSendInput(8,pad);
     for(i=0;i<(int)sTagWs.outWrite;i++){
@@ -63,7 +63,7 @@ int main(void){
         if(i&&frame!=previous+1)holes+=(int)(frame-previous-1);
         previous=frame;
     }
-    printf("{\"cpu_delay\":%d,\"cpu_ping\":%d,\"cpu_first_frame_ready\":%d,\"network_schedule_holes\":%d,\"queued_frames\":%u",cpu_delay,cpu_ping,cpu_take,holes,sTagWs.outWrite);
+    printf("{\"cpu_delay\":%d,\"cpu_ping\":%d,\"cpu_first_frame_ready\":%d,\"network_delay\":%d,\"network_schedule_holes\":%d,\"queued_frames\":%u",cpu_delay,cpu_ping,cpu_take,network_delay,holes,sTagWs.outWrite);
 #ifdef BT4_TIMING_FIXED
     { unsigned before=sTagWs.outWrite;
       unsigned char tap[18]={0x40,0,0,0,127,127,1,0,1},release[18]={0,0,0,0,127,127};
@@ -71,12 +71,15 @@ int main(void){
       for(i=1;i<5;++i)if(sTagWs.outgoing[i][22]||sTagWs.outgoing[i][24])once=0;
       Port_TagSendInput(7,tap);Port_TagSendInput(9,release);
       retained=sTagWs.outWrite==before+1&&Ttw_Read(sTagWs.outgoing[before]+16)==0x40&&sTagWs.outgoing[before][22]==1&&sTagWs.outgoing[before][24]==1;
-      tag_delay_margin=1;tag_delay_adjusted=0;
+      tag_delay_margin=0;tag_delay_clean_frames=tag_delay_late_streak=0;tag_delay_adjusted=0;
+      tag_input_first=0;tag_input_latest=200;tag_input_epoch=state.epoch;tag_input_sent=1;
       for(i=0;i<3;++i)tag_delay_feedback(i,1);
       margin_before=tag_delay_margin;
-      tag_delay_feedback(3,1);tag_delay_feedback(4,1);
-      printf(",\"shrinking_lead_retains_taps\":%d,\"gap_does_not_repeat_commands\":%d,\"startup_margin\":%d,\"burst_margin\":%d",retained,once,margin_before,tag_delay_margin);
-      if(!retained||!once||margin_before!=1||tag_delay_margin!=2)return 5;
+      for(i=3;i<26;++i)tag_delay_feedback(i,1);
+      if(tag_delay_margin!=4)return 5;
+      for(i=0;i<120;++i)tag_delay_feedback(26+i,0);
+      printf(",\"shrinking_lead_retains_taps\":%d,\"gap_does_not_repeat_commands\":%d,\"startup_margin\":%d,\"burst_margin\":4,\"clean_decay\":%d",retained,once,margin_before,tag_delay_margin);
+      if(!retained||!once||margin_before!=1||tag_delay_margin!=3||network_delay!=3)return 5;
     }
     end();room(1);
     { int ready=0;

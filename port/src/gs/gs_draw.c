@@ -673,23 +673,32 @@ static GsTex tbo_texture(uint32_t id) {
     return tex;
 }
 
-/* Retire only older HD art when its cache exceeds 192 MiB. Keep this frame's draw references alive. */
+/* Retire only older HD art when its cache exceeds 192 MiB. Keep this frame's draw references alive.
+   Track the resident HD-art bytes so the normal frame path does not walk the whole texture cache. */
+static uint64_t sMenuHdBytes;
+static unsigned sMenuHdLastTrimFrame;
+static int sMenuHdTrimTried;
 static void menu_hd_trim(uint64_t incoming) {
-    uint64_t bytes = incoming;
+    const uint64_t budget = 192ull * 1024 * 1024;
+    uint64_t bytes = sMenuHdBytes + incoming, retired = 0;
     uint32_t i, n = 0;
     int changed = 0;
+    if (bytes <= budget) { sMenuHdTrimTried = 0; return; }
+    /* When every entry is still in use, retry periodically instead of scanning the full cache every frame. */
+    if (sMenuHdTrimTried && gGsFrame - sMenuHdLastTrimFrame < 4) { return; }
+    sMenuHdLastTrimFrame = gGsFrame;
+    sMenuHdTrimTried = 1;
     for (i = 0; i < (uint32_t)gsTexCount; ++i) {
-        if (sTex[i].replaced == 4) { bytes += (uint64_t)sTex[i].rw * sTex[i].rh * 4; }
-    }
-    if (bytes <= 192ull * 1024 * 1024) { return; }
-    for (i = 0; i < (uint32_t)gsTexCount; ++i) {
-        if (bytes > 192ull * 1024 * 1024 && sTex[i].replaced == 4 && sTex[i].last + 4 < gGsFrame) {
-            bytes -= (uint64_t)sTex[i].rw * sTex[i].rh * 4;
+        if (bytes > budget && sTex[i].replaced == 4 && sTex[i].last + 4 < gGsFrame) {
+            uint64_t weight = (uint64_t)sTex[i].rw * sTex[i].rh * 4;
+            bytes -= weight;
+            retired += weight;
             sBackend->texDestroy(sTex[i].tex);
             changed = 1;
         } else { sTex[n++] = sTex[i]; }
     }
     if (!changed) { return; }
+    sMenuHdBytes = sMenuHdBytes > retired ? sMenuHdBytes - retired : 0;
     gsTexCount = n;
     sLast = NULL;
     memset(sTexBucket, 0, sizeof(sTexBucket));
@@ -723,6 +732,7 @@ static void texture_cache_trim(void) {
         for(i=0,n=0;i<(unsigned)gsTexCount;++i) {
             Tex *t=&sTex[i];
             if(bytes>target&&gGsFrame-t->last>age) {
+                if(t->replaced==4)sMenuHdBytes=sMenuHdBytes>t->bytes?sMenuHdBytes-t->bytes:0;
                 bytes-=t->bytes;
                 sBackend->texDestroy(t->tex);changed=1;
             } else sTex[n++]=*t;
@@ -851,6 +861,7 @@ static void menu_hd_arrived(Tex *c) {
     old[head & 255].tex = c->tex; old[head++ & 255].frame = gGsFrame;
     c->tex = tex; c->rw = w; c->rh = h; c->replaced = 4; c->hdPending = 0;
     c->bytes=(uint64_t)w*h*4;
+    sMenuHdBytes += c->bytes;
 }
 
 /* Decoding a texture's rows: a large one is shared among worker threads (and the caller), which only read GS memory
@@ -1035,6 +1046,7 @@ static GsTex texture_get(int ctx, int menuHd) {
                 if (sTex[i].last >= keep) {
                     sTex[n++] = sTex[i];
                 } else {
+                    if(sTex[i].replaced==4)sMenuHdBytes=sMenuHdBytes>sTex[i].bytes?sMenuHdBytes-sTex[i].bytes:0;
                     sBackend->texDestroy(sTex[i].tex);
                 }
             }

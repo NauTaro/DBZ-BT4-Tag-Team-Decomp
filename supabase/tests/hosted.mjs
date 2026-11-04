@@ -12,6 +12,8 @@ async function actor(label){
   await writeFile(cachePath,JSON.stringify(cache),{mode:0o600});clients.push(c);return c;
 }
 const profile={mode:'tag',wire:'bt4-p2p-1',content:'5454000754540008',rules:'2v2-114',name:'Host',capacity:4};
+// Match the actual 1v1 profile sent by port/src/gs/match_supabase.cpp.
+const duelProfile={mode:'duel',wire:'bt4-duel-1112814612',content:'5b7bf7035a8b115d',rules:'S',name:'Host',capacity:8};
 const checked=(name)=>{checks.push(name);console.log('PASS '+name);};
 try{
   const host=await actor('host'), guest=await actor('guest'), outsider=await actor('outsider');
@@ -48,17 +50,20 @@ try{
   assert.equal(busy.error,'ROOM_BUSY');checked('closed-admission-rejected');
   await guest.rpc('leave');await host.rpc('leave');
   const gone=await guest.rpc('get');assert.equal(gone.state,'none');checked('leave-and-room-cleanup');
-  const duel=await host.rpc('create',{...profile,mode:'duel',capacity:8});
-  const observer=await guest.rpc('join',{code:duel.code,wire:profile.wire,content:profile.content,name:'Observer',role:'spectator'});
+  const duel=await host.rpc('create',duelProfile);
+  assert.ok(duel.code,JSON.stringify(duel));assert.equal(duel.wire,duelProfile.wire);assert.equal(duel.content,duelProfile.content);
+  checked('actual-client-duel-profile-created');
+  const observer=await guest.rpc('join',{code:duel.code,wire:duelProfile.wire,content:duelProfile.content,name:'Observer',role:'spectator'});
   assert.equal(observer.members.find(x=>x.peer===observer.self).role,'spectator');
-  const fighter=await outsider.rpc('join',{code:duel.code,wire:profile.wire,content:profile.content,name:'Fighter'});
+  const fighter=await outsider.rpc('join',{code:duel.code,wire:duelProfile.wire,content:duelProfile.content,name:'Fighter'});
   assert.equal(fighter.members.filter(x=>x.role==='player').length,2);checked('spectator-does-not-occupy-second-fighter');
   await host.rpc('leave',{generation:room.generation});
   assert.equal((await host.rpc('get')).room,duel.room);checked('stale-teardown-cannot-close-a-new-room');
   await host.rpc('leave');await guest.rpc('leave');await outsider.rpc('leave');
-  await host.rpc('queue',{...profile,mode:'duel',name:'Host'});
-  const match=await guest.rpc('queue',{...profile,mode:'duel',name:'Guest'});
-  assert.equal(match.mode,'duel');assert.equal(match.members.length,2);assert.equal(match.self,2);
+  await host.rpc('queue',{...duelProfile,name:'Host'});
+  const match=await guest.rpc('queue',{...duelProfile,name:'Guest'});
+  assert.equal(match.wire,duelProfile.wire);assert.equal(match.content,duelProfile.content);
+  assert.equal(match.members.length,2);assert.equal(match.self,2);
   const paired=await host.wait('bt4.room',x=>x.room===match.room);assert.equal(paired.self,1);
   checked('quick-match-pairs-compatible-clients');
   await host.rpc('leave');await guest.rpc('leave');
