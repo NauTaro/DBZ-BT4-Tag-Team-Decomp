@@ -53,7 +53,7 @@ jobs:
           request = urllib.request.Request(
               os.environ["WEBHOOK_URL"],
               data=json.dumps(payload).encode("utf-8"),
-              headers={"Content-Type": "application/json"},
+              headers={"Content-Type": "application/json", "User-Agent": "DBZ-BT4-Decomp"},
               method="POST"
           )
           with urllib.request.urlopen(request) as response:
