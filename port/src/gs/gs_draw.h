@@ -95,6 +95,7 @@ typedef struct GsDraw {
     float rect[4];  /* a frame buffer as texture: the part of it the GS would address (u0, v0, u1, v1 in its uv);
                        a texture pack's replacement drawn as 2D art: the piece's own rectangle of the sheet */
     float orig[4];  /* a texture pack's replacement: xy = the original texture's size in texels, z = its largest alpha */
+    float portrait[2]; /* outer screen edge and signed fade width; zero width outside portraits */
     float blendc;
     int scissor[4]; /* x, y, width, height, at SCALE */
     int wall;       /* triangles of the wall at the edge of the map (gs_draw.c, Port_WallMesh): in-between pictures draw it anew */

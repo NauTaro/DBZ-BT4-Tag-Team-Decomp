@@ -65,6 +65,8 @@ static int sUiLanguage=0; // Spanish, English, Portuguese (Brazil)
 static int sInstallMask=1,sPackagePercent=0;
 static std::string sGithubCode, sActivity;
 static bool sInstallTexturePack=false, sInstallPtbrPack=false;
+static bool sTextureMaintenance=false;
+
 static const char *L(const char *es,const char *en,const char *pt){
     return sUiLanguage==2?pt:sUiLanguage==1?en:es;
 }
@@ -205,6 +207,13 @@ static void reset_rows() {
     for (size_t i = 0; i < titles.size(); i++) {
         sRows[i].title = titles[i];
     }
+}
+
+static void start_texture_update() {
+    sRows.assign(1,StepRow());sRows[0].title="Texture pack";
+    sError.clear();sLauncher.clear();sActivity.clear();sPackage=false;
+    sRunStart=SDL_GetTicks();sNative=true;sInstallTexturePack=true;
+    Native_StartTextures(sRoot);sPage=PAGE_RUN;
 }
 
 static void start_install() {
@@ -369,7 +378,10 @@ static void play_game() {
         const char *args[2] = {sLauncher.c_str(), NULL};
         SDL_PropertiesID props = SDL_CreateProperties();
         SDL_Environment *env = SDL_CreateEnvironment(true);
-        SDL_SetEnvironmentVariable(env, "BT3_GS", "gpu", true); // the window and the GPU renderer
+        SDL_SetEnvironmentVariable(env, "BT3_GS", "gpu", true);
+        // Cancel/failure may leave the old pack installed. Permit this launch
+        // without immediately reopening maintenance; retry next normal launch.
+        if(sTextureMaintenance)SDL_SetEnvironmentVariable(env,"BT4_TEXTURE_UPDATE_SKIP","1",true); // the window and the GPU renderer
         for (const char *key : {"BT3_DEMO", "BT3_REPLAY", "BT3_DATA", "BT3_SETTINGS", "BT3_SAVES", "BT3_PAD_PLAY", "BT3_PAD_REC", "BT3_NET_SESSION", "BT3_NET_HOST", "BT3_NET_JOIN", "BT3_LOBBY", "BT3_NET_SCRIPT", "BT4_TEST_MODE", "BT4_TEST_TECH", "BT4_RENDER_TEST"}) {
             SDL_UnsetEnvironmentVariable(env, key);
         }
@@ -414,6 +426,7 @@ static void pump_install() {
             }
             if (!sLauncher.empty()) {
                 sPage = PAGE_DONE;
+                if(sTextureMaintenance)play_game();
             } else {
                 if (sError.empty()) {
                     sError = "La instalación se detuvo. Revisa el registro para ver el motivo.";
@@ -617,7 +630,7 @@ static void page_pick() {
         ImGui::Dummy(ImVec2(0,4));
         ImGui::Separator();
         ImGui::TextUnformatted(L("Paquetes adicionales","Additional packs","Pacotes adicionais"));
-        ImGui::Checkbox(L("DBZ BT4 HD v1.07 (3,69 GB)","DBZ BT4 HD v1.07 (3.69 GB)","DBZ BT4 HD v1.07 (3,69 GB)"),&sInstallTexturePack);
+        ImGui::Checkbox(L("BT4 HD v1.0 Light (2,54 GB)","BT4 HD v1.0 Light (2.54 GB)","BT4 HD v1.0 Light (2,54 GB)"),&sInstallTexturePack);
         ImGui::PushStyleColor(ImGuiCol_Text,kDim);
         ImGui::TextWrapped("%s",L("Descarga e instalación automáticas desde GitHub.","Downloads and installs automatically from GitHub.","Download e instalação automáticos pelo GitHub."));
         ImGui::PopStyleColor();
@@ -721,7 +734,9 @@ static void page_run() {
         StepRow *row=current();const char *task=L("Preparando instalación","Preparing installation","Preparando a instalação");
         if(sActivity=="finalize")task=L("Guardando la instalación","Saving installation","Salvando a instalação");
         else if(sActivity=="extract")task=L("Extrayendo y verificando archivos","Extracting and verifying files","Extraindo e verificando os arquivos");
-        else if(sActivity=="download")task=L("Descargando paquete de idioma","Downloading language pack","Baixando o pacote de idioma");
+        else if(sActivity=="download")task=row&&row->title=="Texture pack"?
+            L("Descargando texturas HD","Downloading HD textures","Baixando texturas HD"):
+            L("Descargando paquete de idioma","Downloading language pack","Baixando o pacote de idioma");
         else if(sActivity=="verify-package")task=L("Verificando la descarga","Verifying download","Verificando o download");
         else if(sActivity=="unpack")task=L("Extrayendo paquete de idioma","Extracting language pack","Extraindo o pacote de idioma");
         else if(sActivity=="texture-copy")task=L("Instalando el paquete de texturas HD","Installing the HD texture pack","Instalando o pacote de texturas HD");
@@ -748,7 +763,8 @@ static void page_run() {
 
 static void page_done() {
     ImGui::Dummy(ImVec2(0,75));
-    heading(L("BT4 está listo","BT4 is ready","BT4 está pronto"),sInstallPtbrPack?L("Português (Brasil) instalado.","Portuguese (Brazil) installed.","Português (Brasil) instalado."):sInstallMask==3?L("Español e inglés instalados.","Spanish and English installed.","Espanhol e inglês instalados."):sInstallMask==2?L("Inglés instalado.","English installed.","Inglês instalado."):L("Español instalado.","Spanish installed.","Espanhol instalado."));
+    if(sTextureMaintenance)heading(L("Texturas actualizadas","Textures updated","Texturas atualizadas"),"BT4 HD v1.0 Light (2.54 GB)");
+    else heading(L("BT4 está listo","BT4 is ready","BT4 está pronto"),sInstallPtbrPack?L("Português (Brasil) instalado.","Portuguese (Brazil) installed.","Português (Brasil) instalado."):sInstallMask==3?L("Español e inglés instalados.","Spanish and English installed.","Espanhol e inglês instalados."):sInstallMask==2?L("Inglés instalado.","English installed.","Inglês instalado."):L("Español instalado.","Spanish installed.","Espanhol instalado."));
     if(sInstallPtbrPack)ImGui::TextWrapped("%s",L("Português (Brasil) instalado y disponible en Idioma del juego.","Português (Brasil) installed and available under Game language.","Português (Brasil) instalado e disponível em Idioma do jogo."));
     if(sInstallTexturePack)ImGui::TextWrapped("%s",L("El paquete HD está en la carpeta textures.","The HD pack is in the textures folder.","O pacote HD está na pasta textures."));
     bottom_row(2);
@@ -772,8 +788,12 @@ static const char *error_text(){
 static void page_failed() {
     heading(L("Instalación detenida","Installation stopped","Instalação interrompida"),error_text());
     bottom_row(3);if(big_button(L("Ver registro","View log","Ver registro"),false))SDL_OpenURL(("file://"+sRoot+"tbo/setup/install.log").c_str());
-    ImGui::SameLine();if(big_button(L("Volver","Back","Voltar"),true))sPage=PAGE_PICK;
-    ImGui::SameLine();if(big_button(L("Cerrar","Close","Fechar"),false))sQuit=true;
+    ImGui::SameLine();if(big_button(sTextureMaintenance?L("Reintentar","Retry","Tentar novamente"):L("Volver","Back","Voltar"),true)){
+        if(sTextureMaintenance)start_texture_update();else sPage=PAGE_PICK;
+    }
+    ImGui::SameLine();if(big_button(sTextureMaintenance?L("Jugar sin actualizar","Play without updating","Jogar sem atualizar"):L("Cerrar","Close","Fechar"),false)){
+        if(sTextureMaintenance){sLauncher=sRoot+(file_exists((sRoot+GAME ".exe").c_str())?GAME ".exe":GAME);play_game();}else sQuit=true;
+    }
 }
 
 static void build_ui() {
@@ -1100,7 +1120,11 @@ int main(int argc, char **argv) {
         sPage = PAGE_DONE;
         }
     }
-    if (argc > 1) {
+    if (argc > 1 && !strcmp(argv[1],"--update-textures") && sRelease) {
+        sTextureMaintenance=true;
+        for(int i=2;i+1<argc;i++)if(!strcmp(argv[i],"--ui-language"))sUiLanguage=std::max(0,std::min(2,atoi(argv[++i])));
+        start_texture_update();
+    } else if (argc > 1) {
         SDL_strlcpy(sIso, argv[1], sizeof(sIso));
     }
     if (getenv("BT3_SETUP_EU_ISO") != NULL) { // (testing, with BT3_SETUP_ISO: the European image too)

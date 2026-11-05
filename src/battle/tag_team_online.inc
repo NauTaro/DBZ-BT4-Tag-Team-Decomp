@@ -101,6 +101,7 @@ static s32 TagOnline_Tick(void){
             else held=BTLB_BLAST|BTLB_BLAST2|BTLB_TRIANGLE;
             memcpy(packet,&held,4);packet[6]=n%150==0;packet[7]=0;
         }
+        {extern void Port_DevRulesEncode(u8 *);Port_DevRulesEncode(packet+9);}
         if(!Port_TagSendInput(sTagOnlineFrame+Port_TagDelay(),packet))return -1;
         sTagOnlinePressed=0;
         sTagOnlineSent=1;

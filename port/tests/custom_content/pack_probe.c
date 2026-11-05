@@ -6,10 +6,12 @@ const uint8_t *Gs_BlockPtr(uint32_t a,uint32_t b,uint32_t c,uint32_t d,uint32_t 
 uint32_t Gs_VramRead(uint32_t a,uint32_t b,uint32_t c,uint32_t d,uint32_t e){(void)a;(void)b;(void)c;(void)d;(void)e;return 0;}
 uint32_t Gs_PageHash(uint32_t page){(void)page;return 0;}
 int main(int argc,char **argv){
-    assert(excluded(UINT64_C(0xc3b168f19eccae01),0x14,512,512));
-    assert(!excluded(UINT64_C(0xc3b168f19eccae00),0x14,512,512));
-    assert(!excluded(UINT64_C(0xc3b168f19eccae01),0x13,512,512));
-    assert(!excluded(UINT64_C(0xc3b168f19eccae01),0x14,256,512));
+    /* The Time Skip backdrop is ordinary content, including replacement packs.
+       Test ingestion directly so a restored effect cannot be silently excluded. */
+    add("", "c3b168f19eccae01-1234-00006654.png", -1, 0);
+    assert(sCount == 1 && sEntries[0].tex == UINT64_C(0xc3b168f19eccae01));
+    free(sEntries[0].path);
+    sCount = 0;
     assert(argc==2);SDL_setenv_unsafe("BT3_TEXTURES",argv[1],1);TexPack_Init();assert(sCount>0);
     /* Lookup keeps every content key except draw-time TCC. Exact variants
        still win when a pack intentionally supplies both alpha modes. */
@@ -24,8 +26,6 @@ int main(int argc,char **argv){
         if(find(e->tex,e->clut,e->bits^0x40u,e->pal)<0 && find(e->tex,e->clut,e->bits^0x4040u,e->pal)<0)
             assert(find_image(e->tex,e->clut,e->bits^0x40u,e->pal)<0);
     }
-    for(uint32_t i=0;i<sCount;i++) assert(!excluded(sEntries[i].tex,sEntries[i].bits&63,
-        1u<<((sEntries[i].bits>>6)&15),1u<<((sEntries[i].bits>>10)&15)));
     unsigned checked=0;int beyond2gb=0;
     for(uint32_t i=0;i<sCount;i+=(sCount>32?sCount/31:1)){
         TexPackImage image;assert(load(&sEntries[i],&image));assert(image.w&&image.h&&image.levels);

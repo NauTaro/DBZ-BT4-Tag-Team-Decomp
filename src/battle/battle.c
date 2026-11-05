@@ -15,6 +15,9 @@ extern int TagBattle_Active(void);
 #include "tag_team_hud.inc"
 #include "tag_team_result.inc"
 #include "tag_team_online.inc"
+extern s32 *BtlMember_GetActiveGauge(void *);
+extern s32 BtlSeq_GetState(void);
+#include "dev_rules.inc"
 
 /*
  * Battle scene top level, 0x12B570..0x12BD58. The frame order, the pause/restart/exit protocol and the
@@ -168,6 +171,7 @@ s32 Battle_Restart(void) {
 
 /* Loads the battle data, creates every battle subsystem, then starts the first match. */
 s32 Battle_Init(void) {
+    DevRules_Reset();
     {extern void Port_TagBattleRenderSet(s32);Port_TagBattleRenderSet(TagBattle_Active());}
     Battle_Load();
     StgFx_Init();
@@ -368,6 +372,7 @@ void Battle_Loop(void) {
     s32 done=0;
 
     do {
+        s32 devPauseOwned=0;
         if (Battle_GetWork()->flags & BATTLE_FLAG_RESTART) {
             Battle_Restart();
             Battle_GetWork()->flags &= ~BATTLE_FLAG_RESTART;
@@ -388,12 +393,16 @@ void Battle_Loop(void) {
             Job_Run();
         }
         Gfx_BeginFrame();
+        if(DevRules_Online()){
+            if(!TagBattle_Network())Pad_Update();
+            devPauseOwned=DevPause_Begin(DevRules_NetworkTick());
+        }
         if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) {
             Gsc_Update();
             BtlScript_Update();
         }
         BtlChars_CheckStart();
-        if(!TagBattle_Network())Pad_Update();
+        if(!TagBattle_Network()&&!Port_NetActive())Pad_Update();
         if(TagBattle_Active()){
             static s32 spectatorTestFrames;
             if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_SPECTATOR_TEST") && TagBattle_Spectating()){
@@ -425,6 +434,7 @@ void Battle_Loop(void) {
             Battle_Draw();
         }
         TagBattle_ResultDraw();
+        DevPause_End(devPauseOwned);
         Gfx_EndFrame(2);
         Dma_Flush();
     } while (!done);

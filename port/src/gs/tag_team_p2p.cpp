@@ -50,7 +50,16 @@ struct Session {
     std::string room,generation,code,content;Packet opening={};Pj queueProfile;bool creating=false,initializing=false,clock=false,queued=false,waiting=false;int phase=TT_CLOSED;
     Uint64 nextTick=0,nextPing=0,nextLease=0,began=SDL_GetTicks(),lastReplay=0;int publishedPhase=-1;
     unsigned expected=0,probeSerial=0;std::array<std::pair<unsigned,Uint64>,32> probes={};
+    std::array<unsigned,8> pingSamples={};unsigned pingCount=0,pingCursor=0;
     std::deque<Wire> history,recent;std::map<unsigned,Wire> reordered;
+    void pingSample(unsigned sample){
+        if(sample>=10000)return;
+        pingSamples[pingCursor++%pingSamples.size()]=sample;
+        if(pingCount<pingSamples.size())++pingCount;
+        unsigned best=sample;
+        for(unsigned i=0;i<pingCount;++i)if(pingSamples[i]<best)best=pingSamples[i];
+        service.ping=(int)best;
+    }
     Peer *find(unsigned id){for(auto &p:peers)if(p.id==id)return &p;return nullptr;}
     void emit(const Packet &p,Uint64 at=0){std::lock_guard<std::mutex> g(service.lock);if(service.incoming.size()>=1024){service.status=-1;return;}service.incoming.push_back({p,at?at:SDL_GetTicks()});}
     static void RTC_API description(int pc,const char *sdp,const char *kind,void *ptr){auto &p=*static_cast<Peer*>(ptr);if(p.pc!=pc||!sdp||!kind)return;Event e;e.kind=1;e.peer=p.id;e.pc=pc;e.a=kind;e.b=sdp;service.event(std::move(e));}
@@ -144,7 +153,7 @@ struct Session {
             if(e.bytes.size()!=528||Ttw_Read(e.bytes.data())!=magic||Ttw_Read(e.bytes.data()+4)!=lo||Ttw_Read(e.bytes.data()+8)!=hi||Ttw_Read(e.bytes.data()+12)!=p->id)return;
             Packet packet;memcpy(packet.data(),e.bytes.data()+16,512);if(Ttw_Read(packet.data())!=TT_PROTOCOL)return;p->heard=e.at;unsigned cmd=Ttw_Read(packet.data()+4),packetEpoch=Ttw_Read(packet.data()+8);
             if(cmd==pingCommand&&self==1){Ttw_Write(packet.data()+4,pongCommand);send(*p,packet,false);return;}
-            if(cmd==pongCommand&&self!=1){unsigned sequence=Ttw_Read(packet.data()+12);auto sample=probes[sequence%32];if(sample.first==sequence&&e.at>=sample.second)service.ping=(int)(e.at-sample.second);return;}
+            if(cmd==pongCommand&&self!=1){unsigned sequence=Ttw_Read(packet.data()+12);auto sample=probes[sequence%32];if(sample.first==sequence&&e.at>=sample.second)pingSample((unsigned)(e.at-sample.second));return;}
             if(cmd==replayCommand&&e.reliable&&self==1&&packetEpoch==epoch){unsigned wanted=Ttw_Read(packet.data()+12),sent=0;for(auto &f:history)if(Ttw_Read(f.bytes.data()+12)>=wanted&&sent++<16)send(*p,f.bytes,true);return;}
             if(self==1){if(!p->admitted)return;if(cmd==TTW_INPUT||e.reliable)command(p->id,packet);return;}
             if(cmd==TTW_STATE&&e.reliable){TtRoom r;unsigned target;int result;char roomCode[7];if(!Ttw_Decode(packet.data(),&r,&target,&result,roomCode)||target!=self||r.host!=1)return;

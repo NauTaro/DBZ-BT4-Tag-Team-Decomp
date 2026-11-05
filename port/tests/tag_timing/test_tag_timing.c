@@ -45,7 +45,7 @@ static void room(int humans){
     state.phase=TT_FIGHT;state.delay=0;
     Tt_InputsReset(&received,state.epoch,Tt_Count(&state));
     ws_mode=ws_started=1;local_room=0;tag_paced=0;tag_ping=170;
-    tag_input_sent=0;tag_delay_margin=1;tag_delay_clean_frames=0;
+    tag_input_sent=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_feedback_seen=0;
     tag_received_valid=0;request_serial=0;
     memset(&sTagWs,0,sizeof(sTagWs));InitializeCriticalSection(&sTagWs.lock);sTagWs.lockReady=1;
 }
@@ -56,7 +56,10 @@ int main(void){
     room(1);cpu_delay=Port_TagDelay();cpu_ping=Port_TagPing();
     Port_TagSendInput(cpu_delay,pad);cpu_take=Port_TagTakeFrame(taken);end();
     room(2);tag_paced=1;
+    tag_delay_margin=8;tag_delay_feedback_seen=1;tag_delay_clean_frames=100;
+    tag_input_epoch=state.epoch-1;
     Port_TagSendInput(3,pad);
+    if(tag_delay_margin!=1||tag_delay_feedback_seen||tag_delay_clean_frames)return 11;
     pad[0]=0x20;pad[6]=pad[8]=1;Port_TagSendInput(8,pad);
     for(i=0;i<(int)sTagWs.outWrite;i++){
         unsigned frame=Ttw_Read(sTagWs.outgoing[i]+12);

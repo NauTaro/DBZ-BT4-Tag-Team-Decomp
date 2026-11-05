@@ -24,10 +24,11 @@ static struct {void (*scaleChanged)(void);} backend={rebuilt},*sBackend=&backend
 static void remember(void){sInterpNext=3;sInterpRepeat=1;sInterpPrevCount=10;sInterpPrevPrimCount=20;sInterpPrevVertCount=40;memset(sInterpSaved,1,sizeof(sInterpSaved));}
 static void retired(void){int i;assert(!sInterpNext&&!sInterpRepeat&&!sInterpPrevCount&&!sInterpPrevPrimCount&&!sInterpPrevVertCount);for(i=0;i<16;++i)assert(sInterpSaved[i]==0);}
 int main(void){
- remember();assert(scale_apply()==1);assert(gsScale==3&&rebuilds==1&&gsTargetCount==0);retired();
- remember();assert(scale_apply()==0);assert(sInterpNext==3&&sInterpPrevCount==10&&rebuilds==1);
- active=0;assert(scale_apply()==1);assert(gsScale==2&&rebuilds==2&&sMenuHD==1&&sBootQualityScale==-1);retired();
- remember();gsPendingScale=4;assert(scale_apply()==1);assert(gsScale==4&&rebuilds==3);retired();
+ /* Menus no longer force a software-upscaled art/resolution profile. */
+ remember();assert(scale_apply()==0);assert(gsScale==2&&rebuilds==0&&sInterpNext==3);
+ active=0;assert(scale_apply()==0);assert(gsScale==2&&rebuilds==0&&sInterpPrevCount==10);
+ remember();gsPendingScale=4;assert(scale_apply()==1);assert(gsScale==4&&rebuilds==1&&gsTargetCount==0);retired();
+ remember();gsPendingScale=4;assert(scale_apply()==0);assert(sInterpNext==3&&rebuilds==1);
  return 0;
 }
 '''

@@ -9,6 +9,7 @@
 #include "../../src/gs/match_supabase.h"
 #include "../../src/gs/supabase_signal.h"
 #include "../../src/gs/voice.h"
+#include "../../include/bt4_online_compat.h"
 extern "C" void PortVoice_P2PSession(int,const char*,const PortVoiceRoomMember*,int){}
 static bool address(const char *text,sockaddr_in &out){char copy[64];snprintf(copy,sizeof(copy),"%s",text);char *colon=strrchr(copy,':');if(!colon)return false;*colon++=0;out={};out.sin_family=AF_INET;out.sin_port=htons((unsigned short)atoi(colon));return inet_pton(AF_INET,copy,&out.sin_addr)==1;}
 int main(int argc,char **argv){
@@ -17,7 +18,7 @@ int main(int argc,char **argv){
     SOCKET socket=::socket(AF_INET,SOCK_DGRAM,IPPROTO_UDP);sockaddr_in local={};local.sin_family=AF_INET;local.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
     if(bind(socket,(sockaddr*)&local,sizeof(local)))return 2;int length=sizeof(local);getsockname(socket,(sockaddr*)&local,&length);u_long one=1;ioctlsocket(socket,FIONBIO,&one);
     char addresses[100];snprintf(addresses,sizeof(addresses),"[\"127.0.0.1:%u\"]",ntohs(local.sin_port));
-    if(!Bt4Discovery_Begin(1,host?1:watch?4:2,1234,0x5454000754540008ULL,name,argc>3?argv[3]:"",addresses,"S"))return 3;
+    if(!Bt4Discovery_Begin(1,host?1:watch?4:2,0x42543414,BT4_ONLINE_COMPAT_ID,name,argc>3?argv[3]:"",addresses,"S"))return 3;
     FILE *log=fopen(argv[2],"w");bool code=false,onlyWatcher=false,foundFighter=false;unsigned received=0,next=0;Uint64 deadline=SDL_GetTicks()+30000,last=0,at=0;std::set<unsigned short> finished;
     while(SDL_GetTicks()<deadline){Bt4DiscoveryStatus status={};Bt4Discovery_Poll(1,&status);
         if(status.state<0){fprintf(log,"ERROR %s\n",status.error);fflush(log);break;}

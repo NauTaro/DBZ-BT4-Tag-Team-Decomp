@@ -16,11 +16,14 @@ class TagInputFeedbackTests(unittest.TestCase):
         cc=shutil.which('cc') or shutil.which('gcc')
         if not cc:self.skipTest('A C compiler is required')
         code='''#include <assert.h>
+#include <stdint.h>
 static struct {unsigned epoch;} state={4};
 static int member=101,seat=0,tag_paced=1,tag_input_sent=1;
 static int tag_delay_margin=1,tag_delay_adjusted;
 static unsigned tag_input_epoch=4,tag_input_first=100,tag_input_latest=110;
 static unsigned tag_delay_last_adjust_frame,tag_delay_clean_frames;
+static uint32_t tag_delay_feedback_epoch,tag_delay_feedback_frame;
+static int tag_delay_feedback_seen;
 static int Tt_Seat(const void *room,int id){return seat;}
 '''+feedback_function()+'''
 int main(void){
@@ -33,6 +36,11 @@ int main(void){
     tag_delay_feedback(99,1);assert(tag_delay_margin==1);
     /* Actual submitted input still raises the lead, once per feedback window. */
     tag_delay_feedback(100,1);assert(tag_delay_margin==2&&tag_delay_adjusted);
+    /* UDP redundancy and replay cannot teach the same frame twice. */
+    tag_delay_adjusted=0;tag_delay_feedback(100,1);
+    assert(tag_delay_margin==2&&!tag_delay_adjusted);
+    tag_delay_feedback(99,1);assert(tag_delay_margin==2); /* out-of-order replay */
+    tag_delay_adjusted=1;
     for(frame=101;frame<108;++frame)tag_delay_feedback(frame,1);
     assert(tag_delay_margin==2);
     tag_delay_feedback(108,1);assert(tag_delay_margin==3);
@@ -52,9 +60,15 @@ int main(void){
     tag_input_epoch=4;tag_input_sent=0;tag_delay_feedback(115,8);assert(tag_delay_margin==6);
     tag_input_sent=1;seat=-1;tag_delay_feedback(115,8);assert(tag_delay_margin==6);
     /* Existing healthy-frame recovery remains in force. */
-    seat=0;tag_delay_clean_frames=0;tag_delay_margin=3;tag_input_latest=500;
-    for(frame=100;frame<442;++frame)tag_delay_feedback(frame,0);
+    seat=0;tag_delay_clean_frames=0;tag_delay_margin=3;tag_input_latest=600;
+    tag_delay_feedback(200,0);assert(tag_delay_clean_frames==1);
+    for(frame=0;frame<1000;++frame)tag_delay_feedback(200,0);
+    assert(tag_delay_margin==3&&tag_delay_clean_frames==1);
+    for(frame=201;frame<542;++frame)tag_delay_feedback(frame,0);
     assert(tag_delay_margin==2&&tag_delay_clean_frames==0);
+    /* The next epoch legitimately restarts frame numbering. */
+    state.epoch=tag_input_epoch=5;tag_input_first=0;tag_input_latest=100;tag_delay_adjusted=0;
+    tag_delay_feedback(1,1);assert(tag_delay_margin==3&&tag_delay_feedback_epoch==5&&tag_delay_feedback_frame==1);
     return 0;
 }
 '''

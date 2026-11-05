@@ -42,6 +42,29 @@ s32 TagBattle_Allied(s32 a,s32 b){return sTagFreeForAll?a==b:TagBattle_Team(a)==
 s32 TagBattle_WinningActor(void){return sTagWinningActor;}
 void TagBattle_SetWinningActor(s32 actor){sTagWinningActor=actor;}
 static BattleSide sTagSides[8];
+/* A local draft may page through more than five fighters per team. Retain
+   each seat's actual set, rather than the reused five-member movie slots.
+   Network rooms never read this machine-local customization state. */
+static BattleItemSet sTagDraftItems[10];
+static s32 sTagDraftItemChara[10];
+void TagBattle_ClearDraftItems(void) {
+    s32 i;
+    memset(sTagDraftItems, 0, sizeof(sTagDraftItems));
+    for (i = 0; i < 10; ++i) sTagDraftItemChara[i] = -1;
+}
+void TagBattle_SetDraftItems(s32 actor, s32 chara, const u16 *ids) {
+    s32 i;
+    if (actor < 0 || actor >= 10) return;
+    sTagDraftItemChara[actor] = chara;
+    for (i = 0; i < 8; ++i)
+        sTagDraftItems[actor].id[i] = ids && ids[i] <= 350 ? ids[i] : 0;
+}
+BattleItemSet *TagBattle_GetDraftItems(s32 actor, s32 chara) {
+    extern int Port_TagNetwork(void);
+    if (Port_TagNetwork() || actor < 0 || actor >= 10 ||
+        sTagDraftItemChara[actor] != chara) return NULL;
+    return &sTagDraftItems[actor];
+}
 static s32 sTagLocal, sTagTargets[10],sTagTeams[10]={0,1,0,1,0,1,0,1,0,1};
 s32 TagBattle_Active(void){return sTagLocal || sTagActors>2;}
 s32 TagBattle_Team(s32 a){return a>=0&&a<sTagActors?sTagTeams[a]:a&1;}
@@ -132,11 +155,13 @@ void TagBattle_UpdatePairs(void){
     s32 a,b;
     for(a=0;a<sTagActors;++a){b=sTagPairs[a];if(b<=a||b>=sTagActors)continue;
         s32 attacker=sTagAttackers[a];
-        if(attacker>=0&&TagBattle_PairedAction(BtlAct_GetCurrent(BtlChar_Get(attacker))))sTagPairGrace[a]=6;
+        {extern s32 Bt4BodyChange_Active(s32);
+        if(attacker>=0&&(TagBattle_PairedAction(BtlAct_GetCurrent(BtlChar_Get(attacker)))||Bt4BodyChange_Active(attacker)))sTagPairGrace[a]=6;
         else if(--sTagPairGrace[a]<=0){
             extern void ChrCam_EndCut(void *);
             ChrCam_EndCut(BtlChar_Get(a));ChrCam_EndCut(BtlChar_Get(b));
             sTagPairs[a]=sTagPairs[b]=sTagAttackers[a]=sTagAttackers[b]=-1;sTagPairGrace[a]=sTagPairGrace[b]=0;
+        }
         }
     }
 }
@@ -228,7 +253,8 @@ s32 TagBattle_ConfigureLocal(void) {
             if(i==3 || (i==2 && test[0]!='e'))health=1.0f;
         }
         BattleSetup_SetSide(i,(Port_TagCPU(i)||(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_TEST")))?BTL_CONTROL_CPU:BTL_CONTROL_PAD,0,1,1,1,0,NULL);
-        BattleSetup_SetMember(i,0,Port_TagPlayerChara(i),Port_TagPlayerCostume(i),0,levels[d],health,NULL);
+        BattleSetup_SetMember(i,0,Port_TagPlayerChara(i),Port_TagPlayerCostume(i),0,levels[d],health,
+                             TagBattle_GetDraftItems(i,Port_TagPlayerChara(i)));
         sTagTargets[i]=TagBattle_FirstEnemy(i);
     }
     if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_KO_TEST") && getenv("BT4_TAG_KO_TEST")[0]=='e')sTagTargets[0]=3;

@@ -40,6 +40,7 @@ const char *Update_Notes(void);            /* the release's notes (its body on G
 void Update_NotesFor(const char *locale,char *out,size_t size); /* bounded localized release summary */
 void Update_Download(void);                /* downloads the verified release in a thread */
 void Update_Install(void);                 /* swaps files in a thread -> UPD_INSTALLED or UPD_FAILED */
+int Update_StartTextureMaintenance(int locale); /* caller must be in an offline menu; 1: close this game */
 int Update_Relaunch(void);                 /* UPD_INSTALLED: starts the new version (the caller then exits); 0 failed */
 int Update_BlocksOnline(void);             /* an update is under way: no new online session until it is installed */
 const char *Update_OnlineNote(void);       /* ... the line that says so (English) */

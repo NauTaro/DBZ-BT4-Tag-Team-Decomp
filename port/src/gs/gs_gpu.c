@@ -35,11 +35,6 @@ extern int Port_AspectMilli(void);
 
 static SDL_Window *sWindow; /* the shared window (GsDraw_WindowCreate) */
 static SDL_GPUDevice *sDev;
-/* Hidden/minimized windows have no swapchain acquisition to throttle the GPU.
-   Bound queued frames explicitly so cyclic upload buffers cannot grow with an
-   arbitrarily long backlog on a busy or integrated GPU. */
-static SDL_GPUFence *sFrameFences[3];
-static unsigned sFrameFenceCursor;
 static SDL_GPUTextureFormat sDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 static int sShadowStencil;
 static SDL_GPUShader *sVs, *sFs, *sFsNz, *sFsWb; /* (Nz: gs.frag without its depth output, key bit 23; Wb: and with the glow chain's sampling, bit 25) */
@@ -1308,10 +1303,6 @@ static void vk_frame_end(void) {
         return;
     }
     sEndT[0] = gpu_now();
-    {
-        SDL_GPUFence **old=&sFrameFences[sFrameFenceCursor%3];
-        if(*old){SDL_WaitForGPUFences(sDev,true,old,1);SDL_ReleaseGPUFence(sDev,*old);*old=NULL;}
-    }
     cmd = SDL_AcquireGPUCommandBuffer(sDev);
     /* uploads: this frame's vertices and the textures decoded for it */
     copy = SDL_BeginGPUCopyPass(cmd);
@@ -1661,6 +1652,10 @@ static void vk_frame_end(void) {
                     ft.store_op = SDL_GPU_STOREOP_STORE;
                     pass = SDL_BeginGPURenderPass(cmd, &ft, 1, NULL);
                     SDL_BindGPUGraphicsPipeline(pass, sGradePipe);
+                    /* The target is 1024-square, but only the 512x448 game
+                       picture is presented. Do not shade unused padding. */
+                    SDL_Rect gradeRect={d->scissor[0],d->scissor[1],d->scissor[2],d->scissor[3]};
+                    SDL_SetGPUScissor(pass,&gradeRect);
                     fs[0].texture = sGradeCopy;
                     fs[0].sampler = sGradeSampler; /* (level 0 at its own size; the blurs from the mipmaps) */
                     fs[1].texture = sTgDep[d->target]; /* (the ambient shadows read the depth) */
@@ -1853,6 +1848,8 @@ static void vk_frame_end(void) {
         memcpy(fu.orig, d->orig, sizeof(fu.orig));
         fu.extra[0] = d->vu ? (gsVuUni[d->uniform].misc[2] > 0.0f ? gsVuUni[d->uniform].misc[2] : 0.0f) : gsZMax;
         fu.extra[1] = (sPipes[d->pipeline].key & (1u << 9)) ? 1.0f : 0.0f; /* the source scaled by its alpha */
+        fu.extra[2] = d->portrait[0];
+        fu.extra[3] = d->portrait[1];
         if (!haveFu || memcmp(&fu, &lastFu, sizeof(fu)) != 0) {
             SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
             memcpy(&lastFu, &fu, sizeof(fu));
@@ -2050,9 +2047,13 @@ static void vk_frame_end(void) {
         Port_LagMark('S');
         lag_fence(f);
     } else {
-        sFrameFences[sFrameFenceCursor++%3]=SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
-        { extern void Port_LagMark(int what); Port_LagMark('S'); }
+        SDL_SubmitGPUCommandBuffer(cmd); { extern void Port_LagMark(int what); Port_LagMark('S'); }
     }
+    /* A minimized/hidden window has no swapchain acquisition to pace GPU
+       submissions. Private readback targets bypass it too. Drain only those
+       off-screen submissions instead of retaining an unbounded queue. The
+       visible game keeps the driver's normal swapchain pacing. */
+    if (privatePresent || !acquired || swap == NULL) SDL_WaitForGPUIdle(sDev);
     {   /* BT3_DRAW_LOG=<ms>: each picture whose drawing took longer, from the start of its list to the driver, in parts:
            to find what makes a drawing slow now and then (a laptop: 1 in 10 took 10 to 20 ms instead of 2) */
         static int limit = -1;

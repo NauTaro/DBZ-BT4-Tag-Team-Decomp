@@ -12,6 +12,9 @@
 #include "sys/job.h"
 #include "sys/loading.h"
 #include "sys/save.h"
+#ifdef PORT
+#include "battle/bt4_potara.h"
+#endif
 
 #ifdef PORT
 /* PC build: a stage added from outside the disc (id 0x24 on) has no files on the disc. Every file id the game
@@ -1373,22 +1376,30 @@ void BtlMember_ApplyItems(BattleMember *m) {
     s32 ability[4];
     s32 stats[5];
     s32 i;
+#ifdef PORT
+    s32 online;
+    extern int Port_NetSession(void),Port_TagNetwork(void);
+    online=Port_NetSession()||Port_TagNetwork();
+#endif
 
 #ifdef PORT
-    {
-        /* Online (a session of gs/net.c) nobody has items: the session starts from an empty save, so every item set
-           is empty, but the character selects read a set by the cell of the grid (105 cells) from a table of 97
-           (src/menu/menu_c_e.c, menu_e_b.c: set 2 chosen, then the random cell drawing a cell past 96), and the
-           bytes behind the table (the saved custom characters, which list nothing, and which items are owned, all
-           of them in a session) are taken for item ids: a player got items, a red Potara. The game does it on the
-           PS2 too, with the player's own save; online it is closed here, where every fighter's items arrive. */
-        extern int Port_NetSession(void);
-        if (Port_NetSession()) {
-            memset(&m->items, 0, sizeof(m->items));
-        }
+    /* Saved item IDs are one-based. An invalid old customization must not
+       index beyond the ISO's 350-entry item table on either path. */
+    for (i = 0; i < 8; ++i) {
+        if (m->items.id[i] > SAVE_ITEM_COUNT ||
+            (online && !Bt4Potara_VisualItem(m->items.id[i])))
+            m->items.id[i] = 0;
     }
 #endif
     ItemSet_GetStats(&m->items, stats, ability, m->chara);
+#ifdef PORT
+    if(online){
+        /* Aura Potara also contain a Ki-start bit in the original table.
+           Retain their visual component only on both online transports. */
+        stats[0]=stats[1]=stats[2]=stats[3]=0;
+        Bt4Potara_OnlineAbilities(ability);
+    }
+#endif
     m->bonus[0] = 0;
     m->bonus[1] = stats[2];
     m->bonus[2] = stats[0];
@@ -1405,18 +1416,28 @@ void BtlMember_ApplyItems(BattleMember *m) {
 
 /*
  * Clears a member and fills it: items (optional), character, costume, variant, CPU level, health.
- * BtlMember_ApplyItems runs while m->chara is still 0, so without an AI item the AI type is the one of
- * character 0, whatever `chara` is.
+ * The PC item reader receives the selected character before calculating its
+ * fallback AI type. The original console ordering is retained below.
  */
 void BtlMember_Init(BattleMember *m, s32 chara, s32 costume, s32 variant, s32 cpuLevel, f32 health,
                     BattleItemSet *items) {
     memset(m, 0, sizeof(BattleMember));
+#ifdef PORT
+    m->chara = chara; /* item-derived AI fallback belongs to this fighter */
+#endif
     if (items != NULL) {
         m->items = *items;
     }
     BtlMember_ApplyItems(m);
     m->chara = chara;
     m->costume = costume;
+#ifdef PORT
+    /* BT4 B14 Rev2 DBZP.BIN 0x3BEA0C, called by SLUS 0x129AF0:
+       ability 0x7B (Ragged Clothes) starts with the damaged model. This
+       belongs in setup, before startForm/model loading, not only in the
+       live gauge after the intact model has already been loaded. */
+    if ((u32)m->ability[3] & (1u << (0x7B - 96))) variant = 1;
+#endif
     m->variant = variant;
     m->cpuLevel = cpuLevel;
     m->health = health;

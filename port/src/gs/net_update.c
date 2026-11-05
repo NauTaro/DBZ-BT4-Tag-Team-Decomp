@@ -52,6 +52,7 @@
 #include "update_sign.h"
 #include "port_version.h" /* internal bridge/canonical update identifier */
 #include "../../include/bt4_version.h"
+#include "../../include/bt4_texture_update.h"
 #include "../port_release.h"
 #include "../update_key.h"
 
@@ -1293,6 +1294,30 @@ void Update_Install(void) {
 
 /* The new version, started from the same place (its own folder's program; the working folder stays the one this
    game was started in). */
+int Update_StartTextureMaintenance(int locale) {
+    const char *root=SDL_GetBasePath();
+    char exe[4096], language[4]; SDL_PathInfo info;
+    if(!root||SDL_getenv("BT4_TEXTURE_UPDATE_SKIP")||SDL_getenv("BT4_RENDER_TEST")||
+       SDL_getenv("BT3_REPLAY")||SDL_getenv("BT3_DEMO")||!Bt4Texture_NeedsUpdate(root))return 0;
+#ifdef _WIN32
+    SDL_snprintf(exe,sizeof(exe),"%sBT4decomp-setup.exe",root);
+#else
+    SDL_snprintf(exe,sizeof(exe),"%sBT4decomp-setup",root);
+#endif
+    if(!SDL_GetPathInfo(exe,&info)||info.type!=SDL_PATHTYPE_FILE)return 0;
+    SDL_snprintf(language,sizeof(language),"%d",locale>=0&&locale<=2?locale:0);
+    const char *args[]={exe,"--update-textures","--ui-language",language,NULL};
+    SDL_PropertiesID props=SDL_CreateProperties();
+    SDL_SetPointerProperty(props,SDL_PROP_PROCESS_CREATE_ARGS_POINTER,(void *)args);
+    SDL_SetStringProperty(props,SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING,root);
+    SDL_SetNumberProperty(props,SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,SDL_PROCESS_STDIO_NULL);
+    SDL_SetBooleanProperty(props,SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN,true);
+    SDL_Process *child=SDL_CreateProcessWithProperties(props);
+    SDL_DestroyProperties(props);
+    if(!child){fprintf(stderr,"bt3: texture maintenance could not start: %s\n",SDL_GetError());return 0;}
+    SDL_DestroyProcess(child);return 1;
+}
+
 int Update_Relaunch(void) {
     char exe[1300];
     const char *args[2];

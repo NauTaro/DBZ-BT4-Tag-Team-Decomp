@@ -64,6 +64,8 @@ extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page sho
 extern int gPortMusicPercent, gPortSePercent, gPortVoicePercent, gPortStagePercent;
 
 static GsBackend *sBackend;
+#include "gs_portrait_fade.h"
+static unsigned sPortraitFrame=~0u;
 extern int Port_TagBattleRenderActive(void);
 
 /* Test-only readback: a network wait must present the completed image without
@@ -121,8 +123,9 @@ void Gs_HoldFrame(void) {
     }
 }
 extern int Bt4MenuHD_Request(const uint32_t *, int, int, int, uint64_t, uint32_t **);
-static int sMenuHD = 4;
-static int sBootQualityScale = -1, sBootQualityHD;
+/* BT4 R3: native artworks and glyph sprites come only from disc or the external pack. */
+static const int sMenuHD = 0;
+static int sBootQualityScale = -1;
 extern int Port_GameProfileMenuActive(void);
 static int sSmooth2d = 1; /* the setting "2D filtering" (smooth_2d; BT3_2D_SMOOTH=0/1 wins): 1 smooth */
 static int sWholeFrame; /* the draw being set up shows a frame the game read back (the cross-fade) */
@@ -298,16 +301,16 @@ typedef struct Tex {
     int replaced;  /* 1: texture pack, 2: vector menu labels, 3: packed shared glyphs, 4: enlarged menu artwork */
     int battleText; /* the source texture has Battle font artwork, even with Original selected */
     uint32_t ow, oh, rw, rh; /* then: the original's size and the replacement's */
-    uint64_t bytes; /* uploaded levels, preserving compressed-pack accounting */
+    uint64_t bytes; /* Uploaded storage, including compressed mip levels. */
     uint32_t amax;           /* and the largest alpha byte of the original */
-    int pack; /* pending replacement (gs_texpack.c), or -1 */
-    int packIdentity; /* exact replacement identity, retained after upload */
+    int pack;                /* a texture pack's replacement still being read (gs_texpack.c), or -1 */
     uint32_t packAlpha;      /* and the amax it will have */
     float avg[3];            /* its average colour, weighted by alpha, 0..1 (an energy light's colour is in its texture) */
 } Tex;
 static Tex sTex[MAX_TEX];
 static uint16_t sTexBucket[TEX_BUCKETS]; /* index + 1 of a cache entry, 0 = empty (open addressing) */
 static Tex *sLast; /* the entry the previous lookup returned */
+static uint64_t sTextureBytes;
 #define HD_ALIAS_COUNT 2048
 /* Identical menu artwork is repeatedly uploaded at different GS addresses.
    Remember those addresses without decoding and rerasterizing the same image.
@@ -450,16 +453,21 @@ static uint32_t tex_bucket(uint64_t t0, uint64_t texa, uint32_t gen) {
    written again. The page hashes are too coarse here: a page holds up to 32 palettes, and the game rewrites some
    of them every frame (lit palettes, the fighters' palettes painted for the see-through pass), which made every
    texture with a palette in the same page count as new and be decoded again, hundreds per frame on some stages. */
-#include "gs_palette.h"
 static uint32_t clut_hash(uint32_t cbp, uint32_t cpsm, uint32_t count) {
     static struct { uint32_t key, gen0, gen1, hash; } memo[1024];
-    uint32_t key = cbp << 5 | cpsm << 1 | (count == 256), slot = (key * 2654435761u) >> 22, h;
+    uint32_t key = cbp << 5 | cpsm << 1 | (count == 256), slot = (key * 2654435761u) >> 22, h = 2166136261u, i;
     uint32_t g0 = gGsPageGen[(cbp / 32) & 511], g1 = gGsPageGen[(cbp / 32 + 1) & 511];
 
     if (memo[slot].key == key + 1 && memo[slot].gen0 == g0 && memo[slot].gen1 == g1) {
         return memo[slot].hash;
     }
-    h=Gs_PaletteHash(cbp,cpsm,count,Gs_VramRead);
+    /* Match the decoder's CLUT coordinates. PSMT4 uses two rows of eight,
+       not the first row of a sixteen-column PSMT8 palette. */
+    for (i = 0; i < count; i++) {
+        uint32_t x = count == 16 ? i & 7 : i & 15;
+        uint32_t y = count == 16 ? i >> 3 : i >> 4;
+        h = (h ^ Gs_VramRead(cbp, 1, cpsm, x, y)) * 16777619u;
+    }
     memo[slot].key = key + 1;
     memo[slot].gen0 = g0;
     memo[slot].gen1 = g1;
@@ -673,6 +681,43 @@ static GsTex tbo_texture(uint32_t id) {
     return tex;
 }
 
+/* Rebuild address indexes after compaction. No cross-address replacement sharing.
+   Aliases contain array indices and must be invalidated when entries move. */
+static void texture_cache_reindex(void) {
+    unsigned i;
+    sLast=NULL;sTextureBytes=0;
+    memset(sHdAlias,0,sizeof(sHdAlias));
+    memset(sTexBucket,0,sizeof(sTexBucket));
+    for(i=0;i<(unsigned)gsTexCount;++i) {
+        unsigned h=tex_bucket(sTex[i].tex0,sTex[i].texa,sTex[i].gen);
+        while(sTexBucket[h])h=(h+1)&(TEX_BUCKETS-1);
+        sTexBucket[h]=(uint16_t)(i+1);
+        sTextureBytes+=sTex[i].bytes;
+    }
+}
+
+/* A soft working-set budget, checked in constant time while below its limit.
+   Retire only textures absent from four completed frame lists. A single active
+   scene may exceed the budget: never destroy a texture referenced by that scene.
+   A small eviction band avoids repeatedly throwing out the entire warm cache. */
+static void texture_cache_trim(void) {
+    uint64_t budget=192ull<<20,target;
+    unsigned i,n=0,retired=0;
+    const char *setting=getenv("BT3_TEXTURE_CACHE_MB");
+    if(setting) {int mb=atoi(setting);if(mb>=32&&mb<=2048)budget=(uint64_t)mb<<20;}
+    if(sTextureBytes<=budget)return;
+    target=budget-budget/8;
+    for(i=0;i<(unsigned)gsTexCount;++i) {
+        Tex *t=&sTex[i];
+        if(sTextureBytes>target && gGsFrame-t->last>4) {
+            sTextureBytes-=t->bytes;sBackend->texDestroy(t->tex);++retired;
+        } else sTex[n++]=*t;
+    }
+    if(retired) {gsTexCount=n;texture_cache_reindex();}
+    if(getenv("BT3_MEMORY_LOG"))fprintf(stderr,"texture working set: frame=%u MiB=%llu entries=%d retired=%u\n",
+        gGsFrame,(unsigned long long)(sTextureBytes>>20),gsTexCount,retired);
+}
+
 /* Retire only older HD art when its cache exceeds 192 MiB. Keep this frame's draw references alive. */
 static void menu_hd_trim(uint64_t incoming) {
     uint64_t bytes = incoming;
@@ -691,54 +736,7 @@ static void menu_hd_trim(uint64_t incoming) {
     }
     if (!changed) { return; }
     gsTexCount = n;
-    sLast = NULL;
-    memset(sTexBucket, 0, sizeof(sTexBucket));
-    for (i = 0; i < (uint32_t)gsTexCount; ++i) {
-        uint32_t h = tex_bucket(sTex[i].tex0, sTex[i].texa, sTex[i].gen);
-        while (sTexBucket[h] != 0) { h = (h + 1) & (TEX_BUCKETS - 1); }
-        sTexBucket[h] = (uint16_t)(i + 1);
-    }
-}
-
-/* The count limit alone can retain gigabytes of superseded GS generations.
-   Bound all decoded textures, including ordinary gameplay without a pack.
-   Four completed frames are retained for the interpolation draw lists. */
-static void texture_cache_trim(void) {
-    static unsigned swept;
-    uint64_t bytes=0, budget=256ull<<20, target;
-    unsigned i,n,pass;
-    int changed=0;
-    if(gGsFrame-swept<30)return;
-    swept=gGsFrame;
-    for(i=0;i<(unsigned)gsTexCount;++i)
-        bytes+=sTex[i].bytes;
-    if(getenv("BT3_TEXTURE_CACHE_MB")) {
-        int mb=atoi(getenv("BT3_TEXTURE_CACHE_MB"));
-        if(mb>=32&&mb<=2048)budget=(uint64_t)mb<<20;
-    }
-    if(bytes<=budget)return;
-    target=budget*3/4;
-    for(pass=0;pass<2&&bytes>target;++pass) {
-        unsigned age=pass?4:120;
-        for(i=0,n=0;i<(unsigned)gsTexCount;++i) {
-            Tex *t=&sTex[i];
-            if(bytes>target&&gGsFrame-t->last>age) {
-                bytes-=t->bytes;
-                sBackend->texDestroy(t->tex);changed=1;
-            } else sTex[n++]=*t;
-        }
-        gsTexCount=n;
-    }
-    if(!changed)return;
-    sLast=NULL;
-    memset(sHdAlias,0,sizeof(sHdAlias));
-    memset(sTexBucket,0,sizeof(sTexBucket));
-    for(i=0;i<(unsigned)gsTexCount;++i) {
-        unsigned h=tex_bucket(sTex[i].tex0,sTex[i].texa,sTex[i].gen);
-        while(sTexBucket[h])h=(h+1)&(TEX_BUCKETS-1);
-        sTexBucket[h]=(uint16_t)(i+1);
-    }
-    if(getenv("BT3_MEMORY_LOG"))fprintf(stderr,"texture cache: frame=%u entries=%d estimated-MiB=%llu\n",gGsFrame,gsTexCount,(unsigned long long)(bytes>>20));
+    texture_cache_reindex();
 }
 
 /* How much of a texture pack's pictures a frame takes in (BT3_PACK_FRAME_MB, 4 MB; 0: no limit). Each one in is
@@ -773,29 +771,54 @@ static int pack_budget_take(const TexPackImage *pack) {
 
 /* A pack's levels into a new texture (the back end takes a copy of each). */
 static GsTex pack_texture(const TexPackImage *pack) {
-    GsTex tex = sBackend->texCreate(pack->w, pack->h, pack->format & 3, pack->levels);
+    void *copies[TEXPACK_MAX_LEVELS] = {0};
+    GsTex tex;
     int level;
-    for (level = 0; tex != 0 && level < pack->levels; level++) {
+    if (pack->levels < 1 || pack->levels > TEXPACK_MAX_LEVELS) return 0;
+    /* Reserve every CPU copy before queuing any GPU upload. If allocation
+       fails, keep the existing texture and retry later without a partial
+       upload referencing a destroyed GPU handle. */
+    for (level = 0; level < pack->levels; level++) {
+        copies[level] = malloc(pack->bytes[level]);
+        if (copies[level] == NULL) {
+            while (level > 0) free(copies[--level]);
+            return 0;
+        }
+        memcpy(copies[level], pack->data[level], pack->bytes[level]);
+    }
+    tex = sBackend->texCreate(pack->w, pack->h, pack->format & 3, pack->levels);
+    if (tex == 0) {
+        for (level = 0; level < pack->levels; level++) free(copies[level]);
+        return 0;
+    }
+    for (level = 0; level < pack->levels; level++) {
         uint32_t lw = pack->w >> level ? pack->w >> level : 1, lh = pack->h >> level ? pack->h >> level : 1;
-        void *buf = malloc(pack->bytes[level]);
-        memcpy(buf, pack->data[level], pack->bytes[level]);
-        sBackend->texUpload(tex, level, lw, lh, pack->format & 3, buf, pack->bytes[level]);
+        sBackend->texUpload(tex, level, lw, lh, pack->format & 3, copies[level], pack->bytes[level]);
     }
     return tex;
+}
+
+/* At most 64 source texels per new HD texture, only for energy lighting.
+   No decoded-image allocation or GPU readback. Source textures are unchanged. */
+static void texture_light_average(uint32_t tbp,uint32_t tbw,uint32_t psm,uint32_t tw,uint32_t th,
+                                  uint32_t cbp,uint32_t cpsm,int bits,float out[3]) {
+    double sum[3]={0,0,0},alpha=0;
+    uint32_t nx=tw<8?tw:8,ny=th<8?th:8,x,y;
+    for(y=0;y<ny;y++)for(x=0;x<nx;x++) {
+        uint32_t c=Gs_VramRead(tbp,tbw,psm,(x*tw+tw/2)/nx,(y*th+th/2)/ny);
+        if(bits<=8) {
+            uint32_t i=bits==8?(c&0xE7)|((c&8)<<1)|((c&0x10)>>1):c&15;
+            c=Gs_Expand(Gs_VramRead(cbp,1,cpsm,i&(bits==8?15:7),i>>(bits==8?4:3)),cpsm);
+        } else c=Gs_Expand(c,psm);
+        double a=c>>24;
+        sum[0]+=(c&255)*a;sum[1]+=((c>>8)&255)*a;sum[2]+=((c>>16)&255)*a;alpha+=a;
+    }
+    for(x=0;x<3;x++)out[x]=alpha>0?(float)(sum[x]/alpha/255.0):1.0f;
 }
 
 /* A texture made from the original while its replacement was still being read: once the file is in, it is made
    again from that, at its first use in a frame. The one it replaces may still be in the lists of the frames before
    (Smooth motion draws the last one again while the game makes the next): it is released a few frames later. */
-static Tex *pack_resident(int id,uint64_t texa,uint32_t w,uint32_t h,uint32_t alpha) {
-    if(id<0)return NULL;
-    for(unsigned i=0;i<(unsigned)gsTexCount;++i){
-        Tex *c=&sTex[i];
-        if(c->replaced==1&&c->packIdentity==id&&c->texa==texa&&c->ow==w&&c->oh==h&&c->packAlpha==alpha)return c;
-    }
-    return NULL;
-}
-
 static void pack_arrived(Tex *c) {
     static struct { GsTex tex; unsigned frame; } old[256];
     static unsigned oldHead, oldTail;
@@ -820,14 +843,16 @@ static void pack_arrived(Tex *c) {
     }
     old[oldHead & 255].tex = c->tex;
     old[oldHead++ & 255].frame = gGsFrame;
+    sTextureBytes-=c->bytes;c->bytes=0;
+    for(int level=0;level<pack.levels;++level)c->bytes+=pack.bytes[level];
+    sTextureBytes+=c->bytes;
     c->tex = tex;
     c->replaced = 1;
     c->rw = pack.w;
     c->rh = pack.h;
-    c->bytes=0;
-    for(int level=0;level<pack.levels;++level)c->bytes+=pack.bytes[level];
     c->amax = c->packAlpha;
     c->pack = -1;
+    c->hdPending = 0; /* A completed pack upload takes precedence over software enlargement. */
     gGpuTexReplaced++;
 }
 
@@ -850,7 +875,7 @@ static void menu_hd_arrived(Tex *c) {
     sBackend->texUpload(tex, 0, w, h, GS_TEXFMT_RGBA8, pixels, w * h * 4);
     old[head & 255].tex = c->tex; old[head++ & 255].frame = gGsFrame;
     c->tex = tex; c->rw = w; c->rh = h; c->replaced = 4; c->hdPending = 0;
-    c->bytes=(uint64_t)w*h*4;
+    sTextureBytes-=c->bytes;c->bytes=(uint64_t)w*h*4;sTextureBytes+=c->bytes;
 }
 
 /* Decoding a texture's rows: a large one is shared among worker threads (and the caller), which only read GS memory
@@ -958,11 +983,12 @@ static GsTex texture_get(int ctx, int menuHd) {
     uint64_t tex_t0;
     TexPackImage pack;
     uint32_t packMaxAlpha = 255, rw = tw, rh = th;
-    int packIdentity = -1;
     int replaced = 0, menuText = 0, sharedText = 0, battleText = 0, hdPending = 0, packWait = -1;
     /* Language labels are composed before a generic HD pack's menu artwork.
      * A pack must not replace Portuguese lettering with its English bitmap. */
     int localizedMenu = gPortMenuMode && getenv("BT4_PTBR_ROOT") != NULL && bits <= 8;
+    int originalBootText = Port_GameProfileMenuActive() && MenuText_IsSharedTexture((int)tbp, (int)cbp);
+    int selectedFont = 0;
     uint64_t hdKey = 0;
 
     if (tw > 1024) { tw = 1024; }
@@ -981,6 +1007,7 @@ static GsTex texture_get(int ctx, int menuHd) {
        texture identities when the artwork is still on "Original". */
     gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale(SCALE));
     if (menuHd) { gen ^= 0xB7404D00u + (uint32_t)sMenuHD; }
+    if (originalBootText) { gen ^= 0xB007F017u; }
     gen ^= bits <= 8 ? MenuLabels_ArtKey() : 0; /* the chosen language's menu art ready: decoded again */
     int toonSharp = sToonWanted ? Mods_Look()->shading : 0; /* (a fighter's shading ramp, redrawn: its own copy) */
     if (toonSharp > 0) { gen ^= 0x70017000u + (uint32_t)toonSharp * 0x9E3779B1u; }
@@ -996,8 +1023,6 @@ static GsTex texture_get(int ctx, int menuHd) {
         }
     }
     if (sLast != NULL && sLast->tex0 == t0 && sLast->texa == texa && sLast->gen == gen) {
-        Tex *ready=sTexPackOn?pack_resident(sLast->pack,texa,tw,th,sLast->packAlpha):NULL;
-        if(ready){ready->last=gGsFrame;sLast=ready;return ready->tex;}
         if (sLast->hdPending && sLast->last != gGsFrame) menu_hd_arrived(sLast);
         if (sLast->pack >= 0 && sLast->last != gGsFrame) {
             pack_arrived(sLast);
@@ -1010,8 +1035,6 @@ static GsTex texture_get(int ctx, int menuHd) {
         while (sTexBucket[h] != 0) {
             Tex *c = &sTex[sTexBucket[h] - 1];
             if (c->tex0 == t0 && c->texa == texa && c->gen == gen) {
-                Tex *ready=sTexPackOn?pack_resident(c->pack,texa,tw,th,c->packAlpha):NULL;
-                if(ready){ready->last=gGsFrame;sLast=ready;return ready->tex;}
                 if (c->hdPending && c->last != gGsFrame) menu_hd_arrived(c);
                 if (c->pack >= 0 && c->last != gGsFrame) {
                     pack_arrived(c);
@@ -1027,7 +1050,7 @@ static GsTex texture_get(int ctx, int menuHd) {
         return gsWhite;
     }
     if (gsTexCount == MAX_TEX) {
-        /* Full: prefer textures unused for two seconds, then retain the four most recent frames. */
+        /* Full: retain two seconds first, then the four completed frame lists */
         unsigned keep = gGsFrame > 120 ? gGsFrame - 120 : 0;
         int pass, n;
         for (pass = 0; pass < 2 && gsTexCount == MAX_TEX; pass++, keep = gGsFrame > 4 ? gGsFrame - 4 : 0) {
@@ -1040,35 +1063,17 @@ static GsTex texture_get(int ctx, int menuHd) {
             }
             gsTexCount = n;
         }
-        sLast = NULL;
-        memset(sTexBucket, 0, sizeof(sTexBucket));
-        for (i = 0; i < (uint32_t)gsTexCount; i++) {
-            uint32_t h = tex_bucket(sTex[i].tex0, sTex[i].texa, sTex[i].gen);
-            while (sTexBucket[h] != 0) {
-                h = (h + 1) & (TEX_BUCKETS - 1);
-            }
-            sTexBucket[h] = (uint16_t)(i + 1);
-        }
+        texture_cache_reindex();
         if (gsTexCount == MAX_TEX) {
             return gsWhite; /* this one frame uses more textures than the cache holds */
         }
     }
     tex_t0 = gpu_now();
+    selectedFont = MenuText_WantsTexture((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp);
     /* a texture pack's replacement for this texture, if there is one (gs_texpack.c) */
     if (sTexPackOn && TexPack_Count() != 0) {
         int id = TexPack_Lookup(tbp, tbw, psm, tw, th, (uint32_t)((t0 >> 34) & 1), cbp, cpsm, &packMaxAlpha);
-        int got;
-        packIdentity=id;
-        if(id >= 0) {
-            for (i=0;i<(uint32_t)gsTexCount;++i) {
-                Tex *cached=&sTex[i];
-                if(cached->replaced==1 && cached->packIdentity==id && cached->texa==texa &&
-                   cached->ow==tw && cached->oh==th && cached->packAlpha==packMaxAlpha) {
-                    cached->last=gGsFrame;sLast=cached;return cached->tex;
-                }
-            }
-        }
-        got = id >= 0 ? TexPack_Get(id, &pack) : -1;
+        int got = id >= 0 ? TexPack_Get(id, &pack) : -1;
         if (got > 0 && sBackend->texSlotsLeft() >= pack.levels && pack_budget_take(&pack)) {
             replaced = 1;
             gGpuTexReplaced++;
@@ -1080,28 +1085,9 @@ static GsTex texture_get(int ctx, int menuHd) {
         }
     }
     /* A texture pack still uses the game's source pixels to identify Battle text for widescreen geometry. */
-    px = !replaced || localizedMenu || MenuText_MayHaveBattleTexture((int)tw, (int)th, bits <= 8) ?
+    px = !replaced || localizedMenu || selectedFont || originalBootText || MenuText_MayHaveBattleTexture((int)tw, (int)th, bits <= 8) ?
          malloc((size_t)tw * th * 4) : NULL;
     if (!replaced && px == NULL) { return gsWhite; }
-    if(replaced && px==NULL && Mods_Look()->energy_light>0) {
-        /* HD uploads skip full source decoding. Still sample the source colour
-           for energy lights, instead of treating every coloured ki orb as white.
-           Bounded to 256 samples, only on a texture cache miss. */
-        double sr=0,sg=0,sb=0,sa=0;
-        uint32_t sx=tw/16?tw/16:1,sy=th/16?th/16:1;
-        for(y=sy/2;y<th;y+=sy)for(x=sx/2;x<tw;x+=sx){
-            uint32_t c=Gs_VramRead(tbp,tbw,psm,x,y);
-            if(bits<=8){
-                uint32_t index=bits==8?c&255:c&15;
-                uint32_t n=bits==8?((index&0xE7)|((index&8)<<1)|((index&16)>>1)):index;
-                c=Gs_Expand(Gs_VramRead(cbp,1,cpsm,bits==8?n&15:n&7,bits==8?n>>4:n>>3),cpsm);
-            }else c=Gs_Expand(c,psm);
-            double a=c>>24;sr+=(c&255)*a;sg+=((c>>8)&255)*a;sb+=((c>>16)&255)*a;sa+=a;
-        }
-        sTexAvg[0]=sa>0?(float)(sr/sa/255):1;
-        sTexAvg[1]=sa>0?(float)(sg/sa/255):1;
-        sTexAvg[2]=sa>0?(float)(sb/sa/255):1;
-    }
     {   /* a palette's colours read and expanded once, by the index as stored (8-bit: the GS's order of the 256 entries
            undone), instead of again for every pixel: most of a fight's effects are 4- and 8-bit */
         uint32_t lut[256];
@@ -1118,10 +1104,11 @@ static GsTex texture_get(int ctx, int menuHd) {
         if (px != NULL) {
             TexDecode d = {tbp, tbw, psm, bits, tw, th, lut, px};
             tex_decode(&d);
-            {   /* its average colour, by alpha (every 4th texel is plenty): the colour of an energy light */
+            {   /* its alpha-weighted hue: at most 64 samples, only when this texture is decoded */
                 double sr = 0.0, sg = 0.0, sb = 0.0, sa = 0.0;
-                uint32_t n;
-                for (n = 0; n < tw * th; n += 4) {
+                uint32_t n, step = (tw * th + 63) / 64;
+                if (!step) step=1;
+                for (n = 0; n < tw * th; n += step) {
                     uint32_t c = px[n];
                     double a = (double)(c >> 24);
                     sr += (c & 0xFF) * a; sg += ((c >> 8) & 0xFF) * a; sb += ((c >> 16) & 0xFF) * a; sa += a;
@@ -1132,6 +1119,8 @@ static GsTex texture_get(int ctx, int menuHd) {
             }
         }
     }
+    if(px==NULL && replaced && !gPortMenuMode && Mods_Look()->energy_light>0)
+        texture_light_average(tbp,tbw,psm,tw,th,cbp,cpsm,bits,sTexAvg);
     if (px != NULL && !replaced && bits <= 8) {
         MenuLabels_ArtSwap((unsigned char *)px, (int)tw, (int)th); /* the European picture, in the chosen language */
     }
@@ -1139,11 +1128,16 @@ static GsTex texture_get(int ctx, int menuHd) {
         MenuText_NewTexture(); /* (its label hash is worked out once, for this check and MenuText_Render below) */
         battleText = MenuText_IsBattleTexture((const uint8_t *)px, (int)tw, (int)th, bits <= 8);
     }
-    if (replaced && !localizedMenu) {
+    if (replaced && !localizedMenu && !selectedFont && !originalBootText) {
         free(px);
         px = NULL;
     }
-    if ((!replaced || localizedMenu) && px != NULL) {
+    /* The startup language dialog retains its native glyphs unless the user
+       selected a font. Other pack images survive when no text replacement matches. */
+    if (originalBootText && px != NULL) {
+        replaced = 0; packWait = -1; rw = tw; rh = th;
+    }
+    if ((!replaced || localizedMenu || selectedFont) && px != NULL) {
         int mw, mh;
         uint64_t font_t0 = gpu_now();
         int textScale = MenuText_RasterScale(SCALE);
@@ -1240,9 +1234,9 @@ static GsTex texture_get(int ctx, int menuHd) {
     t->rh = rh;
     t->bytes=(uint64_t)rw*rh*4;
     if(replaced){t->bytes=0;for(int level=0;level<pack.levels;++level)t->bytes+=pack.bytes[level];}
+    sTextureBytes+=t->bytes;
     t->amax = replaced ? packMaxAlpha : 255u;
     t->pack = packWait;
-    t->packIdentity = packIdentity;
     t->packAlpha = packMaxAlpha;
     memcpy(t->avg, sTexAvg, sizeof(t->avg));
     sTexAvg[0] = sTexAvg[1] = sTexAvg[2] = 1.0f;
@@ -1446,6 +1440,8 @@ int GsDraw_TargetGet(uint32_t fbp, int create) {
 
 static int pipeline_get(int ctx, int topo, int vu, int shadow);
 
+/* Opt-in capture of framebuffer ownership while reproducing screen effects.
+   Read-only: it must not create targets or touch their lifetime/generation. */
 /* GfxPost_DrawDepthClut as one full-screen pass (the game sends 16 strips; they become one draw). */
 static void depth_clut(int ctx) {
     uint64_t sc = gGs.scissor[ctx];
@@ -1496,11 +1492,6 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     float tw = (float)(1u << ((t0 >> 26) & 15)), th = (float)(1u << ((t0 >> 30) & 15));
 
     *us = *vs = 1.0f;
-    if (tme && TexPack_SkipDraw((uint32_t)t0 & 0x3FFF, (uint32_t)(t0 >> 14) & 63,
-                              (uint32_t)(t0 >> 20) & 63, (uint32_t)tw, (uint32_t)th)) {
-        gsSkipped++;
-        return 0;
-    }
     /* Passes that only make sense on the PS2's memory layout are not drawn here: they belong to full-screen
        effects that get native versions (see docs/port/README.md). Dropped:
          - drawing through a 16-bit view of the frame buffer (the "channel shuffle" between halves of a pixel),
@@ -1799,7 +1790,7 @@ void Port_WallMesh(const void *key, int second, int culled, const float *screen,
 /* Two draws can be merged into one call when everything they need is the same. `scissor` is compared as
    four ints (the scissor a draw has recorded). */
 static int same_state(const GsDraw *a, const GsDraw *b) {
-    return !a->native && a->hud == b->hud && a->vu == b->vu && a->wall == b->wall && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
+    return !a->native && a->portrait[0] == b->portrait[0] && a->portrait[1] == b->portrait[1] && a->hud == b->hud && a->vu == b->vu && a->wall == b->wall && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
            memcmp(a->mode, b->mode, sizeof(a->mode)) == 0 && a->misc[0] == b->misc[0] && a->misc[1] == b->misc[1] &&
            a->misc[2] == b->misc[2] && a->misc[3] == b->misc[3] && a->blendc == b->blendc &&
            memcmp(a->rect, b->rect, sizeof(a->rect)) == 0 && memcmp(a->orig, b->orig, sizeof(a->orig)) == 0 &&
@@ -2022,6 +2013,11 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
            blocks of a GS pixel, which a replacement of several texels per GS pixel is not; held to the GS's grid
            its letters stepped one after the other while a piece glided (BT3_TEX_GRID=1: the grid rule, to compare). */
         d.orig[3] = getenv("BT3_TEX_GRID") != NULL && atoi(getenv("BT3_TEX_GRID")) != 0 ? 0.0f : 1.0f;
+    }
+    if (fst && !d.tex_is_target && (prim & (PORT_PRIM_PORTRAIT_LEFT | PORT_PRIM_PORTRAIT_RIGHT))) {
+        /* Resolve one mask across every piece at frame end, after layout. */
+        d.portrait[0]=(prim & PORT_PRIM_PORTRAIT_RIGHT)?1.0f:-1.0f;
+        sPortraitFrame=gGsFrame;
     }
     if (type == 3 && (prim & PORT_PRIM_BOUNDARY) && !Port_TagBattleRenderActive()) {
         /* Boundary geometry is marked in its sorted packet. A reused TEX0 is
@@ -2629,18 +2625,30 @@ void Port_TagHudTrace(int actor,int front,int kind,const float *basis,const floa
 }
 /* A script mod's vivid colours, ambient shadows and energy light (bt3.look): native effect 6, a pass over the fight's
    picture before its HUD (shaders/grade.frag); only the back end of SDL's GPU API draws it (gs_gpu.c). */
+/* Both SDL GPU backends replay native grade passes in vk_frame_end.
+   OpenGL and the retired legacy backend do not implement this pass. */
+static int grade_supported(void) {
+    if(sBackend==&sVulkanBackend)return 1;
+#ifdef _WIN32
+    if(sBackend==&sDirect3D12Backend)return 1;
+#endif
+    return 0;
+}
 static void grade_add(void) {
     const ModsLook *lk = Mods_Look();
     GsDraw g;
     float k = lk->vivid / 100.0f;
     int ls;
 
-    if ((lk->vivid <= 0 && lk->ambient <= 0 && lk->energy_light <= 0) || !sBackend || sBackend->frameEnd != sVulkanBackend.frameEnd ||
+    if ((lk->vivid <= 0 && lk->ambient <= 0 && lk->energy_light <= 0) || !grade_supported() ||
         sGradeFrame == gGsFrame || gsDrawCount >= MAX_DRAWS || gGsMainFbp < 0) {
         return;
     }
+    /* Energy-only needs no copy, mip chain or fullscreen pass without lights. */
+    if(lk->vivid<=0 && lk->ambient<=0 && (sLightFrame!=gGsFrame || sLightCount==0))return;
     memset(&g, 0, sizeof(g));
     g.native = 6;
+    g.scissor[2]=512*SCALE;g.scissor[3]=448*SCALE; /* displayed picture, not unused target padding */
     g.target = GsDraw_TargetGet((uint32_t)gGsMainFbp, 0);
     if (g.target < 0) {
         return;
@@ -2775,17 +2783,6 @@ void GsGpu_Native(int effect) {
 static void interp_scale_changed(void);
 static int scale_apply(void) {
     /* Tag Team uses the user's chosen resolution, as the other battle modes do. */
-    /* Presentation-only quality for the original boot glyphs. Restore the
-     * user's battle resolution and menu-filter preference on leaving it. */
-    if(Port_GameProfileMenuActive() && sBootQualityScale<0){
-        sBootQualityScale=gsPendingScale?gsPendingScale:gsScale;
-        sBootQualityHD=sMenuHD;sMenuHD=4;
-        gsPendingScale=sBootQualityScale<3?3:sBootQualityScale;
-        fprintf(stderr,"bt4: language selector quality: original glyphs, 4x artwork, minimum 3x target\n");
-    }else if(!Port_GameProfileMenuActive() && sBootQualityScale>=0){
-        gsPendingScale=sBootQualityScale;sMenuHD=sBootQualityHD;sBootQualityScale=-1;
-        fprintf(stderr,"bt4: language selector quality: restored game settings\n");
-    }
     if (gsPendingScale == 0 || gsPendingScale == gsScale) {
         gsPendingScale = 0;
         return 0;
@@ -3083,17 +3080,11 @@ renderer_ready:
     gsWhite = sb->whiteTex();
     gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 255;
     gsGlowPercent = getenv("BT3_GLOW") != NULL ? atoi(getenv("BT3_GLOW")) : Port_Setting("glow", GLOW_DEFAULT);
-    sMenuHD = Port_Setting("menu_hd", 1) ? Port_Setting("menu_hd_scale", 4) : 0;
-    if (sMenuHD < 2 || sMenuHD > 6) { sMenuHD = 0; }
     /* (one strength for both until 2026-10-21: a saved "glow" is the glare's too until it has its own) */
     gsGlarePercent = getenv("BT3_GLARE") != NULL ? atoi(getenv("BT3_GLARE")) : Port_Setting("glare", gsGlowPercent);
     gsSharpBlur = (getenv("BT3_SHARP_BLUR") != NULL ? atoi(getenv("BT3_SHARP_BLUR")) : Port_Setting("sharp_blur", 1)) != 0;
     MenuText_SetFontId(Port_Setting("menu_font_id", 0));
-    if(getenv("BT4_PTBR_ROOT") && Port_Setting("menu_font_id",0)==0)
-        MenuText_SetFontId(MenuText_FirstFontId(MENU_TEXT_MENU));
     MenuText_SetBattleFontId(Port_Setting("battle_font_id", 0));
-    if(getenv("BT4_PTBR_ROOT") && Port_Setting("battle_font_id",0)==0)
-        MenuText_SetBattleFontId(MenuText_FirstFontId(MENU_TEXT_BATTLE));
     MenuText_SetSharedFontId(Port_Setting("text_font_id", 0));
     sTexPackOn = Port_Setting("texture_pack", 1) != 0;
     sSmooth2d = getenv("BT3_2D_SMOOTH") != NULL ? atoi(getenv("BT3_2D_SMOOTH")) != 0 : Port_Setting("smooth_2d", 1) != 0;
@@ -3101,7 +3092,6 @@ renderer_ready:
         extern int gsInterp; gsInterp = 0;
         gsFxOff |= 1u | 2u | 32u; /* outline, glare, camera blur; keep attack effects */
         gsGlowPercent = 15; gsGlarePercent = 0; gsSharpBlur = 0;
-        if (sMenuHD > 2) sMenuHD = 2;
         fprintf(stderr,"bt4: DX9 Performance: scale=1 outline=off glare=off camera-blur=off texture-pack=%s\n",sTexPackOn?"on":"off");
     }
     gPortMusicPercent = Port_Setting("music", 100);
@@ -3161,7 +3151,18 @@ static unsigned gInterpCuts, gInterpStatic, gInterpNotMutual;
 static unsigned gInterpFollowed, gInterpThrough; /* ticks left without in-between pictures because the camera's way crossed the scenery */
 static unsigned gInterpPaired, gInterpUnpaired, gInterpCamera; /* blocks blended / without a partner / of those, moved by the camera's change (BT3_INTERP_LOG) */
 
-#define INTERP_SCISSOR_ID(d) ((((uint32_t)(d)->scissor[0] * 73856093u) ^ ((uint32_t)(d)->scissor[1] * 19349663u) ^ ((uint32_t)(d)->scissor[2] * 83492791u) ^ ((uint32_t)(d)->scissor[3] * 2971215073u)) | 1u)
+/* Equal scissors do not identify a camera: scene, shadow and intermediate
+   render targets can use that same rectangle with different projections.
+   Mixing them makes a 60-FPS frame zoom/jump even while the native pose is
+   paused. Keep model matching AND CPU-transformed effects in the same target. */
+static uint32_t interp_target_role(const GsDraw *d) {
+    if(d->target<0 || d->target>=gsTargetCount)return 0;
+    /* The two alternating display buffers are the SAME camera. Physical
+       buffer indices cannot be used as identities across game ticks. */
+    uint32_t fbp=gsTargets[d->target].fbp;
+    return gGsMainFbp>=0 && fbp==(uint32_t)gGsMainFbp ? 1u : fbp+2u;
+}
+#define INTERP_SCISSOR_ID(d) ((((uint32_t)(d)->scissor[0] * 73856093u) ^ ((uint32_t)(d)->scissor[1] * 19349663u) ^ ((uint32_t)(d)->scissor[2] * 83492791u) ^ ((uint32_t)(d)->scissor[3] * 2971215073u) ^ (interp_target_role(d) * 0x9E3779B9u)) | 1u)
 /* What a uniform block draws, as a number that is the same in the next picture: the kind of each of its draws and
    the first vertices of each (they are in model space: the same mesh has the same numbers every frame, wherever it
    stands in the list; the stage's pieces come and go with what the camera sees, so the place in the list is no
@@ -3299,14 +3300,9 @@ static void interp_clip_pos(const Vu0Uniform *u, const float *v, float *s) {
     }
 }
 
-/* The camera's change in parts: sInterpRoot[0] = its square root (half of the move), [1] = a quarter, [2] = an eighth.
-   The picture a fraction of a tick before this one is then (the product of some of these) * this picture's screen
-   matrix: the camera half way along its turn. (Half way between the two MATRICES is something else: a camera that
-   turned by a good angle in one tick gives a picture that is too small half way, the average of two rotations
-   being shorter than either. The scenery shrank in the in-between pictures of every fast turn; the sky came away
-   from the edge of the screen and the cleared picture showed as a grey veil.) */
-static double sInterpRoot[3][16];
-static int sInterpRoots; /* they could be worked out */
+#include "gs_camera_interp.h"
+static double sInterpSceneNow[16];
+
 static double sInterpDd[16], sInterpDtD[16]; /* the camera's change, and the part of it used for the picture being built, in double precision */
 static float sInterpDt[16]; /* the camera's change over the part of the tick still to come at the picture being built */
 static int sInterpHaveDt;
@@ -3358,40 +3354,6 @@ static void interp_mul_d(const double *a, const double *b, double *o) {
             o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
         }
     }
-}
-
-/* The square root of a matrix (Denman and Beavers' iteration): the matrix that, applied twice, is `a`. For the
-   camera's change that is half of the camera's move. 0 = it did not settle (a turn of half a circle has none). */
-static int interp_sqrt_d(const double *a, double *out) {
-    double y[16], z[16], yi[16], zi[16], chk[16], err = 0.0, mag = 0.0;
-    int i, it;
-
-    memcpy(y, a, sizeof(y));
-    for (i = 0; i < 16; i++) {
-        z[i] = i % 5 == 0;
-    }
-    for (it = 0; it < 24; it++) {
-        if (!interp_inverse_d(y, yi) || !interp_inverse_d(z, zi)) {
-            return 0;
-        }
-        for (i = 0; i < 16; i++) {
-            y[i] = 0.5 * (y[i] + zi[i]);
-            z[i] = 0.5 * (z[i] + yi[i]);
-        }
-    }
-    interp_mul_d(y, y, chk);
-    for (i = 0; i < 16; i++) {
-        err += fabs(chk[i] - a[i]);
-        mag += fabs(a[i]);
-        if (!(y[i] == y[i])) {
-            return 0;
-        }
-    }
-    if (!(err <= mag * 1e-6)) {
-        return 0;
-    }
-    memcpy(out, y, sizeof(y));
-    return 1;
 }
 
 static void interp_camera_screen(const float *screen, float *o) {
@@ -3640,6 +3602,7 @@ static int interp_build_view(float t, int first) {
                             sp[k3] = q->screen[k3];
                         }
                         memcpy(sInterpSceneWas, sp, sizeof(sp));
+                        memcpy(sInterpSceneNow, sc, sizeof(sc));
                         sInterpHaveCam = interp_camera_centre(sc, sInterpCamNow) && interp_camera_centre(sp, sInterpCamWas);
                         if (interp_inverse_d(sc, si)) {
                             interp_mul_d(sp, si, dd);
@@ -3662,10 +3625,6 @@ static int interp_build_view(float t, int first) {
             }
         }
         sInterpHaveD = agreed && sInterpZMax > 0.0f;
-        sInterpRoots = 0;
-        if (agreed) {
-            sInterpRoots = interp_sqrt_d(sInterpDd, sInterpRoot[0]) && interp_sqrt_d(sInterpRoot[0], sInterpRoot[1]) && interp_sqrt_d(sInterpRoot[1], sInterpRoot[2]);
-        }
     }
     /* 2b. Scenery that goes with the camera. The far backdrop is drawn with the scenery's own screen matrix, but its
        vertices are made anew in every picture, around where the camera stands: it has no partner by its vertices,
@@ -3979,29 +3938,14 @@ static int interp_build_view(float t, int first) {
     /* 4. The blend. */
 blend:
     sInterpHaveDt = 0;
-    if (agreed && sInterpRoots && getenv("BT3_INTERP_LINEAR") == NULL) {
-        /* the camera's change over the rest of the tick, 1 - t of it, from its halves, quarters and eighths */
-        float left = (1.0f - t) * 8.0f;
-        int m = (int)(left + 0.5f), bit;
-        if (m >= 1 && m <= 7 && fabsf(left - (float)m) < 0.01f) {
-            double acc[16], tmp[16];
-            int k, have = 0;
-            for (bit = 0; bit < 3; bit++) {
-                if (m & (4 >> bit)) {
-                    if (!have) {
-                        memcpy(acc, sInterpRoot[bit], sizeof(acc));
-                        have = 1;
-                    } else {
-                        interp_mul_d(acc, sInterpRoot[bit], tmp);
-                        memcpy(acc, tmp, sizeof(acc));
-                    }
-                }
-            }
-            for (k = 0; k < 16; k++) {
-                sInterpDt[k] = (float)acc[k];
-                sInterpDtD[k] = acc[k];
-            }
-            sInterpHaveDt = 1;
+    if (agreed && getenv("BT3_INTERP_LINEAR") == NULL) {
+        double camera[16], inverse[16];
+        /* Interpolate the actual eye, quaternion and projection parameters.
+           Rejected/non-perspective views keep the existing linear fallback. */
+        if (GsCamera_Blend(sInterpSceneWas,sInterpSceneNow,t,camera) && interp_inverse_d(sInterpSceneNow,inverse)) {
+            interp_mul_d(camera,inverse,sInterpDtD);
+            for (int j=0;j<16;j++)sInterpDt[j]=(float)sInterpDtD[j];
+            sInterpHaveDt=1;
         }
     }
     for (i = 0; i < gsVuUniCount; i++) {
@@ -4095,14 +4039,14 @@ blend:
                something else: how bright the piece is drawn. A piece of scenery paired with another one that stands
                like it (the second chance above) got the average of two brightnesses: the grey veil over a whole
                in-between picture, whenever the pieces on screen changed. */
-            for (k = 0; k < ((sInterpKind[i] >> 6) == 1 && (c->misc[3] <= 1.0f || c->misc[3] == 6.0f) ? 60 : 56); k++) {
+            for (k = 0; k < ((sInterpKind[i] >> 6) == 1 && c->misc[3] <= 1.0f ? 60 : 56); k++) {
                 of[k] = pf[k] + (cf[k] - pf[k]) * t;
             }
             if (memcmp(c->boneA, q->boneA, 40 * sizeof(float)) == 0) {
                 /* it stands as it stood: its bones are this picture's to the last bit (pieces of scenery laid over
                    each other must come out at exactly the same depth) */
                 memcpy(o->boneA, c->boneA, 40 * sizeof(float));
-            } else if (sInterpSig[i] != 0x53484457u && (c->misc[3] <= 1.0f || c->misc[3] == 5.0f || c->misc[3] == 6.0f)) { /* model, reflection and rim must share the same interpolated bones */
+            } else if (sInterpSig[i] != 0x53484457u && (c->misc[3] <= 1.0f || c->misc[3] == 5.0f)) { /* (a model's two bones: not the shadow's and other programs' use of these slots) */
                 /* Layer 5 is the reflection of a shiny model (program 1's second texture), drawn over the same
                    triangles as its layer 0. With the plain average of the matrices above, its triangles were a
                    little smaller and elsewhere than the layer's under it, in the in-between pictures only: the
@@ -4112,8 +4056,11 @@ blend:
                 interp_bone(q->boneA, c->boneA, t, around, o->boneA);
                 interp_bone(q->boneB, c->boneB, t, around, o->boneB);
             }
-            if (scenery && sInterpHaveDt) {
-                interp_camera_screen(c->screen, o->screen); /* the camera part of the way, not the matrices' average */
+            if (memcmp(c->screen,q->screen,sizeof(c->screen))==0) {
+                /* Never move a stationary projection using another pass's camera. */
+                memcpy(o->screen,c->screen,sizeof(c->screen));
+            } else if (scenery && sInterpHaveDt) {
+                interp_camera_screen(c->screen, o->screen);
             }
             paired++;
         } else if (agreed && sInterpSig[i] != 0) {
@@ -4184,8 +4131,8 @@ typedef struct InterpViewState {
     uint32_t id;
     int ok, cut, scenery;
     float D[16], offX, offY, zMax, Dt[16], camMove;
-    double root[3][16], Dd[16], DtD[16], camNow[3], camWas[3], sceneWas[16];
-    int haveD, roots, haveDt, haveCam, agreed, bonesInView;
+    double sceneNow[16], Dd[16], DtD[16], camNow[3], camWas[3], sceneWas[16];
+    int haveD, haveDt, haveCam, agreed, bonesInView;
     uint32_t jumped, nscreens;
     const float *screens[16];
 } InterpViewState;
@@ -4196,13 +4143,13 @@ static void interp_view_save(InterpViewState *v) {
     memcpy(v->D, D, sizeof(D));
     v->offX = sInterpOffX; v->offY = sInterpOffY; v->zMax = sInterpZMax; v->camMove = sInterpCamMove;
     memcpy(v->Dt, sInterpDt, sizeof(v->Dt));
-    memcpy(v->root, sInterpRoot, sizeof(v->root));
+    memcpy(v->sceneNow, sInterpSceneNow, sizeof(v->sceneNow));
     memcpy(v->Dd, sInterpDd, sizeof(v->Dd));
     memcpy(v->DtD, sInterpDtD, sizeof(v->DtD));
     memcpy(v->camNow, sInterpCamNow, sizeof(v->camNow));
     memcpy(v->camWas, sInterpCamWas, sizeof(v->camWas));
     memcpy(v->sceneWas, sInterpSceneWas, sizeof(v->sceneWas));
-    v->haveD = sInterpHaveD; v->roots = sInterpRoots; v->haveDt = sInterpHaveDt; v->haveCam = sInterpHaveCam;
+    v->haveD = sInterpHaveD; v->haveDt = sInterpHaveDt; v->haveCam = sInterpHaveCam;
     v->agreed = agreed; v->bonesInView = bonesInView; v->jumped = jumped; v->nscreens = nscreens;
     memcpy(v->screens, screens, sizeof(v->screens));
 }
@@ -4212,13 +4159,13 @@ static void interp_view_load(const InterpViewState *v) {
     memcpy(sInterpD, v->D, sizeof(sInterpD));
     sInterpOffX = v->offX; sInterpOffY = v->offY; sInterpZMax = v->zMax; sInterpCamMove = v->camMove;
     memcpy(sInterpDt, v->Dt, sizeof(v->Dt));
-    memcpy(sInterpRoot, v->root, sizeof(v->root));
+    memcpy(sInterpSceneNow, v->sceneNow, sizeof(v->sceneNow));
     memcpy(sInterpDd, v->Dd, sizeof(v->Dd));
     memcpy(sInterpDtD, v->DtD, sizeof(v->DtD));
     memcpy(sInterpCamNow, v->camNow, sizeof(v->camNow));
     memcpy(sInterpCamWas, v->camWas, sizeof(v->camWas));
     memcpy(sInterpSceneWas, v->sceneWas, sizeof(v->sceneWas));
-    sInterpHaveD = v->haveD; sInterpRoots = v->roots; sInterpHaveDt = v->haveDt; sInterpHaveCam = v->haveCam;
+    sInterpHaveD = v->haveD; sInterpHaveDt = v->haveDt; sInterpHaveCam = v->haveCam;
     agreed = v->agreed; bonesInView = v->bonesInView; jumped = v->jumped; nscreens = v->nscreens;
     memcpy(screens, v->screens, sizeof(v->screens));
 }
@@ -4239,12 +4186,13 @@ static int interp_view_select(uint32_t id) {
         }
     }
     /* a view without any block of a vertex program (the HUD's rectangle): no camera */
-    sInterpHaveD = sInterpHaveDt = sInterpRoots = sInterpHaveCam = 0;
+    sInterpHaveD = sInterpHaveDt = sInterpHaveCam = 0;
     sInterpCamMove = 0.0f;
     sInterpViewLoaded = -1;
     return 1;
 }
 
+#include "gs_rim_interp.h"
 static int interp_build(float t, int first) {
     uint32_t i;
     int k, okAny = 0, cutAny = 0, okScenery = 0;
@@ -4263,8 +4211,10 @@ static int interp_build(float t, int first) {
             }
             if (k == sInterpViewCount) {
                 if (sInterpViewCount == INTERP_MAX_VIEWS) {
-                    sInterpBlkView[i] = sInterpViews[0].id; /* (more views than there is room for: with the first) */
-                    k = 0;
+                    /* No capacity is preferable to borrowing another target's
+                       camera. This block keeps its real pose for this tick. */
+                    sInterpSig[i] = 0;
+                    continue;
                 } else {
                     memset(&sInterpViews[k], 0, sizeof(sInterpViews[k]));
                     sInterpViews[k].id = sInterpBlkView[i];
@@ -4279,7 +4229,7 @@ static int interp_build(float t, int first) {
         sInterpView = v->id;
         if (first) {
             sInterpWasCut = 0;
-            sInterpHaveD = sInterpHaveDt = sInterpRoots = sInterpHaveCam = 0;
+            sInterpHaveD = sInterpHaveDt = sInterpHaveCam = 0;
             sInterpCamMove = 0.0f;
             v->ok = interp_build_view(t, 1);
             v->cut = sInterpWasCut;
@@ -4294,6 +4244,7 @@ static int interp_build(float t, int first) {
         okScenery |= v->ok && v->scenery;
     }
     sInterpViewLoaded = -1;
+    GsRim_Align(sInterpBlend,gsVuUni,sInterpKind,sInterpObject,sInterpBlkView,gsVuUniCount);
     /* a cut where no view with scenery goes on: no in-between picture at all (the shots of a transformation) */
     return okAny && !(cutAny && !okScenery);
 }
@@ -5351,7 +5302,7 @@ static void interp_counts_restore(void) {
 static uint64_t sInterpCostNs;
 static void interp_forget(void) {
     sInterpNext = sInterpPrevCount = sInterpPrevPrimCount = sInterpPrevVertCount = 0;
-    sInterpHaveCam = sInterpHaveD = sInterpHaveDt = sInterpRoots = 0;
+    sInterpHaveCam = sInterpHaveD = sInterpHaveDt = 0;
     sInterpViewCount = 0;
     sInterpViewLoaded = -1;
 }
@@ -5639,6 +5590,7 @@ void GsGpu_FrameEnd(void) {
         skip_decide();
         return;
     }
+    if(sPortraitFrame==gGsFrame)GsPortrait_Finalize(gsDraws,gsDrawCount,gsVerts,(float)SCALE);
     uint64_t t0 = gpu_now();
     if (sBackend != NULL) {
         int i;
@@ -5652,16 +5604,13 @@ void GsGpu_FrameEnd(void) {
             }
         }
         if (gsInterp < 0) {
-            /* One-time upgrade of the old native-30 presentation profile.
-             * Subsequent explicit 30/60/120/240 choices remain the user's. */
-            if (!getenv("BT3_INTERP") && Port_Setting("bt4_motion_profile",0)<2) {
-                if (Port_Setting("interp",0)==0 && !GsDraw_PerformanceMode())
-                    Port_SettingSave("interp",1);
-                Port_SettingSave("bt4_motion_profile",2);
-                Port_SettingsWrite();
-            }
+            /* An explicit native-30 choice is not an obsolete profile. */
             gsInterp = getenv("BT3_INTERP") != NULL ? atoi(getenv("BT3_INTERP")) : Port_Setting("interp", 1);
             gsInterp = gsInterp < 0 ? 0 : gsInterp > 3 ? 3 : gsInterp;
+        }
+        /* Allocate the interpolation history only when it is actually enabled,
+           including when enabled later from F1. Native rendering needs none. */
+        if (gsInterp > 0 && sInterpPrev == NULL) {
             sInterpPrev = malloc(MAX_VU_UNIFORMS * sizeof(Vu0Uniform));
             sInterpBlend = malloc(MAX_VU_UNIFORMS * sizeof(Vu0Uniform));
             sInterpPrevSig = malloc(MAX_VU_UNIFORMS * sizeof(uint32_t));
@@ -5671,6 +5620,16 @@ void GsGpu_FrameEnd(void) {
             sInterpPrevPrims = malloc(INTERP_MAX_PRIMS * sizeof(InterpPrim));
             sInterpPrims = malloc(INTERP_MAX_PRIMS * sizeof(InterpPrim));
             sInterpPrimUsed = malloc(INTERP_MAX_PRIMS);
+            if(!sInterpPrev || !sInterpBlend || !sInterpPrevSig || !sInterpSig ||
+               !sInterpPrevVerts || !sInterpBlendVerts || !sInterpPrevPrims || !sInterpPrims || !sInterpPrimUsed) {
+                free(sInterpPrev);sInterpPrev=NULL;free(sInterpBlend);sInterpBlend=NULL;
+                free(sInterpPrevSig);sInterpPrevSig=NULL;free(sInterpSig);sInterpSig=NULL;
+                free(sInterpPrevVerts);sInterpPrevVerts=NULL;free(sInterpBlendVerts);sInterpBlendVerts=NULL;
+                free(sInterpPrevPrims);sInterpPrevPrims=NULL;free(sInterpPrims);sInterpPrims=NULL;
+                free(sInterpPrimUsed);sInterpPrimUsed=NULL;
+                gsInterp=0;
+                fprintf(stderr,"bt3: interpolation history allocation failed; using native presentation\n");
+            }
         }
         {
             /* A scene the game shows at 60 a second (one vertical blank per picture: menus, the character select) has

@@ -2076,7 +2076,7 @@ static int upd_percent(const UpdateStatus &u) {
 }
 
 static bool upd_online(void) { // an online session or a lobby is on: it is never interrupted
-    return Port_NetActive() || Lobby_Active() || Port_NetSpectating();
+    return Port_NetActive() || Lobby_Active() || Port_NetSpectating() || Port_TagNetwork();
 }
 
 static bool upd_menu(void) {
@@ -2123,6 +2123,13 @@ static void update_tick(void) {
                             sizeof(sUpdWhy));
             }
         }
+    }
+    // Migration runs once at a safe offline menu. No pack swap or 2.54 GB
+    // download is started in a match, a character selector or a lobby.
+    static bool texturesChecked;
+    if(!texturesChecked&&!sOpen&&!sQuit&&upd_menu()&&!upd_online()){
+        texturesChecked=true;
+        if(Update_StartTextureMaintenance(f1_language())){Port_SettingsWrite();exit(0);}
     }
     if (!sUpdTold) { // the update installed before this start
         const char *ver;
@@ -2522,40 +2529,28 @@ static void ui_tab(PortVideo &v) {
         if (choice != Port_GameProfileLanguage()) ImGui::TextWrapped("%s", f1_text("Language saved for the next launch."));
         ImGui::Separator();
     }
-    if (ImGui::BeginCombo(f1_text("Menu font"), f1_text(MenuText_FontName(v.menuFont)))) {
-        for (int i = 0; i < MenuText_FontCount(); i++) {
-            if (!MenuText_FontAvailable(i, MENU_TEXT_MENU)) { continue; }
-            ImGui::PushID(i);
-            if (ImGui::Selectable(f1_text(MenuText_FontName(i)), v.menuFont == i)) { v.menuFont = i; }
-            if (v.menuFont == i) { ImGui::SetItemDefaultFocus(); }
-            ImGui::PopID();
+    struct FontSetting { const char *label; int *choice; int role; const char *tip; };
+    FontSetting fonts[] = {
+        {"Menu font", &v.menuFont, MENU_TEXT_MENU,
+         "Original uses the game's sprites. Other fonts replace matching menu labels immediately.\nBattle announcements have their own setting below."},
+        {"Battle font", &v.battleFont, MENU_TEXT_BATTLE,
+         "Choose original battle announcements and HUD text, or any battle font listed in fonts.tsv."},
+        {"Dialogue / UI font", &v.textFont, MENU_TEXT_DIALOGUE,
+         "Replace the shared font used by dialogue, subtitles and ordinary UI text.\nOriginal keeps the game's glyphs. Text placement, colors, shadows and icons are preserved."}
+    };
+    for (FontSetting &font : fonts) {
+        if (ImGui::BeginCombo(f1_text(font.label), f1_text(MenuText_FontName(*font.choice)))) {
+            for (int i = 0; i < MenuText_FontCount(); ++i) {
+                if (!MenuText_FontAvailable(i, font.role)) continue;
+                ImGui::PushID(i);
+                if (ImGui::Selectable(f1_text(MenuText_FontName(i)), *font.choice == i)) *font.choice = i;
+                if (*font.choice == i) ImGui::SetItemDefaultFocus();
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
         }
-        ImGui::EndCombo();
+        ImGui::SetItemTooltip(f1_text(font.tip));
     }
-    ImGui::SetItemTooltip(f1_text("Original uses the game's sprites. Other fonts replace matching menu labels immediately.\nBattle announcements have their own setting below."));
-    if (ImGui::BeginCombo(f1_text("Battle font"), f1_text(MenuText_FontName(v.battleFont)))) {
-        for (int i = 0; i < MenuText_FontCount(); i++) {
-            if (!MenuText_FontAvailable(i, MENU_TEXT_BATTLE)) { continue; }
-            ImGui::PushID(i);
-            if (ImGui::Selectable(f1_text(MenuText_FontName(i)), v.battleFont == i)) { v.battleFont = i; }
-            if (v.battleFont == i) { ImGui::SetItemDefaultFocus(); }
-            ImGui::PopID();
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::SetItemTooltip(f1_text("Choose original battle announcements and HUD text, or any battle font listed in fonts.tsv."));
-    if (ImGui::BeginCombo(f1_text("Dialogue / UI font"), f1_text(MenuText_FontName(v.textFont)))) {
-        for (int i = 0; i < MenuText_FontCount(); i++) {
-            if (!MenuText_FontAvailable(i, MENU_TEXT_DIALOGUE)) { continue; }
-            ImGui::PushID(i);
-            if (ImGui::Selectable(f1_text(MenuText_FontName(i)), v.textFont == i)) { v.textFont = i; }
-            if (v.textFont == i) { ImGui::SetItemDefaultFocus(); }
-            ImGui::PopID();
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::SetItemTooltip(f1_text("Replace the shared font used by dialogue, subtitles and ordinary UI text.\n"
-                          "Original keeps the game's glyphs. Text placement, colors, shadows and icons are preserved."));
     static const char *const kHud[] = {"BT4 original, at the edges", "BT4 original, centered"};
     int bt4Hud = v.hudLayout == 2 ? 1 : 0;
     const char *hudNames[] = {f1_text(kHud[0]), f1_text(kHud[1])};

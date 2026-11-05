@@ -874,7 +874,7 @@ static void transfer_data(const uint8_t *p, uint32_t bytes) {
 /* PRMODECONT.AC = 1: the attributes (shading, texturing, fogging, blending, ...) are PRIM's own; AC = 0: they come
    from PRMODE and PRIM only gives the primitive type. The game switches to PRMODE for its shadow passes. */
 static void prim_update(void) {
-    gs.prim = (gs.prmodecont & 1) ? gs.primRaw : (gs.primRaw & (7 | PORT_PRIM_BOUNDARY)) | (gs.prmode & 0x7F8);
+    gs.prim = (gs.prmodecont & 1) ? gs.primRaw : (gs.primRaw & (7 | PORT_PRIM_METADATA)) | (gs.prmode & 0x7F8);
 }
 
 static void reg_write(uint32_t addr, uint64_t d) {
@@ -959,7 +959,7 @@ void Gs_Gif(const uint8_t *p, uint32_t qwc) {
             uint64_t lo = q[0], hi = q[1];
 
             switch (r) {
-            case 0x0: reg_write(0, lo & (0x7FF | PORT_PRIM_BOUNDARY)); break;
+            case 0x0: reg_write(0, lo & (0x7FF | PORT_PRIM_METADATA)); break;
             case 0x1: reg_write(1, (lo & 0xFF) | ((lo >> 32) & 0xFF) << 8 | (hi & 0xFF) << 16 | ((hi >> 32) & 0xFF) << 24 |
                                    (uint64_t)*(uint32_t *)&gs.q << 32); break;
             case 0x2: gs.st = lo; { uint32_t qq = (uint32_t)hi; memcpy(&gs.q, &qq, 4); } break;

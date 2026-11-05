@@ -38,6 +38,8 @@ int main(void){
         code+='\n'.join([struct(header,'Vtx'),struct(header,'GsTarget'),struct(header,'GsDraw'),struct(source,'InterpPrim')])
         code+='\n#define INTERP_MAX_PRIMS 32\n#define INTERP_PIECE_MAX 8\n'+macro+'\n'
         code+='static GsDraw gsDraws[2];static Vtx gsVerts[12];static GsTarget gsTargets[1];static unsigned gsDrawCount=2;static int gsTargetCount=1,gGsMainFbp=0;\n'
+        start=source.index('static uint32_t interp_target_role(');end=source.index('\n}',start)+2
+        code+=source[start:end]+'\n'
         code+='static char *test_no_environment(const char *name){(void)name;return NULL;}\n#define getenv test_no_environment\n'
         code+=routines+r'''
 int main(void){

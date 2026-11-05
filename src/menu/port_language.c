@@ -55,9 +55,8 @@ static void original_text(s32 english,s32 alpha){
  * Its allocation is shared with the following memory-card flow. */
 void PortLanguage_Run(void){
     s32 selected=0,frame=0,choice=Port_GameProfileLanguage(),result;
-    DialogFlashRef anchor;s32 sharedFont,alpha,spoken=choice;
+    DialogFlashRef anchor;s32 alpha,spoken=choice;
     if(!Port_GameProfilePrompt())return;
-    sharedFont=MenuText_GetSharedFont();MenuText_SetSharedFont(0);
     int three=Port_GameProfileAvailable(2);
     Dialog_SetLayout(0);Dialog_SetChoices(three?0:1);Dialog_SetPort(0);
     Dialog_SetChoiceLabels(sLabels[0],sLabels[1]);
@@ -116,7 +115,7 @@ void PortLanguage_Run(void){
         frame++;
         if(selected&&Dialog_IsClosed())break;
     }
-    Port_GameProfileMenuSet(0,choice,0);MenuText_SetSharedFont(sharedFont);
+    Port_GameProfileMenuSet(0,choice,0);
     Dialog_SetChoiceLabels(NULL,NULL);Dialog_SetChoices(0);Dialog_SetMsgTable(NULL);Dialog_SetMsg(-1);Dialog_SetTitle(-1);
     Dma_ResetBuffers();
     if(!Port_GameProfileChoose(choice)) {PortLanguage_Run();return;}

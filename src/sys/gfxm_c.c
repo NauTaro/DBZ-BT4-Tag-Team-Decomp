@@ -16,6 +16,11 @@ extern int Port_MenuClipMoving(const char *name, int x, int top);
 extern int Port_MenuFree(int on);
 static int gPortFlashMeasure;  /* FlashDraw_Quad only measures (gPortFlashBox: the leftmost and rightmost x) */
 static float gPortFlashBox[2];
+#include "port_render_markers.h"
+static const void *sPortraitFade[2];
+static u64 sPortraitPrim;
+void Flash_PortPortraits(const void *a,const void *b){sPortraitFade[0]=a;sPortraitFade[1]=b;}
+
 extern int Port_MenuPart(int part);
 #endif
 #include "sys/gfxm_b_b.h"
@@ -766,6 +771,9 @@ u64 *FlashDraw_PutSprite(u64 *p, FlashQuad *q, u64 tex0) {
     p += 2;
     p[0] = tex0;
     p[1] = 0x154;
+#ifdef PORT
+    p[1] |= sPortraitPrim;
+#endif
     p += 2;
     uv[0] = q->uv.u0 + 1;
     uv[2] = q->uv.u1 - 1;
@@ -961,7 +969,16 @@ void FlashDraw_Quad(FlashTex *tex, FlashQuad *q) {
     }
     p[1] = 8;
     p += 2;
+#ifdef PORT
+    /* Mark only the large portraits, never their roster icons or labels.
+       The renderer fades the opaque outside cut, using the original alpha. */
+    sPortraitPrim = tex && tex == sPortraitFade[0] ? PORT_PRIM_PORTRAIT_LEFT :
+                    tex && tex == sPortraitFade[1] ? PORT_PRIM_PORTRAIT_RIGHT : 0;
+#endif
     Dma_EndDirect(FlashDraw_PutSprite(p, q, tex0));
+#ifdef PORT
+    sPortraitPrim = 0;
+#endif
 }
 
 /* Brings a shape's quad to the screen: the shape's matrix and colour transform, then the owning sprite's drawing

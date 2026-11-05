@@ -38,9 +38,15 @@ static void tag_ping_sample(unsigned sample){
 }
 static int tag_delay_margin=1;
 static unsigned tag_delay_clean_frames;
+static uint32_t tag_delay_feedback_epoch,tag_delay_feedback_frame;
+static int tag_delay_feedback_seen;
 static void tag_delay_feedback(unsigned frame,unsigned late_mask){
     int seat=Tt_Seat(&state,member);
     if(!tag_paced||seat<0||!tag_input_sent||tag_input_epoch!=state.epoch||frame<tag_input_first||frame>tag_input_latest)return;
+    /* Redundant authoritative packets are transport recovery, not more
+     * evidence of late input. Count each timeline frame at most once. */
+    if(tag_delay_feedback_seen&&tag_delay_feedback_epoch==state.epoch&&(int32_t)(frame-tag_delay_feedback_frame)<=0)return;
+    tag_delay_feedback_epoch=state.epoch;tag_delay_feedback_frame=frame;tag_delay_feedback_seen=1;
     /* A stalled game thread may not have sampled these authoritative frames
      * at all. Their missing input is not evidence of a late network packet;
      * backlog compensation already schedules the next input on the live clock. */

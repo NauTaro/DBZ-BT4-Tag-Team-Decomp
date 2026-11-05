@@ -8,6 +8,8 @@
 // eu: the European one for Spanish, German, French and Italian (empty: none). Either may be left out, not both.
 void Native_Start(const std::string &root, const std::string &iso, const std::string &eu,int mask=1,
                   const std::string &texturePack="", const std::string &ptbrPack="");
+// Texture-only maintenance: never reads an ISO, rewrites language settings or runs a test fight.
+void Native_StartTextures(const std::string &root);
 bool Native_Poll(std::string &line);                               // the next event line, if there is one
 bool Native_Running(void);
 void Native_Cancel(void);

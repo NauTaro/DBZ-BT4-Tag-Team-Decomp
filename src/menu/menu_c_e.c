@@ -1233,11 +1233,16 @@ void CharSel_Draw(void) {
     }
 
 #ifdef PORT
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *,const void *);
+    Flash_PortPortraits(gCharSel->tex[23],gCharSel->tex[22]);
+#endif
     for (i = 0; i < CHARSEL_FLASH_NUM; i++) {
         Port_MenuMovie(i); /* widescreen menus: which of the screen's movies (port/src/gs_marker.c) */
         Flash_Draw(&gCharSel->flash[i]);
     }
     Port_MenuMovie(0);
+    Flash_PortPortraits(NULL,NULL);
 #else
     for (i = 0; i < CHARSEL_FLASH_NUM; i++) {
         Flash_Draw(&gCharSel->flash[i]);

@@ -35,7 +35,7 @@ mkdir -p $O
 # IMGUI_ENABLE_TEST_ENGINE. An object older than this script is built again (one from before lacks them).
 for f in $I/imgui.cpp $I/imgui_draw.cpp $I/imgui_tables.cpp $I/imgui_widgets.cpp $I/imgui_impl_sdl3.cpp $I/imgui_impl_sdlgpu3.cpp $I/imgui_impl_opengl3.cpp port/setup/native.cpp port/setup/setup.cpp port/src/gs/ui_a11y.cpp; do
     o=$O/$(basename "$f" .cpp).o
-    if [ ! -f "$o" ] || [ "$f" -nt "$o" ] || [ port/setup/native.h -nt "$o" ] || [ port/src/gs/ui.h -nt "$o" ] || [ port/setup/build.sh -nt "$o" ] || [ port/setup/progress.h -nt "$o" ] || [ port/setup/private_packages.inc -nt "$o" ] || [ port/setup/language_install.inc -nt "$o" ] || [ port/setup/language_packages.h -nt "$o" ] || [ port/third_party/miniz/miniz.h -nt "$o" ]; then
+    if [ ! -f "$o" ] || [ "$f" -nt "$o" ] || [ port/setup/native.h -nt "$o" ] || [ port/src/gs/ui.h -nt "$o" ] || [ port/setup/build.sh -nt "$o" ] || [ port/setup/progress.h -nt "$o" ] || [ port/setup/private_packages.inc -nt "$o" ] || [ port/setup/language_install.inc -nt "$o" ] || [ port/setup/language_packages.h -nt "$o" ] || [ port/include/bt4_texture_pack.h -nt "$o" ] || [ port/third_party/miniz/miniz.h -nt "$o" ]; then
         $CXX -std=c++17 -O2 -w -DIMGUI_ENABLE_TEST_ENGINE -I$I -Iport/src/gs $SDL -c "$f" -o "$o" || exit 1
     fi
 done

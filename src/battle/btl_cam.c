@@ -504,11 +504,11 @@ void BtlCam_Term(void) {
 #ifdef PORT
 static void BtlCam_PortMods(BtlCamView *view,s32 side,s32 objId) {
         extern void Port_NaturalFightCamera(s32,s32,s32);
-        extern void Port_ModsCamera(s32 side, s32 objId, s32 pos, s32 rot); /* (addresses in game memory) */
+        extern void Port_ModsCamera(s32 side, s32 objId, s32 pos, s32 rot, s32 paused); /* (addresses in game memory) */
         extern s32 Port_ModsCamZoom(s32 side);
         extern s32 Port_ModsCamCollide(s32 side);
         Port_NaturalFightCamera(objId,(s32)(u32)&view->pos,(s32)(u32)&view->rot);
-        Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot);
+        Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot, (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)!=0);
         sPortZoomView[view->index & 1] = Port_ModsCamZoom(side); /* (the zoom, the stage: what they also asked) */
         if (Port_ModsCamCollide(side)) {
             BtlCam_PortCollide(view, objId);

@@ -31,6 +31,8 @@
 #include "../../third_party/xxhash/xxhash.h"
 #include "gs_internal.h"
 #include "gs_texpack.h"
+#include "../../include/bt4_texture_pack.h"
+#include "gs_index_bounds.h"
 /* The updater already links miniz's read-only API. Supply bounded SDL I/O
    here so multi-gigabyte packs need neither a RAM copy nor disk extraction. */
 #define MINIZ_NO_ARCHIVE_WRITING_APIS
@@ -59,7 +61,7 @@ typedef struct Entry {
 static Entry *sEntries;
 static uint32_t sCount, sCap, *sBucket, sBuckets;
 
-#define TEXPACK_BUDGET ((size_t)512 << 20) /* bounded CPU cache, separate from uploaded GPU textures */
+#define TEXPACK_BUDGET ((size_t)512 << 20) /* CPU images, separate from the decoded renderer working set. */
 #define QUEUE 4096                          /* files waiting for the reader (a power of two) */
 static SDL_Mutex *sLock;
 static SDL_Condition *sWake;
@@ -69,46 +71,6 @@ static uint32_t *sHeld, sHeldCount;          /* the entries in memory (state 2) 
 static size_t sHeldBytes, sBudget;
 static unsigned sTick;
 static int sSync = -1;
-
-/* Hit's Time Skip backdrop, identified from its original GS blocks in BT4.
-   Do not sample this effect, including from HD packs. Its palette and GS
-   address vary during the cut, so neither belongs to the content identity. */
-#define HIT_TIME_SKIP_TEXTURE UINT64_C(0xc3b168f19eccae01)
-static int excluded(uint64_t hash, uint32_t psm, uint32_t w, uint32_t h) {
-    return hash == HIT_TIME_SKIP_TEXTURE && psm == 0x14 && w == 512 && h == 512;
-}
-
-int TexPack_SkipDraw(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32_t th) {
-    typedef struct SkipCache { uint32_t tbp, tbw, gen; int valid, skip; } SkipCache;
-    static SkipCache cache[16];
-    static unsigned next;
-    uint32_t gen = 2166136261u, x, y, i;
-    XXH3_state_t hash;
-    SkipCache *entry;
-    if (psm != 0x14 || tw != 512 || th != 512) return 0;
-    /* Include every page touched by the swizzled blocks. The cached result
-       must change when the same GS address is reused in a later battle. */
-    for (y = 0; y < th; y += 128) {
-        for (x = 0; x < tw; x += 128) {
-            const uint8_t *block = Gs_BlockPtr(tbp, tbw, psm, x, y);
-            uint32_t page = (uint32_t)(block - Gs_BlockPtr(0, 1, 0, 0, 0)) / 8192;
-            gen = (gen ^ Gs_PageHash(page)) * 16777619u;
-        }
-    }
-    for (i = 0; i < 16; ++i) {
-        entry = &cache[i];
-        if (entry->valid && entry->tbp == tbp && entry->tbw == tbw && entry->gen == gen) return entry->skip;
-    }
-    XXH3_64bits_reset(&hash);
-    for (y = 0; y < th; y += 16) {
-        for (x = 0; x < tw; x += 32) XXH3_64bits_update(&hash, Gs_BlockPtr(tbp, tbw, psm, x, y), 256);
-    }
-    entry = &cache[next++ & 15];
-    entry->valid = 1; entry->tbp = tbp; entry->tbw = tbw; entry->gen = gen;
-    entry->skip = excluded(XXH3_64bits_digest(&hash), psm, tw, th);
-    if (entry->skip && getenv("BT3_TEX_LOG")) fprintf(stderr, "bt4: omitted Hit Time Skip backdrop\n");
-    return entry->skip;
-}
 
 static uint32_t bucket_of(uint64_t tex, uint64_t clut, uint32_t bits) {
     uint64_t h = (tex ^ (clut * 0x9E3779B97F4A7C15ull) ^ bits) * 0x9FB21C651E98DF25ull;
@@ -175,7 +137,6 @@ static void add(const char *dir, const char *name, int archive, mz_uint member) 
     e.pal = parts == 3;
     e.clut = e.pal ? strtoull(part[1], NULL, 16) : 0;
     e.bits = (uint32_t)strtoul(part[parts - 1], NULL, 16);
-    if (excluded(e.tex, e.bits & 63, 1u << ((e.bits >> 6) & 15), 1u << ((e.bits >> 10) & 15))) return;
     e.state = 0;
     e.archive = archive;
     e.member = member;
@@ -267,7 +228,16 @@ void TexPack_Init(void) {
         char portuguese[2048];SDL_snprintf(portuguese,sizeof(portuguese),"%s/textures/",getenv("BT4_PTBR_ROOT"));
         SDL_EnumerateDirectory(portuguese,walk,NULL);
     }
-    SDL_EnumerateDirectory(dir, walk, NULL);
+    {
+        char selected[4096];SDL_PathInfo selectedInfo;
+        SDL_snprintf(selected,sizeof(selected),"%s%s",dir,BT4_TEXTURE_ARCHIVE);
+        /* The managed R3 archive replaces the preceding pack as a whole.
+           Leave other files intact, but do not mix their missing entries into
+           the selected pack. Portuguese profile overrides remain isolated. */
+        if(SDL_GetPathInfo(selected,&selectedInfo)&&selectedInfo.type==SDL_PATHTYPE_FILE)
+            add_zip(selected);
+        else SDL_EnumerateDirectory(dir, walk, NULL);
+    }
     free(dir);
     if (sCount == 0) {
         return;
@@ -320,20 +290,7 @@ int TexPack_Lookup(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32
         for (x = 0; x < tw; x += bw) {
             const uint8_t *p = Gs_BlockPtr(tbp, tbw, psm, x, y);
             XXH3_64bits_update(&st, p, 256);
-            if (psm == 0x13) {
-                for (i = 0; i < 256; i++) {
-                    if (p[i] < lo) { lo = p[i]; }
-                    if (p[i] > hi) { hi = p[i]; }
-                }
-            } else if (psm == 0x14) {
-                for (i = 0; i < 256; i++) {
-                    uint32_t a = p[i] & 15, b = p[i] >> 4;
-                    if (a < lo) { lo = a; }
-                    if (b < lo) { lo = b; }
-                    if (a > hi) { hi = a; }
-                    if (b > hi) { hi = b; }
-                }
-            }
+            if (pal) Gs_IndexBounds(p, psm == 0x14, &lo, &hi);
         }
     }
     tex = XXH3_64bits_digest(&st);
@@ -553,7 +510,10 @@ static int SDLCALL reader(void *unused) {
         TexPackImage img;
         int ok;
         SDL_LockMutex(sLock);
-        while (sHead == sTail) {
+        /* Only the renderer may evict borrowed image data. Park the reader
+           after one image crosses the budget, including while no frames are
+           consumed in a hidden/paused window. */
+        while (sHead == sTail || sHeldBytes > sBudget) {
             SDL_WaitCondition(sWake, sLock);
         }
         id = sQueue[sTail++ & (QUEUE - 1)];
@@ -569,7 +529,11 @@ static int SDLCALL reader(void *unused) {
 /* Over the budget: the files asked for longest ago leave memory, down to three quarters of it (not `keep`, the one
    just asked for). Only this thread frees them; the reader only adds. Called with sLock held. */
 static void trim(uint32_t keep) {
-    while (sHeldBytes > sBudget / 4 * 3 && sHeldCount > 1) {
+    /* Hits inside the full budget keep the warm working set. Only crossing the
+       high watermark starts a sweep to the lower one; otherwise every hit
+       above 75% evicted usable artwork and queued another disk/decode cycle. */
+    if (sHeldBytes <= sBudget) return;
+    while (sHeldBytes > sBudget / 4 * 3 && sHeldCount > 0) {
         uint32_t i, old = sHeldCount;
         for (i = 0; i < sHeldCount; i++) {
             if (sHeld[i] != keep && (old == sHeldCount || sEntries[sHeld[i]].used < sEntries[sHeld[old]].used)) {
@@ -588,6 +552,7 @@ static void trim(uint32_t keep) {
             sHeld[old] = sHeld[--sHeldCount];
         }
     }
+    if (sHeldBytes <= sBudget && sWake != NULL) SDL_SignalCondition(sWake);
 }
 
 int TexPack_Get(int id, TexPackImage *img) {
@@ -613,6 +578,9 @@ int TexPack_Get(int id, TexPackImage *img) {
     }
     e = &sEntries[id];
     SDL_LockMutex(sLock);
+    /* Pending requests must also let a budget-blocked reader make progress.
+       Keep the requested image; no other TexPack_Get borrow is live here. */
+    trim((uint32_t)id);
     e->used = ++sTick;
     if (e->state == 0 && sSync) {
         TexPackImage read;

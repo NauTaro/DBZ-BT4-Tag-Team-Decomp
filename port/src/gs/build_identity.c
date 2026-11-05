@@ -5,6 +5,26 @@
 #include <string.h>
 #include "../../include/bt4_online_compat.h"
 #include "game_profile.h"
+#include "../../include/bt4_dev_rules.h"
+/* Local requests are encoded in the normal input history. The simulation never
+   reads UI settings directly, including during rollback or on the sending peer. */
+static unsigned sDevRequestedFlags;static uint32_t sDevRequestedSequence;
+static SDL_SpinLock sDevRuleLock;
+unsigned Port_DevRulesRequested(void){
+ unsigned flags;SDL_LockSpinlock(&sDevRuleLock);flags=sDevRequestedFlags;SDL_UnlockSpinlock(&sDevRuleLock);return flags;
+}
+void Port_DevRulesRequest(unsigned flags,int step){
+ SDL_LockSpinlock(&sDevRuleLock);
+ sDevRequestedFlags=flags&15;if(++sDevRequestedSequence==0)++sDevRequestedSequence;
+ if(step)sDevRequestedFlags|=BT4_DEV_PAUSE|BT4_DEV_STEP;
+ SDL_UnlockSpinlock(&sDevRuleLock);
+}
+void Port_DevRulesEncode(unsigned char out[8]){
+
+ unsigned flags;uint32_t seq;
+ SDL_LockSpinlock(&sDevRuleLock);flags=sDevRequestedFlags;seq=sDevRequestedSequence;SDL_UnlockSpinlock(&sDevRuleLock);
+ if(seq)Bt4Dev_Pack(out,flags,seq);
+}
 extern FILE *Port_FileOpenHost(const char *,char *,size_t);
 static int sChecked,sCompatible;
 static char sReason[192];

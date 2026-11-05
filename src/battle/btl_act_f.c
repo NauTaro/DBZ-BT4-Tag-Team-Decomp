@@ -2205,6 +2205,17 @@ void BtlAct_SuperRushSequenceHandler(ActGChr *chr, s32 phase) {
             if (level < chr->thr.unk10 - 1) {
                 BtlAnim_AdvanceThen(chr, BtlAnim_GetId(chr) + 1, 0.0f, 0);
             } else {
+#ifdef PORT
+                /* Finish the original two-character cinematic before changing
+                   either model. The body transaction then streams both bodies. */
+                if (BtlAnim_Advance(chr, 0)) {
+                    if (chr->work[0] & 1) {
+                        extern void Bt4BodyChange_Queue(s32,s32);
+                        Bt4BodyChange_Queue(chr->thr.atkSide,chr->thr.defSide);
+                    }
+                    chr->work[1] = 1;
+                }
+#else
                 switch (*stepA) {
                     case 0:
                         if ((chr->work[0] & 1) && BtlAnim_IsNew(chr)) {
@@ -2234,6 +2245,7 @@ void BtlAct_SuperRushSequenceHandler(ActGChr *chr, s32 phase) {
                         chr->work[1] = 1;
                         break;
                 }
+#endif
             }
         } else {
             s32 okA = 0;
@@ -3182,6 +3194,10 @@ s32 BtlAct_SuperLaunchedUpHandler(ActGChr *chr, s32 phase) {
  * on every frame: the battle is frozen until the model has loaded.
  */
 s32 BtlAct_ChangeRandomCharaHandler(ActGChr *chr, s32 phase) {
+#ifdef PORT
+    {extern s32 Bt4BodyChange_Active(s32);extern void Bt4BodyChange_Action(void *,s32);
+     if(Bt4BodyChange_Active(chr->player)){Bt4BodyChange_Action(chr,phase);return 0;}}
+#endif
     s32 *step = &chr->work[2];
 
     if (phase == 1) {

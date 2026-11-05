@@ -730,6 +730,8 @@ static void draw_params(const GsDraw *d, GlParams *fu) {
     memcpy(fu->orig, d->orig, sizeof(fu->orig));
     fu->extra[0] = d->vu ? (gsVuUni[d->uniform].misc[2] > 0.0f ? gsVuUni[d->uniform].misc[2] : 0.0f) : gsZMax;
     fu->extra[1] = (sPipes[d->pipeline].key & (1u << 9)) ? 1.0f : 0.0f;
+    fu->extra[2] = d->portrait[0];
+    fu->extra[3] = d->portrait[1];
 }
 
 /* One streamed upload per frame; binding a range does not overwrite constants

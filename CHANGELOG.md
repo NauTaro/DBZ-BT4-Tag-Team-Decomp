@@ -1,3 +1,48 @@
+# 0.1.39.5 R3
+
+- Restore Hit's original Time Skip backdrop and allow its HD replacement to load.
+- Keep transient effect preparation running under the original pause flag during developer pauses, instead of redrawing stale aura/effect resources.
+- Align the rim-light pass with its shading pass's exact interpolated bones, camera and light direction; preserve the rim's own colour and intensity.
+- Remove cross-address HD replacement sharing and match native palette cache coordinates to the decoder.
+- Replace periodic full-cache memory sweeps with tracked texture storage and a working-set budget that retains recent frame references. Keep a separate bounded CPU image cache.
+- Invalidate artwork address aliases when cache entries move, and cancel software enlargement after an HD replacement arrives.
+- Keep the native gauges suppressed throughout the Modern HUD exit animation, and upgrade only the exact unmodified bundled script.
+- Respect the saved interpolation setting and allocate interpolation history only while enabled.
+- Speed up indexed texture matching without adding another texture cache.
+- Allocate water wakes for all Tag Team fighters and reject out-of-range object IDs instead of overwriting adjacent particle lists.
+- Filter Tag Team RTT samples, ignore duplicate delay feedback, and reset adaptive timing between battles.
+- Improve 1v1 room routing, legacy member descriptors and room admission diagnostics.
+- Exchange Ginyu's body and current health with the struck opponent, retaining each player's controls and other roster members.
+- Match BT4's tournament selection lock instead of disabling navigation in the former Yamcha slot.
+- Preserve native ISO artwork and fonts; legacy generated-art/font settings no longer replace them, including after startup language selection.
+- Offer the supplied BT4 HD v1.0 Light DDS archive (2.54 GB) as a separate optional GitHub download, verified and read directly from ZIP.
+- Restore the ISO's Ragged Clothes Potara model selection, retain local Tag Team item sets, and block mechanical item bonuses on both online paths while retaining recognized visual components.
+- Automatically migrate the managed v1.07 pack through Setup at an offline menu, with no ISO or language reinstallation; keep the previous pack until the replacement is verified.
+- Receive synchronized development test rules for health, Ki, Blast Stock, pause and single-step. These rules apply equally to all fighters; only the separate Dev client exposes their controls.
+- Use simulation family sim6 for the corrected gameplay and shared test-rule inputs. All players in a room need a compatible R3 build.
+
+- Keep Modern Camera presentation consistent when a render frame is skipped; use stable view identities for alternating display buffers and freeze the world camera during native pause.
+- Bound camera collision traversal to valid stage data and intersected zones.
+- Apply one smooth fade across every piece of a character-selection artwork, preserving original ISO files and unrelated interface elements.
+- Restore F1 font choices, including Original, without changing saved choices when selecting a language.
+- Restore Modern Look energy lighting on DirectX 12 as well as Vulkan, sample effect colour with bounded work and avoid the lighting pass when no energy light is active.
+
+<!-- bt4-update:en
+- Restore Hit's Time Skip effect and correct Modern HUD transition overlap.
+- Improve texture-cache lifetime and bounded memory use.
+- Improve Tag Team timing feedback and 1v1 room admission.
+-->
+<!-- bt4-update:es
+- Restaura el efecto de salto temporal de Hit y corrige la superposición durante la salida del HUD moderno.
+- Mejora la duración de la caché de texturas y su control de memoria.
+- Mejora el ajuste de tiempos de Tag Team y el acceso a salas 1 vs 1.
+-->
+<!-- bt4-update:pt
+- Restaura o efeito de salto temporal do Hit e corrige a sobreposição na saída do HUD moderno.
+- Melhora a duração do cache de texturas e o controle de memória.
+- Melhora o ajuste de tempo do Tag Team e a entrada em salas 1 contra 1.
+-->
+
 # 0.1.39.5 R2
 
 - Align health-bar alpha clearing with widescreen HUD scaling, so the remaining blue tier and the exposed green tier use the same mask on both sides.

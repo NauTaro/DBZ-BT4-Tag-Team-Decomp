@@ -322,8 +322,9 @@ void validate_texture_archive(const std::string &path) {
     ZipReader reader(path);
     if(!reader.open)throw Stop{"TEXTURE_PACK_INVALID"};
     mz_uint count=mz_zip_reader_get_num_files(&reader.zip);
-    if(count<24639||count>25663)throw Stop{"TEXTURE_PACK_INVALID"};
-    mz_uint files=0,directories=0,png=0,ini=0;Uint64 total=0;
+    if(count<BT4_TEXTURE_FILES||count>BT4_TEXTURE_FILES+1024)throw Stop{"TEXTURE_PACK_INVALID"};
+    mz_uint files=0,directories=0,dds=0;Uint64 total=0;
+    const std::string prefix=std::string(BT4_TEXTURE_ROOT)+"/";
     for(mz_uint i=0;i<count;i++) {
         mz_zip_archive_file_stat st{};
         if(mz_zip_reader_get_filename(&reader.zip,i,NULL,0)>sizeof(st.m_filename)-1||
@@ -331,7 +332,7 @@ void validate_texture_archive(const std::string &path) {
             throw Stop{"TEXTURE_PACK_INVALID"};
         std::string name=st.m_filename;
         if(!valid_zip_relative_path(name,st.m_is_directory)||
-           (name!="SLUS-21978"&&name.rfind("SLUS-21978/",0)!=0))
+           (name!=BT4_TEXTURE_ROOT&&name.rfind(prefix,0)!=0))
             throw Stop{"TEXTURE_PACK_INVALID"};
         if(st.m_is_directory){
             if(st.m_uncomp_size!=0||++directories>1024)throw Stop{"TEXTURE_PACK_INVALID"};
@@ -341,14 +342,22 @@ void validate_texture_archive(const std::string &path) {
         size_t dot=name.find_last_of('.');
         std::string ext=dot==std::string::npos?"":name.substr(dot);
         for(char &c:ext)c=(char)tolower((unsigned char)c);
-        if(ext==".png")png++;
-        else if(ext==".ini")ini++;
+        if(ext==".dds")dds++;
         else throw Stop{"TEXTURE_PACK_INVALID"};
-        if(st.m_uncomp_size>50000000ULL||total>5000000000ULL-st.m_uncomp_size)
+        if(st.m_uncomp_size>50000000ULL||st.m_uncomp_size>BT4_TEXTURE_UNPACKED_BYTES||total>BT4_TEXTURE_UNPACKED_BYTES-st.m_uncomp_size)
             throw Stop{"TEXTURE_PACK_INVALID"};
         total+=st.m_uncomp_size;
     }
-    if(files!=24639||png!=24638||ini!=1||total!=3998269861ULL)throw Stop{"TEXTURE_PACK_INVALID"};
+    if(files!=BT4_TEXTURE_FILES||dds!=BT4_TEXTURE_FILES||total!=BT4_TEXTURE_UNPACKED_BYTES)throw Stop{"TEXTURE_PACK_INVALID"};
+}
+
+void retire_legacy_texture_pack(const std::string &root) {
+    const std::string path=root+"textures/"+BT4_TEXTURE_LEGACY_ARCHIVE;
+    SDL_PathInfo info;
+    if(!SDL_GetPathInfo(path.c_str(),&info)||info.type!=SDL_PATHTYPE_FILE||info.size!=BT4_TEXTURE_LEGACY_BYTES)return;
+    // Never remove a customized ZIP just because it has the old pack's name.
+    if(sha256_file(path)!=BT4_TEXTURE_LEGACY_SHA256)return;
+    if(SDL_RemovePath(path.c_str()))say("@note Superseded HD pack removed after verifying the new installation");
 }
 
 void install_texture_pack(const std::string &root,std::string source) {
@@ -364,6 +373,7 @@ void install_texture_pack(const std::string &root,std::string source) {
         throw Stop{"TEXTURE_PACK_INVALID"};
     if(normalized_path(source)==normalized_path(destination)) {
         say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
+        retire_legacy_texture_pack(root);
         say("@ok HD texture pack is already in textures");
         return;
     }
@@ -374,7 +384,9 @@ void install_texture_pack(const std::string &root,std::string source) {
         try {
             validate_texture_archive(destination);
             say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
-            say("@skip DBZ BT4 HD v1.07 is already installed");
+            retire_legacy_texture_pack(root);
+            say("@skip BT4 HD v1.0 Light is already installed");
+            if(downloaded)SDL_RemovePath(source.c_str());
             return;
         } catch(const Stop &) {
             // The destination has the expected size but is damaged; replace it from the validated source.
@@ -383,15 +395,16 @@ void install_texture_pack(const std::string &root,std::string source) {
     ensure_directories(root+"textures");
     if(downloaded){
         /* Cache and textures share an install root. Move the verified archive
-           atomically to avoid needing another 3.69 GB of free space. */
+           atomically to avoid needing another 2.54 GB of free space. */
         std::string previous;
         try{
-            if(destinationExists){previous=unique_backup_path(root,"textures/"+relative,"texture-pack-v1.07-originals");
+            if(destinationExists){previous=unique_backup_path(root,"textures/"+relative,"texture-pack-v1.0-light-originals");
                 if(!SDL_RenamePath(destination.c_str(),previous.c_str()))throw Stop{"Could not preserve the existing HD pack."};}
             if(!SDL_RenamePath(source.c_str(),destination.c_str()))throw Stop{"Could not finish installing the texture pack. Check available disk space."};
         }catch(...){if(!previous.empty())SDL_RenamePath(previous.c_str(),destination.c_str());throw;}
         say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
-        say("@ok DBZ BT4 HD v1.07 installed");return;
+        retire_legacy_texture_pack(root);
+        say("@ok BT4 HD v1.0 Light installed");return;
     }
     const std::string temp=destination+".part";
     SDL_IOStream *in=SDL_IOFromFile(source.c_str(),"rb");
@@ -416,7 +429,7 @@ void install_texture_pack(const std::string &root,std::string source) {
     if(!ioOk||!closeIn||!closeOut){SDL_RemovePath(temp.c_str());throw Stop{"Could not copy the HD texture pack. Check available disk space."};}
     std::string backup;
     if(destinationExists) {
-        backup=unique_backup_path(root,relative,"texture-pack-v1.07-originals");
+        backup=unique_backup_path(root,relative,"texture-pack-v1.0-light-originals");
         if(!SDL_RenamePath(destination.c_str(),backup.c_str())){SDL_RemovePath(temp.c_str());throw Stop{"Could not preserve the existing texture pack before replacing it."};}
     }
     if(!SDL_RenamePath(temp.c_str(),destination.c_str())) {
@@ -425,7 +438,8 @@ void install_texture_pack(const std::string &root,std::string source) {
         throw Stop{"Could not finish installing the texture pack. Check available disk space."};
     }
     say("@progress "+std::to_string(sourceInfo.size)+" "+std::to_string(sourceInfo.size)+" 1 1");
-    say("@ok DBZ BT4 HD v1.07 copied to textures");
+    retire_legacy_texture_pack(root);
+    say("@ok BT4 HD v1.0 Light copied to textures");
 }
 
 bool bytes_match_file(const std::string &path,const void *data,size_t size) {
@@ -1100,6 +1114,24 @@ void work(std::string root, std::string path, std::string eu, std::string textur
     sRunning=false;
 }
 
+void texture_work(std::string root) {
+    try {
+        sStep=0;sSteps=1;
+        // Use a verified installed archive directly; do not download it again.
+        const std::string installed=root+"textures/"+BT4_TEXTURE_ARCHIVE;
+        bool valid=false;
+        try{validate_texture_archive(installed);valid=true;}catch(const Stop &){}
+        install_texture_pack(root,valid?installed:"@download");
+        say("@done "+root+kGame);
+    }catch(const Stop &e){
+        ensure_directories(root+"tbo/setup");
+        SDL_SaveFile((root+"tbo/setup/install.log").c_str(),e.why.data(),e.why.size());
+        std::string why=e.why;for(size_t i=0;(i=why.find('\n',i))!=std::string::npos;)why.replace(i,1,"\\n");
+        say("@fail");say("@stopped "+why);
+    }catch(...){say("@fail");say("@stopped INSTALL_FAILED");}
+    sRunning=false;
+}
+
 } // namespace
 
 void Native_Start(const std::string &root, const std::string &iso, const std::string &eu,int mask,
@@ -1111,6 +1143,13 @@ void Native_Start(const std::string &root, const std::string &iso, const std::st
     sCancel = false;
     sRunning = true;
     sThread = std::thread(work, root, iso, eu, texturePack, ptbrPack);
+}
+
+void Native_StartTextures(const std::string &root) {
+    if(sThread.joinable())sThread.join();
+    {std::lock_guard<std::mutex> lock(sLock);sLines.clear();}
+    sCancel=false;sRunning=true;
+    sThread=std::thread(texture_work,root);
 }
 
 bool Native_Poll(std::string &line) {

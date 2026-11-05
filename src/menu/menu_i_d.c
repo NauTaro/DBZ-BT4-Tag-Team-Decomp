@@ -385,6 +385,8 @@ void EntrySel_Term(void) {
     }
 }
 
+static s32 EntrySel_SelectionLocked(void);
+
 /* Sets up every clip of the four movies from the current state and draws the screen. */
 void EntrySel_Draw(void) {
 #ifdef PORT
@@ -521,7 +523,7 @@ void EntrySel_Draw(void) {
             Flash_FindLabel(flash, i != 0 ? "mc_yajirusi_down" : "mc_yajirusi_up",
                             i != 0 ? "mc_yajirusi_icon_down" : "mc_yajirusi_icon_up", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
-            if ((gEntrySel->sel->flags & ESEL_SEL_FORM) || TOUR_PROG->t.tour == TOUR_YAMCHA) {
+            if ((gEntrySel->sel->flags & ESEL_SEL_FORM) || EntrySel_SelectionLocked()) {
                 Flash_ClipSetFlags(flash, &ref, 2, 0);
             } else {
                 Flash_ClipSetFlags(flash, &ref, 2, 1);
@@ -605,6 +607,17 @@ void EntrySel_Update(void) {
     }
 }
 
+/* BT4 DBZP.BIN EntrySel_Input gates its ten cursor/form/item/costume
+ * branches on tournament 1 (e.g. 0x360488..0x360494), not BT3 Yamcha 4.
+ * Keep the original PS2 reconstruction separate from BT4's PC data. */
+static s32 EntrySel_SelectionLocked(void) {
+#ifdef PORT
+    return TOUR_PROG->t.tour == 1;
+#else
+    return TOUR_PROG->t.tour == TOUR_YAMCHA;
+#endif
+}
+
 /* Pad 0: grid cursor, form, item set, item panel and costume of the entrant being chosen. */
 void EntrySel_Input(s32 *result) {
     if (!(gEntrySel->flash[0].flags & MFLASH_PAD)) {
@@ -617,21 +630,21 @@ void EntrySel_Input(s32 *result) {
     }
     switch (gEntrySel->sel->step) {
     case ESEL_STEP_CHARA:
-        if ((gPad[0].gameRepeat & 1) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        if ((gPad[0].gameRepeat & 1) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(1, 0, "fl_off_start");
             ChrGrid_MoveLeft(gEntrySel->grid, &ES_CUR.col, ES_CUR.row);
             EntrySel_ClipGoto(1, 0, "fl_on_start");
             gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.col];
             EntrySel_ChangeImage();
             Snd_PlaySe(2, 0);
-        } else if ((gPad[0].gameRepeat & 2) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 2) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(1, 0, "fl_off_start");
             ChrGrid_MoveRight(gEntrySel->grid, &ES_CUR.col, ES_CUR.row);
             EntrySel_ClipGoto(1, 0, "fl_on_start");
             gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.col];
             EntrySel_ChangeImage();
             Snd_PlaySe(2, 0);
-        } else if ((gPad[0].gameRepeat & 8) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 8) && !EntrySel_SelectionLocked()) {
             if (gEntrySel->rows >= 2) {
                 Flash_GotoLabel(&gEntrySel->flash[1], "fl_reel_down", 1);
                 gEntrySel->sel->rowAnim = 1;
@@ -643,7 +656,7 @@ void EntrySel_Input(s32 *result) {
                 EntrySel_ChangeImage();
                 Snd_PlaySe(2, 2);
             }
-        } else if ((gPad[0].gameRepeat & 4) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 4) && !EntrySel_SelectionLocked()) {
             if (gEntrySel->rows >= 2) {
                 Flash_GotoLabel(&gEntrySel->flash[1], "fl_reel_up", 1);
                 gEntrySel->sel->rowAnim = 1;
@@ -717,14 +730,14 @@ void EntrySel_Input(s32 *result) {
         }
         break;
     case ESEL_STEP_FORM:
-        if ((gPad[0].gameRepeat & 1) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        if ((gPad[0].gameRepeat & 1) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(1, 1, "fl_off_start");
             ChrGrid_PrevForm(gEntrySel->sel->rowChara, &ES_CUR.form);
             EntrySel_ClipGoto(1, 1, "fl_on_start");
             gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.form];
             EntrySel_ChangeImage();
             Snd_PlaySe(2, 0);
-        } else if ((gPad[0].gameRepeat & 2) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 2) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(1, 1, "fl_off_start");
             ChrGrid_NextForm(gEntrySel->sel->rowChara, &ES_CUR.form);
             EntrySel_ClipGoto(1, 1, "fl_on_start");
@@ -756,7 +769,7 @@ void EntrySel_Input(s32 *result) {
         }
         break;
     case ESEL_STEP_CUSTOM:
-        if ((gPad[0].gameRepeat & 8) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        if ((gPad[0].gameRepeat & 8) && !EntrySel_SelectionLocked()) {
             if (gEntrySel->customCount >= 2) {
                 EntrySel_ClipGoto(2, 2, "fl_off_start");
                 ES_CUR.custom--;
@@ -766,7 +779,7 @@ void EntrySel_Input(s32 *result) {
                 EntrySel_ClipGoto(2, 2, "fl_on_start");
                 Snd_PlaySe(1, 0);
             }
-        } else if ((gPad[0].gameRepeat & 4) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 4) && !EntrySel_SelectionLocked()) {
             if (gEntrySel->customCount >= 2) {
                 EntrySel_ClipGoto(2, 2, "fl_off_start");
                 ES_CUR.custom++;
@@ -830,7 +843,7 @@ void EntrySel_Input(s32 *result) {
         }
         break;
     case ESEL_STEP_COLOR:
-        if ((gPad[0].gameRepeat & 1) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        if ((gPad[0].gameRepeat & 1) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(2, 5, "fl_off_start");
             ES_CUR.costume--;
             if (ES_CUR.costume < 0) {
@@ -838,7 +851,7 @@ void EntrySel_Input(s32 *result) {
             }
             EntrySel_ClipGoto(2, 5, "fl_on_start");
             Snd_PlaySe(1, 0);
-        } else if ((gPad[0].gameRepeat & 2) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 2) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(2, 5, "fl_off_start");
             ES_CUR.costume++;
             if (ES_CUR.costume >= gEntrySel->colorCount) {

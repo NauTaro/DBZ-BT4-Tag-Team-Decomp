@@ -20,7 +20,7 @@
  *
  * Nothing here is game state: the game is only read (the glyph table Font_UploadTexture hands over), and what
  * this file keeps is on the renderer's side (not saved by a rollback, not in the desync checksum). Texture-pack
- * replacements take precedence. */
+ * replacements remain available; an explicitly selected font takes precedence on identified text. */
 #include "menu_text.h"
 #include "menu_labels.h"
 #include "ui_text_extract.h" /* UiText_EuropeanOnStartup */
@@ -1052,7 +1052,7 @@ void MenuText_SetBattleFont(int choice) {
 void MenuText_SetBattleFontId(int id) {
     pthread_mutex_lock(&sLock);
     set_battle_font(font_by_id(id));
-    sWantedBattleId = sMake != 0 && sBattleChoice == 0 ? id : 0;
+    sWantedBattleId = (sMake != 0 || sBootAwaitLanguage) && sBattleChoice == 0 ? id : 0;
     pthread_mutex_unlock(&sLock);
 }
 
@@ -1092,13 +1092,6 @@ int MenuText_FontIdToSave(void) {
 static void labels_take(void) {
     int id = sWantedId;
     int battleId = sWantedBattleId;
-    if(getenv("BT4_PTBR_ROOT")){
-        int i;
-        for(i=0;i<sFontCount;i++){
-            if(!id&&sFonts[i].uses[FONT_MENU])id=sFonts[i].id;
-            if(!battleId&&sFonts[i].uses[FONT_BATTLE])battleId=sFonts[i].id;
-        }
-    }
     sMake = 0;
     sWantedId = 0;
     sWantedBattleId = 0;
@@ -1235,10 +1228,11 @@ void MenuText_BootLanguageChosen(void) {
     }
     __atomic_store_n(&sBootAwaitLanguage, 0, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&sLock);
+    /* Choosing a language must not discard the user's explicit font choices.
+       Original (zero) remains the default for every language, including PT-BR. */
     MenuText_SetFontId(Port_Setting("menu_font_id", 0));
-    if(getenv("BT4_PTBR_ROOT")&&Port_Setting("menu_font_id",0)==0)MenuText_SetFontId(MenuText_FirstFontId(MENU_TEXT_MENU));
     MenuText_SetBattleFontId(Port_Setting("battle_font_id", 0));
-    if(getenv("BT4_PTBR_ROOT")&&Port_Setting("battle_font_id",0)==0)MenuText_SetBattleFontId(MenuText_FirstFontId(MENU_TEXT_BATTLE));
+    MenuText_SetSharedFontId(Port_Setting("text_font_id", 0));
 }
 
 /* Decode strictly, skipping characters absent from the selected font. Malformed UTF-8 keeps the original row. */
@@ -2006,6 +2000,26 @@ static SharedSheet *shared_sheet(int tbp, int cbp) {
             cbp < sSharedSheets[i].cbp + 4) { return &sSharedSheets[i]; }
     }
     return NULL;
+}
+
+/* Called only for new textures. Decode the original when a selected font may
+   replace it; an HD pack stays in use if the actual glyph/label render fails. */
+int MenuText_IsSharedTexture(int tbp, int cbp) {
+    int result;
+    pthread_mutex_lock(&sLock);
+    result = shared_sheet(tbp, cbp) != NULL;
+    pthread_mutex_unlock(&sLock);
+    return result;
+}
+
+int MenuText_WantsTexture(int width, int height, int indexed, int tbp, int cbp) {
+    int result;
+    if (!sFontChoice && !sBattleChoice && !sSharedChoice) return 0;
+    pthread_mutex_lock(&sLock);
+    result = (sSharedChoice && shared_sheet(tbp, cbp) != NULL) ||
+             (indexed && (sFontChoice || sBattleChoice) && label_size(width, height));
+    pthread_mutex_unlock(&sLock);
+    return result;
 }
 
 /* What of the settings here a decoded texture depends on, for the renderer's texture cache. A new catalog also

@@ -925,10 +925,7 @@ void MenuTranslation_SaveChoice(const char *locale) {
     if (locale == NULL || locale[0] == '\0') return;
     Port_SettingTextSave("menu_lang", locale);
     __atomic_store_n(&sBootChoiceMade, 1, __ATOMIC_RELEASE);
-    if (strcmp(locale, "en") != 0) {
-        if (Port_Setting("menu_font_id", 0) == 0) Port_SettingSave("menu_font_id", MenuText_FirstFontId(MENU_TEXT_MENU));
-        if (Port_Setting("battle_font_id", 0) == 0) Port_SettingSave("battle_font_id", MenuText_FirstFontId(MENU_TEXT_BATTLE));
-    }
+    /* Font choices, including Original, belong to the user rather than the locale. */
     Port_SettingsWrite();
 }
 int MenuTranslation_Load(const char *outDir, char *why, size_t whyLen) {

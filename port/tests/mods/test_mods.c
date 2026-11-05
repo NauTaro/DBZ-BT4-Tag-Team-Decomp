@@ -249,6 +249,17 @@ int main(void) {
         upgrade_bundled_text("port/examples/mods", "skill_list", &text, &size);
         CHECK(size == sizeof(kSkillList0394) && text[0] == (kSkillList0394[0] ^ 1));
         free(text);
+        text = malloc(sizeof(kR2_modern_hud) + 1); size = sizeof(kR2_modern_hud);
+        memcpy(text, kR2_modern_hud, size); text[size] = 0;
+        expected = read_file("port/examples/mods/modern_hud/mod.lua", &expectedSize);
+        upgrade_bundled_text("port/examples/mods", "modern_hud", &text, &size);
+        CHECK(expected && size == expectedSize && !memcmp(text, expected, size));
+        free(text); free(expected);
+        text = malloc(sizeof(kR2_modern_hud) + 1); size = sizeof(kR2_modern_hud);
+        memcpy(text, kR2_modern_hud, size); text[0] ^= 1; text[size] = 0;
+        upgrade_bundled_text("port/examples/mods", "modern_hud", &text, &size);
+        CHECK(size == sizeof(kR2_modern_hud) && text[0] == (kR2_modern_hud[0] ^ 1));
+        free(text);
         text = malloc(1); text[0] = 0; size = 0;
         upgrade_bundled_text("port/examples/mods", "skill_list", &text, &size);
         CHECK(size == 0 && text[0] == 0); free(text);
@@ -336,6 +347,21 @@ int main(void) {
         CHECK(Mods_Info(i)->error[0] == '\0');
     }
     CHECK(Mods_HudRead(&sRead) && sRead.count >= 4);
+
+    /* The modern overlay keeps drawing its last gauges during its exit fade.
+       Native gauges must stay hidden for that same interval. */
+    sFp.gauges = 0;
+    ++gPortVBlanks;
+    Mods_Tick();
+    CHECK(Mods_HudRead(&sRead) && sRead.count > 0);
+    CHECK((Mods_HudHidden() & 1) != 0);
+    { struct timespec fadeWait = {0, 250000000}; nanosleep(&fadeWait, NULL); }
+    gPortVBlanks += 120;
+    Mods_Tick();
+    CHECK((Mods_HudHidden() & 1) == 0);
+    sFp.gauges = 1;
+    ++gPortVBlanks;
+    Mods_Tick();
 
     /* An update from a launcher that omits mods/: recover all six scripts
        from the reserved package copy, off by default, and preserve an edit. */

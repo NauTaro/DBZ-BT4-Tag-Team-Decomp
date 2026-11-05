@@ -58,6 +58,8 @@ int PortMods_ViewActor(int side) {
 static ModsGame sGame;
 static ModsCam sCam;
 static int sCamOut;
+/* Presentation-only, one last requested pose per view, not a frame history. */
+static struct { int valid,obj; ModsCam pose; } sPausedCamera[2];
 struct NaturalPose { int valid,obj; float pos[3],rot[3],anchor[3]; };
 static struct NaturalPose sNatural[10];
 int PortMods_InBattle(void) { return sGame.battle; }
@@ -97,7 +99,7 @@ void Port_NaturalFightCamera(int objId,int pos,int rot) {
     uint8_t GAME_PTR chr=(uint8_t GAME_PTR)BtlChar_FindByObjId(objId);
     float anchor[3],p[3],r[3];int action,cut,i,slot=objId>=0?objId%10:0;
     struct NaturalPose *s=&sNatural[slot];
-    if(gPortResim||gsSkipFrame)return;
+    if(gPortResim)return;
     if(!chr)return;
     action=BtlAct_GetCurrent(chr);
     cut=ChrCam_IsCutActive(chr)||(action>=0xFD && action<=0x13B);
@@ -113,7 +115,7 @@ void PortMods_GameTick(void) {
     int side;
     uint8_t GAME_PTR chr;
 
-    if (gPortResim || gsSkipFrame) {
+    if (gPortResim) {
         return;
     }
     memset(&sGame, 0, sizeof(sGame));
@@ -128,7 +130,7 @@ void PortMods_GameTick(void) {
         }
         sGame.battle = sGame.f[0].found && sGame.f[1].found;
         sGame.split = sGame.battle && Battle_IsSplitScreen();
-    } else memset(sNatural,0,sizeof(sNatural));
+    } else { memset(sNatural,0,sizeof(sNatural)); memset(sPausedCamera,0,sizeof(sPausedCamera)); }
     Mods_Tick();
 }
 
@@ -162,18 +164,21 @@ int Port_ModsCamCollide(int side) {
     return side >= 0 && side < 2 ? sCollide[side] : 0;
 }
 
-void Port_ModsCamera(int side, int objId, int pos, int rot) {
+void Port_ModsCamera(int side, int objId, int pos, int rot, int paused) {
     static int synctest = -1;
     uint8_t GAME_PTR chr;
 
     if (synctest < 0) {
         synctest = getenv("BT3_SYNCTEST") != NULL;
     }
-    /* Rollback and discarded frames must not reset presentation preferences.
-       The same view may be rebuilt many times without a new shown frame. */
-    if (gPortResim || gsSkipFrame || side < 0 || side > 1) return;
+    /* A render skip is chosen on the renderer thread. It must not decide
+       whether the simulation builds a native or modified view: the choice
+       can change before this tick's list is consumed. Only rollback skips
+       presentation state. Renderer frame dropping remains independent. */
+    if (gPortResim || side < 0 || side > 1) return;
     sZoom[side]=1000;sCollide[side]=0;
     if (synctest || PortSpectator_Mode() || !Mods_WantCamera()) {
+        sPausedCamera[side].valid=0;
         return;
     }
     chr = (uint8_t GAME_PTR)BtlChar_FindByObjId(objId);
@@ -191,7 +196,15 @@ void Port_ModsCamera(int side, int objId, int pos, int rot) {
     sCam.zoom = 1.0f;
     sCam.collide = 1;
     sCamOut = 0;
-    Mods_Camera();
+    if (paused && !sCam.cut && sPausedCamera[side].valid && sPausedCamera[side].obj==objId) {
+        sCam=sPausedCamera[side].pose;
+        sCamOut=1;
+    } else {
+        Mods_Camera();
+        sPausedCamera[side].valid=sCamOut && !sCam.cut;
+        sPausedCamera[side].obj=objId;
+        sPausedCamera[side].pose=sCam;
+    }
     if (sCamOut) {
         wra((uint32_t)pos, sCam.pos, 3);
         wra((uint32_t)rot, sCam.rot, 3);

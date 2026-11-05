@@ -1,6 +1,9 @@
 extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
 extern int TagBattle_Active(void);
 #include "common.h"
+#ifdef PORT
+#include "battle/bt4_body_change.h"
+#endif
 extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/battle.h"
 #include "battle/battle_setup.h"
@@ -387,6 +390,9 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
     BtlObjAnim_SamplePose(obj);
     BtlChar_PoseToObj(chr, 1);
     BtlObjPose_CalcMatrices(obj);
+#ifdef PORT
+    if (!Bt4BodyChange_OnModelLoaded(chr))
+#endif
     switch (BtlAct_GetCurrent(chr)) {
     case 0xEC:
     case 0xED:
@@ -1381,6 +1387,9 @@ void BtlChar_FreeAll(void) {
 
 /* Zeroes the manager's state and every fighter, then sets each fighter up from the battle setup. */
 void BtlChar_ResetAll(void) {
+#ifdef PORT
+    Bt4BodyChange_Reset();
+#endif
     s32 i;
     BtlMgrChr *chr;
     s32 pad;
@@ -1567,6 +1576,9 @@ void BtlChars_EndFrame(void) {
     if (Battle_GetWork()->flags & BATTLE_FLAG_LOADING) {
         return;
     }
+#ifdef PORT
+    if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) Bt4BodyChange_Update();
+#endif
     BtlChange_Update();
     if (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE) {
         return;

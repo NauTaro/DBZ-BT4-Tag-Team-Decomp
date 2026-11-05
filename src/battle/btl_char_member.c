@@ -351,6 +351,8 @@ void BtlMember_PrevSwitchTarget(BtlMemberChr *chr) {
  */
 /* Only matches with BtlColl_NextPoolMember defined above in this file (bgtz, not bgtzl, after BtlMember_CountAlive). */
 s32 BtlMember_Damage(BtlMemberChr *chr, s32 amount, s32 flags) {
+    extern s32 DevRules_ProtectHealth(void);
+    if(amount>0&&DevRules_ProtectHealth())return 0;
     BtlMemberCombo *combo = &chr->combo;
     BtlMemberGauge *g = BtlMember_GetActiveGauge(chr);
     s32 before = g->health;
@@ -869,7 +871,8 @@ void Bt4_SpendTransformKi(BtlMemberChr *chr, s32 amount) {
     else BtlMember_DrainKi(chr, amount);
 }
 
-/* BT4 helper 0x1E118C: a recovery ability also suppresses the forced exhausted reaction. */
+/* BT4 helper 0x1E118C: an already damaged model or Sturdy Clothes (0x7A)
+   suppresses another clothing-damage model reload. */
 s32 Bt4_HasRecoveryVariant(BtlMemberChr *chr) {
     return BtlMember_GetActiveGauge(chr)->variant != 0 || BtlMember_HasAbility(chr, 0x7A);
 }

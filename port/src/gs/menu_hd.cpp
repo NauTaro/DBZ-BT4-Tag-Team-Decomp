@@ -18,7 +18,11 @@ extern "C" uint32_t *Bt4MenuHD_Upscale(const uint32_t *pixels, int w, int h, int
         /* GS RGBA, opaque=128 -> xBRZ ARGB, opaque=255. */
         source[i] = ((a * 255 + 64) / 128 << 24) | ((c & 255) << 16) | (c & 0xFF00) | ((c >> 16) & 255);
     }
-    xbrz::scale(factor, source, result, w, h, xbrz::ColorFormat::ARGB);
+    /* Use xBRZ's direct colour-distance implementation. The buffered variant
+       creates a 64 MiB process-global table on this worker, whose destructor
+       can run before the earlier atexit worker join. Direct distance needs
+       no shared table or lifetime dependency; enlargement stays off-thread. */
+    xbrz::scale(factor, source, result, w, h, xbrz::ColorFormat::ARGB_UNBUFFERED);
     std::free(source);
     for (size_t i = 0; i < count * factor * factor; ++i) {
         uint32_t c = result[i], a = c >> 24;

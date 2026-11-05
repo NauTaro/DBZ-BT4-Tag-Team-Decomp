@@ -142,6 +142,7 @@ void params(const GsDraw &d,uint32_t key,bool effect){
         for(int i=0;i<4;i++)data[i]=(float)d.mode[i];
         std::memcpy(data+4,d.misc,16);std::memcpy(data+8,d.rect,16);std::memcpy(data+12,d.orig,16);
         data[16]=d.vu?std::fmax(gsVuUni[d.uniform].misc[2],0.0f):gsZMax;data[17]=(key&(1<<9))?1.0f:0.0f;
+        data[18]=d.portrait[0];data[19]=d.portrait[1];
     }
     dev->SetPixelShaderConstantF(0,data,5);
 }

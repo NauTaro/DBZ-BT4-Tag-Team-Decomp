@@ -6,6 +6,7 @@
  */
 #include "menu/port_screen.h"
 #include "menu/tbo_art.h"
+extern void TagBattle_ClearDraftItems(void),TagBattle_SetDraftItems(s32,s32,const u16 *);
 extern void Port_TagPoll(void), Port_TagClose(void), Port_TagCommand(int command, int a, int b);
 extern int Port_TagPhase(void), Port_TagSeat(void), Port_TagTurn(void), Port_TagCapacity(void);
 extern int Port_TagDraftSeat(void), Port_TagCPU(int seat);
@@ -141,6 +142,7 @@ static s32 TeamSel_TagRestartDraft(void){
     s32 i;
     if(Port_TagNetwork()){Port_TagCommand(12,0,0);gPad[0].gamePressed=0;return 0;}
     if(!Port_TagReselect())return 0;
+    TagBattle_ClearDraftItems();
     gTeamSel->flags&=~(TEAMSEL_STAGE|TEAMSEL_DECIDED|TEAMSEL_LEAVING);
     gTeamSel->stage->mask=0;gTeamSel->faceMask=0;sTagTransition=0;
     Flash_GotoLabel(&gTeamSel->flash[0],"fl_map_cansel",1);IconWin_Close();
@@ -175,6 +177,7 @@ static s32 TeamSel_TagAutoConfirm(s32 seat){
     color=m->color;if(ChrTbl_WrapCostume(id,&color)<=0)return 0;
     m->chara=id;m->color=color;m->plate=0;m->form=0;
     m->row=index/TS_COLS;m->col=index%TS_COLS;memset(&m->items,0,sizeof(TsItemSet));
+    TagBattle_SetDraftItems(seat,id,m->items.id);
     Port_TagCommand(4,id,color);if(Port_TagError()[0])return 0;
     side->flags&=~(TEAMSEL_SIDE_FORM|TEAMSEL_SIDE_CUSTOM|TEAMSEL_SIDE_PANEL);
     ItemHelp_Close();ItemPanel_Hide(team);side->chara=id;
@@ -223,6 +226,7 @@ s32 TeamSel_TagRun(s32 section){
     Pad savedPads[2];SaveData *savedSave;
     if(seat<0 || seat>=10 || Port_TagPhase()!=2)return 0;
     saved[0]=gTsProgress->team[0];saved[1]=gTsProgress->team[1];
+    TagBattle_ClearDraftItems();
     savedSave=Heap_Alloc(SAVE_SIZE,0x20,0,2);memcpy(savedSave,gSaveData,SAVE_SIZE);Save_UnlockAll(gSaveData);
     memset(gTsProgress->team,0,sizeof(gTsProgress->team));
     for(i=0;i<5;++i){gTsProgress->team[0].member[i].chara=-1;gTsProgress->team[1].member[i].chara=-1;}
@@ -296,12 +300,18 @@ s32 TeamSel_TagRun(s32 section){
             gPad[team]=savedPads[0];
             if(getenv("BT4_TAG_DRAFT_TEST") && !TagSelectTest_HoldSeat(seat) && ++testFrames%40==0){gPad[team].gamePressed=PADG_CROSS;gPad[team].gameHeld=PADG_CROSS;gPad[team].gameRepeat=PADG_CROSS;}
             TagLongVideo_Input(seat);
-            gTeamSel->side[team]->member[slot].plate=0;gTeamSel->plateCount[team]=1;
+            /* Local play uses the native three saved sets. Network rooms
+               keep a uniform draft and receive no local combat items. */
+            if(Port_TagNetwork()){
+                gTeamSel->side[team]->member[slot].plate=0;gTeamSel->plateCount[team]=1;
+            }
         }
         before=gTeamSel->side[team]->memberCount;TeamSel_Update();
         if(!exit && ownTurn && canInput)TeamSel_Input(&result);
         if(!exit && ownTurn && gTeamSel->side[team]->memberCount>before){
-            TsMember *m=&gTeamSel->side[team]->member[slot];memset(&m->items,0,sizeof(TsItemSet));
+            TsMember *m=&gTeamSel->side[team]->member[slot];
+            if(Port_TagNetwork())memset(&m->items,0,sizeof(TsItemSet));
+            TagBattle_SetDraftItems(seat,m->chara,m->items.id);
             Port_TagCommand(4,m->chara,m->color);pending=1;
             if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"tag draft: native confirmation seat=%d chara=%d costume=%d\n",seat,m->chara,m->color);
         }else if(!exit && ownTurn && canInput && lastSeat==seat){

@@ -46,6 +46,7 @@
 #include "mods.h"
 #include "bundled_skill_list_0394.h"
 #include "bundled_mods_r1.h"
+#include "bundled_modern_hud_r2.h"
 
 extern unsigned gPortVBlanks;                     /* plat_stub.c */
 extern volatile int gUiPresentW, gUiPresentH;     /* gs_draw.c: the game's picture in the window */
@@ -1279,13 +1280,14 @@ static int has_fn(lua_State *L, int t, const char *k) {
 }
 
 /* Loads the script of mods/<folder> into the next slot. 1 = the slot is used (a mod, running or stopped). */
-/* Updaters preserve mods/. Only substitute the exact, unmodified old bundled
- * Skill List in memory; edited scripts and the user's file/settings stay intact. */
+/* Updaters preserve mods/. Only substitute exact, unmodified bundled scripts
+ * in memory; edited scripts and the user's files/settings stay intact. */
 static void upgrade_bundled_text(const char *source, const char *folder, char **text, long *size) {
     char path[512], *replacement;
     long count = 0;
     int match = !strcmp(folder,"skill_list") && *size == sizeof(kSkillList0394) && !memcmp(*text,kSkillList0394,*size);
     struct Stock { const char *name; const unsigned char *data; long size; } stock[] = {
+        {"modern_hud", kR2_modern_hud, sizeof(kR2_modern_hud)},
         {"modern_camera", kR1_modern_camera, sizeof(kR1_modern_camera)},
         {"modern_look", kR1_modern_look, sizeof(kR1_modern_look)},
         {"skill_list", kR1_skill_list, sizeof(kR1_skill_list)}

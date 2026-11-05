@@ -26,8 +26,14 @@ def build(name,sources,extra=(),cxx=False):
 audio=build('audio_probe',['port/tests/custom_content/audio_probe.c'])
 songs=build('songs_probe',['port/tests/custom_content/songs_probe.c','port/src/plat_songs.c','port/src/plat_extras.c','port/src/plat_file.c'])
 pack=build('pack_probe',['port/tests/custom_content/pack_probe.c','port/third_party/miniz/miniz.c'],['-DMINIZ_NO_ARCHIVE_WRITING_APIS','-DMINIZ_NO_STDIO','-DMINIZ_NO_TIME','-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES'])
+pack_cache=build('pack_cache_probe',['port/tests/custom_content/pack_cache_probe.c','port/third_party/miniz/miniz.c'],['-DMINIZ_NO_ARCHIVE_WRITING_APIS','-DMINIZ_NO_STDIO','-DMINIZ_NO_TIME','-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES'])
+run([str(pack_cache)],cwd=out)
+pack_async=build('pack_async_probe',['port/tests/custom_content/pack_async_probe.c','port/third_party/miniz/miniz.c'],['-DMINIZ_NO_ARCHIVE_WRITING_APIS','-DMINIZ_NO_STDIO','-DMINIZ_NO_TIME','-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES'])
+run([str(pack_async)],cwd=out,timeout=30)
 menu=build('menu_probe',['port/tests/custom_content/menu_probe.cpp'],cxx=True)
 run([str(menu)],cwd=out)
+menu_shutdown=build('menu_shutdown_probe',['port/tests/custom_content/menu_shutdown_probe.cpp'],cxx=True)
+for attempt in range(3):run([str(menu_shutdown)],cwd=out,timeout=30)
 def function(path,signature):
     text=(root/path).read_text();start=text.index(signature);at=text.index('{',start)+1;depth=1
     while depth:depth+=(text[at]=='{')-(text[at]=='}');at+=1

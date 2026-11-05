@@ -2380,6 +2380,7 @@ static void sample_local(unsigned tick) {
     } else if (!Port_PadRead(0, mine)) {
         memcpy(mine, kIdle, PAD);
     }
+    {extern void Port_DevRulesEncode(unsigned char *);Port_DevRulesEncode(mine+8);}
     memcpy(sIn[sMe][at % RING], mine, PAD);
     sHave[sMe] = at + 1;
 }
@@ -2965,7 +2966,8 @@ void Port_NetBeginTick(unsigned tick) {
 }
 
 /* What the game reads for a pad during this blank. */
-void Port_NetInput(int player, unsigned char *data) {
+#include "../../include/bt4_dev_rules.h"
+static void dev_raw_input(int player, unsigned char *data) {
     if (sMode == 3) { /* a spectator: both players' input as the host has it */
         memcpy(data, player >= 0 && player < 2 && sTick < sLogN ? sLog + ((size_t)sTick * 2 + (size_t)player) * PAD : kIdle, PAD);
         return;
@@ -2975,6 +2977,16 @@ void Port_NetInput(int player, unsigned char *data) {
         return;
     }
     memcpy(data, player >= 0 && player < 2 && sTick < sHave[player] ? sIn[player][sTick % RING] : kIdle, PAD);
+}
+
+int Port_NetDevRulesPad(int player,unsigned char out[8]){
+    unsigned char raw[PAD];dev_raw_input(player,raw);memcpy(out,raw+8,8);return 1;
+}
+void Port_NetInput(int player,unsigned char *data){
+    dev_raw_input(player,data);
+    // Pressure bytes 8..15 are unused by this port. Keep developer metadata out
+    // of the original PS2 input decoder and retain byte 17's target extension.
+    unsigned flags;uint32_t seq;if(Bt4Dev_Unpack(data+8,&flags,&seq))memset(data+8,0,8);
 }
 
 int Port_NetResim(void) {

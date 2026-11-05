@@ -1394,6 +1394,10 @@ void TeamSel_Draw(void) {
 #ifdef PORT
     if(sTagSelectActive)TeamSel_TagDrawFilter();
 #endif
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *,const void *);
+    Flash_PortPortraits(gTeamSel->tex[23],gTeamSel->tex[22]);
+#endif
     for (i = 0; i < TEAMSEL_FLASH_NUM; i++) {
 #ifdef PORT
         if(sTagSelectActive && (gTeamSel->flags&TEAMSEL_STAGE) && i>0)continue;
@@ -1403,6 +1407,7 @@ void TeamSel_Draw(void) {
     }
 #ifdef PORT
     Port_MenuMovie(0);
+    Flash_PortPortraits(NULL,NULL);
 #endif
     Font_FlushAll();
     IconWin_Draw();
