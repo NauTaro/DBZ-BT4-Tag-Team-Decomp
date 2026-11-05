@@ -1,0 +1,60 @@
+
+name: Discord Release Announcements
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord announcement
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          description = os.environ.get("RELEASE_BODY", "").strip()
+          if not description:
+              description = "A new version is available!"
+          description = description[:3500]
+
+          payload = {
+              "username": "DBZ BT4 | DECOMP",
+              "embeds": [{
+                  "title": "NEW RELEASE | " + os.environ["RELEASE_NAME"],
+                  "url": os.environ["RELEASE_URL"],
+                  "description": description,
+                  "color": 3447003,
+                  "fields": [
+                      {
+                          "name": "Version",
+                          "value": os.environ["RELEASE_TAG"],
+                          "inline": True
+                      },
+                      {
+                          "name": "Download",
+                          "value": "[View release](" + os.environ["RELEASE_URL"] + ")"
+                      }
+                  ],
+                  "footer": {"text": "DBZ BT4 Decomp | GitHub Releases"}
+              }]
+          }
+
+          request = urllib.request.Request(
+              os.environ["WEBHOOK_URL"],
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST"
+          )
+          with urllib.request.urlopen(request) as response:
+              print("Discord notification sent:", response.status)
+          PY
