@@ -2,6 +2,7 @@
 name: Discord Release Announcements
 
 on:
+  workflow_dispatch:
   release:
     types: [published]
 
