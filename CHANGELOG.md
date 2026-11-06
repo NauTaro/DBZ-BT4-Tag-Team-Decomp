@@ -1,3 +1,32 @@
+# 0.1.39.5 R4
+
+- Restore the full single-view layout after chase-camera updates when cinematic cameras are disabled; cache each visible camera update independently of rollback rendering.
+- Keep uploaded effect work buffers on the GPU texture path and recognize pending framebuffer draws before submission, addressing the multicolored blocks during special attacks without removing their original textures.
+- Preserve full-width effect pointers for stage streaks, including the Spirit Bomb sequence on 64-bit platforms.
+- Restore extended native health bars in the Interface settings in English, Spanish and Brazilian Portuguese, retaining the selected layout at startup.
+- Add signed principal/reserve matchmaking routing with separate project identities, pinned rooms, invitation namespaces and bounded retries.
+- Include an additive Supabase deployment bundle and a coordinated minimum-client gate for new matchmaking. Activation remains disabled until the public signed update packages are verified and the operator completes the database preparation.
+- Keep experimental anime auras and the separate development menu out of this release.
+
+<!-- bt4-update:en
+- Correct full-screen chase-camera layout and repeated camera updates.
+- Correct the GPU source used by uploaded special-attack effects.
+- Preserve 64-bit stage-effect pointers and restore extended native HUD bars.
+- Prepare coordinated online routing and required-update support.
+-->
+<!-- bt4-update:es
+- Corrige el encuadre completo de la cámara y sus actualizaciones repetidas.
+- Corrige la fuente de GPU usada por efectos de ataques especiales.
+- Conserva los punteros de efectos de 64 bits y restaura las barras extendidas.
+- Prepara el respaldo coordinado del online y las actualizaciones requeridas.
+-->
+<!-- bt4-update:pt
+- Corrige o enquadramento completo da câmera e suas atualizações repetidas.
+- Corrige a fonte da GPU usada pelos efeitos dos ataques especiais.
+- Preserva ponteiros de efeitos de 64 bits e restaura as barras estendidas.
+- Prepara a reserva coordenada do online e as atualizações obrigatórias.
+-->
+
 # 0.1.39.5 R3
 
 - Restore Hit's original Time Skip backdrop and allow its HD replacement to load.

@@ -355,7 +355,7 @@ extern "C" void PortVoice_P2PSession(int mode,const char *descriptor,const PortV
     v.direct=true;v.manualRoom=str(room,"wire")=="bt4-voice-direct-1";if(!v.manualRoom)v.rendezvous.clear();v.sessionMode=mode;v.url=Bt4Signal_Project();v.cap=generation;v.seat=seat;v.name=name;v.directRoster=hello.dump();if(changed)++v.generation;
     if(v.options.enabled){Bt4Signal_Listen(2,1);startThread();}
 }
-extern "C" void PortVoice_Leave(int mode){init();std::lock_guard<std::mutex>g(v.lock);if(v.sessionMode==mode){if(v.manualRoom&&Bt4Signal_Status()==1){auto args=VJson{{"generation",v.cap}}.dump();Bt4Signal_Command(2,++directSerial,"leave",args.c_str());}if(v.direct)Bt4Signal_Listen(2,0);v.direct=false;v.manualRoom=false;v.rendezvous.clear();v.directRoster.clear();v.sessionMode=0;v.url.clear();v.cap.clear();++v.generation;v.pttKey=false;v.pttPad=false;}}
+extern "C" void PortVoice_Leave(int mode){init();std::lock_guard<std::mutex>g(v.lock);if(v.sessionMode==mode){Bt4Signal_ReleaseRoom(v.cap.c_str());if(v.manualRoom&&Bt4Signal_Status()==1){auto args=VJson{{"generation",v.cap}}.dump();Bt4Signal_Command(2,++directSerial,"leave",args.c_str());}if(v.direct)Bt4Signal_Listen(2,0);v.direct=false;v.manualRoom=false;v.rendezvous.clear();v.directRoster.clear();v.sessionMode=0;v.url.clear();v.cap.clear();++v.generation;v.pttKey=false;v.pttPad=false;}}
 extern "C" void PortVoice_Mute(unsigned id,int muted){for(auto &p:peers)if(p.id==id)p.muted=muted!=0;}
 extern "C" float PortVoice_ProximityGain(float distance){
     /* Voice uses arena units. Keep the near range clear, then fade smoothly over

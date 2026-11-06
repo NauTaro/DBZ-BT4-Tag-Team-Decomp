@@ -5,6 +5,19 @@ import os, shutil, subprocess, tempfile, unittest
 ROOT = Path(__file__).resolve().parents[3]
 
 class HudMaskTests(unittest.TestCase):
+    def test_extended_layout_survives_saved_setting_loading(self):
+        source = (ROOT / 'port/src/gs/gs_draw.c').read_text(encoding='utf8')
+        start = source.index('    sHudLayout = getenv(')
+        line = source[source.index('\n', start) + 1:].splitlines()[0].strip()
+        expression = line.split('=', 1)[1].strip().rstrip(';')
+        for value, expected in [(-1, 0), (0, 0), (1, 1), (2, 2), (3, 0)]:
+            ternary = expression.replace('sHudLayout', str(value))
+            cond, choices = ternary.split('?')
+            yes, no = choices.split(':')
+            cond = cond.replace('||', ' or ')
+            actual = int(yes if eval(cond) else no)
+            self.assertEqual(actual, expected)
+
     def test_mask_and_colour_take_the_same_widescreen_route(self):
         cc = shutil.which('cc') or shutil.which('gcc')
         if not cc: self.skipTest('A C compiler is required')

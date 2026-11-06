@@ -1486,6 +1486,13 @@ static void depth_clut(int ctx) {
     gsDraws[gsDrawCount++] = d;
 }
 
+/* Recorded writes own a work buffer before GPU submission. */
+static int target_has_image(int src, int kept, uint64_t tex0) {
+    return src >= 0 && (kept || ((tex0 & 0x1F) == 0 &&
+           (gsTargets[src].cleared || gsTargets[src].draws) &&
+           gsTargets[src].gen == gGsPageGen[gsTargets[src].fbp & 511]));
+}
+
 static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *us, float *vs) {
     uint64_t prim = gGs.prim, t0 = gGs.tex0[ctx], test = gGs.test[ctx], cl = gGs.clamp[ctx], sc = gGs.scissor[ctx];
     int tme = (prim >> 4) & 1, src;
@@ -1572,7 +1579,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
             }
         }
         /* a frame buffer used as a texture: only if nothing was uploaded over it since it was drawn */
-        if (src >= 0 && (kept || ((t0 & 0x1F) == 0 && gsTargets[src].cleared && gsTargets[src].gen == gGsPageGen[gsTargets[src].fbp & 511]))) {
+        if (target_has_image(src, kept, t0)) {
             uint32_t tp = (uint32_t)((t0 >> 20) & 0x3F);
             if (gsTargets[src].stale) {
                 /* The buffer was meant to hold a copy or a step of an effect that was dropped; what it holds now
@@ -3098,7 +3105,7 @@ renderer_ready:
     gPortSePercent = Port_Setting("effects", 100);
 
     sHudLayout = getenv("BT3_HUD") != NULL ? atoi(getenv("BT3_HUD")) : Port_Setting("hud_layout", 0);
-    sHudLayout = sHudLayout == 2 ? 2 : 0; /* BT4: original health-bar mask width. */
+    sHudLayout = sHudLayout < 0 || sHudLayout > 2 ? 0 : sHudLayout;
     gPortVoicePercent = Port_Setting("voices", gPortSePercent); /* (one slider before 0.1.30: what it was set to) */
     gPortStagePercent = Port_Setting("stage_sounds", gPortSePercent);
     TexPack_Init();

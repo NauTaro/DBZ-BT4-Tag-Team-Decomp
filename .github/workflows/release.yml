@@ -124,6 +124,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TITLE: ${{ needs.build.outputs.title }}
         run: |
+          python3 port/tools/package_online_handoff.py --out release-assets/BT4decomp-R4-Supabase.zip
           python3 - <<'PY'
           import os, pathlib
           section = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
@@ -137,7 +138,8 @@ jobs:
             release-assets/BT4decomp-linux-x64.zip \
             release-assets/BT4decomp-linux-x64.zip.sig \
             release-assets/BT4decomp-macos-arm64.zip \
-            release-assets/BT4decomp-macos-arm64.zip.sig
+            release-assets/BT4decomp-macos-arm64.zip.sig \
+            release-assets/BT4decomp-R4-Supabase.zip
           gh release view "${GITHUB_REF_NAME}" --json assets,isDraft > release-assets/uploaded.json
           python3 - <<'PY'
           import json
@@ -145,6 +147,7 @@ jobs:
           expected = {'BT4decomp-' + platform + '.zip' + suffix
                       for platform in ('windows-x64', 'linux-x64', 'macos-arm64')
                       for suffix in ('', '.sig')}
+          expected.add('BT4decomp-R4-Supabase.zip')
           assert release['isDraft'], 'Release must stay private while assets are checked'
           assert {asset['name'] for asset in release['assets']} == expected, 'Incomplete release assets'
           assert all(asset['size'] > 0 for asset in release['assets']), 'Empty release asset'

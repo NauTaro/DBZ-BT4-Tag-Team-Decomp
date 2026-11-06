@@ -393,6 +393,16 @@ static int http_get(const char *url, int json, const char *path, char **mem, siz
     return ok;
 }
 
+/* The signaling worker verifies the signed envelope before using it. This
+   fixed URL cannot redirect the client to an arbitrary matchmaking endpoint. */
+int Update_FetchOnlineRoute(char *out,size_t capacity) {
+    char *body=NULL;size_t bytes=0;int ok;
+    if(!out||capacity<2)return 0;
+    ok=http_get("https://raw.githubusercontent.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/online-routing/policy.json",0,NULL,&body,&bytes,8192);
+    if(ok && bytes<capacity){memcpy(out,body,bytes);out[bytes]=0;}else ok=0;
+    SDL_free(body);return ok;
+}
+
 /* ---- just enough JSON for GitHub's answer ---- */
 static const char *js_ws(const char *p) {
     while (*p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') {
@@ -890,12 +900,20 @@ void Update_NotesFor(const char *locale,char *out,size_t size) {
     unlock();
 }
 
+static SDL_AtomicInt sOnlineRequired;
+int Update_OnlineRequired(void){return SDL_GetAtomicInt(&sOnlineRequired)!=0;}
+void Update_SetOnlineRequired(int required){
+    int previous=SDL_SetAtomicInt(&sOnlineRequired,required!=0);
+    if(required && !previous)Update_Recheck();
+}
+
 int Update_BlocksOnline(void) {
     int st = SDL_GetAtomicInt(&sU.state);
-    return st == UPD_DOWNLOADING || st == UPD_VERIFYING || st == UPD_READY || st == UPD_INSTALLING || st == UPD_INSTALLED;
+    return Update_OnlineRequired() || st == UPD_DOWNLOADING || st == UPD_VERIFYING || st == UPD_READY || st == UPD_INSTALLING || st == UPD_INSTALLED;
 }
 
 const char *Update_OnlineNote(void) {
+    if(Update_OnlineRequired())return "A game update is required for online play. Return to a menu to download it and restart.";
     return SDL_GetAtomicInt(&sU.state) >= UPD_READY ? "An update is ready: online play resumes after it installs at the main menu."
                                                      : "An update is downloading: new online sessions are paused until it is verified.";
 }

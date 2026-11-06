@@ -42,6 +42,9 @@ void Update_Download(void);                /* downloads the verified release in 
 void Update_Install(void);                 /* swaps files in a thread -> UPD_INSTALLED or UPD_FAILED */
 int Update_StartTextureMaintenance(int locale); /* caller must be in an offline menu; 1: close this game */
 int Update_Relaunch(void);                 /* UPD_INSTALLED: starts the new version (the caller then exits); 0 failed */
+int Update_FetchOnlineRoute(char *out,size_t capacity); /* background caller, fixed signed-authority URL */
+void Update_SetOnlineRequired(int required);
+int Update_OnlineRequired(void);
 int Update_BlocksOnline(void);             /* an update is under way: no new online session until it is installed */
 const char *Update_OnlineNote(void);       /* ... the line that says so (English) */
 /* What happened to the update installed before this start (read once): 0 none, 1 this is it (`version`). */

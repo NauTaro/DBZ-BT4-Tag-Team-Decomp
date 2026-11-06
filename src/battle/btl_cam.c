@@ -399,6 +399,16 @@ static s32 BtlCam_PortZoom(BtlCamView *view, s32 zoom) {
    stage's frustum, src/battle/stg_a.c; the effects' clip planes, eft_a.c) widens by as much, or what the wider view
    shows at its edges is left out. 1 without (never narrower than the game's). */
 static s32 sPortZoomView[2] = {1000, 1000};
+/* Host presentation state. A priority/chase override can read the same view
+ * twice during one blank, and rollback can rebuild old blanks. Neither should
+ * advance Lua inertia or stage-collision hysteresis a second time. */
+PORT_HOST static struct {
+    s32 valid, side, obj, zoom;
+    u32 blank;
+    Vec4 pos, rot;
+} sPortCameraPose[2];
+PORT_HOST static f32 sPortCollisionHeld[2] = {1.0f, 1.0f};
+PORT_HOST static s32 sPortCollisionClear[2], sPortCollisionObj[2];
 f32 Port_CamCull(void) {
     s32 zoom;
     if (gBtlCam == NULL || gBtlCam->cur == NULL) {
@@ -417,8 +427,6 @@ f32 Port_CamCull(void) {
 static f32 SpecCamera_StageRay(const f32 *from,const f32 *to);
 static void BtlCam_PortCollide(BtlCamView *view, s32 objId) {
     extern void *BtlChar_FindByObjId(s32 objId);
-    static f32 sHeld[2] = {1.0f, 1.0f};
-    static s32 sClear[2];
     u8 *chr = BtlChar_FindByObjId(objId);
     s32 v = view->index & 1, i;
     Vec4 target;
@@ -426,6 +434,11 @@ static void BtlCam_PortCollide(BtlCamView *view, s32 objId) {
 
     if (chr == NULL) {
         return;
+    }
+    if (sPortCollisionObj[v] != objId) {
+        sPortCollisionHeld[v] = 1.0f;
+        sPortCollisionClear[v] = 0;
+        sPortCollisionObj[v] = objId;
     }
     target = *(Vec4 *)(chr + 0x450); /* (ChrCam.target, include/battle/btl_char_cam.h) */
     /* Presentation collision reads the stage BVH without changing simulation scratch globals. */
@@ -438,13 +451,13 @@ static void BtlCam_PortCollide(BtlCamView *view, s32 objId) {
         f = len > 0.0001f ? f - 4.0f / __builtin_sqrtf(len) : 0.0f;
         f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
     }
-    if (f < sHeld[v]) {
-        sHeld[v] += (f - sHeld[v]) * 0.5f;
-        sClear[v] = 0;
-    } else if (++sClear[v] >= 15) {
-        sHeld[v] += (f - sHeld[v]) * 0.1f;
+    if (f < sPortCollisionHeld[v]) {
+        sPortCollisionHeld[v] += (f - sPortCollisionHeld[v]) * 0.5f;
+        sPortCollisionClear[v] = 0;
+    } else if (++sPortCollisionClear[v] >= 15) {
+        sPortCollisionHeld[v] += (f - sPortCollisionHeld[v]) * 0.1f;
     }
-    f = sHeld[v];
+    f = sPortCollisionHeld[v];
     for (i = 0; i < 3; i++) {
         ((f32 *)&view->pos)[i] = ((f32 *)&target)[i] + f * (((f32 *)&view->pos)[i] - ((f32 *)&target)[i]);
     }
@@ -475,6 +488,10 @@ void BtlCam_BuildView(BtlCamView *view, s32 apply) {
 void BtlCam_Reset(void) {
 #ifdef PORT
     sPortFreeCamLive = 0;
+    memset(sPortCameraPose, 0, sizeof(sPortCameraPose));
+    sPortCollisionHeld[0] = sPortCollisionHeld[1] = 1.0f;
+    memset(sPortCollisionClear, 0, sizeof(sPortCollisionClear));
+    sPortCollisionObj[0] = sPortCollisionObj[1] = -1;
     PortSpectator_EndBattle();
 #endif
     memset(gBtlCam, 0, sizeof(BtlCam));
@@ -503,16 +520,34 @@ void BtlCam_Term(void) {
 
 #ifdef PORT
 static void BtlCam_PortMods(BtlCamView *view,s32 side,s32 objId) {
+        extern s32 gPortResim;
+        extern u32 gPortLiveBlanks;
         extern void Port_NaturalFightCamera(s32,s32,s32);
         extern void Port_ModsCamera(s32 side, s32 objId, s32 pos, s32 rot, s32 paused); /* (addresses in game memory) */
         extern s32 Port_ModsCamZoom(s32 side);
         extern s32 Port_ModsCamCollide(s32 side);
+        s32 k = view->index & 1;
+        if (gPortResim) return;
+        if (sPortCameraPose[k].valid && sPortCameraPose[k].blank == gPortLiveBlanks &&
+            sPortCameraPose[k].side == side && sPortCameraPose[k].obj == objId) {
+            view->pos = sPortCameraPose[k].pos;
+            view->rot = sPortCameraPose[k].rot;
+            sPortZoomView[k] = sPortCameraPose[k].zoom;
+            return;
+        }
         Port_NaturalFightCamera(objId,(s32)(u32)&view->pos,(s32)(u32)&view->rot);
         Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot, (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)!=0);
         sPortZoomView[view->index & 1] = Port_ModsCamZoom(side); /* (the zoom, the stage: what they also asked) */
         if (Port_ModsCamCollide(side)) {
             BtlCam_PortCollide(view, objId);
         }
+        sPortCameraPose[k].valid = 1;
+        sPortCameraPose[k].blank = gPortLiveBlanks;
+        sPortCameraPose[k].side = side;
+        sPortCameraPose[k].obj = objId;
+        sPortCameraPose[k].pos = view->pos;
+        sPortCameraPose[k].rot = view->rot;
+        sPortCameraPose[k].zoom = sPortZoomView[k];
 }
 #endif
 
@@ -729,6 +764,16 @@ static s32 BtlCam_PortFreeCamera(s32 selected) {
     return 1;
 }
 #endif
+#ifdef PORT
+static void BtlCam_PortChaseView(s32 side) {
+    BtlCam_SelectView(side);
+    BtlCam_UpdateView(side);
+    /* UpdateView restores the native split-screen projection. Apply the
+     * local full-screen projection only after copying that pose. */
+    BtlCam_SetLayout(0,1);
+    BtlCam_ApplyView(1);
+}
+#endif
 /* Decides whether one full-screen view replaces the per-player views this frame; returns 1 if so. */
 s32 BtlCam_UpdateOverride(void) {
     s32 ret = 0;
@@ -823,7 +868,8 @@ s32 BtlCam_UpdateOverride(void) {
         if(side<0)side=Battle_GetHumanSide();if(side<0||side>1)side=0;
         for(i=0;i<2;++i){s32 a=BtlAct_GetCurrent(BtlChar_Get(i));if(a>=0xFD&&a<=0x13B)special=1;}
         if(special&&!Port_SpecialMoveCameras(-1)){
-            BtlCam_SelectView(side);BtlCam_SetLayout(0,1);BtlCam_UpdateView(side);ret=1;
+            BtlCam_PortChaseView(side);
+            ret=1;
         }
     }
     if (BtlCam_PortFreeCamera(ret)) {

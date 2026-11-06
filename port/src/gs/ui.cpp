@@ -212,6 +212,7 @@ static const char *f1_text(const char *english) {
         {"BT4 original, en los bordes", "BT4 original, en los bordes", "BT4 original, nas bordas"},
         {"BT4 original, at the edges", "BT4 original, en los bordes", "BT4 original, nas bordas"},
         {"BT4 original, centered", "BT4 original, centrado", "BT4 original, centralizado"},
+        {"Extended health bars", "Barras extendidas", "Barras de vida estendidas"},
         {"Show HUD", "Mostrar HUD", "Mostrar HUD"},
         {"Hide HUD", "Ocultar HUD", "Ocultar HUD"},
         {"Game camera", "Cámara del juego", "Câmera do jogo"},
@@ -229,6 +230,8 @@ static const char *f1_text(const char *english) {
         {"English (text and voices)", "Inglés (textos y voces)", "Inglês (texto e vozes)"},
         {"New update available. Restart required.", "Nueva actualización disponible, requiere reiniciar.", "Nova atualização disponível. É necessário reiniciar."},
         {"Restart now", "Reiniciar ahora", "Reiniciar agora"},
+        {"Online play requires this update. Offline play remains available.", "Necesitas esta actualización para jugar online. Puedes seguir jugando sin conexión.", "Esta atualização é necessária para jogar online. Você pode continuar jogando offline."},
+        {"A game update is required for online play. Return to a menu to download it and restart.", "Necesitas actualizar el juego para jugar online. Vuelve a un menú para descargarla y reiniciar.", "É necessário atualizar o jogo para jogar online. Volte a um menu para baixar e reiniciar."},
         {"Later", "Más tarde", "Mais tarde"},
         {"This update is ready. Restart now to apply it, or choose Later to install it another time.", "La actualización está lista. Reinicia ahora para aplicarla o elige Más tarde para instalarla en otro momento.", "A atualização está pronta. Reinicie agora para aplicá-la ou escolha Mais tarde para instalá-la depois."},
         {"Downloading automatically", "Descargando automáticamente", "Baixando automaticamente"},
@@ -2186,7 +2189,9 @@ static void update_line(char *out, size_t size) {
         return;
     }
     Update_Status(&u);
-    if (u.state == UPD_AVAILABLE && u.canInstall) {
+    if(Update_OnlineRequired() && u.state!=UPD_READY) {
+        SDL_strlcpy(out,f1_text("Online play requires this update. Offline play remains available."),size);
+    } else if (u.state == UPD_AVAILABLE && u.canInstall) {
         upd_fill(out, size, PORT_TEXT_UPDATE_AVAILABLE, "Update {version} found. Downloading automatically.", u.latest, 0);
     } else if (u.state == UPD_DOWNLOADING || u.state == UPD_VERIFYING) {
         upd_fill(out, size, PORT_TEXT_UPDATE_DOWNLOADING, "Downloading update {version}: {percent}%", u.latest, upd_percent(u));
@@ -2207,6 +2212,7 @@ static void update_panel(void) {
         ImGui::TextColored(green, f1_text("Updated to %s."), ver);
         ImGui::Separator();
     }
+    if(Update_OnlineRequired())ImGui::TextWrapped("%s",f1_text("Online play requires this update. Offline play remains available."));
     if (u.state < UPD_AVAILABLE) {
         return;
     }
@@ -2469,6 +2475,7 @@ static void update_prompt_draw(void) {
         return;
     }
     ImGui::TextWrapped("%s", f1_text("New update available. Restart required."));
+    if(Update_OnlineRequired())ImGui::TextWrapped("%s",f1_text("Online play requires this update. Offline play remains available."));
     UpdateStatus status;Update_Status(&status);
     ImGui::TextDisabled("%s",status.latest);
     ImGui::Spacing();
@@ -2551,10 +2558,10 @@ static void ui_tab(PortVideo &v) {
         }
         ImGui::SetItemTooltip(f1_text(font.tip));
     }
-    static const char *const kHud[] = {"BT4 original, at the edges", "BT4 original, centered"};
-    int bt4Hud = v.hudLayout == 2 ? 1 : 0;
-    const char *hudNames[] = {f1_text(kHud[0]), f1_text(kHud[1])};
-    if (ImGui::Combo(f1_text("HUD Style"), &bt4Hud, hudNames, 2)) v.hudLayout = bt4Hud ? 2 : 0;
+    static const char *const kHud[] = {"BT4 original, at the edges", "Extended health bars", "BT4 original, centered"};
+    int bt4Hud = v.hudLayout >= 0 && v.hudLayout < 3 ? v.hudLayout : 0;
+    const char *hudNames[] = {f1_text(kHud[0]), f1_text(kHud[1]), f1_text(kHud[2])};
+    if (ImGui::Combo(f1_text("HUD Style"), &bt4Hud, hudNames, 3)) v.hudLayout = bt4Hud;
     ImGui::SetItemTooltip(f1_text("Where a fight's health bars and gauges sit in a picture wider than 4:3.\n"
                           "Long health bars: the bars reach from the edges to the timer.\n"
                           "In the middle: the original 4:3 arrangement, next to the timer."));
