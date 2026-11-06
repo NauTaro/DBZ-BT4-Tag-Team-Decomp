@@ -1,0 +1,4 @@
+# The handler validates the user through PostgREST + room admission before issuing TURN.
+# Avoid the legacy gateway verifier rejecting the project's asymmetric user JWTs.
+[functions.bt4-turn]
+verify_jwt = false

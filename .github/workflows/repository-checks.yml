@@ -39,4 +39,8 @@ jobs:
         if: runner.os == 'Linux'
         run: python port/tests/palette/run.py
       - name: Test authenticated Tag Team negotiation and recovery
-        run: node --test cloudflare/tests/tag_link.test.mjs cloudflare/tests/voice_hibernation.test.mjs
+        run: node --test cloudflare/tests/tag_link.test.mjs cloudflare/tests/voice_hibernation.test.mjs supabase/tests/turn.test.mjs
+      - name: Install isolated PostgreSQL test runtime
+        run: npm ci --prefix supabase/tests --ignore-scripts
+      - name: Test TURN SQL authorization and issuance quotas
+        run: node --test supabase/tests/turn_sql.test.mjs

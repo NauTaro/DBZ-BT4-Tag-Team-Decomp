@@ -49,3 +49,4 @@ port/tools/update_signing_key.txt
 supabase/.temp/
 supabase/.branches/
 supabase/*session*.json
+supabase/tests/node_modules/

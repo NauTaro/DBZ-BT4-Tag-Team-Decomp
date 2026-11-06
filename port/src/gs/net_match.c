@@ -508,6 +508,7 @@ static int lan_address(int localPort, char *out, size_t size) {
 static int supabase_match_loop(const char *name,const char *addrs){
     unsigned generation=(unsigned)(uintptr_t)SDL_GetTLS(&sMine);
     unsigned long long content=0;char addresses[192],identityError[256];Bt4DiscoveryStatus status;
+    int turnWaiting=0;
     extern int Port_BuildIdentity(unsigned long long *);
     extern const char *Port_BuildIdentitySummary(void);
     if(Port_BuildIdentity(&content)!=1){
@@ -525,13 +526,37 @@ static int supabase_match_loop(const char *name,const char *addrs){
             sM.st.state=status.state;sM.st.role=status.role;sM.st.lobby=status.lobby;
             SDL_strlcpy(sM.st.code,status.code,sizeof(sM.st.code));SDL_strlcpy(sM.st.error,status.error,sizeof(sM.st.error));
             SDL_strlcpy(sM.st.peerName,status.peerName,sizeof(sM.st.peerName));
+            if(sM.st.peerCount!=status.peerCount||SDL_memcmp(sM.st.peerAddr,status.peerAddr,sizeof(sM.st.peerAddr)))++sM.st.addrGen;
             sM.st.peerCount=status.peerCount;SDL_memcpy(sM.st.peerAddr,status.peerAddr,sizeof(sM.st.peerAddr));
             if(sM.watchCount!=status.watchCount||SDL_memcmp(sM.watchAddr,status.watchAddr,sizeof(sM.watchAddr))){
                 sM.watchCount=status.watchCount;SDL_memcpy(sM.watchAddr,status.watchAddr,sizeof(sM.watchAddr));++sM.watchGen;
             }
         }
         SDL_UnlockMutex(sM.lock);
+        if(STOPPED())break;
         if(status.state<0)break;
+        if(status.role==1&&SDL_GetAtomicInt(&sM.relayAsk)==1){
+            SDL_SetAtomicInt(&sM.relayAsk,2);
+            if(SDL_getenv("BT3_NO_RELAY")==NULL&&!Relay_Active())turnWaiting=Bt4Discovery_RelayAsk(generation);
+        }
+        if(turnWaiting){
+            Bt4TurnCredentials turn;int ready=Bt4Discovery_RelayPoll(generation,&turn);
+            if(ready){
+                turnWaiting=0;
+                if(ready>0&&!STOPPED()){
+                    char relay[64];int got;
+                    SDL_SetAtomicInt(&sM.sockBusy,1);SDL_Delay(80);
+                    got=!STOPPED()&&Relay_Allocate(sM.sock,turn.server,turn.username,turn.password,relay,sizeof(relay));
+                    SDL_memset(&turn,0,sizeof(turn));
+                    if(got&&!STOPPED()){
+                        Bt4Discovery_PublishRelay(generation,relay);
+                        SDL_AddAtomicInt(&sM.relayGen,1);
+                        fprintf(stderr,"bt4: discovery: TURN fallback allocated\n");
+                    }else fprintf(stderr,"bt4: discovery: TURN allocation failed\n");
+                    SDL_SetAtomicInt(&sM.sockBusy,0);
+                }
+            }
+        }
         SDL_Delay(10);
     }
     Bt4Discovery_End(generation);return 0;
@@ -550,6 +575,7 @@ static int SDLCALL match_thread(void *arg) {
         }
     }
     name[n] = '\0';
+    if (!name[0]) SDL_strlcpy(name, "Player", sizeof(name));
     if (!stun_ask(sM.sock, "stun.l.google.com", 19302, pub, sizeof(pub))) {
         stun_ask(sM.sock, "stun1.l.google.com", 19302, pub, sizeof(pub));
     }
@@ -1149,7 +1175,6 @@ int Match_SocketBusy(void) {
 }
 
 void Match_RelayAsk(void) {
-    if(supabase_discovery())return; /* direct UDP or participant-host lobby routing */
     SDL_CompareAndSwapAtomicInt(&sM.relayAsk, 0, 1);
 }
 

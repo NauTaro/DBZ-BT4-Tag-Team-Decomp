@@ -171,7 +171,8 @@ static int entry(void*){
         if(joined&&now>=identity.renewAt){if(authenticate())post("access_token",{{"access_token",identity.access}},"realtime:bt4:inbox:"+identity.user);else{ws.reset();joined=false;state.status=-1;reconnect=now+30000;}}
         Job job;bool have=false;
         {std::lock_guard<std::mutex> g(state.lock);if(!state.jobs.empty()&&(joined||state.jobs.front().consumer==3)){job=std::move(state.jobs.front());state.jobs.pop_front();have=true;}}
-        if(have){Sj reply;if(!authenticate()||!http("/rest/v1/rpc/bt4_api",{{"p_op",job.op},{"p_args",job.args}},true,reply))reply={{"error","SIGNALING_UNAVAILABLE"}};
+        if(have){Sj reply;bool turn=job.op=="turn";
+            if(!authenticate()||!http(turn?"/functions/v1/bt4-turn":"/rest/v1/rpc/bt4_api",turn?job.args:Sj{{"p_op",job.op},{"p_args",job.args}},true,reply))reply={{"error",turn?"RELAY_UNAVAILABLE":"SIGNALING_UNAVAILABLE"}};
             emit(job.consumer,{{"event","reply"},{"serial",job.serial},{"body",reply}});}
         SDL_WaitSemaphoreTimeout(state.wake,have?0:20);
     }
@@ -189,7 +190,8 @@ extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consum
 extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,const char *args){
     if(consumer<0||consumer>3||!op||!args||strlen(args)>18000)return 0;
     if((consumer==3)!=(!strcmp(op,"presence")))return 0;
-    static const char *allowed[]={"create","join","get","lease","leave","list","queue","cancel","signal","counts","voice","presence"};bool found=false;
+    if(!strcmp(op,"turn")&&consumer!=0)return 0;
+    static const char *allowed[]={"create","join","get","lease","leave","list","queue","cancel","signal","counts","voice","presence","turn"};bool found=false;
     for(auto kind:allowed)if(!strcmp(op,kind)){found=true;break;}if(!found)return 0;
     Sj body=Sj::parse(args,nullptr,false);if(!body.is_object())return 0;
     if(!Bt4Signal_Open())return 0;std::lock_guard<std::mutex> g(state.lock);if(state.jobs.size()>=64)return 0;state.consumers|=1u<<consumer;

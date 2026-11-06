@@ -3818,6 +3818,7 @@ int Port_LobbyPoll(void) {
         sLobbyLast = now;
         if (sLobbyRole == 1) {
             watch_service();
+            if (now - sCodeSince > 4000000000ull && !Relay_Active()) Match_RelayAsk();
         }
         if (sLobbyRole == 3 && sLobbySpecWait) {
             sCodeSince = now; /* (the host is there and has no match yet: waited for as long as the player does) */
@@ -3828,6 +3829,8 @@ int Port_LobbyPoll(void) {
             return sLobby;
         }
         if (now - sCodeSince > 24000000000ull) {
+            fprintf(stderr, "bt4: connect: timed out; role=%d candidates=%d relay-active=%d relay-candidate=%d packets-out=%d packets-in=%d send-errors=%d\n",
+                    sLobbyRole, sCodeAddrs, Relay_Active(), sCodeRelay >= 0, sStatOut, sStatIn, sStatErr);
             sLobby = -4; /* 24 seconds of knocking (a relay address is asked for after four of them, see net_match.c):
                             the two cannot reach each other */
             return sLobby;

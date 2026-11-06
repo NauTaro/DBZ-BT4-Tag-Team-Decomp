@@ -90,7 +90,7 @@ Use compatible BT4 data and the same published launcher on every participating c
 
 1 vs 1 uses the upstream peer rollback path. Lobby matches can relay through the lobby owner when the assigned fighters cannot connect directly.
 
-Rooms and Quick Match use authenticated private Supabase signaling. Tag Team room authority runs on the owner's computer from admission onward; gameplay and voice travel between participants. The default connection no longer uses Cloudflare coordination or a hosted game/audio relay. STUN assists direct connection discovery. Networks that block peer traffic, including some CGNAT configurations, can still prevent a direct connection. No public relay is bundled.
+Rooms and Quick Match use authenticated private Supabase signaling. Tag Team room authority runs on the owner's computer from admission onward; gameplay and voice travel between participants. The default connection no longer uses Cloudflare coordination or a hosted game/audio relay. STUN assists direct connection discovery. Networks that block peer traffic, including some CGNAT configurations, can still prevent a direct connection. No public relay is bundled. Operators can deploy the optional [1v1/native-lobby TURN fallback](supabase/functions/bt4-turn/README.md); it requires provider credentials and updated clients on both sides.
 
 The Free signaling project has provider quotas, including concurrent Realtime connection limits. P2P reduces server traffic; it does not provide unlimited hosting capacity. R6 was validated with local native multi-client combat, tournaments and synthetic voice; this is not a cross-ISP or load-capacity benchmark.
 

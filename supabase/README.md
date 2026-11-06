@@ -46,3 +46,10 @@ The included Node reference client and integration tests exercise the hosted
 contract. They are developer tools and are not required by players.
 
 Anonymous refresh tokens stay in the per-user BT4decomp network preferences, with an exclusive process slot. Concurrent instances use separate identities. Voice renegotiation carries monotonic revisions; manual-address sessions rendezvous through a hash of the native shared key, never through a public room listing.
+
+## Optional duel relay
+
+The `202611060001_duel_turn.sql` migration and `functions/bt4-turn` broker enable
+on-demand TURN for updated 1v1/native lobby clients. See the [deployment and
+validation instructions](functions/bt4-turn/README.md). Provider credentials remain
+server-side; gameplay does not travel through this database or Realtime.

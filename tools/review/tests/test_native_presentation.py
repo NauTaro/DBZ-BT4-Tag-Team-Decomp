@@ -11,6 +11,7 @@ class NativePresentationTests(unittest.TestCase):
         source=(ROOT/'port/src/gs/menu_text.c').read_text(encoding='utf8')
         code=r'''
 #include <assert.h>
+#include <stddef.h>
 static int sLock,sFontChoice,sBattleChoice,sSharedChoice;
 static void pthread_mutex_lock(int *p){assert(p==&sLock);}
 static void pthread_mutex_unlock(int *p){assert(p==&sLock);}

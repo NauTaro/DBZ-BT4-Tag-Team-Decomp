@@ -5,3 +5,6 @@ port/voice-runtime/licenses/voice/WINDOWS-BUILD.json text eol=lf
 port/src/gs/shaders/* text eol=lf
 port/src/gs/generated/shaders_*.h text eol=lf
 port/src/gs/generated/*.json text eol=lf
+
+# This upstream file retains CRLF line endings.
+port/src/gs/net.c whitespace=cr-at-eol
