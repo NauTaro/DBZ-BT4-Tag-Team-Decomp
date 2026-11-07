@@ -136,12 +136,19 @@ void EvoZ_Draw(void) {
     Sprite_DrawPicture(gEvoZ->bg, 0, 0, 0x80);
 #endif
     EvoZ_Refresh(gEvoZ);
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(NULL, gEvoZ->tex0[42]);
+#endif
     for (i = 0; i < UEVOZ_FLASH_NUM; i++) {
         if (i != 1 || !(gEvoZ->flags & UEVOZ_REEL_READY)) {
             Flash_Draw(&gEvoZ->flash[i]);
         }
     }
     Font_FlushAll();
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     PassWin_Draw();
     ItemHelp_Draw(gEvoZ->helpItem);
 #ifdef PORT

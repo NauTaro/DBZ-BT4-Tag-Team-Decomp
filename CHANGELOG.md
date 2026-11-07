@@ -1,3 +1,45 @@
+# 0.1.39.5 R4
+
+- Restore the full single-view layout after chase-camera updates when cinematic cameras are disabled; cache each visible camera update independently of rollback rendering.
+- Keep uploaded effect work buffers on the GPU texture path and recognize pending framebuffer draws before submission, addressing the multicolored blocks during special attacks without removing their original textures.
+- Preserve full-width effect pointers for stage streaks, including the Spirit Bomb sequence on 64-bit platforms.
+- Restore extended native health bars in the Interface settings in English, Spanish and Brazilian Portuguese, retaining the selected layout at startup.
+- Keep Potara names, descriptions and their frames together in widescreen menus; retain the original dialogue inset in Tournament menus.
+- Apply the same smooth portrait edge fade to Tournament, Time Nest, customization and related selection screens without editing ISO artwork.
+- Correct costume-number plates and arrow direction across the native selection menus.
+- Increase label sizes throughout the online menus and render those menus at a bounded higher resolution when the internal setting is X1 or X2; restore the selected resolution on leaving it.
+- Retain early duel endpoint and Tag Team negotiation messages until room membership arrives; retry rejected duel endpoint announcements and pass updated candidates to the native handshake.
+- Report connection timeouts without claiming that an unconfigured relay was attempted. No new relay provider is required or enabled by this release.
+- Add signed principal/reserve matchmaking routing with separate project identities, pinned rooms, invitation namespaces and bounded retries.
+- Include an additive Supabase deployment bundle and a coordinated minimum-client gate for new matchmaking. Activation remains disabled until the public signed update packages are verified and the operator completes the database preparation.
+- Extend native footer panels without repeating the corner ornaments or leaving discontinuous texture joins; match the main Online entry to the installed BT4 menu lettering and colour ramp.
+- Keep experimental anime auras and the separate development menu out of this release.
+
+<!-- bt4-update:en
+- Correct full-screen chase-camera layout and repeated camera updates.
+- Correct the GPU source used by uploaded special-attack effects.
+- Preserve 64-bit stage-effect pointers and restore extended native HUD bars.
+- Prepare coordinated online routing and required-update support.
+- Correct widescreen menu text, costume selection and portrait fades; improve online menu readability.
+- Retain early connection messages and retry failed endpoint announcements.
+-->
+<!-- bt4-update:es
+- Corrige el encuadre completo de la cámara y sus actualizaciones repetidas.
+- Corrige la fuente de GPU usada por efectos de ataques especiales.
+- Conserva los punteros de efectos de 64 bits y restaura las barras extendidas.
+- Prepara el respaldo coordinado del online y las actualizaciones requeridas.
+- Corrige textos panorámicos, selección de trajes y difuminados; mejora la lectura del menú online.
+- Conserva los mensajes de conexión anticipados y reintenta los anuncios de dirección fallidos.
+-->
+<!-- bt4-update:pt
+- Corrige o enquadramento completo da câmera e suas atualizações repetidas.
+- Corrige a fonte da GPU usada pelos efeitos dos ataques especiais.
+- Preserva ponteiros de efeitos de 64 bits e restaura as barras estendidas.
+- Prepara a reserva coordenada do online e as atualizações obrigatórias.
+- Corrige textos panorâmicos, seleção de trajes e bordas suaves; melhora a leitura do menu online.
+- Preserva mensagens antecipadas de conexão e repete anúncios de endereço que falharam.
+-->
+
 # 0.1.39.5 R3
 
 - Restore Hit's original Time Skip backdrop and allow its HD replacement to load.

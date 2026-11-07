@@ -14,6 +14,7 @@ int Bt4Signal_Command(int consumer,unsigned serial,const char *operation,const c
 int Bt4Signal_Read(int consumer,char *json,size_t capacity);
 void Bt4Signal_Close(void);
 const char *Bt4Signal_Project(void);
+void Bt4Signal_ReleaseRoom(const char *generation);
 #ifdef __cplusplus
 }
 #endif

@@ -1728,16 +1728,16 @@ static void Tb_DrawHubText(void) {
     Ps_Copy(presence,(char*)PortOnline_Text("Fighters online: "),sizeof(presence));
     if(online<0)Ps_Cat(presence,"...",sizeof(presence));
     else {char value[16];sprintf(value,"%d",online);Ps_Cat(presence,value,sizeof(presence));}
-    Ps_Text(22,236,presence,.50f,270,2);
+    Ps_Text(22,236,presence,.68f,270,2);
 
     for (i = 0; i < HUB_COUNT; i++) {
         f32 y = Tb_HubRowY(i);
 
         /* each label's capitals in the middle of its bar (the bar under the cursor: hubY - 3 to hubY + 27) */
         if (i == sTb->hubCur) {
-            Ps_Text(36.0f + slide, Ps_TextTop(sTb->hubY + 12.0f, 0.84f), sTbHubName[i], 0.84f, Tb_HubRowEnd(i)-42.0f-(sTbHubReady[i]?0:Tb_HubBadgeWidth()+8), 1);
+            Ps_Text(36.0f + slide, Ps_TextTop(sTb->hubY + 12.0f, 1.02f), sTbHubName[i], 1.02f, Tb_HubRowEnd(i)-42.0f-(sTbHubReady[i]?0:Tb_HubBadgeWidth()+8), 1);
         } else {
-            Ps_Text(36.0f + slide, Ps_TextTop(y + 12.0f, 0.7f), sTbHubName[i], 0.7f, Tb_HubRowEnd(i)-42.0f-(sTbHubReady[i]?0:Tb_HubBadgeWidth()+8), sTbHubReady[i] ? 0 : 4);
+            Ps_Text(36.0f + slide, Ps_TextTop(y + 12.0f, 0.94f), sTbHubName[i], 0.94f, Tb_HubRowEnd(i)-42.0f-(sTbHubReady[i]?0:Tb_HubBadgeWidth()+8), sTbHubReady[i] ? 0 : 4);
         }
         if (!sTbHubReady[i]) {
             Ps_Align(1);

@@ -747,7 +747,11 @@ static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
                buffer): the game paints over its fighters' palettes this way, to give them all one alpha before the
                see-through pass. That has to happen in GS memory, where the GPU back end reads palettes from. */
             uint32_t fb = (uint32_t)(gs.frame[ctx] & 0x1FF);
-            if (kick && sGpu && ((gs.frame[ctx] >> 16) & 0x3F) == 1 && gGsPageGen[fb] != 0) {
+            /* Only a solid palette fill can be evaluated from CPU GS memory.
+               A textured sprite can read a GPU framebuffer. The 64-pixel glow
+               pages reuse uploaded memory too; routing their blur copies here
+               samples stale CPU pixels and feeds coloured blocks into the glow. */
+            if (kick && sGpu && !(gs.prim & 0x10) && ((gs.frame[ctx] >> 16) & 0x3F) == 1 && gGsPageGen[fb] != 0) {
                 draw_sprite(sf, ctx, &gs.vtx[0], &gs.vtx[1]);
                 gGsPageGen[fb]++;
                 gGsPageGen[(fb + 1) & 511]++;

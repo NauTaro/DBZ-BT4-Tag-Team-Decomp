@@ -18,7 +18,8 @@ struct Command {unsigned id;std::string op;};
 static std::vector<Command> commands;
 static std::deque<std::string> events;
 static bool acceptLeave=true;
-Uint64 SDL_GetTicks(void){return 1000;}
+static Uint64 now=1000;
+Uint64 SDL_GetTicks(void){return now;}
 extern "C" int Bt4Signal_Open(void){return 1;}
 extern "C" int Bt4Signal_Status(void){return 1;}
 extern "C" int Bt4Signal_Command(int,unsigned id,const char *op,const char *){
@@ -51,7 +52,7 @@ int main(){
     begin(1);auto status=deliver(room(1,nullptr));
     assert(status.state==2&&status.lobby==0); // Missing mode is still a duel.
     d.addresses[2]=Dj::array({"127.0.0.1:22"});refreshStatus();
-    assert(d.status.state==2&&d.status.watchCount==1); // Observer cannot become fighter.
+    assert(d.status.state==2&&d.status.watchCount==2); // Candidate plus the native lobby's seen marker.
     d.addresses[3]=Dj::array({"127.0.0.1:33"});refreshStatus();
     assert(d.status.state==3&&std::string(d.status.peerName)=="Fighter");
     begin(2);d.addresses[1]=Dj::array({"127.0.0.1:11"});status=deliver(room(3,"duel"));
@@ -64,6 +65,28 @@ int main(){
     begin(1);Dj legacy=room(1,nullptr);legacy["members"]=Dj::array({{{"peer",1u},{"name","Host"}},{{"peer",2u},{"name","Fighter"}}});
     d.addresses[2]=Dj::array({"127.0.0.1:22"});status=deliver(legacy);
     assert(status.state==3&&!status.lobby);
+    // Private broadcasts can beat the create/join reply on the other transport.
+    begin(2);
+    Dj udp={{"generation","00000000-0000-0000-0000-000000000001"},{"channel","duel"},{"kind","udp"},
+            {"from",1u},{"body",{{"addresses",Dj::array({"127.0.0.1:11"})}}}};
+    events.push_back(Dj({{"event","bt4.signal"},{"body",udp}}).dump());
+    assert(Bt4Discovery_Poll(d.generation,&status)&&status.state==1);
+    status=deliver(room(3,"duel"));assert(status.state==3&&status.peerCount==1);
+    // A malformed or unrelated early packet cannot become this room's candidate.
+    begin(2);udp["generation"]="00000000-0000-0000-0000-000000000002";
+    events.push_back(Dj({{"event","bt4.signal"},{"body",udp}}).dump());
+    status=deliver(room(3,"duel"));assert(status.state==1);
+    // A failed endpoint RPC must be retried; enqueue success is not server success.
+    begin(1);status=deliver(room(1,"duel"));assert(!d.announcements.empty());
+    auto failed=d.announcements.begin()->first;auto peer=d.announcements.begin()->second;
+    events.push_back(Dj({{"event","reply"},{"serial",failed},{"body",{{"error","SIGNALING_UNAVAILABLE"}}}}).dump());
+    Bt4Discovery_Poll(d.generation,&status);assert(!d.announced[peer]);
+    auto before=commands.size();now+=2001;Bt4Discovery_Poll(d.generation,&status);
+    assert(commands.size()>before&&!d.announcements.empty());
+    // Departure clears stale peer candidates rather than retaining the last fighter.
+    begin(1);d.addresses[3]=Dj::array({"127.0.0.1:33"});status=deliver(room(1,"duel"));assert(status.peerCount==1);
+    auto alone=room(1,"duel");alone["members"]=Dj::array({{{"peer",1u},{"name","Host"},{"role","player"}}});
+    status=deliver(alone);assert(status.state==2&&status.peerCount==0&&status.peerAddr[0][0]==0);
     acceptLeave=false;commands.clear();
     assert(!Bt4Discovery_Begin(d.generation+1,1,1234,123,"Tester","","[\"127.0.0.1:12\"]","S"));
     assert(commands.size()==1&&commands[0].op=="leave");

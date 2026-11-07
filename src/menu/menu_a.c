@@ -43,6 +43,36 @@ MainMenu *gMainMenu = NULL;
 #include "port_bt4_label_eng.h"
 #include "../../port/src/gs/game_profile.h"
 
+#include "menu/port_screen.h"
+#include "menu/tbo_art.h"
+extern void Flash_ClipSetCustomDraw(MFlash *,MFlashRef *,void *,void *);
+typedef struct OnlineLabelProp {
+    u32 flags;f32 x,y,alpha,scaleX,scaleY,color;MFlashUv uv;
+    f32 m[9],mul[4];s16 add[4];
+} OnlineLabelProp;
+static u32 PortMainMenu_LabelTint(const OnlineLabelProp *p){
+    u32 tint=0;
+    for(s32 channel=0;channel<3;channel++){
+        s32 value=(s32)(128*p->mul[channel])+p->add[channel];
+        if(p->flags&32)value=(s32)(value*p->color);
+        if(value<0)value=0;
+        if(value>255)value=255;
+        tint|=(u32)value<<(channel*8);
+    }
+    return tint;
+}
+static void PortMainMenu_OnlineLabel(void *arg,OnlineLabelProp *p){
+    s32 alpha=(s32)(p->mul[3]*128)+p->add[3];
+    f32 sx=p->m[0],sy=p->m[4],x=p->m[2],y=p->m[5];
+    if(p->flags&16){sx*=p->scaleX;sy*=p->scaleY;}
+    if(p->flags&2){x+=p->x;y+=p->y;}
+    if(p->flags&8)alpha=(s32)(alpha*p->alpha);
+    Ps_PageSet();Ps_SetShift(0);
+    /* The long name stays inside the plate's cursor end cap, while retaining
+       the native row's height, baseline and normal/highlight animation. */
+    Ps_Sprite(arg?TBO_MAIN_ONLINE_ON:TBO_MAIN_ONLINE_OFF,Ps_Left()+x,y,Ps_Left()+x+512*sx*.9f,y+32*sy,0,0,1,1,PortMainMenu_LabelTint(p),alpha);
+}
+
 #define MAINMENU_TBO 11
 #define MM_ICON(item) ((item) == MAINMENU_TBO ? 4 : (item)) /* whose icon an item shows */
 
@@ -404,9 +434,11 @@ void MainMenu_Draw(void) {
             Flash_FindLabel(flash, name, "mc_menu_text_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,NULL);
             Flash_FindLabel(flash, name, "mc_menu_text_on", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,(void*)1);
             uv.x0 = (MM_ICON(item) % 4) * 0x40;
             uv.y0 = (MM_ICON(item) / 4) * 0x40;
             uv.x1 = uv.x0 + 0x40;
@@ -436,9 +468,11 @@ void MainMenu_Draw(void) {
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_off", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,NULL);
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_on", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,(void*)1);
         uv.x0 = (MM_ICON(item) % 4) * 0x40;
         uv.y0 = (MM_ICON(item) / 4) * 0x40;
         uv.x1 = uv.x0 + 0x40;

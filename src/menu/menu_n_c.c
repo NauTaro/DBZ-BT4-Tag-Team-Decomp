@@ -436,11 +436,18 @@ void UbRank_Draw(void) {
         Flash_SetFlag(flash, 4, 1);
         break;
     }
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(gUbRank->texC[11], gUbRank->texC[10]);
+#endif
     for (i = 0; i < UBRANK_FLASH_NUM; i++) {
         if (gUbRank->state != UBRANK_ST_WAIT || i == 2) {
             Flash_Draw(&gUbRank->flash[i]);
         }
     }
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     if (gUbRank->state != UBRANK_ST_WAIT) {
         IconWin_Draw();
     }

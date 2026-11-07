@@ -366,7 +366,7 @@ void SoloSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
     }
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 8; i++) {
         /* costume plates */
         uv.x0 = (i % 2) * 0x40;
         uv.y0 = (i / 2) * 0x20;
@@ -374,16 +374,10 @@ void SoloSel_Draw(void) {
         uv.y1 = uv.y0 + 0x20;
         sprintf(name, "mc_color_plate_%d", i + 1);
         Flash_FindLabel(flash, NULL, name, &ref);
-        if (i < gSoloSel->colorCount) {
+        if (i < gSoloSel->colorCount && i == SS_CUR.costume) {
             Flash_ClipSetFlags(flash, &ref, 2, 1);
-            switch (gSoloSel->colorCount) {
-            case 2:
-                Flash_ClipSetOffset(flash, &ref, 0x2D, 0);
-                break;
-            case 3:
-                Flash_ClipSetOffset(flash, &ref, 0x16, 0);
-                break;
-            }
+            /* BT4 stacks these plates at one location, unlike BT3. */
+            Flash_ClipSetOffset(flash, &ref, 0, 0);
             Flash_FindLabel(flash, name, "mc_color_text_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_FindLabel(flash, name, "mc_color_text_on", &ref);
@@ -392,6 +386,9 @@ void SoloSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
     }
+#ifdef PORT
+    {extern void Bt4Costume_FixArrows(MFlash *);Bt4Costume_FixArrows(&gSoloSel->flash[2]);}
+#endif
     flash = &gSoloSel->flash[1];
     uv.x0 = 0;
     uv.y0 = 0;
@@ -432,11 +429,18 @@ void SoloSel_Draw(void) {
         Flash_FindLabel(flash, NULL, name, &ref);
         Flash_ClipSetFlags(flash, &ref, 0x80, (u8)gSoloSel->sel->rowAnim);
     }
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(gSoloSel->texA[17], NULL);
+#endif
     Flash_Draw(&gSoloSel->flash[0]);
     Flash_Draw(&gSoloSel->flash[1]);
     Font_FlushAll();
     Flash_Draw(&gSoloSel->flash[2]);
     MsgWin_Draw(0, 0, gSoloSel->voiceLine);
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     ItemPanel_Draw(0);
     ItemHelp_Draw(gSoloSel->helpItem);
 #ifdef PORT

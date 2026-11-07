@@ -543,7 +543,7 @@ void UbTeamSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
     }
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 8; i++) {
         /* costume plates */
         uv.x0 = (i % 2) * 0x40;
         uv.x1 = uv.x0 + 0x40;
@@ -551,16 +551,10 @@ void UbTeamSel_Draw(void) {
         uv.y1 = uv.y0 + 0x20;
         sprintf(name, "mc_color_plate_%d", i + 1);
         Flash_FindLabel(flash, NULL, name, &ref);
-        if (i < gUbTeamSel->colorCount) {
+        if (i < gUbTeamSel->colorCount && i == UT_CUR.color) {
             Flash_ClipSetFlags(flash, &ref, 2, 1);
-            switch (gUbTeamSel->colorCount) {
-            case 2:
-                Flash_ClipSetOffset(flash, &ref, 0x2D, 0);
-                break;
-            case 3:
-                Flash_ClipSetOffset(flash, &ref, 0x16, 0);
-                break;
-            }
+            /* BT4 stacks these plates at one location, unlike BT3. */
+            Flash_ClipSetOffset(flash, &ref, 0, 0);
             Flash_FindLabel(flash, name, "mc_color_text_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_FindLabel(flash, name, "mc_color_text_on", &ref);
@@ -651,6 +645,9 @@ void UbTeamSel_Draw(void) {
             }
         }
     }
+#ifdef PORT
+    {extern void Bt4Costume_FixArrows(MFlash *);Bt4Costume_FixArrows(&gUbTeamSel->flash[3]);}
+#endif
     flash = &gUbTeamSel->flash[1];
     for (i = 0; i < UB_MEMBER_MAX; i++) {
         /* the team plates and the cost of each member */
@@ -676,12 +673,19 @@ void UbTeamSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
     }
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(gUbTeamSel->texA[17], NULL);
+#endif
     Flash_Draw(&gUbTeamSel->flash[0]);
     Flash_Draw(&gUbTeamSel->flash[1]);
     Flash_Draw(&gUbTeamSel->flash[2]);
     Font_FlushAll();
     Flash_Draw(&gUbTeamSel->flash[3]);
     MsgWin_Draw(0, 0, gUbTeamSel->voiceLine);
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     ItemPanel_Draw(0);
     ItemHelp_Draw(gUbTeamSel->help);
 #ifdef PORT

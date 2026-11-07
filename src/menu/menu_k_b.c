@@ -147,6 +147,10 @@ void Bracket_Draw(void) {
     Port_MenuPage(21); /* widescreen menus: this screen's page */
 #endif
     TourBg_Draw();
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(gBracket->texVs[6], gBracket->texVs[5]);
+#endif
     Bracket_SetupDraw(gBracket);
     Flash_Draw(&gBracket->flash[BRK_FL_TREE]);
     Flash_Draw(&gBracket->flash[BRK_FL_MOVE_A]);
@@ -162,6 +166,9 @@ void Bracket_Draw(void) {
         Flash_Draw(&gBracket->flash[BRK_FL_VS]);
         Flash_Draw(&gBracket->flash[BRK_FL_TITLE]);
     }
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     GetWin_Draw();
 #ifdef PORT
     Port_MenuPage(0);

@@ -212,6 +212,7 @@ static const char *f1_text(const char *english) {
         {"BT4 original, en los bordes", "BT4 original, en los bordes", "BT4 original, nas bordas"},
         {"BT4 original, at the edges", "BT4 original, en los bordes", "BT4 original, nas bordas"},
         {"BT4 original, centered", "BT4 original, centrado", "BT4 original, centralizado"},
+        {"Extended health bars", "Barras extendidas", "Barras de vida estendidas"},
         {"Show HUD", "Mostrar HUD", "Mostrar HUD"},
         {"Hide HUD", "Ocultar HUD", "Ocultar HUD"},
         {"Game camera", "Cámara del juego", "Câmera do jogo"},
@@ -229,6 +230,8 @@ static const char *f1_text(const char *english) {
         {"English (text and voices)", "Inglés (textos y voces)", "Inglês (texto e vozes)"},
         {"New update available. Restart required.", "Nueva actualización disponible, requiere reiniciar.", "Nova atualização disponível. É necessário reiniciar."},
         {"Restart now", "Reiniciar ahora", "Reiniciar agora"},
+        {"Online play requires this update. Offline play remains available.", "Necesitas esta actualización para jugar online. Puedes seguir jugando sin conexión.", "Esta atualização é necessária para jogar online. Você pode continuar jogando offline."},
+        {"A game update is required for online play. Return to a menu to download it and restart.", "Necesitas actualizar el juego para jugar online. Vuelve a un menú para descargarla y reiniciar.", "É necessário atualizar o jogo para jogar online. Volte a um menu para baixar e reiniciar."},
         {"Later", "Más tarde", "Mais tarde"},
         {"This update is ready. Restart now to apply it, or choose Later to install it another time.", "La actualización está lista. Reinicia ahora para aplicarla o elige Más tarde para instalarla en otro momento.", "A atualização está pronta. Reinicie agora para aplicá-la ou escolha Mais tarde para instalá-la depois."},
         {"Downloading automatically", "Descargando automáticamente", "Baixando automaticamente"},
@@ -495,7 +498,7 @@ static const char *f1_text(const char *english) {
         {"Found a player. Connecting...", "Jugador encontrado. Conectando...", "Jogador encontrado. Conectando..."},
         {"Searching for a player in this queue...", "Buscando un jugador en esta cola...", "Buscando um jogador nesta fila..."},
         {"Searching for %d:%02d more. Leave the window open.", "Tiempo de búsqueda restante: %d:%02d. Mantén abierta esta ventana.", "Tempo de busca restante: %d:%02d. Mantenha esta janela aberta."},
-        {"The two games could not reach each other, directly or through the relay. Search again for another player.", "No se pudo conectar de forma directa ni por retransmisión. Busca otro jugador.", "Não foi possível conectar diretamente nem por retransmissão. Busque outro jogador."},
+        {"The games could not establish a connection. Search again for another player.", "No se pudo establecer la conexión entre los juegos. Busca otro jugador.", "Não foi possível estabelecer a conexão entre os jogos. Busque outro jogador."},
         {"The other player's game is a different version. Search again.", "El otro jugador usa una versión distinta del juego. Vuelve a buscar.", "O outro jogador usa uma versão diferente do jogo. Busque novamente."},
         {"Nobody was searching this queue in the last three minutes. Search again, or try another queue.", "No se encontraron jugadores en esta cola durante los últimos tres minutos. Vuelve a buscar o prueba otra cola.", "Nenhum jogador foi encontrado nesta fila nos últimos três minutos. Busque novamente ou tente outra fila."},
         {"Checking your game data...", "Verificando los datos del juego...", "Verificando os dados do jogo..."},
@@ -554,7 +557,7 @@ static const char *f1_text(const char *english) {
         {"Checking your game data... Connecting begins when it is done.", "Verificando los datos del juego... La conexión comenzará al finalizar.", "Verificando os dados do jogo... A conexão começará ao terminar."},
         {"Found the lobby. Connecting to its owner...", "Sala encontrada. Conectando con el anfitrión...", "Sala encontrada. Conectando ao anfitrião..."},
         {"Looking for the lobby...", "Buscando la sala...", "Buscando a sala..."},
-        {"The two games could not reach each other, directly or through the relay. Hosting on a port (with port forwarding or a virtual network such as Tailscale) still works.", "No se pudo conectar directamente ni por retransmisión. Puedes crear una sala por puerto con redirección de puertos o una red virtual como Tailscale.", "Não foi possível conectar diretamente nem por retransmissão. Você pode criar uma sala por porta com redirecionamento de portas ou uma rede virtual como Tailscale."},
+        {"The games could not establish a connection. Hosting on a port (with port forwarding or a virtual network such as Tailscale) still works.", "No se pudo establecer la conexión entre los juegos. Puedes crear una sala por puerto con redirección de puertos o una red virtual como Tailscale.", "Não foi possível estabelecer a conexão entre os jogos. Você pode criar uma sala por porta com redirecionamento de portas ou uma rede virtual como Tailscale."},
         {"Open a lobby", "Crear una sala", "Criar uma sala"},
         {"Join the lobby", "Unirse a la sala", "Entrar na sala"},
         {"Back", "Volver", "Voltar"},
@@ -1282,7 +1285,7 @@ static void quick_status(int state, int &lastState, const char *name) {
     if (lastState == -3) {
         ImGui::TextWrapped("%s", Port_LobbyError());
     } else if (lastState == -4) {
-        ImGui::TextWrapped(f1_text("The two games could not reach each other, directly or through the relay. Search again for another player."));
+        ImGui::TextWrapped(f1_text("The games could not establish a connection. Search again for another player."));
     } else if (lastState == -2) {
         ImGui::TextWrapped(f1_text("The other player's game is a different version. Search again."));
     } else if (lastState == -5) {
@@ -1545,7 +1548,7 @@ static void build_net(void) {
                 if (lastState == -3) {
                     ImGui::TextWrapped("%s", Port_LobbyError());
                 } else if (lastState == -4) {
-                    ImGui::TextWrapped(f1_text("The two games could not reach each other, directly or through the relay. "
+                    ImGui::TextWrapped(f1_text("The games could not establish a connection. "
                                        "Hosting on a port (with port forwarding or a virtual network such as Tailscale) still works."));
                 }
                 bool can = Port_OnlineBlocked() == NULL && (byCode ? (tab == 0 || strlen(roomCode) == 6) : atoi(port) > 0 && atoi(port) < 65536 && (tab == 0 || address[0] != '\0'));
@@ -2186,7 +2189,9 @@ static void update_line(char *out, size_t size) {
         return;
     }
     Update_Status(&u);
-    if (u.state == UPD_AVAILABLE && u.canInstall) {
+    if(Update_OnlineRequired() && u.state!=UPD_READY) {
+        SDL_strlcpy(out,f1_text("Online play requires this update. Offline play remains available."),size);
+    } else if (u.state == UPD_AVAILABLE && u.canInstall) {
         upd_fill(out, size, PORT_TEXT_UPDATE_AVAILABLE, "Update {version} found. Downloading automatically.", u.latest, 0);
     } else if (u.state == UPD_DOWNLOADING || u.state == UPD_VERIFYING) {
         upd_fill(out, size, PORT_TEXT_UPDATE_DOWNLOADING, "Downloading update {version}: {percent}%", u.latest, upd_percent(u));
@@ -2207,6 +2212,7 @@ static void update_panel(void) {
         ImGui::TextColored(green, f1_text("Updated to %s."), ver);
         ImGui::Separator();
     }
+    if(Update_OnlineRequired())ImGui::TextWrapped("%s",f1_text("Online play requires this update. Offline play remains available."));
     if (u.state < UPD_AVAILABLE) {
         return;
     }
@@ -2469,6 +2475,7 @@ static void update_prompt_draw(void) {
         return;
     }
     ImGui::TextWrapped("%s", f1_text("New update available. Restart required."));
+    if(Update_OnlineRequired())ImGui::TextWrapped("%s",f1_text("Online play requires this update. Offline play remains available."));
     UpdateStatus status;Update_Status(&status);
     ImGui::TextDisabled("%s",status.latest);
     ImGui::Spacing();
@@ -2551,10 +2558,10 @@ static void ui_tab(PortVideo &v) {
         }
         ImGui::SetItemTooltip(f1_text(font.tip));
     }
-    static const char *const kHud[] = {"BT4 original, at the edges", "BT4 original, centered"};
-    int bt4Hud = v.hudLayout == 2 ? 1 : 0;
-    const char *hudNames[] = {f1_text(kHud[0]), f1_text(kHud[1])};
-    if (ImGui::Combo(f1_text("HUD Style"), &bt4Hud, hudNames, 2)) v.hudLayout = bt4Hud ? 2 : 0;
+    static const char *const kHud[] = {"BT4 original, at the edges", "Extended health bars", "BT4 original, centered"};
+    int bt4Hud = v.hudLayout >= 0 && v.hudLayout < 3 ? v.hudLayout : 0;
+    const char *hudNames[] = {f1_text(kHud[0]), f1_text(kHud[1]), f1_text(kHud[2])};
+    if (ImGui::Combo(f1_text("HUD Style"), &bt4Hud, hudNames, 3)) v.hudLayout = bt4Hud;
     ImGui::SetItemTooltip(f1_text("Where a fight's health bars and gauges sit in a picture wider than 4:3.\n"
                           "Long health bars: the bars reach from the edges to the timer.\n"
                           "In the middle: the original 4:3 arrangement, next to the timer."));

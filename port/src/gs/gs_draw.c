@@ -125,7 +125,7 @@ void Gs_HoldFrame(void) {
 extern int Bt4MenuHD_Request(const uint32_t *, int, int, int, uint64_t, uint32_t **);
 /* BT4 R3: native artworks and glyph sprites come only from disc or the external pack. */
 static const int sMenuHD = 0;
-static int sBootQualityScale = -1;
+static int sOnlineQualityScale = -1;
 extern int Port_GameProfileMenuActive(void);
 static int sSmooth2d = 1; /* the setting "2D filtering" (smooth_2d; BT3_2D_SMOOTH=0/1 wins): 1 smooth */
 static int sWholeFrame; /* the draw being set up shows a frame the game read back (the cross-fade) */
@@ -601,6 +601,20 @@ static GsTex tbo_texture(uint32_t id) {
     unsigned char *missing;
     int languageArt = id >= TBO_LANG_BG && id <= TBO_LANG_ARROW_RIGHT;
 
+    if(id==TBO_MAIN_ONLINE_OFF||id==TBO_MAIN_ONLINE_ON){
+        static GsTex lettering[2];static int tried;
+        if(!tried){
+            extern int MenuLabels_Bt4MainItem(const char *,const char *,unsigned char **);
+            unsigned char *pics[2]={0};const char *root=getenv("BT3_DATA");
+            if(MenuLabels_Bt4MainItem(root?root:"gamedata","Tenkaichi Budokai Online",pics))for(int k=0;k<2;k++){
+                for(int i=0;i<512*32;i++)pics[k][i*4+3]=(pics[k][i*4+3]*128u+127)/255;
+                lettering[k]=tbo_upload((uint32_t*)pics[k],512,32); /* upload owns the pixels */
+            }else for(int k=0;k<2;k++){
+                uint32_t *blank=calloc(1,4);
+                if(blank)lettering[k]=tbo_upload(blank,1,1);
+            }tried=1;
+        }return lettering[id==TBO_MAIN_ONLINE_ON]?lettering[id==TBO_MAIN_ONLINE_ON]:gsWhite;
+    }
     if (id >= TBO_TEXT_BASE && id < TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         return tbo_text_texture(id);
     }
@@ -1486,6 +1500,13 @@ static void depth_clut(int ctx) {
     gsDraws[gsDrawCount++] = d;
 }
 
+/* Recorded writes own a work buffer before GPU submission. */
+static int target_has_image(int src, int kept, uint64_t tex0) {
+    return src >= 0 && (kept || ((tex0 & 0x1F) == 0 &&
+           (gsTargets[src].cleared || gsTargets[src].draws) &&
+           gsTargets[src].gen == gGsPageGen[gsTargets[src].fbp & 511]));
+}
+
 static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *us, float *vs) {
     uint64_t prim = gGs.prim, t0 = gGs.tex0[ctx], test = gGs.test[ctx], cl = gGs.clamp[ctx], sc = gGs.scissor[ctx];
     int tme = (prim >> 4) & 1, src;
@@ -1572,7 +1593,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
             }
         }
         /* a frame buffer used as a texture: only if nothing was uploaded over it since it was drawn */
-        if (src >= 0 && (kept || ((t0 & 0x1F) == 0 && gsTargets[src].cleared && gsTargets[src].gen == gGsPageGen[gsTargets[src].fbp & 511]))) {
+        if (target_has_image(src, kept, t0)) {
             uint32_t tp = (uint32_t)((t0 >> 20) & 0x3F);
             if (gsTargets[src].stale) {
                 /* The buffer was meant to hold a copy or a step of an effect that was dropped; what it holds now
@@ -2782,7 +2803,22 @@ void GsGpu_Native(int effect) {
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
 static void interp_scale_changed(void);
 static int scale_apply(void) {
-    /* Tag Team uses the user's chosen resolution, as the other battle modes do. */
+    /* Rasterize the online UI close to output resolution even with X1 gameplay.
+       The normal attachment table is reused, with a bounded 3x maximum override.
+       Restore the exact chosen gameplay scale before a battle/selector begins. */
+    extern int Port_UpdateMenuScreen(void);
+    int online = gPortMenuMode && Port_UpdateMenuScreen() == 52;
+    int uiScale = 2, wh = 0;
+    if (sWindow) SDL_GetWindowSizeInPixels(sWindow, NULL, &wh);
+    if (wh > 896) uiScale = 3;
+    if (online && sOnlineQualityScale < 0)
+        sOnlineQualityScale = gsPendingScale ? gsPendingScale : gsScale;
+    if (sOnlineQualityScale >= 0) {
+        if (gsPendingScale > 0) sOnlineQualityScale = gsPendingScale;
+        gsPendingScale = sOnlineQualityScale;
+        if (online && gsPendingScale < uiScale) gsPendingScale = uiScale;
+        if (!online) sOnlineQualityScale = -1;
+    }
     if (gsPendingScale == 0 || gsPendingScale == gsScale) {
         gsPendingScale = 0;
         return 0;
@@ -2921,7 +2957,7 @@ int Port_FxOff(int bit) {
 }
 
 void GsGpu_GetSettings(PortVideo *v) {
-    v->scale = sBootQualityScale>=0?sBootQualityScale:(gsPendingScale ? gsPendingScale : gsScale);
+    v->scale = sOnlineQualityScale>=0?sOnlineQualityScale:(gsPendingScale ? gsPendingScale : gsScale);
     v->aspectMilli = Port_AspectMilli();
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
@@ -2956,7 +2992,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     GsGpu_GetSettings(&now);
     if (v->scale != now.scale) {
         int requested=v->scale<1?1:v->scale>8?8:v->scale;
-        if(sBootQualityScale>=0){sBootQualityScale=requested;gsPendingScale=requested<3?3:requested;}
+        if(sOnlineQualityScale>=0){sOnlineQualityScale=requested;gsPendingScale=requested;}
         else gsPendingScale=requested; /* applied between two frames */
     }
     if (v->aspectMilli != now.aspectMilli) {
@@ -2999,7 +3035,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     sSmooth2d = v->smooth2d != 0;
     Port_SettingSave("smooth_2d", sSmooth2d);
     if (!sPerformanceMode) Port_SettingSave("texture_pack", sTexPackOn);
-    if (!sPerformanceMode) Port_SettingSave("scale", sBootQualityScale>=0?sBootQualityScale:(gsPendingScale ? gsPendingScale : gsScale));
+    if (!sPerformanceMode) Port_SettingSave("scale", sOnlineQualityScale>=0?sOnlineQualityScale:(gsPendingScale ? gsPendingScale : gsScale));
     Port_SettingSave("aspect_milli", Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
     if (!sPerformanceMode) Port_SettingSave("fx_off", (int)gsFxOff);
@@ -3098,7 +3134,7 @@ renderer_ready:
     gPortSePercent = Port_Setting("effects", 100);
 
     sHudLayout = getenv("BT3_HUD") != NULL ? atoi(getenv("BT3_HUD")) : Port_Setting("hud_layout", 0);
-    sHudLayout = sHudLayout == 2 ? 2 : 0; /* BT4: original health-bar mask width. */
+    sHudLayout = sHudLayout < 0 || sHudLayout > 2 ? 0 : sHudLayout;
     gPortVoicePercent = Port_Setting("voices", gPortSePercent); /* (one slider before 0.1.30: what it was set to) */
     gPortStagePercent = Port_Setting("stage_sounds", gPortSePercent);
     TexPack_Init();

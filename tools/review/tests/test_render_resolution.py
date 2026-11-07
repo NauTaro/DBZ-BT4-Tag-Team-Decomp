@@ -13,7 +13,10 @@ class RenderResolutionTests(unittest.TestCase):
 #include <stdio.h>
 #include <string.h>
 static int gsScale=2,gsPendingScale,gsTargetCount=7;
-static int sBootQualityScale=-1,sBootQualityHD,sMenuHD=1;
+static int sOnlineQualityScale=-1,gPortMenuMode,screen,windowHeight=1080;
+static void *sWindow=(void*)1;
+static int Port_UpdateMenuScreen(void){return screen;}
+static void SDL_GetWindowSizeInPixels(void *window,int *width,int *height){*height=windowHeight;}
 static int sInterpNext=2,sInterpRepeat=1,sInterpPrevCount=12,sInterpPrevPrimCount=7,sInterpPrevVertCount=40;
 static int sInterpSaved[16];
 static int active=1,rebuilds;
@@ -24,11 +27,25 @@ static struct {void (*scaleChanged)(void);} backend={rebuilt},*sBackend=&backend
 static void remember(void){sInterpNext=3;sInterpRepeat=1;sInterpPrevCount=10;sInterpPrevPrimCount=20;sInterpPrevVertCount=40;memset(sInterpSaved,1,sizeof(sInterpSaved));}
 static void retired(void){int i;assert(!sInterpNext&&!sInterpRepeat&&!sInterpPrevCount&&!sInterpPrevPrimCount&&!sInterpPrevVertCount);for(i=0;i<16;++i)assert(sInterpSaved[i]==0);}
 int main(void){
- /* Menus no longer force a software-upscaled art/resolution profile. */
+ /* Non-online pages and battles keep the user's scale. */
  remember();assert(scale_apply()==0);assert(gsScale==2&&rebuilds==0&&sInterpNext==3);
  active=0;assert(scale_apply()==0);assert(gsScale==2&&rebuilds==0&&sInterpPrevCount==10);
  remember();gsPendingScale=4;assert(scale_apply()==1);assert(gsScale==4&&rebuilds==1&&gsTargetCount==0);retired();
  remember();gsPendingScale=4;assert(scale_apply()==0);assert(sInterpNext==3&&rebuilds==1);
+ /* At X1 a 1080p online menu temporarily uses 3x, without changing the
+    requested scale or rebuilding its targets every frame. */
+ gsScale=1;gPortMenuMode=1;screen=52;remember();
+ assert(scale_apply()==1);assert(gsScale==3&&sOnlineQualityScale==1);retired();
+ int before=rebuilds;remember();assert(scale_apply()==0);
+ assert(rebuilds==before&&sOnlineQualityScale==1&&sInterpNext==3);
+ /* User adjustments are preserved while the UI minimum is active. */
+ gsPendingScale=2;assert(scale_apply()==0);assert(sOnlineQualityScale==2&&gsScale==3);
+ screen=3;assert(scale_apply()==1);assert(gsScale==2&&sOnlineQualityScale==-1);retired();
+ /* 720p is bounded at 2x. A 4x user setting is never reduced. */
+ screen=52;windowHeight=720;gsScale=1;assert(scale_apply()==1);assert(gsScale==2);
+ gsPendingScale=4;assert(scale_apply()==1);assert(gsScale==4&&sOnlineQualityScale==4);
+ /* The screen marker can remain stale after leaving menus. Gameplay wins. */
+ gPortMenuMode=0;assert(scale_apply()==0);assert(gsScale==4&&sOnlineQualityScale==-1);
  return 0;
 }
 '''

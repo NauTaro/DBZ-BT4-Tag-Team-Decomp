@@ -51,7 +51,7 @@ jobs:
           for locale in ('en', 'es', 'pt'):
               assert '<!-- bt4-update:' + locale + '\n' in notes, 'Missing localized updater notes: ' + locale
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('title=' + title + '\n')
+              output.write('title=BT4decomp ' + title + '\n')
           PY
 
       - uses: docker/setup-buildx-action@v3
@@ -124,29 +124,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TITLE: ${{ needs.build.outputs.title }}
         run: |
+          python3 port/tools/package_online_handoff.py --out release-assets/BT4decomp-R4-Supabase.zip
           python3 - <<'PY'
           import os, pathlib
           section = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
           heading, body = section.split('\n', 1)
-          assert heading == '# ' + os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
+          assert 'BT4decomp ' + heading.removeprefix('# ') == os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
           pathlib.Path('release-assets/notes.md').write_text(body.strip() + '\n')
           PY
-          gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "$RELEASE_TITLE" --notes-file release-assets/notes.md \
-            release-assets/BT4decomp-windows-x64.zip \
-            release-assets/BT4decomp-windows-x64.zip.sig \
-            release-assets/BT4decomp-linux-x64.zip \
-            release-assets/BT4decomp-linux-x64.zip.sig \
-            release-assets/BT4decomp-macos-arm64.zip \
-            release-assets/BT4decomp-macos-arm64.zip.sig
-          gh release view "${GITHUB_REF_NAME}" --json assets,isDraft > release-assets/uploaded.json
-          python3 - <<'PY'
-          import json
-          release = json.load(open('release-assets/uploaded.json'))
-          expected = {'BT4decomp-' + platform + '.zip' + suffix
-                      for platform in ('windows-x64', 'linux-x64', 'macos-arm64')
-                      for suffix in ('', '.sig')}
-          assert release['isDraft'], 'Release must stay private while assets are checked'
-          assert {asset['name'] for asset in release['assets']} == expected, 'Incomplete release assets'
-          assert all(asset['size'] > 0 for asset in release['assets']), 'Empty release asset'
-          PY
+          python3 port/tools/release_draft.py --assets release-assets             --notes release-assets/notes.md --title "$RELEASE_TITLE"             --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
           echo "Signed packages are ready in a draft. Publish explicitly after gameplay validation." >> "$GITHUB_STEP_SUMMARY"

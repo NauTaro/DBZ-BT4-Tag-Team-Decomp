@@ -2022,8 +2022,7 @@ extern void EftTechEvt_RequestStop(s32 objId);
 #define EftRushShot_CreateModels ((void (*)(EftTask *task))EftRushShot_CreateModels)
 #define EftRushShot_UpdateModels ((void (*)(EftTask *task))EftRushShot_UpdateModels)
 extern void EftFlash_Start(EftFlashArg *arg);
-extern s32 EftStreak_Start(s32 objId, s32 kind, s32 arg2, f32 angle);
-#define EftStreak_Stop ((void (*)(s32 handle))EftStreak_Stop)
+extern void *EftStreak_Start(s32 objId, s32 kind, s32 arg2, f32 angle);
 extern void EftDelaySe_Start(s32 objId, EftSparkTbl *tbl, s32 count);
 extern void EftObj_Destroy(s32 handle);
 #define BtlTask_SetDead ((void (*)(EftTask *task))BtlTask_SetDead)
@@ -2111,7 +2110,7 @@ void EftRushShot_UpdateStageFx(EftTask *task) {
     EftTechArg *arg = w->arg;
     s32 opp = BtlCharApi_GetOpponentObjId(arg->objId);
 
-    if (EftShot_TestBits(opp, 0x80)) {
+    if (EftShot_TestBits(opp, 0x80) && w->stage >= 0 && w->stage < 8) {
         s32 i = w->stage;
         f32 angle = arg->def->unk60[i] * 3.14159265f / 180.0f;
         s32 kind = arg->def->unk58[i];
@@ -2129,6 +2128,9 @@ void EftRushShot_UpdateStageFx(EftTask *task) {
 
         if (i < 0) {
             i = 0;
+        }
+        if (i >= 8) {
+            i = 7;
         }
         if (w->flags & EFT_RUSHSHOT_STAGE_FX) {
             EftStreak_Stop(w->stageFx[i]);

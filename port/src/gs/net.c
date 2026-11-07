@@ -3828,8 +3828,9 @@ int Port_LobbyPoll(void) {
             return sLobby;
         }
         if (now - sCodeSince > 24000000000ull) {
-            sLobby = -4; /* 24 seconds of knocking (a relay address is asked for after four of them, see net_match.c):
-                            the two cannot reach each other */
+            fprintf(stderr, "bt4: connect: timed out; role=%d candidates=%d relay-active=%d relay-candidate=%d packets-out=%d packets-in=%d send-errors=%d\n",
+                    sLobbyRole, sCodeAddrs, Relay_Active(), sCodeRelay >= 0, sStatOut, sStatIn, sStatErr);
+            sLobby = -4; /* Direct connection timed out; no hosted relay is configured for Supabase. */
             return sLobby;
         }
     } else if (!sCodeMode && sLobbyRole == 3 && now - sLobbyLast > 200000000ull) {
