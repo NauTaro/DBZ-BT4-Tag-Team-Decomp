@@ -474,7 +474,7 @@ void EntrySel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, ES_CELL.id != ESEL_ID_RANDOM);
         }
     }
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 8; i++) {
         /* costume plates */
         uv.x0 = (i % 2) * 0x40;
         uv.y0 = (i / 2) * 0x20;
@@ -482,16 +482,10 @@ void EntrySel_Draw(void) {
         uv.y1 = uv.y0 + 0x20;
         sprintf(name, "mc_color_plate_%d", i + 1);
         Flash_FindLabel(flash, NULL, name, &ref);
-        if (i < gEntrySel->colorCount) {
+        if (i < gEntrySel->colorCount && i == ES_CUR.costume) {
             Flash_ClipSetFlags(flash, &ref, 2, 1);
-            switch (gEntrySel->colorCount) {
-            case 2:
-                Flash_ClipSetOffset(flash, &ref, 0x2D, 0);
-                break;
-            case 3:
-                Flash_ClipSetOffset(flash, &ref, 0x16, 0);
-                break;
-            }
+            /* BT4 stacks these plates at one location, unlike BT3. */
+            Flash_ClipSetOffset(flash, &ref, 0, 0);
             Flash_FindLabel(flash, name, "mc_color_text_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_FindLabel(flash, name, "mc_color_text_on", &ref);
@@ -500,6 +494,9 @@ void EntrySel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
     }
+#ifdef PORT
+    {extern void Bt4Costume_FixArrows(MFlash *);Bt4Costume_FixArrows(flash);}
+#endif
     flash = &gEntrySel->flash[1];
     if (TOUR_PROG->t.entryNum - 1 < gEntrySel->sel->cur) {
         uv.x0 = ((gEntrySel->sel->cur - 1) % 2) * 0x40;
@@ -581,12 +578,19 @@ void EntrySel_Draw(void) {
         }
         break;
     }
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(NULL, gEntrySel->texA[5]);
+#endif
     Flash_Draw(&gEntrySel->flash[0]);
     Font_FlushAll();
     Flash_Draw(&gEntrySel->flash[1]);
     Flash_Draw(&gEntrySel->flash[2]);
     MsgWin_Draw(0, 0, gEntrySel->voiceLine);
     Flash_Draw(&gEntrySel->flash[3]);
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     ItemPanel_Draw(0);
     ItemHelp_Draw(gEntrySel->helpItem);
 #ifdef PORT

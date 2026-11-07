@@ -125,7 +125,7 @@ void Gs_HoldFrame(void) {
 extern int Bt4MenuHD_Request(const uint32_t *, int, int, int, uint64_t, uint32_t **);
 /* BT4 R3: native artworks and glyph sprites come only from disc or the external pack. */
 static const int sMenuHD = 0;
-static int sBootQualityScale = -1;
+static int sOnlineQualityScale = -1;
 extern int Port_GameProfileMenuActive(void);
 static int sSmooth2d = 1; /* the setting "2D filtering" (smooth_2d; BT3_2D_SMOOTH=0/1 wins): 1 smooth */
 static int sWholeFrame; /* the draw being set up shows a frame the game read back (the cross-fade) */
@@ -2789,7 +2789,22 @@ void GsGpu_Native(int effect) {
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
 static void interp_scale_changed(void);
 static int scale_apply(void) {
-    /* Tag Team uses the user's chosen resolution, as the other battle modes do. */
+    /* Rasterize the online UI close to output resolution even with X1 gameplay.
+       The normal attachment table is reused, with a bounded 3x maximum override.
+       Restore the exact chosen gameplay scale before a battle/selector begins. */
+    extern int Port_UpdateMenuScreen(void);
+    int online = gPortMenuMode && Port_UpdateMenuScreen() == 52;
+    int uiScale = 2, wh = 0;
+    if (sWindow) SDL_GetWindowSizeInPixels(sWindow, NULL, &wh);
+    if (wh > 896) uiScale = 3;
+    if (online && sOnlineQualityScale < 0)
+        sOnlineQualityScale = gsPendingScale ? gsPendingScale : gsScale;
+    if (sOnlineQualityScale >= 0) {
+        if (gsPendingScale > 0) sOnlineQualityScale = gsPendingScale;
+        gsPendingScale = sOnlineQualityScale;
+        if (online && gsPendingScale < uiScale) gsPendingScale = uiScale;
+        if (!online) sOnlineQualityScale = -1;
+    }
     if (gsPendingScale == 0 || gsPendingScale == gsScale) {
         gsPendingScale = 0;
         return 0;
@@ -2928,7 +2943,7 @@ int Port_FxOff(int bit) {
 }
 
 void GsGpu_GetSettings(PortVideo *v) {
-    v->scale = sBootQualityScale>=0?sBootQualityScale:(gsPendingScale ? gsPendingScale : gsScale);
+    v->scale = sOnlineQualityScale>=0?sOnlineQualityScale:(gsPendingScale ? gsPendingScale : gsScale);
     v->aspectMilli = Port_AspectMilli();
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
@@ -2963,7 +2978,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     GsGpu_GetSettings(&now);
     if (v->scale != now.scale) {
         int requested=v->scale<1?1:v->scale>8?8:v->scale;
-        if(sBootQualityScale>=0){sBootQualityScale=requested;gsPendingScale=requested<3?3:requested;}
+        if(sOnlineQualityScale>=0){sOnlineQualityScale=requested;gsPendingScale=requested;}
         else gsPendingScale=requested; /* applied between two frames */
     }
     if (v->aspectMilli != now.aspectMilli) {
@@ -3006,7 +3021,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     sSmooth2d = v->smooth2d != 0;
     Port_SettingSave("smooth_2d", sSmooth2d);
     if (!sPerformanceMode) Port_SettingSave("texture_pack", sTexPackOn);
-    if (!sPerformanceMode) Port_SettingSave("scale", sBootQualityScale>=0?sBootQualityScale:(gsPendingScale ? gsPendingScale : gsScale));
+    if (!sPerformanceMode) Port_SettingSave("scale", sOnlineQualityScale>=0?sOnlineQualityScale:(gsPendingScale ? gsPendingScale : gsScale));
     Port_SettingSave("aspect_milli", Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
     if (!sPerformanceMode) Port_SettingSave("fx_off", (int)gsFxOff);

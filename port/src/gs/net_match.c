@@ -525,12 +525,14 @@ static int supabase_match_loop(const char *name,const char *addrs){
             sM.st.state=status.state;sM.st.role=status.role;sM.st.lobby=status.lobby;
             SDL_strlcpy(sM.st.code,status.code,sizeof(sM.st.code));SDL_strlcpy(sM.st.error,status.error,sizeof(sM.st.error));
             SDL_strlcpy(sM.st.peerName,status.peerName,sizeof(sM.st.peerName));
+            if(sM.st.peerCount!=status.peerCount||SDL_memcmp(sM.st.peerAddr,status.peerAddr,sizeof(sM.st.peerAddr)))++sM.st.addrGen;
             sM.st.peerCount=status.peerCount;SDL_memcpy(sM.st.peerAddr,status.peerAddr,sizeof(sM.st.peerAddr));
             if(sM.watchCount!=status.watchCount||SDL_memcmp(sM.watchAddr,status.watchAddr,sizeof(sM.watchAddr))){
                 sM.watchCount=status.watchCount;SDL_memcpy(sM.watchAddr,status.watchAddr,sizeof(sM.watchAddr));++sM.watchGen;
             }
         }
         SDL_UnlockMutex(sM.lock);
+        if(STOPPED())break;
         if(status.state<0)break;
         SDL_Delay(10);
     }
@@ -550,6 +552,7 @@ static int SDLCALL match_thread(void *arg) {
         }
     }
     name[n] = '\0';
+    if (!name[0]) SDL_strlcpy(name, "Player", sizeof(name));
     if (!stun_ask(sM.sock, "stun.l.google.com", 19302, pub, sizeof(pub))) {
         stun_ask(sM.sock, "stun1.l.google.com", 19302, pub, sizeof(pub));
     }
@@ -1149,7 +1152,7 @@ int Match_SocketBusy(void) {
 }
 
 void Match_RelayAsk(void) {
-    if(supabase_discovery())return; /* direct UDP or participant-host lobby routing */
+    if(supabase_discovery())return; /* No hosted relay is configured for this provider. */
     SDL_CompareAndSwapAtomicInt(&sM.relayAsk, 0, 1);
 }
 

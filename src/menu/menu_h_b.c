@@ -444,9 +444,16 @@ void CharRef_Draw(void) {
         Flash_FindLabel(flash, NULL, "mc_yajirusi_icon_down", &ref);
         Flash_ClipSetFlags(flash, &ref, 2, gCharRef->scroll < gCharRef->textHeight - 0x6E);
     }
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(gCharRef->tex[2], NULL);
+#endif
     for (i = 0; i < CHARREF_FLASH_NUM; i++) {
         Flash_Draw(&gCharRef->flash[i]);
     }
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     Flash_FindLabel(flash, NULL, "mc_dammy_text", &ref);
     TextBox_AttachLine(flash, &ref, 0, -gCharRef->scroll, line + 1, &gCharRef->box[CHARREF_BOX_PROFILE]);
     IconWin_Draw();

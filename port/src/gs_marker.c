@@ -127,7 +127,7 @@ void Port_MenuPage(int screen) {
        too, but so is its window of rows: in the middle, the shelves meet the backdrop at the 4:3 page's edges.) */
     /* (the title, 1: its logo is a picture as wide as the 4:3 screen, kept at its true shape; its sky and clouds fill
        by their own markers)
-       (Evolution Z's character customising, 37, is laid out as character select: its bars at their true shape too;
+       (Evolution Z's character customising, 37, keeps composite rows in one centered coordinate space;
        the Data Center's password, 44: its keyboard is one picture as wide as the 4:3 screen, its letters on it)
        (Character Reference's pages of a character, 53: the picture on the left, the name and the choices on the right
        (the user's choice), the introduction's window and the voice's button in the middle) */
@@ -135,7 +135,7 @@ void Port_MenuPage(int screen) {
     Port_MenuPart(screen == 0 ? PORT_MENU_NONE : screen == 2 ? PORT_MENU_LEFT
                   : screen == 52 ? PORT_MENU_FILL /* (Tenkaichi Budokai Online: its page stretched as before) */
                   : screen == 51 ? PORT_MENU_CENTER_FREE /* (the logo page before the title: a picture of the whole 4:3 screen) */
-                  : screen == 37 ? PORT_MENU_SPLIT /* (Evolution Z's customising: the player's side left, the points right) */
+                  : screen == 37 ? PORT_MENU_CENTER_ALL /* one coordinate space for composite Potara rows and tooltips */
                   : screen == 1 ? PORT_MENU_CENTER_FREE /* (the title: its characters' art goes on past the 4:3 screen's edges,
                                                     Piccolo's cape at the top right: not cut there; its plates, parked off
                                                     the screen, are by their own rule) */
@@ -403,7 +403,13 @@ static int clip_part(const char *name, int x, int top) {
         if (n > 2 && name[n - 2] == '_' && name[n - 1] == 'l' && !starts(name, "mc_single_chara_")) {
             return PORT_MENU_LEFT;
         }
-        if (starts(name, "mc_chara_chip_") || strcmp(name, "mc_plate") == 0 || starts(name, "mc_yajirusi_") || strcmp(name, "mc_chara_mask") == 0) {
+        if (starts(name, "mc_color_") || starts(name, "mc_custom_")) {
+            return PORT_MENU_CENTER_ALL;
+        }
+        if (strcmp(name, "mc_yajirusi_left") == 0 || strcmp(name, "mc_yajirusi_right") == 0) {
+            return PORT_MENU_CENTER_ALL;
+        }
+        if (starts(name, "mc_chara_chip_") || strcmp(name, "mc_plate") == 0 || starts(name, "mc_yajirusi_up") || starts(name, "mc_yajirusi_down") || strcmp(name, "mc_chara_mask") == 0) {
             /* (with its mask: the cells outside the bar are hidden by it, so it has to be where they are) */
             return PORT_MENU_LEFT_ALL; /* (the player's roster against the left edge, as the versus one's: the user's choice) */
         }
@@ -411,16 +417,14 @@ static int clip_part(const char *name, int x, int top) {
             return PORT_MENU_CENTER_ALL;
         }
     }
-    if (sMenuScreen == 37 && top) { /* Evolution Z's customising (the user's choice): the player's side on the left, the
-                                        points on the right; the page's own pieces by the half they start in (SPLIT) */
+    if (sMenuScreen == 37 && top) { /* Keep each customization widget and its text in the same coordinate space. */
         if (starts(name, "mc_chara_chip_") || strcmp(name, "mc_plate") == 0 || starts(name, "mc_yajirusi_") ||
-            starts(name, "mc_name_") || starts(name, "mc_form_") || strcmp(name, "mc_single_chara_l") == 0 ||
-            starts(name, "mc_status_ability_") || strcmp(name, "mc_status_attribute") == 0) {
+            starts(name, "mc_name_") || starts(name, "mc_form_") || strcmp(name, "mc_single_chara_l") == 0) {
             return PORT_MENU_LEFT_ALL;
         }
         if (strcmp(name, "mc_status_power_base") == 0 || strcmp(name, "mc_status_base_1") == 0 || starts(name, "mc_text_power_") ||
             strcmp(name, "mc_exp_bar_point") == 0 || starts(name, "mc_ability_limit_") || starts(name, "mc_num_zp_")) {
-            return PORT_MENU_RIGHT_ALL;
+            return PORT_MENU_CENTER_ALL;
         }
     }
     if (sMenuScreen == 38 && top && starts(name, "menu_plate_")) {
@@ -465,13 +469,11 @@ static int clip_part(const char *name, int x, int top) {
     return PORT_MENU_NONE;
 }
 
-/* Where the message window's text goes from its clip (src/battle/view_a_b.c MsgWin_Draw). The window that opens on
-   the left (side 0) has its text 108 into the page, well clear of its stepped corner, whose lower step (beside the
-   text) ends at 25; on a converted screen in the widescreen layout, where its band reaches the picture's edge, the
-   text starts at 40 instead: nearer the main menu's (26), still clear of the corner. Elsewhere as the game has it. */
+/* No custom displacement: retain the ISO message inset clear of ornaments and hosts. */
 extern int Port_MenusWide(void); /* port/src/plat_stub.c */
 int Port_MenuMessageX(int side) {
-    return side == 0 && sMenuScreen >= 10 && Port_MenusWide() ? 40 - 108 : 0;
+    /* Keep the ISO's inset clear of the stepped ornament and host. */
+    return 0;
 }
 
 /* Whether a clip of a converted screen's movie is moving (sliding in or out): its position changed within the last

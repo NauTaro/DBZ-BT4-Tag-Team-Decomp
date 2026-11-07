@@ -360,6 +360,14 @@ static void Bt4Costume_DrawCaption(void *arg, TextBoxClipProp *prop) {
     Gfx_AddDefaultEnv();
 }
 
+/* BT4 uses the left-pointing atlas arrow for both costume controls. Keep the
+   right control's UV mirrored, in every selector which uses that movie. */
+void Bt4Costume_FixArrows(Flash *flash) {
+    FlashRef ref;
+    Flash_FindLabel(flash, "mc_yajirusi_right", "mc_yajirusi_icon_right", &ref);
+    Flash_ClipSetFlags(flash, &ref, 4, 1);
+}
+
 void Bt4Costume_AttachCaption(Flash *flash, FlashRef *ref, s32 number, s32 total,
                               const u16 *name, void *storage) {
     Bt4CostumeCaption *caption = NULL;

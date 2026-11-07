@@ -132,7 +132,21 @@ jobs:
           assert heading == '# ' + os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
           pathlib.Path('release-assets/notes.md').write_text(body.strip() + '\n')
           PY
-          gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "$RELEASE_TITLE" --notes-file release-assets/notes.md \
+          gh release list --limit 100 --json tagName,isDraft > release-assets/existing.json
+          python3 - <<'PY'
+          import json, os, pathlib
+          matches = [r for r in json.load(open('release-assets/existing.json'))
+                     if r['tagName'] == os.environ['GITHUB_REF_NAME']]
+          assert len(matches) <= 1, 'Duplicate releases for this tag require review'
+          assert not matches or matches[0]['isDraft'], 'Refusing to replace a published release'
+          pathlib.Path('release-assets/existing-draft').write_text('yes' if matches else 'no')
+          PY
+          if [ "$(cat release-assets/existing-draft)" = no ]; then
+            gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "$RELEASE_TITLE" --notes-file release-assets/notes.md
+          else
+            gh release edit "${GITHUB_REF_NAME}" --draft --title "$RELEASE_TITLE" --notes-file release-assets/notes.md
+          fi
+          gh release upload "${GITHUB_REF_NAME}" --clobber \
             release-assets/BT4decomp-windows-x64.zip \
             release-assets/BT4decomp-windows-x64.zip.sig \
             release-assets/BT4decomp-linux-x64.zip \

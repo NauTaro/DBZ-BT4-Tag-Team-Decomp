@@ -44,6 +44,7 @@ static std::atomic<unsigned> rpcSerial{1000};
 static unsigned number(const Pj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_number_unsigned()?p->get<unsigned>():0;}
 static std::string text(const Pj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
 struct Peer {std::atomic<unsigned> id{0};std::atomic<int> pc{-1},control{-1},input{-1};bool remote=false,admitted=false;std::string name;std::vector<Pj> candidates;Uint64 heard=0;};
+struct PendingSignal {Pj body;Uint64 at;};
 static std::array<Peer,10> stablePeers;
 struct Session {
     std::array<Peer,10> &peers=stablePeers;unsigned self=0,epoch=0,lo=0,hi=0,initSerial=0,reconcile=0;
@@ -52,6 +53,7 @@ struct Session {
     unsigned expected=0,probeSerial=0;std::array<std::pair<unsigned,Uint64>,32> probes={};
     std::array<unsigned,8> pingSamples={};unsigned pingCount=0,pingCursor=0;
     std::deque<Wire> history,recent;std::map<unsigned,Wire> reordered;
+    std::deque<PendingSignal> earlySignals;
     void pingSample(unsigned sample){
         if(sample>=10000)return;
         pingSamples[pingCursor++%pingSamples.size()]=sample;
@@ -94,6 +96,45 @@ struct Session {
         if(target==self)emit(packet);else if(auto *p=find(target))send(*p,packet,true);}
     void notify(){snapshot(self);for(auto &p:peers)if(p.id&&p.admitted)snapshot(p.id);}
     void clearRound(unsigned next){epoch=next;clock=false;expected=0;recent.clear();history.clear();reordered.clear();lastReplay=0;}
+    bool validSignal(const Pj &body){
+        auto b=body.find("body");unsigned from=number(body,"from"),to=number(body,"to");
+        if(text(body,"channel")!="tag"||!from||from>10||!to||to>10||from==to||
+           text(body,"generation").size()!=36||b==body.end()||!b->is_object())return false;
+        auto kind=text(body,"kind");
+        if(kind=="offer"||kind=="answer"){auto sdp=text(*b,"sdp");return !sdp.empty()&&sdp.size()<=14000;}
+        if(kind=="candidate"){auto candidate=text(*b,"candidate"),mid=text(*b,"mid");return !candidate.empty()&&candidate.size()<=2048&&mid.size()<=64;}
+        return false;
+    }
+    bool takeSignal(const Pj &body){
+        // Realtime and HTTP admission are independent transports. An offer can
+        // arrive before the join reply or the new member's room notification.
+        if(generation.empty()||!self)return false;
+        if(text(body,"generation")!=generation||number(body,"to")!=self)return true;
+        auto *p=find(number(body,"from"));if(!p||p->pc<0)return false;
+        auto &b=body["body"];auto kind=text(body,"kind");
+        if(kind=="offer"||kind=="answer"){
+            if((kind=="offer"&&(self==1||p->id!=1))||(kind=="answer"&&self!=1))return true;
+            if(rtc.rtcSetRemoteDescription(p->pc,text(b,"sdp").c_str(),kind.c_str())<0)return true;
+            p->remote=true;
+            for(auto &c:p->candidates)rtc.rtcAddRemoteCandidate(p->pc,text(c,"candidate").c_str(),text(c,"mid").c_str());
+            p->candidates.clear();if(kind=="offer")rtc.rtcSetLocalDescription(p->pc,"answer");
+        }else if(kind=="candidate"){
+            if(p->remote)rtc.rtcAddRemoteCandidate(p->pc,text(b,"candidate").c_str(),text(b,"mid").c_str());
+            else if(p->candidates.size()<32)p->candidates.push_back(b);
+        }
+        return true;
+    }
+    void drainSignals(){
+        Uint64 now=SDL_GetTicks();
+        for(auto it=earlySignals.begin();it!=earlySignals.end();){
+            if(now-it->at>10000||takeSignal(it->body))it=earlySignals.erase(it);else ++it;
+        }
+    }
+    void receiveSignal(const Pj &body){
+        if(!validSignal(body))return;
+        drainSignals();
+        if(!takeSignal(body)&&earlySignals.size()<32)earlySignals.push_back({body,SDL_GetTicks()});
+    }
     void command(unsigned sender,const Packet &packet){unsigned cmd=Ttw_Read(packet.data()+4),atEpoch=Ttw_Read(packet.data()+8);
         if(cmd!=TTW_PING&&atEpoch!=Kernel_Epoch()&&(int32_t)(atEpoch-Kernel_Epoch())<0){if(cmd!=TTW_INPUT)snapshot(sender);return;}
         if(cmd==TTW_INPUT){if(atEpoch!=Kernel_Epoch()||Kernel_Phase()!=TT_FIGHT)return;memcpy(Kernel_Input(),packet.data(),512);Kernel_Command(sender);
@@ -124,6 +165,7 @@ struct Session {
         }
         // Database expiry/temporary signaling loss cannot delete a live P2P
         // player. Departures are detected on the peer transport itself.
+        drainSignals();
     }
     void signaling(){char raw[24577];unsigned count=0;
         while(count++<64&&Bt4Signal_Read(1,raw,sizeof(raw))>0){Pj j=Pj::parse(raw,nullptr,false);if(!j.is_object())continue;auto body=j.find("body");if(body==j.end()||!body->is_object())continue;
@@ -132,12 +174,7 @@ struct Session {
                 if(number(j,"serial")==initSerial||number(j,"serial")==reconcile){if(body->contains("error")){if(!self){fprintf(stderr,"tag P2P admission failed: %s\n",text(*body,"error").c_str());service.status=-1;}}else if(text(*body,"state")=="waiting"){waiting=true;nextLease=SDL_GetTicks()+60000;}else metadata(*body);}
             }else if(event=="bt4.ready"&&!room.empty()){reconcile=++rpcSerial;rpc("get",Pj::object(),reconcile);
             }else if(event=="bt4.room"&&(!room.empty()||queued))metadata(*body);
-            else if(event=="bt4.signal"&&text(*body,"generation")==generation&&text(*body,"channel")=="tag"&&number(*body,"to")==self){
-                auto *p=find(number(*body,"from"));auto b=body->find("body");if(!p||p->pc<0||b==body->end()||!b->is_object())continue;auto kind=text(*body,"kind");
-                if(kind=="offer"||kind=="answer"){auto sdp=text(*b,"sdp");if(sdp.empty()||sdp.size()>14000||rtc.rtcSetRemoteDescription(p->pc,sdp.c_str(),kind.c_str())<0)continue;p->remote=true;
-                    for(auto &c:p->candidates)rtc.rtcAddRemoteCandidate(p->pc,text(c,"candidate").c_str(),text(c,"mid").c_str());p->candidates.clear();if(kind=="offer")rtc.rtcSetLocalDescription(p->pc,"answer");}
-                else if(kind=="candidate"){if(p->remote)rtc.rtcAddRemoteCandidate(p->pc,text(*b,"candidate").c_str(),text(*b,"mid").c_str());else if(p->candidates.size()<32)p->candidates.push_back(*b);}
-            }
+            else if(event=="bt4.signal")receiveSignal(*body);
         }
     }
     void flushFrames(){if(phase!=TT_FIGHT)return;while(true){auto item=reordered.find(expected);if(item==reordered.end())break;emit(item->second.bytes,item->second.at);reordered.erase(item);++expected;}}

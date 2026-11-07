@@ -1228,6 +1228,9 @@ void TeamSel_Draw(void) {
                                        TS_RANDOM);
             }
         }
+#ifdef PORT
+        {extern void Bt4Costume_FixArrows(MFlash *);Bt4Costume_FixArrows(flash);}
+#endif
         /* BT4's helper 0x269778 draws per-character costume names from section 57.
            The old BT3 four-digit atlas is not the BT4 costume label. */
         for (j = 0; j < 8; j++) {
