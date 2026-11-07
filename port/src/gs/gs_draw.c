@@ -601,6 +601,20 @@ static GsTex tbo_texture(uint32_t id) {
     unsigned char *missing;
     int languageArt = id >= TBO_LANG_BG && id <= TBO_LANG_ARROW_RIGHT;
 
+    if(id==TBO_MAIN_ONLINE_OFF||id==TBO_MAIN_ONLINE_ON){
+        static GsTex lettering[2];static int tried;
+        if(!tried){
+            extern int MenuLabels_Bt4MainItem(const char *,const char *,unsigned char **);
+            unsigned char *pics[2]={0};const char *root=getenv("BT3_DATA");
+            if(MenuLabels_Bt4MainItem(root?root:"gamedata","Tenkaichi Budokai Online",pics))for(int k=0;k<2;k++){
+                for(int i=0;i<512*32;i++)pics[k][i*4+3]=(pics[k][i*4+3]*128u+127)/255;
+                lettering[k]=tbo_upload((uint32_t*)pics[k],512,32); /* upload owns the pixels */
+            }else for(int k=0;k<2;k++){
+                uint32_t *blank=calloc(1,4);
+                if(blank)lettering[k]=tbo_upload(blank,1,1);
+            }tried=1;
+        }return lettering[id==TBO_MAIN_ONLINE_ON]?lettering[id==TBO_MAIN_ONLINE_ON]:gsWhite;
+    }
     if (id >= TBO_TEXT_BASE && id < TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         return tbo_text_texture(id);
     }

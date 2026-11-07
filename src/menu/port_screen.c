@@ -422,6 +422,12 @@ void Ps_Line(s32 id, f32 x, f32 base, f32 cap, f32 fit, u32 top, u32 bottom, u32
 void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width,
                       u32 top, u32 bottom, u32 line, u32 outer, f32 outerWidth) {
     extern int Port_MenusWide(void),gPortMenuMode;
+    extern int Port_UpdateMenuScreen(void);
+    /* Every online submenu uses this path, not just the hub's six buttons.
+       Preserve the centre of each row while enlarging small labels. */
+    if(gPortMenuMode&&Port_UpdateMenuScreen()==52&&scaleY<.85f){
+        y-=PS_CELL_UNITS*scaleY*.10f;scaleX*=1.20f;scaleY*=1.20f;
+    }
     if(gPortMenuMode&&Port_MenusWide()&&Port_PageAspectMilli()>=2000){
         y-=PS_CELL_UNITS*scaleY*.08f;scaleX*=1.20f;scaleY*=1.20f;
     }

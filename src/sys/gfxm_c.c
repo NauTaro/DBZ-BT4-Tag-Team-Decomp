@@ -1277,6 +1277,18 @@ void Flash_ClipSetCallbackC(Flash *flash, FlashRef *ref, void *fn, void *arg) {
     }
 }
 
+#ifdef PORT
+/* A port-owned menu sprite in place of a clip's baked picture. The original timeline,
+   transforms, visibility and fade still control the replacement. */
+void Flash_ClipSetCustomDraw(Flash *flash, FlashRef *ref, void *fn, void *arg) {
+    if(ref->index>=0) {
+        FlashClip *clip=&flash->clips->items[ref->index];
+        if(fn)clip->flags|=0x10;else clip->flags&=~0x10;
+        FlashClipList_SetDrawOver(flash->clips,ref,fn,arg);
+    }
+}
+#endif
+
 /* Sets or clears properties of a clip, one bit of `props` each: 1 playing, 2 visible, 4 flip x, 8 flip y,
    0x10 no screen offset, 0x20 additive, 0x40 subtractive, 0x80 masked, 0x100 mask writer, 0x200 repeat,
    0x400 keeps running while its parent is stopped. */

@@ -7,11 +7,12 @@
 - Keep Potara names, descriptions and their frames together in widescreen menus; retain the original dialogue inset in Tournament menus.
 - Apply the same smooth portrait edge fade to Tournament, Time Nest, customization and related selection screens without editing ISO artwork.
 - Correct costume-number plates and arrow direction across the native selection menus.
-- Increase online hub label sizes and render that menu at a bounded higher resolution when the internal setting is X1 or X2; restore the selected resolution on leaving it.
+- Increase label sizes throughout the online menus and render those menus at a bounded higher resolution when the internal setting is X1 or X2; restore the selected resolution on leaving it.
 - Retain early duel endpoint and Tag Team negotiation messages until room membership arrives; retry rejected duel endpoint announcements and pass updated candidates to the native handshake.
 - Report connection timeouts without claiming that an unconfigured relay was attempted. No new relay provider is required or enabled by this release.
 - Add signed principal/reserve matchmaking routing with separate project identities, pinned rooms, invitation namespaces and bounded retries.
 - Include an additive Supabase deployment bundle and a coordinated minimum-client gate for new matchmaking. Activation remains disabled until the public signed update packages are verified and the operator completes the database preparation.
+- Extend native footer panels without repeating the corner ornaments or leaving discontinuous texture joins; match the main Online entry to the installed BT4 menu lettering and colour ramp.
 - Keep experimental anime auras and the separate development menu out of this release.
 
 <!-- bt4-update:en

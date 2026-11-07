@@ -51,7 +51,7 @@ jobs:
           for locale in ('en', 'es', 'pt'):
               assert '<!-- bt4-update:' + locale + '\n' in notes, 'Missing localized updater notes: ' + locale
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('title=' + title + '\n')
+              output.write('title=BT4decomp ' + title + '\n')
           PY
 
       - uses: docker/setup-buildx-action@v3
@@ -129,7 +129,7 @@ jobs:
           import os, pathlib
           section = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
           heading, body = section.split('\n', 1)
-          assert heading == '# ' + os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
+          assert 'BT4decomp ' + heading.removeprefix('# ') == os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
           pathlib.Path('release-assets/notes.md').write_text(body.strip() + '\n')
           PY
           gh release list --limit 100 --json tagName,isDraft > release-assets/existing.json

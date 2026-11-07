@@ -2,7 +2,7 @@
   "schema_version": 1,
   "labels_version": 3,
   "translation_version": 2,
-  "labels_count": 1271,
+  "labels_count": 1276,
   "locale": "pt-BR",
   "name": "PORTUGUÊS (BR)",
   "order": 3,
@@ -5090,6 +5090,26 @@
     "tbo/native-r1-1/2": {
       "original": "Universe 6's Strongest Warrior",
       "text": "O guerreiro mais forte\ndo Universo 6"
+    },
+    "online/setup/create-title": {
+      "original": "CREATE MATCH",
+      "text": "CRIAR PARTIDA"
+    },
+    "online/setup/connection": {
+      "original": "Connection",
+      "text": "Conexão"
+    },
+    "online/setup/room-code": {
+      "original": "Room Code",
+      "text": "Código da sala"
+    },
+    "online/setup/by-address": {
+      "original": "By Address",
+      "text": "Por endereço"
+    },
+    "online/setup/port": {
+      "original": "Port",
+      "text": "Porta"
     }
   }
 }
