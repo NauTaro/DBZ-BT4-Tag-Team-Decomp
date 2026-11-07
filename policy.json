@@ -1,0 +1,4 @@
+{
+  "payload": "{\"active\":\"primary\",\"capability\":1,\"epoch\":2,\"expires_at\":1794068313,\"issued_at\":1794067713,\"minimum\":\"0.1.39.5-R4\",\"require_update\":true,\"schema\":1}",
+  "signature": "fd992fa700075e1c6a1cf4263286fce52a939687792b445c33bac82b841c6a8f3a9c6591f92e9a641f3e880cbec1673e781a4d128db2e350acc69bf1dfd2e600"
+}
