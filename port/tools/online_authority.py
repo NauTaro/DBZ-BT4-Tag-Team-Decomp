@@ -208,12 +208,14 @@ def main():
         expected_state=(args.state_dir/'state.json').read_bytes().strip()
         expected_policy=(args.state_dir/'policy.json').read_bytes().strip()
         published=False
-        # GitHub's raw-content CDN can briefly serve the prior branch version
-        # after the write-ahead records have been committed. Retry the exact-byte
-        # verification before touching either database.
+        # Read the just-published records from GitHub's authenticated Contents
+        # API. The raw-content CDN can continue serving the prior branch version
+        # after the write-ahead commit has completed.
         for attempt in range(15):
-            status,remote=request(f'https://raw.githubusercontent.com/{REPOSITORY}/online-routing/state.json')
-            status2,remote_policy=request(f'https://raw.githubusercontent.com/{REPOSITORY}/online-routing/policy.json')
+            status,state_record=github('contents/state.json?ref=online-routing')
+            status2,policy_record=github('contents/policy.json?ref=online-routing')
+            remote=base64.b64decode(state_record.get('content','')) if status==200 else b''
+            remote_policy=base64.b64decode(policy_record.get('content','')) if status2==200 else b''
             if status==200 and status2==200 and remote.strip()==expected_state and remote_policy.strip()==expected_policy:
                 published=True
                 break
