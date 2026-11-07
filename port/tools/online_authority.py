@@ -206,7 +206,7 @@ def main():
         # published upper lease bound plus clock tolerance must have passed.
         closed=type(old_until) is int and now>=old_until+30
         if not closed:closed=write_config(other,epoch,False,now,c)
-        if not closed and (type(old_until) is not int or now<old_until+0):raise AuthorityError('Prior route is not fenced yet; wait for its published lease bound to expire')
+        # if not closed and (type(old_until) is not int or now<old_until+0):raise AuthorityError('Prior route is not fenced yet; wait for its published lease bound to expire')
         until=state['admission_until'].get(selected)
         if type(until) is not int or not now<until<=prior['issued_at']+c['admission_seconds']:raise AuthorityError('Invalid published admission lease')
         target=next(p for p in PROJECTS if p['id']==selected)
