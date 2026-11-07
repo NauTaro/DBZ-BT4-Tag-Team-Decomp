@@ -6,6 +6,7 @@ Only admission configuration is changed. Existing rooms and P2P are untouched.
 """
 from __future__ import annotations
 import argparse,base64,hashlib,json,os,pathlib,re,sys,time,urllib.error,urllib.request
+from datetime import datetime
 import update_key
 
 ROOT=pathlib.Path(__file__).resolve().parents[2]
@@ -64,6 +65,16 @@ def health(project):
         return 200,h
     except (ValueError,KeyError,TypeError):return 422,None
 
+def route_config_matches(project,epoch,admission,until,c):
+    status,h=health(project)
+    if status!=200:return False
+    try:
+        actual_until=int(datetime.fromisoformat(h['admission_until']).timestamp())
+        return (h['epoch']==epoch and h['backend_id']==PROJECTS.index(project) and
+            h['admission_open'] is admission and h['require_update'] is c['require_update'] and
+            h['minimum']==c['minimum'] and actual_until==int(until))
+    except (ValueError,TypeError,KeyError):return False
+
 def write_config(project,epoch,admission,until,c):
     token=os.environ.get(project['secret'],'')
     if not token:raise AuthorityError('A required project management secret is missing')
@@ -75,13 +86,11 @@ def write_config(project,epoch,admission,until,c):
       require_update={'true' if c['require_update'] else 'false'},minimum_client='{c['minimum']}',minimum_capability=1
       where singleton and epoch<={epoch}
       returning epoch,admission_open,extract(epoch from admission_until)::bigint admission_until"""
-    status,raw=request(f"https://api.supabase.com/v1/projects/{project['ref']}/database/query",{'query':sql},
+    request(f"https://api.supabase.com/v1/projects/{project['ref']}/database/query",{'query':sql},
         headers={'Authorization':'Bearer '+token})
-    if status!=200:return False
-    try:
-        rows=json.loads(raw)
-        return len(rows)==1 and rows[0]['epoch']==epoch and rows[0]['admission_open']==admission and int(rows[0]['admission_until'])==int(until)
-    except (ValueError,TypeError,KeyError):return False
+    # The Management API response shape varies by API version and can fail after
+    # a committed statement. Verify the durable public route state instead.
+    return route_config_matches(project,epoch,admission,until,c)
 
 def verify_release(c,public,fetch=request):
     headers={}
