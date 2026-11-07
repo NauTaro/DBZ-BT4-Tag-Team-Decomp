@@ -42,7 +42,7 @@ def config(path):
     if c['schema']!=1 or type(c['enabled']) is not bool or type(c['require_update']) is not bool or type(c['automatic_return']) is not bool:raise AuthorityError('Invalid authority switches')
     if not re.fullmatch(r'[0-9]{1,4}(?:\.[0-9]{1,4}){2,3}-R[0-9]{1,4}(?:\.[0-9]{1,4})?',c['minimum']):raise AuthorityError('Invalid minimum version')
     if c['release_tag']!='v'+c['minimum']:raise AuthorityError('Release tag must match the minimum')
-    if c['capability']!=1 or not 300<=c['policy_seconds']<=600 or not c['policy_seconds']<c['admission_seconds']<=900:raise AuthorityError('Invalid compatibility or lease bounds')
+    if c['capability']!=1 or not 300<=c['policy_seconds']<c['admission_seconds']<=86400:raise AuthorityError('Invalid compatibility or lease bounds')
     return c
 
 def read_policy(path,public):

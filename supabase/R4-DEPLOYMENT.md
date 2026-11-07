@@ -51,10 +51,12 @@ lease plus clock tolerance to expire. Enable the repository variable
 Scheduled executions are serialized. A healthy reserve is not automatically
 switched back to the primary.
 
-Policy lifetime is 10 minutes; admission leases last 15 minutes. The five-minute
-Actions schedule is not a real-time guarantee. An unreachable old database can
-therefore require over 15 minutes to fence, plus scheduling time. Failed policy
-refresh stops new admission after a trusted policy expires.
+Policy lifetime is just under 24 hours; admission leases last 24 hours. The
+five-minute Actions schedule is not a real-time guarantee. This longer signed
+window keeps current clients admitting rooms during delayed scheduled runs. If
+the previous database cannot be closed administratively, a route switch can
+take up to 24 hours to fence it. Failed policy refresh stops new admission after
+the trusted policy expires.
 
 ## Sessions, updates and limits
 
