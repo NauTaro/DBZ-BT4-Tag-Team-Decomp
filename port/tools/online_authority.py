@@ -196,9 +196,20 @@ def main():
         if not prior or now>=prior['expires_at'] or prior['minimum']!=c['minimum']:raise AuthorityError('A current published policy is required')
         # The workflow pushes these signed lease bounds BEFORE any database write.
         # A failed later commit can therefore never hide a renewed admission lease.
-        status,remote=request(f'https://raw.githubusercontent.com/{REPOSITORY}/online-routing/state.json')
-        status2,remote_policy=request(f'https://raw.githubusercontent.com/{REPOSITORY}/online-routing/policy.json')
-        if status!=200 or status2!=200 or remote.strip()!=(args.state_dir/'state.json').read_bytes().strip() or remote_policy.strip()!=(args.state_dir/'policy.json').read_bytes().strip():raise AuthorityError('The write-ahead policy and lease bounds are not published yet')
+        expected_state=(args.state_dir/'state.json').read_bytes().strip()
+        expected_policy=(args.state_dir/'policy.json').read_bytes().strip()
+        published=False
+        # GitHub's raw-content CDN can briefly serve the prior branch version
+        # after the write-ahead records have been committed. Retry the exact-byte
+        # verification before touching either database.
+        for attempt in range(15):
+            status,remote=request(f'https://raw.githubusercontent.com/{REPOSITORY}/online-routing/state.json')
+            status2,remote_policy=request(f'https://raw.githubusercontent.com/{REPOSITORY}/online-routing/policy.json')
+            if status==200 and status2==200 and remote.strip()==expected_state and remote_policy.strip()==expected_policy:
+                published=True
+                break
+            if attempt<14:time.sleep(2)
+        if not published:raise AuthorityError('The write-ahead policy and lease bounds are not published yet')
         selected=prior['active'];epoch=prior['epoch'];other=next(p for p in PROJECTS if p['id']!=selected)
         old_until=state['admission_until'].get(other['id'])
         # Never presume that an unreachable old database stopped accepting rooms.
