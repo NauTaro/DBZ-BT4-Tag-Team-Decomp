@@ -132,38 +132,5 @@ jobs:
           assert 'BT4decomp ' + heading.removeprefix('# ') == os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
           pathlib.Path('release-assets/notes.md').write_text(body.strip() + '\n')
           PY
-          gh release list --limit 100 --json tagName,isDraft > release-assets/existing.json
-          python3 - <<'PY'
-          import json, os, pathlib
-          matches = [r for r in json.load(open('release-assets/existing.json'))
-                     if r['tagName'] == os.environ['GITHUB_REF_NAME']]
-          assert len(matches) <= 1, 'Duplicate releases for this tag require review'
-          assert not matches or matches[0]['isDraft'], 'Refusing to replace a published release'
-          pathlib.Path('release-assets/existing-draft').write_text('yes' if matches else 'no')
-          PY
-          if [ "$(cat release-assets/existing-draft)" = no ]; then
-            gh release create "${GITHUB_REF_NAME}" --draft --verify-tag --title "$RELEASE_TITLE" --notes-file release-assets/notes.md
-          else
-            gh release edit "${GITHUB_REF_NAME}" --draft --title "$RELEASE_TITLE" --notes-file release-assets/notes.md
-          fi
-          gh release upload "${GITHUB_REF_NAME}" --clobber \
-            release-assets/BT4decomp-windows-x64.zip \
-            release-assets/BT4decomp-windows-x64.zip.sig \
-            release-assets/BT4decomp-linux-x64.zip \
-            release-assets/BT4decomp-linux-x64.zip.sig \
-            release-assets/BT4decomp-macos-arm64.zip \
-            release-assets/BT4decomp-macos-arm64.zip.sig \
-            release-assets/BT4decomp-R4-Supabase.zip
-          gh release view "${GITHUB_REF_NAME}" --json assets,isDraft > release-assets/uploaded.json
-          python3 - <<'PY'
-          import json
-          release = json.load(open('release-assets/uploaded.json'))
-          expected = {'BT4decomp-' + platform + '.zip' + suffix
-                      for platform in ('windows-x64', 'linux-x64', 'macos-arm64')
-                      for suffix in ('', '.sig')}
-          expected.add('BT4decomp-R4-Supabase.zip')
-          assert release['isDraft'], 'Release must stay private while assets are checked'
-          assert {asset['name'] for asset in release['assets']} == expected, 'Incomplete release assets'
-          assert all(asset['size'] > 0 for asset in release['assets']), 'Empty release asset'
-          PY
+          python3 port/tools/release_draft.py --assets release-assets             --notes release-assets/notes.md --title "$RELEASE_TITLE"             --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
           echo "Signed packages are ready in a draft. Publish explicitly after gameplay validation." >> "$GITHUB_STEP_SUMMARY"
