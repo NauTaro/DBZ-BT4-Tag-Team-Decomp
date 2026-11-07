@@ -69,6 +69,7 @@ jobs:
       - name: Fence the previous route and admit the selected route
         if: github.event_name == 'schedule' || inputs.apply
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
           SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
         run: python3 port/tools/online_authority.py --state-dir "$RUNNER_TEMP/online-routing" --activate-published
