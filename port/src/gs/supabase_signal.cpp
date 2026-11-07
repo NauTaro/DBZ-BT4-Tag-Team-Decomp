@@ -121,7 +121,7 @@ static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &a
     if(data.size()>20000)return false;
 #ifdef _WIN32
     HINTERNET session=WinHttpOpen(L"BT4decomp signaling",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);
-    if(!session)return false;WinHttpSetTimeouts(session,4000,4000,4000,8000);
+    if(!session)return false;WinHttpSetTimeouts(session,10000,10000,10000,20000);
     HINTERNET connection=WinHttpConnect(session,pathWide(endpoint().host).c_str(),443,0);
     std::wstring wide(path.begin(),path.end());
     HINTERNET request=connection?WinHttpOpenRequest(connection,L"POST",wide.c_str(),nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE):nullptr;
@@ -275,7 +275,11 @@ static int entry(void*){
             // A deferred search must not block a cancellation, presence or room leave.
             auto it=std::find_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){
                 bool httpOnly=j.op=="presence"||j.op=="counts"||j.op=="list"||j.op=="leave"||j.op=="cancel";
-                return j.notBefore<=now&&(joined||httpOnly);
+                bool admission=j.op=="create"||j.op=="join"||j.op=="queue";
+                // Room admission uses authenticated HTTP. It must not wait for
+                // Realtime; successful admission then reconnects/subscribes for
+                // peer discovery and signaling.
+                return j.notBefore<=now&&(joined||httpOnly||admission);
             });
             if(it!=state.jobs.end()){job=std::move(*it);state.jobs.erase(it);have=true;}
         }
@@ -305,6 +309,7 @@ static int entry(void*){
                 bool ok=authenticate()&&http("/rest/v1/rpc/bt4_api",{{"p_op",job.op},{"p_args",job.args}},true,reply);
                 if(!ok&&lastHttpStatus==401){identity.access.clear();identity.renewAt=0;ok=authenticate()&&http("/rest/v1/rpc/bt4_api",{{"p_op",job.op},{"p_args",job.args}},true,reply);}
                 if(!ok){
+                    fprintf(stderr,"bt4: signaling: RPC %s failed (HTTP %ld)\n",job.op.c_str(),lastHttpStatus);
                     auto business=reply.is_object()?str(reply,"error"):std::string();
                     if(business!="RATE_LIMITED"&&business!="AUTH_REQUIRED")reply={{"error","SIGNALING_UNAVAILABLE"}};
                     httpFailures=std::min(5u,httpFailures+1);retryHttp=now+(1000u<<httpFailures);nextPolicy=std::min(nextPolicy,now+5000);

@@ -159,7 +159,10 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
 extern "C" int Bt4Discovery_Poll(unsigned generation,Bt4DiscoveryStatus *out){
     std::lock_guard<std::mutex> g(lock);if(!out||!d.on||generation!=d.generation)return 0;pump();Uint64 now=SDL_GetTicks();
     if(now>=d.leaseAt){d.leaseAt=now+60000;if(d.waiting){d.init=++serial;rpc("queue",d.profile,d.init);}else if(number(d.descriptor,"self")==1)rpc("lease",Dj::object());}
-    if(d.status.state==1&&Bt4Signal_Status()<0&&now-d.began>15000)error("SIGNALING_UNAVAILABLE");
+    // First-run admission may perform anonymous auth and then the room RPC;
+    // both have bounded 20 s HTTP receive timeouts. Do not cancel the UI while
+    // that request is still within its legitimate deadline.
+    if(d.status.state==1&&Bt4Signal_Status()<0&&now-d.began>45000)error("SIGNALING_UNAVAILABLE");
     // A queued RPC is not an acknowledgement; retry failed announcements at a bounded rate.
     bool retry=false;for(const auto &entry:d.retryAt)if(!d.announced[entry.first]&&now>=entry.second){
         bool pending=false;for(const auto &request:d.announcements)if(request.second==entry.first)pending=true;
