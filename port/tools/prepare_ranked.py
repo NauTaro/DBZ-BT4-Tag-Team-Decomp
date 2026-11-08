@@ -6,6 +6,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 ROOT = Path(__file__).resolve().parents[2]
+ACTIVATE = os.environ.get("ACTIVATE_RANKED", "").lower() == "true"
 PROJECTS = (("primary", "mhgksaiitqoijnatpurf", "SUPABASE_PRIMARY_MANAGEMENT_TOKEN"),
             ("secondary", "houhjsfukkkicjejvett", "SUPABASE_SECONDARY_MANAGEMENT_TOKEN"))
 
@@ -32,6 +33,25 @@ for name, ref, key in PROJECTS:
     if not state[0]["ready"]:
         query(ref, secret, (ROOT / "supabase/migrations/202611080005_ranked_admission_reports.sql").read_text())
     result = query(ref, secret, "select enabled,authority_backend,to_regclass('bt4_private.ranked_reports') is not null as reports,has_function_privilege('authenticated','public.bt4_ranked_api(text,jsonb)','execute') as authenticated_api from bt4_private.ranked_config where singleton")
-    if len(result) != 1 or result[0]["authority_backend"] != 1 or not result[0]["reports"] or not result[0]["authenticated_api"] or result[0]["enabled"]:
+    if len(result) != 1 or result[0]["authority_backend"] != 1 or not result[0]["reports"] or not result[0]["authenticated_api"] or (result[0]["enabled"] and (not ACTIVATE or name != "secondary")):
         raise RuntimeError("Unexpected staged Ranked state on " + name)
     print(name + ": R5 reports ready, authority backend 1, admission disabled", flush=True)
+
+if ACTIVATE:
+    name,ref,key=PROJECTS[1];secret=os.environ[key]
+    query(ref,secret,(ROOT/'supabase/checks/r5_ranked_live.sql').read_text())
+    print('Live database: both formats, two-party scores and idempotent retries passed; fixture rolled back',flush=True)
+    rows=query(ref,secret,"""update bt4_private.ranked_config set enabled=true where singleton and authority_backend=1
+      and exists(select 1 from bt4_private.route_config where singleton and backend_id=1 and admission_open
+      and (admission_until is null or admission_until>clock_timestamp())) returning enabled,authority_backend""")
+    if len(rows)!=1 or rows[0]['enabled'] is not True:raise RuntimeError('Secondary route admission is not open; Ranked was not enabled')
+    status=query(ref,secret,"""begin;
+      select set_config('request.jwt.claim.sub',gen_random_uuid()::text,true);
+      select public.bt4_ranked_api('status','{"ruleset":"solo"}') as solo,
+             public.bt4_ranked_api('status','{"ruleset":"teams"}') as teams;
+      commit;""")
+    # Return the only SELECT object with both status values; API may include command rows.
+    statuses=next((r for r in status if 'solo' in r and 'teams' in r),None)
+    if not statuses or not statuses['solo'].get('enabled') or not statuses['teams'].get('enabled'):
+        raise RuntimeError('Ranked status did not confirm both active queues')
+    print('Secondary Ranked ACTIVE: solo and native teams, initial rating 1000',flush=True)

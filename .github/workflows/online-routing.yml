@@ -3,6 +3,10 @@ name: Online routing authority
 on:
   workflow_dispatch:
     inputs:
+      activate_ranked:
+        description: Validate both Ranked formats and enable the secondary rating authority
+        type: boolean
+        default: false
       prepare_ranked:
         description: Prepare R5 Ranked schema on both projects without enabling admission
         type: boolean
@@ -28,7 +32,7 @@ concurrency:
 
 jobs:
   prepare_ranked:
-    if: github.event_name == 'workflow_dispatch' && inputs.prepare_ranked
+    if: github.event_name == 'workflow_dispatch' && (inputs.prepare_ranked || inputs.activate_ranked)
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
@@ -37,9 +41,10 @@ jobs:
         env:
           SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
           SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+          ACTIVATE_RANKED: ${{ inputs.activate_ranked }}
         run: python3 port/tools/prepare_ranked.py
   coordinate:
-    if: github.event_name != 'workflow_dispatch' || !inputs.prepare_ranked
+    if: github.event_name != 'workflow_dispatch' || (!inputs.prepare_ranked && !inputs.activate_ranked)
     runs-on: ubuntu-22.04
     timeout-minutes: 8
     steps:
