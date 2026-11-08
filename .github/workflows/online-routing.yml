@@ -3,6 +3,10 @@ name: Online routing authority
 on:
   workflow_dispatch:
     inputs:
+      prepare_ranked:
+        description: Prepare R5 Ranked schema on both projects without enabling admission
+        type: boolean
+        default: false
       route:
         description: Route preference (auto keeps a healthy active route)
         type: choice
@@ -23,7 +27,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare_ranked:
+    if: github.event_name == 'workflow_dispatch' && inputs.prepare_ranked
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Prepare and verify both Ranked backends
+        env:
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+        run: python3 port/tools/prepare_ranked.py
   coordinate:
+    if: github.event_name != 'workflow_dispatch' || !inputs.prepare_ranked
     runs-on: ubuntu-22.04
     timeout-minutes: 8
     steps:
