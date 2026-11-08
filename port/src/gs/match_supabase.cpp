@@ -253,6 +253,9 @@ extern "C" int Port_RankedResult(int *rating,int *delta){
 extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsigned confirmed,int resimulating){
     std::lock_guard<std::mutex> g(lock);
     if(!d.on||!d.ranked||resimulating||!d.descriptor.is_object())return;
+    // Discovery polling ends after the handshake. Consume result acknowledgments
+    // here while the confirmed fight/result ticks continue.
+    pump();
     Uint64 now=SDL_GetTicks();
     if(d.reportSerial){
         if(d.reportState==1&&!d.reportPending&&now>=d.reportAt){

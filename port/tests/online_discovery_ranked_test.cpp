@@ -68,10 +68,11 @@ int main(){
     assert(capturedCommands[0].args["outcome"]==0&&text(capturedCommands[0].args,"digest").size()==64);
     std::string firstDigest=text(capturedCommands[0].args,"digest");
     Port_RankedObserve(4,1,151,151,0);assert(capturedCommands.size()==1); // no duplicate in-flight request
-    emit(0,{{"event","reply"},{"serial",d.reportSerial},{"body",{{"state","waiting"}}}});pump();
+    emit(0,{{"event","reply"},{"serial",d.reportSerial},{"body",{{"state","waiting"}}}});
+    Port_RankedObserve(4,1,152,152,0);assert(!d.reportPending);
     d.reportAt=0;Port_RankedObserve(4,1,152,152,0);assert(capturedCommands.size()==2);
     assert(text(capturedCommands[1].args,"digest")==firstDigest);
-    emit(0,{{"event","reply"},{"serial",d.reportSerial},{"body",{{"state","applied"}}}});pump();
+    emit(0,{{"event","reply"},{"serial",d.reportSerial},{"body",{{"state","applied"}}}});
     Port_RankedObserve(3,0,160,160,0);assert(capturedCommands.size()==2&&d.reportState==2);
     // Presentation/rollback catch-up can first observe the same finish later.
     // Its agreement digest must still identify the same result.
