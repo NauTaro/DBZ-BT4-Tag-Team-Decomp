@@ -1864,7 +1864,7 @@ static void Tb_RankedParagraph(const char *text) {
             char *part=lines[count];
             while(cursor[n] && n<158){
                 part[n]=cursor[n];part[n+1]=0;
-                if((cursor[n]==' '||!cursor[n+1]) && Ps_TextWidth(part,.62f)>210.0f && lastSpace>0){n=lastSpace;break;}
+                if(lastSpace>0 && (n>=62 || ((cursor[n]==' '||!cursor[n+1]) && Ps_TextWidth(part,.62f)>210.0f))){n=lastSpace;break;}
                 if(cursor[n]==' ')lastSpace=n;
                 n++;
             }
