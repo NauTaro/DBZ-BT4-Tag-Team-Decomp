@@ -16,6 +16,15 @@ def plugin():
     # Compiler workers share this plugin. Build it once and publish it atomically
     # so another worker cannot load a missing or partially linked dylib.
     with _plugin_lock:
+        PLUGIN.parent.mkdir(parents=True, exist_ok=True)
+        if os.name == "posix":
+            import fcntl
+            with PLUGIN.with_suffix(".lock").open("a+b") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                try:
+                    return _plugin_locked()
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
         return _plugin_locked()
 
 def _plugin_locked():
