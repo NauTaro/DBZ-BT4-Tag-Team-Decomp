@@ -2,7 +2,7 @@
   "schema_version": 1,
   "labels_version": 3,
   "translation_version": 2,
-  "labels_count": 1308,
+  "labels_count": 1309,
   "locale": "pt-BR",
   "name": "PORTUGUÊS (BR)",
   "order": 3,
@@ -5238,6 +5238,10 @@
     "tbo/ranked/help/7": {
       "original": "Your points carry over each week.",
       "text": "Seus pontos são mantidos a cada semana."
+    },
+    "tbo/ranked/guide": {
+      "original": "Ranked starts you at 1000 points in each format, with separate ratings for solo and team battles. Winning adds points and losing subtracts them; the amount depends on both players' ratings. The Global Top updates hourly, and the weekly standings renew every Sunday at 23:59 Argentina time (UTC-3). Your points carry over, so each new week gives you another chance to climb without losing your progress.",
+      "text": "Você começa com 1000 pontos em cada formato, com pontuações independentes para combates solo e por equipes. As vitórias somam pontos e as derrotas descontam; o valor depende da pontuação dos dois jogadores. O Top global é atualizado a cada hora e a classificação semanal se renova aos domingos, às 23h59 da Argentina (UTC-3). Seus pontos são mantidos, para que você possa disputar o Top a cada nova semana sem perder seu progresso."
     }
   }
 }

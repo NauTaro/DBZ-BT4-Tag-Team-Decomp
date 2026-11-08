@@ -1846,6 +1846,35 @@ static void Tb_DrawRanked(void) {
     }
 }
 
+/* Wrap the translated guide as one paragraph. Cache its lines so menu frames
+ * do not create new text measurements or textures for every word. */
+static void Tb_RankedParagraph(const char *text) {
+    extern int Port_TrLine(const char *,char *,int);
+    static char localized[1024];
+    static char previous[1024], lines[16][160];
+    static s32 count, aspect;
+    s32 i, pageAspect=Port_PageAspectMilli();
+    if(Port_TrLine(text,localized,sizeof(localized)))text=localized;
+    if(strcmp(previous,text)||aspect!=pageAspect){
+        const char *cursor=text;
+        Ps_Copy(previous,text,sizeof(previous));aspect=pageAspect;count=0;
+        PortOnline_Raw(1);
+        while(*cursor && count<16){
+            s32 n=0,lastSpace=-1;
+            char *part=lines[count];
+            while(cursor[n] && n<158){
+                part[n]=cursor[n];part[n+1]=0;
+                if((cursor[n]==' '||!cursor[n+1]) && Ps_TextWidth(part,.62f)>210.0f && lastSpace>0){n=lastSpace;break;}
+                if(cursor[n]==' ')lastSpace=n;
+                n++;
+            }
+            part[n]=0;cursor+=n;while(*cursor==' ')cursor++;count++;
+        }
+        PortOnline_Raw(0);
+    }
+    for(i=0;i<count;i++)Ps_TextRaw(28,116+18*i,lines[i],.62f,258,0);
+}
+
 static void Tb_DrawRankedText(void) {
     s32 i;
     Bt4RankedView ranked={0};char line[96];
@@ -1882,14 +1911,7 @@ static void Tb_DrawRankedText(void) {
         Ps_Text(28, 228, "Argentina time (UTC-3)", .60f, 258, 3);
     } else {
         Ps_Text(28, 78, "How Ranked Works", .76f, 258, 2);
-        Ps_Text(28, 116, "Start at 1000 points.", .58f, 258, 0);
-        Ps_Text(28, 141, "Win to gain points; lose to drop.", .58f, 258, 0);
-        Ps_Text(28, 166, "Points depend on your rival's rating.", .58f, 258, 0);
-        Ps_Text(28, 191, "Solo and teams have separate ratings.", .58f, 258, 0);
-        Ps_Text(28, 216, "Global Top updates every hour.", .58f, 258, 0);
-        Ps_Text(28, 241, "Weekly records reset: Sunday 23:59", .58f, 258, 0);
-        Ps_Text(28, 266, "Argentina time (UTC-3)", .58f, 258, 0);
-        Ps_Text(28, 291, "Your points carry over each week.", .58f, 258, 3);
+        Tb_RankedParagraph(PortOnline_Text("Ranked starts you at 1000 points in each format, with separate ratings for solo and team battles. Winning adds points and losing subtracts them; the amount depends on both players' ratings. The Global Top updates hourly, and the weekly standings renew every Sunday at 23:59 Argentina time (UTC-3). Your points carry over, so each new week gives you another chance to climb without losing your progress."));
     }
 }
 

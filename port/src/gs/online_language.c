@@ -6,6 +6,7 @@ extern int Port_GameProfileEnglish(void);
 static int sRaw;
 void PortOnline_Raw(int on){if(on)sRaw++;else if(sRaw)sRaw--;}
 static const char *const kText[][2]={
+{"Ranked starts you at 1000 points in each format, with separate ratings for solo and team battles. Winning adds points and losing subtracts them; the amount depends on both players' ratings. The Global Top updates hourly, and the weekly standings renew every Sunday at 23:59 Argentina time (UTC-3). Your points carry over, so each new week gives you another chance to climb without losing your progress.","Empiezas con 1000 puntos en cada formato, con una puntuaci\u00f3n independiente para los combates individuales y por equipos. Al ganar sumas puntos y al perder los descuentas; la cantidad depende de la puntuaci\u00f3n de ambos jugadores. El Top global se actualiza cada hora y la clasificaci\u00f3n semanal se renueva los domingos a las 23:59 de Argentina (UTC-3). Tus puntos se conservan, as\u00ed que cada semana puedes volver a competir por el Top sin perder tu progreso."},
 {"Your points carry over each week.","Tus puntos se conservan cada semana."},
 {"Weekly records reset: Sunday 23:59","Registro semanal: reinicio domingo 23:59"},
 {"Solo and teams have separate ratings.","Individual y equipos tienen puntos separados."},
