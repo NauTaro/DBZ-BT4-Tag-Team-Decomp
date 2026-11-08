@@ -1275,7 +1275,7 @@ static void Tb_HubUpdate(s32 live) {
 }
 
 /* Ranked admission uses separate queues and one scored battle per match. */
-static char *sTbRankedActions[3] = {"Find Ranked Match", "Global Top", "Season Rules"};
+static char *sTbRankedActions[3] = {"Find Ranked Match", "Global Top", "How Ranked Works"};
 static void Tb_RankedStart(void){
     Bt4RankedView view={0};s32 state;
     Port_RankedView(&view);
@@ -1881,13 +1881,15 @@ static void Tb_DrawRankedText(void) {
         Ps_Text(28, 202, "Weekly reset: Sunday 23:59", .60f, 258, 0);
         Ps_Text(28, 228, "Argentina time (UTC-3)", .60f, 258, 3);
     } else {
-        Ps_Text(28, 78, "Season Rules", .92f, 258, 2);
-        Ps_Text(28, 124, "Weekly competitive seasons.", .64f, 258, 0);
-        Ps_Text(28, 160, "Global Top updates every hour.", .60f, 258, 0);
-        Ps_Text(28, 196, "Sunday 23:59: new season.", .60f, 258, 0);
-        Ps_Text(28, 222, "Argentina time (UTC-3)", .60f, 258, 3);
-        Ps_Text(28, 258, "240 seconds. Standard speed.", .60f, 258, 0);
-        Ps_Text(28, 292, "Points carry over between weeks.", .56f, 258, 3);
+        Ps_Text(28, 78, "How Ranked Works", .76f, 258, 2);
+        Ps_Text(28, 116, "Start at 1000 points.", .58f, 258, 0);
+        Ps_Text(28, 141, "Win to gain points; lose to drop.", .58f, 258, 0);
+        Ps_Text(28, 166, "Points depend on your rival's rating.", .58f, 258, 0);
+        Ps_Text(28, 191, "Solo and teams have separate ratings.", .58f, 258, 0);
+        Ps_Text(28, 216, "Global Top updates every hour.", .58f, 258, 0);
+        Ps_Text(28, 241, "Weekly records reset: Sunday 23:59", .58f, 258, 0);
+        Ps_Text(28, 266, "Argentina time (UTC-3)", .58f, 258, 0);
+        Ps_Text(28, 291, "Your points carry over each week.", .58f, 258, 3);
     }
 }
 

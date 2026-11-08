@@ -1,12 +1,12 @@
 # 0.1.39.5 R5
 
 - Add separate Ranked queues for solo and native Team Battle, with independent ratings and matchmaking rules.
+- Explain starting points, rating changes, weekly records and the hourly Top in a concise localized Ranked guide.
 - Start new players at 1000 points, apply Elo K=32, and keep ratings between weekly seasons. Weekly records reset Sunday at 23:59 Argentina time; the public Top refreshes hourly.
 - Submit Ranked results only after both participants report the same outcome and match digest. This peer-to-peer agreement is not independent anti-cheat verification.
 - Keep the secondary database as the single Ranked rating authority. Ranked matchmaking reports unavailable while the primary route is active, avoiding separate rating histories during failover.
 - Keep online room discovery and casual matchmaking separate from Ranked admission and result reporting.
 - Ship only the six signed Windows, Linux and macOS update files; the database deployment archive is not a game installer asset.
-- Keep experimental anime auras and the separate development menu out of this release.
 
 <!-- bt4-update:en
 - Add separate Ranked solo and native Team Battle queues with independent ratings.
@@ -42,7 +42,6 @@
 - Add signed principal/reserve matchmaking routing with separate project identities, pinned rooms, invitation namespaces and bounded retries.
 - Include an additive Supabase deployment bundle and a coordinated minimum-client gate for new matchmaking. Activation remains disabled until the public signed update packages are verified and the operator completes the database preparation.
 - Extend native footer panels without repeating the corner ornaments or leaving discontinuous texture joins; match the main Online entry to the installed BT4 menu lettering and colour ramp.
-- Keep experimental anime auras and the separate development menu out of this release.
 
 <!-- bt4-update:en
 - Correct full-screen chase-camera layout and repeated camera updates.

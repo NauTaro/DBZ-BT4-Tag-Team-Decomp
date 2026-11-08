@@ -6,6 +6,12 @@ extern int Port_GameProfileEnglish(void);
 static int sRaw;
 void PortOnline_Raw(int on){if(on)sRaw++;else if(sRaw)sRaw--;}
 static const char *const kText[][2]={
+{"Your points carry over each week.","Tus puntos se conservan cada semana."},
+{"Weekly records reset: Sunday 23:59","Registro semanal: reinicio domingo 23:59"},
+{"Solo and teams have separate ratings.","Individual y equipos tienen puntos separados."},
+{"Points depend on your rival's rating.","El cambio depende de los puntos del rival."},
+{"Win to gain points; lose to drop.","Ganar suma puntos; perder resta."},
+{"Start at 1000 points.","Comienzas con 1000 puntos."},
 {"Ranked","Clasificatorias"},
 {"Ranked service unavailable","Servicio clasificatorio no disponible"},
 {"Rating: %d","Puntos: %d"},
@@ -18,7 +24,7 @@ static const char *const kText[][2]={
 {"View your competitive season, rating and the global leaderboard.","Consulta tu temporada competitiva, puntos y clasificaci\u00f3n mundial."},
 {"Find Ranked Match","Buscar clasificatoria"},
 {"Global Top","Top global"},
-{"Season Rules","Reglas de temporada"},
+{"How Ranked Works","C\u00f3mo funcionan las clasificatorias"},
 {"COMPETITIVE SEASON","TEMPORADA COMPETITIVA"},
 {"Ranked matchmaking","Combate clasificatorio"},
 {"Rating: unranked","Puntos: sin clasificar"},

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "labels_version": 3,
   "translation_version": 2,
-  "labels_count": 1302,
+  "labels_count": 1308,
   "locale": "pt-BR",
   "name": "PORTUGUÊS (BR)",
   "order": 3,
@@ -5128,8 +5128,8 @@
       "text": "Top global"
     },
     "tbo/ranked/04": {
-      "original": "Season Rules",
-      "text": "Regras da temporada"
+      "original": "How Ranked Works",
+      "text": "Como funcionam as ranqueadas"
     },
     "tbo/ranked/05": {
       "original": "COMPETITIVE SEASON",
@@ -5214,6 +5214,30 @@
     "tbo/ranked/result-points": {
       "original": "Ranked: %+d points (%d total)",
       "text": "Classificatórias: %+d pontos (%d no total)"
+    },
+    "tbo/ranked/help/0": {
+      "original": "Start at 1000 points.",
+      "text": "Comece com 1000 pontos."
+    },
+    "tbo/ranked/help/1": {
+      "original": "Win to gain points; lose to drop.",
+      "text": "Vencer soma pontos; perder reduz."
+    },
+    "tbo/ranked/help/2": {
+      "original": "Points depend on your rival's rating.",
+      "text": "A mudança depende dos pontos do rival."
+    },
+    "tbo/ranked/help/3": {
+      "original": "Solo and teams have separate ratings.",
+      "text": "Solo e equipes têm pontuações separadas."
+    },
+    "tbo/ranked/help/5": {
+      "original": "Weekly records reset: Sunday 23:59",
+      "text": "Registro semanal: reinicia domingo 23h59"
+    },
+    "tbo/ranked/help/7": {
+      "original": "Your points carry over each week.",
+      "text": "Seus pontos são mantidos a cada semana."
     }
   }
 }
