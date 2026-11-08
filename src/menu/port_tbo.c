@@ -2,6 +2,7 @@
 extern int Port_TagTeams(int,int),Port_TagSlot(int,int,int),Port_TagSlots(void),Port_TagTeam(int),Port_TagTeamIndex(int),Port_TagTeamCount(int),Port_TagTeamSlots(int),Port_TagCanStart(void);
 #include "common.h"
 #include "../../port/src/gs/online_language.h"
+#include "../../port/src/gs/match_supabase.h"
 #include "menu/menu_e.h"
 #include "sys/pad.h"
 #include "sys/save.h"
@@ -13,7 +14,7 @@ extern int Port_TagTeams(int,int),Port_TagSlot(int,int,int),Port_TagSlots(void),
  * runs this screen. Its own look for online play, after the mockups of online_design: every picture, piece,
  * letter and button is its own (tbo/ui/*.png, drawn by the renderer at full resolution; see "the pictures" below).
  *
- * The hub lists nine modes. What runs today is what the netcode of port/src/gs/net.c and net_lobby.c can do (the same
+ * The hub lists seven modes. What runs today is what the netcode of port/src/gs/net.c and net_lobby.c can do (the same
  * as the Dragon Net Battle window, without the window):
  *   Quick Match   a stranger from the matchmaking service's queue; the search shows a Dragon Radar; square: "Train
  *                 While Waiting" leaves for the Ultimate Training menu with the search still on (net.c polls it each
@@ -26,8 +27,8 @@ extern int Port_TagTeams(int,int),Port_TagSlot(int,int,int),Port_TagSlots(void),
  *                 spectator is a lobby's member in a spectator's place: there is no Watch of its own;
  *   Profile       the name the others see.
  * Everything the Dragon Net Battle window does is here; the window itself is only in F1 > Online > Advanced.
- * Ranked Match, Friends, Tournament, Replays and Leaderboard need the matchmaking service to do more (player ids,
- * ratings): they are listed, marked SOON, and say what they will be.
+ * Ranked uses separate individual/native-team queues and agreeing authenticated
+ * result reports. Its Top is weekly; rating points persist between weeks.
  * Once both players are there the session is the game's own versus mode (character select, the fight, results).
  */
 
@@ -322,17 +323,19 @@ extern const char *Port_TagPlayerName(int seat), *Port_TagCode(void), *Port_TagE
 #define TB_LOBBY 11 /* native online lobby; Tag Team retains its own two screens */
 #define TB_ADDR 12 /* Join by Address: keep its mode separate from Tag Team and lobby screens */
 #define TB_BRACKET 13 /* native lobby tournament bracket */
+#define TB_RANKED 14
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
 /* the hub's modes, in the order of the list */
 #define HUB_QUICK 0
-#define HUB_CREATE 1
-#define HUB_JOIN 2
-#define HUB_TAG 3
-#define HUB_TOURNAMENT 4
-#define HUB_PROFILE 5
-#define HUB_COUNT 6
+#define HUB_RANKED 1
+#define HUB_CREATE 2
+#define HUB_JOIN 3
+#define HUB_TAG 4
+#define HUB_TOURNAMENT 5
+#define HUB_PROFILE 6
+#define HUB_COUNT 7
 
 /* Create Room's rows */
 #define CR_METHOD 0
@@ -397,6 +400,7 @@ typedef struct TboScreen {
     s32 oldTold;
     char sayLine[256];
     s32 hubCur;
+    s32 rankedCur, rankedPage, rankedBattle; /* individual and native team queues */
     f32 hubY;           /* where the hub's cursor plate is drawn: it glides */
     /* the host's choices (kept in the settings) */
     s32 battle;         /* 0 one on one, 1 teams of up to five */
@@ -480,10 +484,11 @@ static char *Tb_Fmt(char *format) {
     return Port_TrLine(format, buf[k], 160) ? buf[k] : format;
 }
 
-static char *sTbHubName[HUB_COUNT]={"Quick Match","Create Match","Join","Tag Team","Tournament","Profile"};
-static const s32 sTbHubReady[HUB_COUNT]={1,1,1,1,1,1};
+static char *sTbHubName[HUB_COUNT]={"Quick Match","Ranked","Create Match","Join","Tag Team","Tournament","Profile"};
+static const s32 sTbHubReady[HUB_COUNT]={1,1,1,1,1,1,1};
 static char *sTbHubSay[HUB_COUNT]={
     "Search for an opponent in a public queue.",
+    "View your competitive season, rating and the global leaderboard.",
     "Open a lobby, choose the rules and invite players or spectators.",
     "Join a lobby with its code or the host address.",
     "Build two teams for simultaneous battles with players and CPU fighters.",
@@ -927,6 +932,7 @@ static void Tb_SparUpdate(s32 live) {
 static void Tb_QuickStart(void) {
     s32 state;
 
+    Port_RankedSearch(0);
     if (!Tb_Vanilla(1)) {
         return;
     }
@@ -1229,6 +1235,13 @@ static void Tb_HubUpdate(s32 live) {
             sTb->crCur = CR_OPEN;
             Tb_SetMode(TB_CREATE);
             break;
+        case HUB_RANKED:
+            Snd_PlaySe(1, 1);
+            sTb->rankedCur = 0;
+            sTb->rankedPage = 0;
+            if(!getenv("BT4_RENDER_TEST"))Port_RankedRefresh(sTb->rankedBattle);
+            Tb_SetMode(TB_RANKED);
+            break;
         case HUB_JOIN:
             sTb->tagJoin = 0;
             Snd_PlaySe(1, 1);
@@ -1251,13 +1264,67 @@ static void Tb_HubUpdate(s32 live) {
             break;
         default:
             Snd_PlaySe(1, 2);
-            Tb_Note("NOT OPEN YET: IT NEEDS MORE FROM THE MATCHMAKING SERVICE");
+            Tb_Note("THIS ONLINE OPTION IS UNAVAILABLE.");
             break;
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
         sTb->leaving = 1;
         ColorFade_StartOut(0, 0, 0, 0x14);
+    }
+}
+
+/* Ranked admission uses separate queues and one scored battle per match. */
+static char *sTbRankedActions[3] = {"Find Ranked Match", "Global Top", "Season Rules"};
+static void Tb_RankedStart(void){
+    Bt4RankedView view={0};s32 state;
+    Port_RankedView(&view);
+    if(view.state!=1){Tb_Say("Ranked is temporarily unavailable. Please try again later.");return;}
+    if(!Tb_Vanilla(1))return;
+    Port_NetSpeedSet(Port_NetSpeedStandard());
+    Port_NetRulesSet(sTb->rankedBattle,0,3); // 240-second matches, native individual/teams
+    Port_NetOptions(Port_RollCan()?4:0,-2);
+    Port_LobbyQuickArea("any");Port_RankedSearch(1);
+    state=Port_LobbyStartQuick(sTb->rankedBattle);
+    if(state<0){Port_RankedSearch(0);Tb_Note("THE NETWORK COULD NOT BE OPENED ON THIS PC");return;}
+    sTb->host=2;sTb->waitFrom=sTb->frames;sTb->found=0;sTb->waitBack=TB_RANKED;
+    Tb_SetMode(TB_WAIT);
+}
+static void Tb_RankedUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+    Ps_Prompt(0, "Enter");
+    Ps_Prompt(2, "Back");
+    if (!live) return;
+    if (pad->gamePressed & (PADG_TRIANGLE | PADG_CIRCLE)) {
+        Snd_PlaySe(1, 2);
+        if (sTb->rankedPage) sTb->rankedPage = 0;
+        else Tb_SetMode(TB_HUB);
+        return;
+    }
+    if (sTb->rankedPage) {
+        if(sTb->rankedPage==1){
+            Ps_Prompt(3,"Change");
+            if(Ps_Side()) {Port_RankedPage(Ps_Side());Snd_PlaySe(1,0);}
+        }
+        return;
+    }
+    Ps_Move(&sTb->rankedCur, 3);
+    if(!sTb->rankedCur){
+        Ps_Prompt(3,"Change");
+        if(Ps_Side()){
+            sTb->rankedBattle=!sTb->rankedBattle;
+            Snd_PlaySe(1,0);
+            if(!getenv("BT4_RENDER_TEST"))Port_RankedRefresh(sTb->rankedBattle);
+        }
+    }
+    if (pad->gamePressed & PADG_CROSS) {
+        if (!sTb->rankedCur) {
+            Snd_PlaySe(1, 1);
+            Tb_RankedStart();
+        } else {
+            Snd_PlaySe(1, 1);
+            sTb->rankedPage = sTb->rankedCur;
+        }
     }
 }
 
@@ -1728,7 +1795,7 @@ static void Tb_DrawHubText(void) {
     Ps_Copy(presence,(char*)PortOnline_Text("Fighters online: "),sizeof(presence));
     if(online<0)Ps_Cat(presence,"...",sizeof(presence));
     else {char value[16];sprintf(value,"%d",online);Ps_Cat(presence,value,sizeof(presence));}
-    Ps_Text(22,236,presence,.68f,270,2);
+    Ps_Text(22,Tb_HubRowY(HUB_COUNT-1)+43.0f,presence,.68f,270,2);
 
     for (i = 0; i < HUB_COUNT; i++) {
         f32 y = Tb_HubRowY(i);
@@ -1767,6 +1834,61 @@ static void Tb_DrawRowsAt(s32 count, s32 cur, f32 y0, f32 step) {
 
 static void Tb_DrawRows(s32 count, s32 cur, f32 y0) {
     Tb_DrawRowsAt(count, cur, y0, 34.0f);
+}
+
+static void Tb_DrawRanked(void) {
+    Tb_Hosts(TBO_HOSTS_ARMS_CROSSED, 408.0f, 350.0f, 250.0f);
+    if (!sTb->rankedPage) {
+        Ps_Panel(TBO_KIT_WINDOW, 14, 62, 300, 164, 0x80);
+        Tb_DrawRows(3, sTb->rankedCur, 196.0f);
+    } else {
+        Ps_Panel(TBO_KIT_WINDOW, 14, 62, 300, 318, 0x80);
+    }
+}
+
+static void Tb_DrawRankedText(void) {
+    s32 i;
+    Bt4RankedView ranked={0};char line[96];
+    if(!getenv("BT4_RENDER_TEST"))Port_RankedView(&ranked);
+    if (!sTb->rankedPage) {
+        Ps_Text(28, 76, "COMPETITIVE SEASON", .72f, 258, 2);
+        Ps_Text(28, 134, "Battle", .62f, 90, 0);
+        Ps_Align(2);Ps_Text(282,134,sTb->rankedBattle?"Teams":"One on One",.62f,160,3);Ps_Align(0);
+        if(ranked.state==1&&ranked.rating){
+            sprintf(line,Tb_Fmt("Rating: %d"),ranked.rating);
+            Ps_Text(28,105,line,.62f,258,3);
+        }else Ps_Text(28,105,ranked.state<0?"Ranked service unavailable":"Rating: unranked",.62f,258,3);
+        for (i=0; i<3; ++i) {
+            Ps_Text(36, Ps_TextTop(209.0f+34.0f*i, .72f),
+                    sTbRankedActions[i], .72f, 228, i==sTb->rankedCur?1:0);
+        }
+    } else if (sTb->rankedPage==1) {
+        Ps_Text(28, 78, "Global Top", .92f, 258, 2);
+        if(ranked.count){
+            for(i=0;i<ranked.count;++i){
+                sprintf(line,"%d. %s",ranked.page*5+i+1,ranked.top[i].name);
+                Ps_TextRaw(28,112+30*i,line,.62f,190,0);
+                sprintf(line,"%d",ranked.top[i].rating);
+                Ps_Align(2);Ps_TextRaw(282,112+30*i,line,.62f,58,1);Ps_Align(0);
+            }
+            sprintf(line,Tb_Fmt("Page %d/%d"),ranked.page+1,ranked.pages);
+            Ps_Text(28,274,line,.60f,258,0);
+            Ps_Text(28,296,"Updates every hour.",.56f,258,3);
+            return;
+        }
+        Ps_Text(28, 124, ranked.state<0?"Ranked service unavailable":"No ranking published yet.", .64f, 258, 0);
+        Ps_Text(28, 164, "Updates every hour.", .64f, 258, 3);
+        Ps_Text(28, 202, "Weekly reset: Sunday 23:59", .60f, 258, 0);
+        Ps_Text(28, 228, "Argentina time (UTC-3)", .60f, 258, 3);
+    } else {
+        Ps_Text(28, 78, "Season Rules", .92f, 258, 2);
+        Ps_Text(28, 124, "Weekly competitive seasons.", .64f, 258, 0);
+        Ps_Text(28, 160, "Global Top updates every hour.", .60f, 258, 0);
+        Ps_Text(28, 196, "Sunday 23:59: new season.", .60f, 258, 0);
+        Ps_Text(28, 222, "Argentina time (UTC-3)", .60f, 258, 3);
+        Ps_Text(28, 258, "240 seconds. Standard speed.", .60f, 258, 0);
+        Ps_Text(28, 292, "Points carry over between weeks.", .56f, 258, 3);
+    }
 }
 
 static void Tb_DrawCreate(void) {
@@ -1977,11 +2099,11 @@ static void Tb_DrawWaitText(void) {
     const char *code = getenv("BT4_RENDER_TBO") != NULL ? "YUH9JP" : Port_LobbyCode();
 
     if (sTb->host == 2) {
-        s32 n = Port_LobbyQueueWaiting(sTb->queue);
+        s32 n = sTb->waitBack==TB_RANKED?0:Port_LobbyQueueWaiting(sTb->queue);
 
-        Ps_Text(22.0f, 94.0f, "QUICK MATCH", 0.56f, 0.0f, 0);
+        Ps_Text(22.0f, 94.0f, sTb->waitBack==TB_RANKED?"Ranked":"QUICK MATCH", 0.56f, 0.0f, 0);
         Ps_Align(1);
-        Ps_Text(95.0f, 124.0f, sTb->queue ? "TEAMS" : "ONE ON ONE", 0.86f, 156.0f, 1);
+        Ps_Text(95.0f, 124.0f, (sTb->waitBack==TB_RANKED?sTb->rankedBattle:sTb->queue) ? "TEAMS" : "ONE ON ONE", 0.86f, 156.0f, 1);
         Ps_Align(0);
         s32 widen = Port_LobbyWiden(), y = 214;
         const char *from = Port_LobbyRivalRegion();
@@ -3934,6 +4056,8 @@ static char *Tb_Help(void) {
                                : "Press Search to enter the public queue. It only matches players searching the same battle type. To use a room code, choose Join Room.";
     case TB_NAME:
         return "Enter your player name, then choose Done. SQUARE deletes a character; START confirms.";
+    case TB_RANKED:
+        return "Choose individual or native team battles to earn ranking points.";
     case TB_PROFILE:
         return "Choose the player name shown to opponents and other players in your rooms.";
     case TB_LOBBY:
@@ -3956,7 +4080,7 @@ static char *Tb_Help(void) {
 }
 
 /* Each page's title (by TB_ mode), as its heading shows it and the screen reader says it. */
-static char *sTbTitle[14] = {"Tenkaichi Budokai Online","New Lobby","Join","Searching","Profile","Profile","Quick Match","Train While Waiting","Tenkaichi Budokai Online","Tag Team","Tag Team Room","Lobby","Join by Address","Tournament"};
+static char *sTbTitle[15] = {"Tenkaichi Budokai Online","New Lobby","Join","Searching","Profile","Profile","Quick Match","Train While Waiting","Tenkaichi Budokai Online","Tag Team","Tag Team Room","Lobby","Join by Address","Tournament","Ranked"};
 
 /* ---- the screen reader (port/src/gs/a11y.c; silent unless the player has it on). The game's own screens are read
    from their state by port/src/a11y_game.c; these pages say what they show themselves: the page's title as it opens,
@@ -4018,6 +4142,9 @@ static void Tb_Speak(void) {
         if (!sTbHubReady[sTb->hubCur]) {
             Ps_Cat(focus, ", soon", 160);
         }
+        break;
+    case TB_RANKED:
+        Ps_Copy(focus, sTbRankedActions[sTb->rankedPage ? sTb->rankedPage : sTb->rankedCur], 160);
         break;
     case TB_TAG:
         Ps_Copy(focus, "Tag Team Settings", 160); break;
@@ -4292,6 +4419,9 @@ static void Tb_Draw(void) {
     case TB_HUB:
         Tb_DrawHub();
         break;
+    case TB_RANKED:
+        Tb_DrawRanked();
+        break;
     case TB_TAG:
         Tb_DrawTag(); break;
     case TB_TAG_ROOM:
@@ -4357,6 +4487,9 @@ static void Tb_DrawText(void) {
     switch (sTb->mode) {
     case TB_HUB:
         Tb_DrawHubText();
+        break;
+    case TB_RANKED:
+        Tb_DrawRankedText();
         break;
     case TB_TAG:
         Tb_DrawTagText(); break;
@@ -4480,6 +4613,11 @@ s32 PortTbo_Run(void) {
     if (getenv("BT4_RENDER_TBO") != NULL) {
         const char *which = getenv("BT4_RENDER_TBO");
         if(!strcmp(which,"tag-quick-wait")&&getenv("BT4_RENDER_TEST")){sTb->tagQuick=4;Tb_SetMode(TB_TAG_ROOM);}
+        else if (!strncmp(which,"ranked",6) && getenv("BT4_RENDER_TEST")) {
+            sTb->rankedCur=0;
+            sTb->rankedPage=!strcmp(which,"ranked-top")?1:!strcmp(which,"ranked-rules")?2:0;
+            Tb_SetMode(TB_RANKED);
+        }
         else if (which[0] == 't') Tb_SetMode(TB_TAG);
         else if (which[0] == 'c' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_CREATE);
         else if (which[0] == 'j' && getenv("BT4_RENDER_TEST")) {sTb->tagJoin=1;Tb_SetMode(TB_JOIN);}
@@ -4582,6 +4720,9 @@ s32 PortTbo_Run(void) {
         if (getenv("BT4_RENDER_TBO") == NULL) switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);
+            break;
+        case TB_RANKED:
+            Tb_RankedUpdate(live);
             break;
         case TB_TAG:
             Tb_TagUpdate(live); break;

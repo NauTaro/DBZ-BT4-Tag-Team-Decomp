@@ -59,14 +59,19 @@ class AuthorityTests(unittest.TestCase):
 
     def test_disabled_configuration_performs_no_network_or_writes(self):
         with tempfile.TemporaryDirectory() as temp:
-            args = ['online_authority.py', '--config', str(ROOT / 'supabase/online-routing.json'),
-                    '--state-dir', temp, '--prepare']
+            config = json.loads((ROOT / 'supabase/online-routing.json').read_text())
+            config['enabled'] = False
+            config_path = Path(temp) / 'disabled.json'
+            config_path.write_text(json.dumps(config))
+            state = Path(temp) / 'state'
+            args = ['online_authority.py', '--config', str(config_path),
+                    '--state-dir', str(state), '--prepare']
             with patch.object(sys, 'argv', args), patch.object(authority, 'request') as request, \
                  patch.object(authority, 'write_config') as write:
                 authority.main()
                 request.assert_not_called()
                 write.assert_not_called()
-                self.assertEqual(list(Path(temp).iterdir()), [])
+                self.assertFalse(state.exists())
 
     def test_fencing_refuses_unpublished_policy(self):
         config = dict(schema=1, enabled=True, minimum='0.1.39.5-R4', release_tag='v0.1.39.5-R4',

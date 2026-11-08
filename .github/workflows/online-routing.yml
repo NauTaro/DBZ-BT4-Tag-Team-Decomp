@@ -24,7 +24,6 @@ concurrency:
 
 jobs:
   coordinate:
-    if: github.event_name == 'workflow_dispatch' || vars.BT4_ONLINE_ROUTING_ENABLED == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 8
     steps:

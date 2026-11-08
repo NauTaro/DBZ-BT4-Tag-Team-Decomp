@@ -2886,6 +2886,24 @@ static void spec_tick(unsigned tick) {
     }
 }
 
+static void ranked_outcome(unsigned tick){
+    extern int Port_RankedActive(void),Port_BattleOutcome(int *);
+    extern void Port_RankedObserve(int,int,unsigned,unsigned,int);
+    extern int Port_RankedResult(int *,int *);
+    static int notified;
+    if(sMode!=3&&sSession&&Port_RankedActive()){
+        int bits=0,state=Port_BattleOutcome(&bits);
+        Port_RankedObserve(state,bits,tick,sRollMax>0?sChecked:tick,sResim||gPortResim);
+        if(!sResim&&!gPortResim){
+            int rating=0,delta=0,result=Port_RankedResult(&rating,&delta);
+            if(result!=2)notified=0;
+            else if(!notified){
+                char line[128];snprintf(line,sizeof(line),PortOnline_Text("Ranked: %+d points (%d total)"),delta,rating);
+                Port_UiBanner(line,0);notified=1;
+            }
+        }
+    }
+}
 void Port_NetBeginTick(unsigned tick) {
     uint64_t t0, last;
 
@@ -2906,6 +2924,7 @@ void Port_NetBeginTick(unsigned tick) {
     }
     if (sRollMax > 0) {
         roll_tick(tick);
+        ranked_outcome(tick);
         return;
     }
     sample_local(tick);
@@ -2941,6 +2960,7 @@ void Port_NetBeginTick(unsigned tick) {
     }
     sWaitNs += SDL_GetTicksNS() - t0;
     sWaits++;
+    ranked_outcome(tick);
     sync_note(tick); /* (nothing is guessed here: every blank is sure when it begins) */
     sync_check(tick, tick);
     {   /* (the meter, when the two copies wait for each other every blank: time waited, and blanks that waited

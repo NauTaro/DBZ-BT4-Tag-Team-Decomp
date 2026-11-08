@@ -2,7 +2,7 @@
   "schema_version": 1,
   "labels_version": 3,
   "translation_version": 2,
-  "labels_count": 1276,
+  "labels_count": 1302,
   "locale": "pt-BR",
   "name": "PORTUGUÊS (BR)",
   "order": 3,
@@ -5110,6 +5110,110 @@
     "online/setup/port": {
       "original": "Port",
       "text": "Porta"
+    },
+    "tbo/ranked/00": {
+      "original": "Ranked",
+      "text": "Classificatórias"
+    },
+    "tbo/ranked/01": {
+      "original": "View your competitive season, rating and the global leaderboard.",
+      "text": "Consulte sua temporada competitiva, pontuação e classificação mundial."
+    },
+    "tbo/ranked/02": {
+      "original": "Find Ranked Match",
+      "text": "Buscar classificatória"
+    },
+    "tbo/ranked/03": {
+      "original": "Global Top",
+      "text": "Top global"
+    },
+    "tbo/ranked/04": {
+      "original": "Season Rules",
+      "text": "Regras da temporada"
+    },
+    "tbo/ranked/05": {
+      "original": "COMPETITIVE SEASON",
+      "text": "TEMPORADA COMPETITIVA"
+    },
+    "tbo/ranked/06": {
+      "original": "Ranked matchmaking",
+      "text": "Partidas classificatórias"
+    },
+    "tbo/ranked/07": {
+      "original": "Rating: unranked",
+      "text": "Pontos: sem classificação"
+    },
+    "tbo/ranked/08": {
+      "original": "No ranking published yet.",
+      "text": "Nenhuma classificação publicada."
+    },
+    "tbo/ranked/09": {
+      "original": "Updates every hour.",
+      "text": "Atualização a cada hora."
+    },
+    "tbo/ranked/10": {
+      "original": "Weekly reset: Sunday 23:59",
+      "text": "Reinício: domingo 23:59"
+    },
+    "tbo/ranked/11": {
+      "original": "Argentina time (UTC-3)",
+      "text": "Horário da Argentina (UTC-3)"
+    },
+    "tbo/ranked/12": {
+      "original": "Weekly competitive seasons.",
+      "text": "Temporadas semanais."
+    },
+    "tbo/ranked/13": {
+      "original": "Global Top updates every hour.",
+      "text": "O Top global é atualizado a cada hora."
+    },
+    "tbo/ranked/14": {
+      "original": "Sunday 23:59: new season.",
+      "text": "Domingo 23:59: nova temporada."
+    },
+    "tbo/ranked/15": {
+      "original": "Separate queues for solo and native Team Battle.",
+      "text": "Filas separadas para individual e Combate de Equipe clássico."
+    },
+    "tbo/ranked/16": {
+      "original": "Play rated solo or native Team Battle matches.",
+      "text": "Jogue partidas classificatórias individuais ou de equipes clássicas."
+    },
+    "tbo/ranked/17": {
+      "original": "Earn points in solo and native Team Battle; points carry over each week.",
+      "text": "Ganhe pontos no individual e no Combate de Equipe clássico; eles são mantidos a cada semana."
+    },
+    "tbo/ranked/unavailable": {
+      "original": "Ranked service unavailable",
+      "text": "Serviço classificatório indisponível"
+    },
+    "tbo/ranked/rating": {
+      "original": "Rating: %d",
+      "text": "Pontos: %d"
+    },
+    "tbo/ranked/page": {
+      "original": "Page %d/%d",
+      "text": "Página %d/%d"
+    },
+    "tbo/ranked/persistent-points": {
+      "original": "Points carry over between weeks.",
+      "text": "A pontuação é mantida entre semanas."
+    },
+    "tbo/ranked/rules-duration": {
+      "original": "240 seconds. Standard speed.",
+      "text": "240 segundos. Velocidade padrão."
+    },
+    "tbo/ranked/help-live": {
+      "original": "Choose individual or native team battles to earn ranking points.",
+      "text": "Escolha batalhas individuais ou por equipes clássicas para ganhar pontos."
+    },
+    "tbo/ranked/temporary": {
+      "original": "Ranked is temporarily unavailable. Please try again later.",
+      "text": "As classificatórias estão indisponíveis. Tente novamente mais tarde."
+    },
+    "tbo/ranked/result-points": {
+      "original": "Ranked: %+d points (%d total)",
+      "text": "Classificatórias: %+d pontos (%d no total)"
     }
   }
 }

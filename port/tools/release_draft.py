@@ -97,7 +97,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     names = ['BT4decomp-' + platform + '.zip' + suffix
              for platform in ('windows-x64', 'linux-x64', 'macos-arm64') for suffix in ('', '.sig')]
-    names.append('BT4decomp-R4-Supabase.zip')
     assets = [args.assets / name for name in names]
     if not all(p.is_file() and p.stat().st_size > 0 for p in assets):
         raise SystemExit('Missing release assets')

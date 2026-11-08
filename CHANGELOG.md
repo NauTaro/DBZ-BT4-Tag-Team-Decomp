@@ -1,3 +1,32 @@
+# 0.1.39.5 R5
+
+- Add separate Ranked queues for solo and native Team Battle, with independent ratings and matchmaking rules.
+- Start new players at 1000 points, apply Elo K=32, and keep ratings between weekly seasons. Weekly records reset Sunday at 23:59 Argentina time; the public Top refreshes hourly.
+- Submit Ranked results only after both participants report the same outcome and match digest. This peer-to-peer agreement is not independent anti-cheat verification.
+- Keep the secondary database as the single Ranked rating authority. Ranked matchmaking reports unavailable while the primary route is active, avoiding separate rating histories during failover.
+- Keep online room discovery and casual matchmaking separate from Ranked admission and result reporting.
+- Ship only the six signed Windows, Linux and macOS update files; the database deployment archive is not a game installer asset.
+- Keep experimental anime auras and the separate development menu out of this release.
+
+<!-- bt4-update:en
+- Add separate Ranked solo and native Team Battle queues with independent ratings.
+- Keep points between weekly seasons, refresh the Top hourly, and reset weekly records Sunday at 23:59 Argentina time.
+- Count a result only when both players report matching results; peer reports are not independent anti-cheat verification.
+- Keep casual matchmaking separate and ship the six signed platform update files.
+-->
+<!-- bt4-update:es
+- Añade colas clasificatorias separadas para Duelo individual y Combate por equipos nativo, con puntuaciones independientes.
+- Conserva los puntos entre temporadas semanales, actualiza el Top cada hora y reinicia el registro semanal los domingos a las 23:59 de Argentina.
+- Cuenta el resultado sólo cuando ambos jugadores informan el mismo resultado; los informes entre pares no son una verificación antitrampas independiente.
+- Mantiene separado el emparejamiento casual e incluye los seis archivos firmados de actualización para las plataformas.
+-->
+<!-- bt4-update:pt
+- Adiciona filas ranqueadas separadas para Solo e Batalha de Equipes nativa, com pontuações independentes.
+- Mantém os pontos entre temporadas semanais, atualiza o Top a cada hora e reinicia o registro semanal aos domingos às 23h59 da Argentina.
+- Só contabiliza o resultado quando ambos os jogadores enviam o mesmo resultado; os relatos entre pares não são uma verificação antitrapaça independente.
+- Mantém o pareamento casual separado e inclui os seis arquivos de atualização assinados para as plataformas.
+-->
+
 # 0.1.39.5 R4
 
 - Restore the full single-view layout after chase-camera updates when cinematic cameras are disabled; cache each visible camera update independently of rollback rendering.

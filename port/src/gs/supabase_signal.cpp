@@ -102,13 +102,13 @@ struct State {
     unsigned consumers=0,realtime=0;
     std::atomic<int> projectIndex{0};
     std::deque<std::string> releasedGenerations;
-    std::array<unsigned,4> sessions={};
+    std::array<unsigned,5> sessions={};
     std::string roomGeneration;
-    std::deque<Job> jobs;std::array<std::deque<std::string>,4> events;
+    std::deque<Job> jobs;std::array<std::deque<std::string>,5> events;
 } state;
 static void wake(void*){if(state.wake)SDL_SignalSemaphore(state.wake);}
 static bool emit(int consumer,const Sj &j){
-    if(consumer<0||consumer>3)return false;
+    if(consumer<0||consumer>4)return false;
     std::string body=j.dump();if(body.size()>24576)return false;
     std::lock_guard<std::mutex> g(state.lock);
     if(!(state.consumers&(1u<<consumer)))return true;
@@ -235,7 +235,7 @@ static int entry(void*){
                         Job retry=queueJob[c];retry.project=-1;retry.generation.clear();
                         retry.notBefore=acknowledged?0:uncertain[activeProject];
                         std::lock_guard<std::mutex> g(state.lock);
-                        state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==c&&j.op=="queue";}),state.jobs.end());
+                        state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==c&&(j.op=="queue"||j.op=="ranked_queue");}),state.jobs.end());
                         state.jobs.push_front(std::move(retry));queued[c]=false;
                     }
                 }
@@ -245,11 +245,16 @@ static int entry(void*){
         auto &identity=currentIdentity();
         if(!realtimeWanted&&ws)disconnect();
         if(!ws&&realtimeWanted&&now>=reconnect){
-            if(!authenticate()){state.status=-1;reconnect=now+30000;SDL_WaitSemaphoreTimeout(state.wake,20);continue;}
-            std::string url=std::string(endpoint().url)+"/realtime/v1/websocket?apikey="+endpoint().key+"&vsn=1.0.0";
-            ws=std::make_unique<VoiceWs>(url,"",0,"",true,wake,nullptr);joined=false;joinAt=0;state.status=0;
+            if(!authenticate()){
+                state.status=-1;failures=std::min(5u,failures+1);reconnect=now+(1000u<<failures);
+                // Do not skip the HTTP queue. Room admission and cleanup must
+                // continue even while the private Realtime inbox reconnects.
+            }else{
+                std::string url=std::string(endpoint().url)+"/realtime/v1/websocket?apikey="+endpoint().key+"&vsn=1.0.0";
+                ws=std::make_unique<VoiceWs>(url,"",0,"",true,wake,nullptr);joined=false;joinAt=0;state.status=0;
+            }
         }
-        if(ws&&ws->status<0){disconnect();failures=std::min(5u,failures+1);reconnect=now+(1000u<<failures);nextPolicy=std::min(nextPolicy,now+5000);}
+        if(ws&&ws->status<0){disconnect();state.status=-1;failures=std::min(5u,failures+1);reconnect=now+(1000u<<failures);nextPolicy=std::min(nextPolicy,now+5000);}
         if(ws&&ws->status==1&&!joinAt){joinRef=std::to_string(serial+1);post("phx_join",{{"config",{{"private",true},{"broadcast",{{"ack",false},{"self",false}}},{"presence",{{"enabled",false}}},{"postgres_changes",Sj::array()}}},{"access_token",identity.access}},"realtime:bt4:inbox:"+identity.user);joinAt=now;nextBeat=now+20000;}
         VoiceWsMessage message;unsigned count=0;
         while(ws&&count++<128&&ws->read(message)){
@@ -274,29 +279,30 @@ static int entry(void*){
         {std::lock_guard<std::mutex> g(state.lock);
             // A deferred search must not block a cancellation, presence or room leave.
             auto it=std::find_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){
-                bool httpOnly=j.op=="presence"||j.op=="counts"||j.op=="list"||j.op=="leave"||j.op=="cancel";
-                bool admission=j.op=="create"||j.op=="join"||j.op=="queue";
-                // Room admission uses authenticated HTTP. It must not wait for
-                // Realtime; successful admission then reconnects/subscribes for
-                // peer discovery and signaling.
+                bool retainedUdp=j.consumer==0&&j.op=="signal"&&str(j.args,"channel")=="duel"&&str(j.args,"kind")=="udp";
+                bool httpOnly=j.op=="presence"||j.op=="counts"||j.op=="list"||j.op=="leave"||j.op=="cancel"||j.op=="lease"||j.op=="get"||j.op=="ranked_report"||retainedUdp||j.consumer==4;
+                bool admission=j.consumer!=1&&(j.op=="create"||j.op=="join"||j.op=="queue"||j.op=="ranked_queue");
+                // Native UDP discovery can recover announcements through get.
+                // Tag Team SDP/ICE is transient, so its recipient must finish
+                // subscribing before admission can notify the host to offer.
                 return j.notBefore<=now&&(joined||httpOnly||admission);
             });
             if(it!=state.jobs.end()){job=std::move(*it);state.jobs.erase(it);have=true;}
         }
         if(have&&!currentJob(job)&&job.op!="leave"&&job.op!="cancel")have=false;
-        if(have&&job.op=="queue"&&pinnedGeneration.empty()){
+        if(have&&(job.op=="queue"||job.op=="ranked_queue")&&pinnedGeneration.empty()){
             Uint64 safeAt=std::max(uncertain[0],uncertain[1]);
             if(now<safeAt){
                 job.notBefore=safeAt;
                 std::lock_guard<std::mutex> g(state.lock);
-                state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==job.consumer&&j.op=="queue";}),state.jobs.end());
+                state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==job.consumer&&(j.op=="queue"||j.op=="ranked_queue");}),state.jobs.end());
                 state.jobs.push_back(std::move(job));have=false;
             }
         }
         if(have){
             Sj reply;bool admit=bt4route::admission(job.op),blocked=false;
             if((job.project>=0&&job.project!=activeProject)||
-               (!job.generation.empty()&&job.generation!=pinnedGeneration&&job.op!="leave")){
+                (!job.generation.empty()&&job.generation!=pinnedGeneration&&job.op!="leave"&&job.op!="ranked_report")){
                 reply={{"error","ROOM_ROUTE_EXPIRED"}};blocked=true;
             }
             else if(admit&&Update_OnlineRequired()){reply={{"error","UPDATE_REQUIRED"},{"minimum",policy.minimum}};blocked=true;}
@@ -306,22 +312,27 @@ static int entry(void*){
             else if(now<retryHttp){reply={{"error","SIGNALING_UNAVAILABLE"}};blocked=true;}
             if(!blocked){
                 if(admit)job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",1},{"epoch",policy.epoch}};
-                bool ok=authenticate()&&http("/rest/v1/rpc/bt4_api",{{"p_op",job.op},{"p_args",job.args}},true,reply);
-                if(!ok&&lastHttpStatus==401){identity.access.clear();identity.renewAt=0;ok=authenticate()&&http("/rest/v1/rpc/bt4_api",{{"p_op",job.op},{"p_args",job.args}},true,reply);}
+                bool rankedRpc=job.consumer==4||job.op=="ranked_queue"||job.op=="ranked_report";
+                const char *rpcPath=rankedRpc?"/rest/v1/rpc/bt4_ranked_api":"/rest/v1/rpc/bt4_api";
+                auto operation=rankedRpc?job.op.substr(7):job.op;
+                bool ok=authenticate()&&http(rpcPath,{{"p_op",operation},{"p_args",job.args}},true,reply);
+                if(!ok&&lastHttpStatus==401){identity.access.clear();identity.renewAt=0;ok=authenticate()&&http(rpcPath,{{"p_op",operation},{"p_args",job.args}},true,reply);}
                 if(!ok){
                     fprintf(stderr,"bt4: signaling: RPC %s failed (HTTP %ld)\n",job.op.c_str(),lastHttpStatus);
                     auto business=reply.is_object()?str(reply,"error"):std::string();
                     if(business!="RATE_LIMITED"&&business!="AUTH_REQUIRED")reply={{"error","SIGNALING_UNAVAILABLE"}};
-                    httpFailures=std::min(5u,httpFailures+1);retryHttp=now+(1000u<<httpFailures);nextPolicy=std::min(nextPolicy,now+5000);
-                    if(lastHttpStatus==0&&(job.op=="create"||job.op=="join"||job.op=="queue"))uncertain[activeProject]=SDL_GetTicks()+305000;
-                }else{httpFailures=0;retryHttp=0;
+                    if(job.consumer!=4){httpFailures=std::min(5u,httpFailures+1);retryHttp=now+(1000u<<httpFailures);nextPolicy=std::min(nextPolicy,now+5000);}
+                    if(lastHttpStatus==0&&(job.op=="create"||job.op=="join"||job.op=="queue"||job.op=="ranked_queue"))uncertain[activeProject]=SDL_GetTicks()+305000;
+                }else{if(job.consumer!=4){httpFailures=0;retryHttp=0;}
                     if(job.op=="presence")onlineMenu=job.args.value("active",false);
-                    if(job.consumer<2&&job.op=="queue"&&str(reply,"state")=="waiting"){queueJob[job.consumer]=job;queued[job.consumer]=true;}
+                    if(job.consumer<2&&(job.op=="queue"||job.op=="ranked_queue")&&str(reply,"state")=="waiting"){queueJob[job.consumer]=job;queued[job.consumer]=true;}
                     if(job.consumer<2&&job.op=="cancel")queued[job.consumer]=false;
                     rememberRoom(job.consumer,reply);
                     if(job.op=="leave"&&!reply.contains("error")&&(str(job.args,"generation").empty()||str(job.args,"generation")==pinnedGeneration)){
                         setPin("");uncertain[activeProject]=0;
-                        std::lock_guard<std::mutex> g(state.lock);state.realtime&=~(1u<<job.consumer);
+                        // Listen() owns the Realtime lifetime. A room reset can
+                        // queue leave immediately before create, so leave must
+                        // not clear the subscription requested by that create.
                     }
                 }
             }
@@ -356,28 +367,30 @@ extern "C" int Bt4Signal_Open(void){
     state.thread=SDL_CreateThread(entry,"BT4 Supabase signaling",nullptr);if(!state.thread){SDL_DestroySemaphore(state.wake);state.wake=nullptr;return 0;}return 1;
 }
 extern "C" int Bt4Signal_Status(void){return state.status;}
-extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consumer>3)return;std::lock_guard<std::mutex> g(state.lock);if(enabled){state.consumers|=1u<<consumer;if(consumer<3)state.realtime|=1u<<consumer;}else{state.consumers&=~(1u<<consumer);state.realtime&=~(1u<<consumer);state.events[consumer].clear();++state.sessions[consumer];
+extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consumer>4)return;std::lock_guard<std::mutex> g(state.lock);if(enabled){state.consumers|=1u<<consumer;if(consumer<3)state.realtime|=1u<<consumer;}else{state.consumers&=~(1u<<consumer);state.realtime&=~(1u<<consumer);state.events[consumer].clear();++state.sessions[consumer];
         state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==consumer&&j.op!="leave"&&j.op!="cancel";}),state.jobs.end());}}
 extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,const char *args){
-    if(consumer<0||consumer>3||!op||!args||strlen(args)>18000)return 0;
+    if(consumer<0||consumer>4||!op||!args||strlen(args)>18000)return 0;
     if((consumer==3)!=(!strcmp(op,"presence")))return 0;
-    static const char *allowed[]={"create","join","get","lease","leave","list","queue","cancel","signal","counts","voice","presence"};bool found=false;
+    bool ranked=!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top");if((consumer==4)!=ranked)return 0;
+    if((!strcmp(op,"ranked_queue")||!strcmp(op,"ranked_report"))&&consumer!=0)return 0;
+    static const char *allowed[]={"create","join","get","lease","leave","list","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report"};bool found=false;
     for(auto kind:allowed)if(!strcmp(op,kind)){found=true;break;}if(!found)return 0;
     Sj body=Sj::parse(args,nullptr,false);if(!body.is_object())return 0;
     if(!Bt4Signal_Open())return 0;std::lock_guard<std::mutex> g(state.lock);if(state.jobs.size()>=64)return 0;state.consumers|=1u<<consumer;
     if(consumer<3&&strcmp(op,"counts")&&strcmp(op,"list"))state.realtime|=1u<<consumer;
-    if(!strcmp(op,"cancel"))state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==consumer&&j.op=="queue";}),state.jobs.end());
+    if(!strcmp(op,"cancel"))state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==consumer&&(j.op=="queue"||j.op=="ranked_queue");}),state.jobs.end());
     Job job;job.consumer=consumer;job.serial=serial;job.op=op;job.args=std::move(body);job.session=state.sessions[consumer];
     // Admission uses the current signed authority. Room work is pinned when
     // enqueued, so a late operation cannot mutate a room on another project.
-    if(!bt4route::admission(job.op)&&job.op!="counts"&&job.op!="presence"){
+    if(!bt4route::admission(job.op)&&job.op!="counts"&&job.op!="presence"&&consumer!=4){
         job.project=state.projectIndex.load();job.generation=state.roomGeneration;
     }
     if(job.op=="leave"&&str(job.args,"generation").empty()&&!job.generation.empty())job.args["generation"]=job.generation;
     state.jobs.push_back(std::move(job));wake(nullptr);return 1;
 }
 extern "C" int Bt4Signal_Read(int consumer,char *out,size_t capacity){
-    if(consumer<0||consumer>3||!out||!capacity)return 0;std::lock_guard<std::mutex> g(state.lock);
+    if(consumer<0||consumer>4||!out||!capacity)return 0;std::lock_guard<std::mutex> g(state.lock);
     auto &events=state.events[consumer];if(events.empty())return 0;if(events.front().size()+1>capacity)return -1;
     memcpy(out,events.front().c_str(),events.front().size()+1);events.pop_front();return 1;
 }

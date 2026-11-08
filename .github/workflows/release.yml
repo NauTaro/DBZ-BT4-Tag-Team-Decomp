@@ -124,7 +124,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TITLE: ${{ needs.build.outputs.title }}
         run: |
-          python3 port/tools/package_online_handoff.py --out release-assets/BT4decomp-R4-Supabase.zip
           python3 - <<'PY'
           import os, pathlib
           section = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]

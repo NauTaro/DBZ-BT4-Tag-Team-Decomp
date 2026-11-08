@@ -37,7 +37,7 @@ class VoiceWs {
         for(unsigned char c:name){if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9'))headers+=c;else {char h[4];snprintf(h,4,"%%%02X",c);headers+=h;}}
         headers+="\r\n";wchar_t wh[1024];MultiByteToWideChar(CP_UTF8,0,headers.c_str(),-1,wh,1024);
         if(!WinHttpSetOption(request,WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET,nullptr,0)||!WinHttpSendRequest(request,wh,(DWORD)-1,WINHTTP_NO_REQUEST_DATA,0,0,0)||!WinHttpReceiveResponse(request,nullptr)){
-            fprintf(stderr,"bt4: realtime: WebSocket handshake failed (%lu)\n",GetLastError());return fail();}
+            if(!stop)fprintf(stderr,"bt4: realtime: WebSocket handshake failed (%lu)\n",GetLastError());return fail();}
         DWORD code=0,size=sizeof(code);WinHttpQueryHeaders(request,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,WINHTTP_HEADER_NAME_BY_INDEX,&code,&size,WINHTTP_NO_HEADER_INDEX);
         if(code!=101){fprintf(stderr,"bt4: realtime: WebSocket handshake returned HTTP %lu\n",code);return fail();}
         if(!adopt(ws,WinHttpWebSocketCompleteUpgrade(request,0)))return fail();status=1;if(sendWake)SetEvent(sendWake);
@@ -45,7 +45,7 @@ class VoiceWs {
             unsigned char data[16385];DWORD got=0;unsigned used=0;WINHTTP_WEB_SOCKET_BUFFER_TYPE kind;
             do{
                 DWORD received=WinHttpWebSocketReceive(ws,data+used,sizeof(data)-used,&got,&kind);
-                if(received!=NO_ERROR){fprintf(stderr,"bt4: realtime: WebSocket receive failed (%lu)\n",received);return fail();}used+=got;
+                if(received!=NO_ERROR){if(!stop)fprintf(stderr,"bt4: realtime: WebSocket receive failed (%lu)\n",received);return fail();}used+=got;
                 if(kind==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE||used>16384)return fail();
             }while(kind==WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE||kind==WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE);
             if(kind!=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE&&kind!=WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)return fail();

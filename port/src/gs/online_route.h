@@ -50,6 +50,6 @@ inline int codeProject(const std::string &code){
  if(code.size()==6&&code[0]=='0')return 1;
  return 0;
 }
-inline bool admission(const std::string &op){return op=="create"||op=="join"||op=="queue"||op=="list";}
+inline bool admission(const std::string &op){return op=="create"||op=="join"||op=="queue"||op=="ranked_queue"||op=="list";}
 }
 #endif

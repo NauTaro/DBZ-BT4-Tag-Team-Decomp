@@ -488,9 +488,18 @@ void PauseMenu_Init(void) {
         if (Port_NetActive() && Port_NetLobbyOwnerSide() >= 0) {
             PauseMenu_PortLobby(); /* a lobby's match: the menus' two forms (above) */
         } else if (Port_NetActive()) {
+            extern int Port_RankedActive(void);
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0xE);
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0x18);
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0x17);
+            if(Port_RankedActive()){
+                // One rated battle per server-issued match. Return to Online
+                // to search again instead of silently playing unscored rematches.
+                PauseMenu_PortRemove(&gPauseMenuResultVersus,0x13);
+                PauseMenu_PortRemove(&gPauseMenuResultVersus,0xD);
+                PauseMenu_PortRemove(&gPauseMenuVersus,0xD);
+                PauseMenu_PortRemove(&gPauseMenuVersus,0xC);
+            }
         }
     }
     {
