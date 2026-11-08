@@ -3,6 +3,7 @@
   <h1>BT4decomp</h1>
   <p><strong>Budokai Tenkaichi 4 B14 Rev2. Native desktop runtime. Simultaneous team battles.</strong></p>
   <p>Online Tag Team, tournaments, spectator rooms and proximity voice, built on Tenkaichi3Decomp.</p>
+  <p><strong><a href="https://discord.gg/EBhh5ef3T6">Join the official Discord community</a></strong> for matchmaking, project news and support.</p>
   <p>
     <a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/latest"><img src="https://img.shields.io/badge/Download-Latest%20release-ef8b24?style=flat-square" alt="Download the latest published release"></a>
     <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-1f6feb?style=flat-square" alt="Windows, Linux and macOS">
