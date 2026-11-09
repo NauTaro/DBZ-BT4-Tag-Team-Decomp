@@ -1,3 +1,17 @@
+# 0.1.39.5 R5 1.3
+
+- Ranked now identifies which player confirmed a surrender in the pause menu. A verified abandonment transfers 16 points to the opponent, subject to rating limits. Inconclusive disconnects leave both ratings unchanged.
+
+<!-- bt4-update:en
+- A confirmed Ranked surrender penalizes the player who left and awards points to the opponent.
+-->
+<!-- bt4-update:es
+- Una rendición confirmada en Clasificatorias descuenta puntos a quien abandona y se los otorga al rival.
+-->
+<!-- bt4-update:pt
+- Uma desistência confirmada nas ranqueadas desconta pontos de quem saiu e os concede ao adversário.
+-->
+
 # 0.1.39.5 R5 1.2
 
 - See the ten highest-ranked fighters and their scores in the Online menu. Open the Global Top directly from Ranked and keep the last standings visible while new data loads. The standings refresh every ten minutes.

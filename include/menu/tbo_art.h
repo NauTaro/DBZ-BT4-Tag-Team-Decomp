@@ -30,7 +30,8 @@
     X(TBO_TAG_HUD_FACES, "tag_hud_faces") \
     X(TBO_KIT_BAR_COMPACT, "kit_bar_compact") \
     X(TBO_KIT_SEL_COMPACT, "kit_sel_compact") \
-    X(TBO_RADAR, "radar")                   /* the Dragon Radar of the search: its frames, 11 a row (src/menu/port_tbo.c Tb_Radar) */
+    X(TBO_RADAR, "radar") \
+    X(TBO_DISCORD, "discord")
 
 #define TBO_MAIN_ONLINE_OFF (TBO_ART_COUNT + 16)
 #define TBO_MAIN_ONLINE_ON (TBO_ART_COUNT + 17)

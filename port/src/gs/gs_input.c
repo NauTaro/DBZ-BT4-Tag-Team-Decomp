@@ -194,6 +194,43 @@ int gPortTboTyping;
 static char sTboKeys[64];
 static unsigned sTboHead, sTboTail;
 static SDL_SpinLock sTboLock;
+static struct {
+    float left, top, right, bottom;
+    int active, clicked;
+} sCommunity;
+
+void PortTbo_CommunityBounds(int active, float left, float top, float right, float bottom) {
+    SDL_LockSpinlock(&sTboLock);
+    sCommunity.active = active;
+    sCommunity.left = left;
+    sCommunity.top = top;
+    sCommunity.right = right;
+    sCommunity.bottom = bottom;
+    if (!active) sCommunity.clicked = 0;
+    SDL_UnlockSpinlock(&sTboLock);
+}
+
+int PortTbo_CommunityTake(void) {
+    SDL_LockSpinlock(&sTboLock);
+    int clicked = sCommunity.clicked;
+    sCommunity.clicked = 0;
+    SDL_UnlockSpinlock(&sTboLock);
+    return clicked;
+}
+
+static void SDLCALL community_open(void *unused) {
+    (void)unused;
+    if (!SDL_OpenURL("https://discord.gg/EBhh5ef3T6"))
+        fprintf(stderr, "bt4 community: %s\n", SDL_GetError());
+}
+
+void PortTbo_OpenCommunity(void) {
+    if (getenv("BT4_RENDER_TEST")) {
+        fprintf(stderr, "bt4 community: activation verified\n");
+        return;
+    }
+    SDL_RunOnMainThread(community_open, NULL, false);
+}
 
 static int typing_key(int sc) {
     return (sc >= SDL_SCANCODE_A && sc <= SDL_SCANCODE_SLASH && sc != SDL_SCANCODE_TAB) ||
@@ -326,8 +363,28 @@ void PortInput_TboClipboard(void) {
     }
 }
 
-/* 1: the event was the keypad's. Only plain characters (32..126) are typed: a name or a room code. */
+static int community_click(const SDL_MouseButtonEvent *ev) {
+    const int width = gUiPresentW, height = gUiPresentH;
+    if (width <= 0 || height <= 0) return 0;
+    SDL_Window *window = SDL_GetWindowFromID(ev->windowID);
+    int w, h, pixelW, pixelH;
+    if (!window || !SDL_GetWindowSize(window, &w, &h) || w <= 0 || h <= 0 ||
+        !SDL_GetWindowSizeInPixels(window, &pixelW, &pixelH)) return 0;
+    float x = (ev->x * pixelW / w - gUiPresentX) * 512.0f / width;
+    float y = (ev->y * pixelH / h - gUiPresentY) * 448.0f / height;
+
+    SDL_LockSpinlock(&sTboLock);
+    int hit = sCommunity.active && x >= sCommunity.left && x <= sCommunity.right &&
+                                  y >= sCommunity.top && y <= sCommunity.bottom;
+    if (hit) sCommunity.clicked = 1;
+    SDL_UnlockSpinlock(&sTboLock);
+    return hit;
+}
+
+/* 1: handled by the online menu. The keypad only types plain characters (32..126). */
 int PortInput_TboEvent(const SDL_Event *ev) {
+    if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev->button.button == SDL_BUTTON_LEFT)
+        return community_click(&ev->button);
     if (!gPortTboTyping) {
         return 0;
     }

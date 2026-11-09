@@ -83,40 +83,42 @@ int main(){
 
     d.ranked=true;rankedActive=true;d.sawFight=false;d.reportSerial=0;d.reportState=0;
     d.profile={{"ruleset","solo"}};d.content="0123456789abcdef";
-    Port_RankedObserve(3,0,100,100,0);
-    Port_RankedObserve(4,1,101,80,0);
-    Port_RankedObserve(4,1,120,120,0);assert(capturedCommands.empty());
-    Port_RankedObserve(4,1,122,100,0);assert(capturedCommands.empty());
-    Port_RankedObserve(4,1,122,122,1);assert(capturedCommands.empty());
-    Port_RankedObserve(3,0,123,123,0); // rollback takes back a tentative finish
-    Port_RankedObserve(4,1,130,130,0);Port_RankedObserve(4,1,150,150,0);
+    Port_RankedObserve(3,0,100,100,0,-1);
+    Port_RankedObserve(4,1,101,80,0,-1);
+    Port_RankedObserve(4,1,120,120,0,-1);assert(capturedCommands.empty());
+    Port_RankedObserve(4,1,122,100,0,-1);assert(capturedCommands.empty());
+    Port_RankedObserve(4,1,122,122,1,-1);assert(capturedCommands.empty());
+    Port_RankedObserve(3,0,123,123,0,-1); // rollback takes back a tentative finish
+    Port_RankedObserve(4,1,130,130,0,-1);Port_RankedObserve(4,1,150,150,0,-1);
     assert(capturedCommands.size()==1&&capturedCommands[0].op=="ranked_report");
     assert(capturedCommands[0].args["outcome"]==0&&text(capturedCommands[0].args,"digest").size()==64);
     std::string firstDigest=text(capturedCommands[0].args,"digest");
-    Port_RankedObserve(4,1,151,151,0);assert(capturedCommands.size()==1); // no duplicate in-flight request
+    Port_RankedObserve(4,1,151,151,0,-1);assert(capturedCommands.size()==1); // no duplicate in-flight request
     emit(0,{{"event","reply"},{"serial",d.reportSerial},{"body",{{"state","waiting"}}}});
-    Port_RankedObserve(4,1,152,152,0);assert(!d.reportPending);
-    d.reportAt=0;Port_RankedObserve(4,1,152,152,0);assert(capturedCommands.size()==2);
+    Port_RankedObserve(4,1,152,152,0,-1);assert(!d.reportPending);
+    d.reportAt=0;Port_RankedObserve(4,1,152,152,0,-1);assert(capturedCommands.size()==2);
     assert(text(capturedCommands[1].args,"digest")==firstDigest);
     emit(0,{{"event","reply"},{"serial",d.reportSerial},{"body",{{"state","applied"}}}});
-    Port_RankedObserve(3,0,160,160,0);assert(capturedCommands.size()==2&&d.reportState==2);
+    Port_RankedObserve(3,0,160,160,0,-1);assert(capturedCommands.size()==2&&d.reportState==2);
     // Presentation/rollback catch-up can first observe the same finish later.
     // Its agreement digest must still identify the same result.
     d.reportSerial=0;d.reportState=0;d.reportPending=false;d.outcomeBits=0;d.sawFight=true;
-    Port_RankedObserve(4,1,200,200,0);Port_RankedObserve(4,1,225,225,0);
+    Port_RankedObserve(4,1,200,200,0,-1);Port_RankedObserve(4,1,225,225,0,-1);
     assert(capturedCommands.size()==3&&text(capturedCommands.back().args,"digest")==firstDigest);
     // Liveness is HTTP-only and continues after the room is left. A local
     // concession names only our own match; remote loss keeps proving presence.
     Bt4Signal_Listen(5,1);
     capturedCommands.clear();rankedWatches.clear();d.reportSerial=0;d.sawFight=false;
     Port_RankedDisconnected(1);assert(rankedWatches.empty());
-    Port_RankedObserve(3,0,300,300,0);assert(rankedWatches.size()==1);
+    Port_RankedObserve(3,0,300,300,0,-1);assert(rankedWatches.size()==1);
     const Uint64 now=SDL_GetTicks()+1000;
     watchStep(now);assert(capturedCommands.size()==1&&capturedCommands.back().op=="ranked_heartbeat");
     assert(text(capturedCommands.back().args,"match")==text(d.descriptor,"generation"));
     watchStep(now+1);assert(capturedCommands.size()==1); // no burst behind an in-flight request
-    Port_RankedDisconnected(0);assert(!rankedWatches[0].concede&&rankedWatches[0].until);
-    Port_RankedDisconnected(1);assert(!rankedWatches[0].concede); // a second teardown cannot change the cause
+    Port_RankedObserve(6,8,310,310,0,0);
+    Port_RankedObserve(6,8,312,312,0,0);
+    assert(!rankedWatches[0].concede&&rankedWatches[0].peerGone&&rankedWatches[0].until);
+    Port_RankedDisconnected(0);assert(rankedWatches[0].peerGone); // the shared teardown cannot change the cause
     watchStep(now+2);assert(capturedCommands.size()==1);
     auto reply=[](const Dj &body){emit(5,{{"event","reply"},{"serial",rankedWatches[0].request},{"body",body}});};
     reply({{"state","applied"},{"rating",1016},{"delta",16}});
@@ -127,21 +129,24 @@ int main(){
 
     // An acknowledged heartbeat must not swallow the player's own surrender.
     capturedCommands.clear();d.sawFight=false;nextSettlement=0;
-    Port_RankedObserve(3,0,301,301,0);watchStep(now+4);
-    Port_RankedDisconnected(1);watchStep(now+5);
+    Port_RankedObserve(3,0,320,320,0,-1);watchStep(now+4);
+    Port_RankedObserve(6,8,321,320,0,1);
+    Port_RankedObserve(6,8,323,320,0,1);assert(!rankedWatches[0].concede); // rollback can still take it back
+    Port_RankedObserve(6,8,323,323,0,1);watchStep(now+5);
     assert(rankedWatches[0].concede&&capturedCommands.size()==1);
     reply({{"state","waiting"}});watchStep(now+6);
     assert(capturedCommands.size()==2&&capturedCommands.back().op=="ranked_forfeit");
+    assert(text(capturedCommands.back().args,"reason")=="local_quit");
     reply({{"state","already_applied"},{"rating",984},{"delta",-16}});
     watchStep(now+7);assert(rankedWatches.empty());
     assert(Port_RankedTakeSettlement(&rating,&delta)&&rating==984&&delta==-16);
 
     // The result can arrive before the peer's goodbye reaches the gameplay socket.
     d.sawFight=false;nextSettlement=0;
-    Port_RankedObserve(3,0,302,302,0);watchStep(now+8);
+    Port_RankedObserve(3,0,330,330,0,-1);watchStep(now+8);
     reply({{"state","already_applied"},{"rating",1032},{"delta",16}});
     watchStep(now+9);assert(rankedWatches.size()==1&&!Port_RankedTakeSettlement(&rating,&delta));
-    Port_RankedDisconnected(0);watchStep(now+10);
+    Port_RankedDisconnected(1);watchStep(now+10);
     assert(rankedWatches.empty()&&Port_RankedTakeSettlement(&rating,&delta)&&rating==1032&&delta==16);
     assert(!Bt4Signal_Command(0,52,"ranked_forfeit","{}"));
     assert(!Bt4Signal_Command(5,53,"create","{}"));

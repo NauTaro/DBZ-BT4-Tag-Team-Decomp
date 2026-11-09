@@ -662,6 +662,7 @@ static const char *const kText[][2]={
 {"Choose Fighters","Elegir luchadores"},
 {"Waiting for host","Esperando al anfitri\u00f3n"},
 {"Arrange the teams and choose your fighters.","Organiza los equipos y elige a tus luchadores."},
+{"Join our DBZ BT4 Decomp community!","\u00a1\u00danete a nuestra comunidad DBZ BT4 Decomp!"},
 {"L1/R1: Change difficulty.","L1/R1: Cambiar dificultad."},
 };
 const char *PortOnline_Text(const char *text){

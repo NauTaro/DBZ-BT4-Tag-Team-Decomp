@@ -40,6 +40,9 @@ extern int PortTbo_TextRead(void);
 extern void PortTbo_Copy(const char *text); /* onto the clipboard ("Copy Code") */
 extern void PortTbo_Paste(void);            /* the clipboard's code, typed (Join's PASTE) */
 extern void PortTbo_PasteText(void);        /* the clipboard's plain characters, typed (Join by Address's PASTE) */
+extern void PortTbo_CommunityBounds(int active, float left, float top, float right, float bottom);
+extern int PortTbo_CommunityTake(void);
+extern void PortTbo_OpenCommunity(void);
 
 /* The game's windows of every menu (battle/view_a_b.c, view_a_c.c), made from the Duel menu's data as
    DuelMenu_Init makes them: the heading's window (IconWin: the cloud swirls in the corners and the line under the
@@ -546,6 +549,7 @@ static void Tb_SetMode(s32 mode) {
     sTb->typing = mode == TB_JOIN || mode == TB_NAME || mode == TB_ADDR; /* the keyboard types on a keypad (elsewhere I is triangle ...) */
     Port_TextMode(sTb->typing);
     if (sTb->mode != mode) { /* (the page that is up again, as when the rival comes on the search: it does not come in anew) */
+        if (sTb->mode == TB_HUB) PortTbo_CommunityBounds(0, 0, 0, 0, 0);
         sTb->modeT = 0;
         if(mode==TB_TAG_ROOM){sTb->note=0;sTb->noteLine[0]=0;}
     }
@@ -1241,6 +1245,11 @@ static void Tb_HubUpdate(s32 live) {
     Ps_Prompt(0, "Enter");
     Ps_Prompt(2, "Back");
     if (!live) {
+        return;
+    }
+    if (PortTbo_CommunityTake() || (pad->gamePressed & PADG_SQUARE)) {
+        Snd_PlaySe(1, 1);
+        PortTbo_OpenCommunity();
         return;
     }
     Ps_Move(&sTb->hubCur, HUB_COUNT);
@@ -4710,7 +4719,31 @@ static void Tb_WinTerm(void) {
     sTbWinRes = NULL;
 }
 
+static void Tb_DrawCommunityButton(s32 live) {
+    const f32 right = 512.0f - Ps_Left() - 12.0f;
+    const f32 left = right - 180.0f;
+    const f32 top = 413.0f, bottom = 437.0f, center = (top + bottom) * 0.5f;
+    const f32 labelX = left + 28.0f, hintX = right - 12.0f;
+    const char *original = "Join our DBZ BT4 Decomp community!";
+    char label[96];
+    extern int Port_TrLine(const char *original, char *out, int size);
+    if (!Port_TrLine(original, label, sizeof(label)))
+        Ps_Copy(label, PortOnline_Text(original), sizeof(label));
+    const f32 available = hintX - Ps_ButtonW(1, 14.0f) * 0.5f - 4.0f - labelX;
+    const f32 textWidth = Ps_MsgWidthLiteral(label, 1.0f);
+    const f32 scale = textWidth * 0.85f > available ? available / textWidth : 0.85f;
+
+    Ps_Panel(TBO_KIT_WINDOW, left, top, right, bottom, 0x74);
+    Ps_Pill(TBO_KIT_GOLD, left + 2.0f, top + 2.0f, left + 24.0f, bottom - 2.0f, 0x80);
+    Ps_Icon(TBO_DISCORD, left + 13.0f, center, 18.0f, 0x80);
+    Ps_MsgLiteral(labelX, center - (PS_MSG_BASE - PS_MSG_CAP * 0.5f) * scale, label, scale, 0x80);
+    Ps_Button(1, hintX, center, 14.0f);
+    Ps_PromptsDrawAt(left - 9.0f);
+    PortTbo_CommunityBounds(live && !sTb->leaving, Ps_X(left), Ps_Y(top), Ps_X(right), Ps_Y(bottom));
+}
+
 s32 PortTbo_Run(void) {
+    const s32 communityTest = getenv("BT4_RENDER_TEST") && getenv("BT4_TBO_COMMUNITY_INPUT_TEST");
     s32 train;
     static s32 returnTestRuns;
     s32 returnedTest=getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RETURN_TEST")&&returnTestRuns++;
@@ -4811,6 +4844,8 @@ s32 PortTbo_Run(void) {
         ColorFade_Update();
         if(!getenv("BT4_RENDER_TEST"))Port_OnlinePresence(1);
         live = !sTb->leaving && ColorFade_IsInDone();
+        if (communityTest && live && sTb->mode == TB_HUB && sTb->frames == 45)
+            gPad[0].gamePressed |= PADG_SQUARE;
         if(live&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST")&&sTb->mode==TB_RANKED){
             if(sTb->frames==45)gPad[0].gameRepeat|=PADG_DOWN;
             if(sTb->frames==50)gPad[0].gamePressed|=PADG_CROSS;
@@ -4861,7 +4896,7 @@ s32 PortTbo_Run(void) {
         }
         Ps_PromptsClear();
         Port_LobbyView(&sTbLv);
-        if (getenv("BT4_RENDER_TBO") == NULL || (getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST"))) switch (sTb->mode) {
+        if (getenv("BT4_RENDER_TBO") == NULL || communityTest || (getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST"))) switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);
             break;
@@ -4914,7 +4949,8 @@ s32 PortTbo_Run(void) {
         IconWin_Draw(); /* the clouds in the corners, the emblem, the line under the title */
         Tb_Draw();
         Tb_DrawText();
-        Ps_PromptsDraw();
+        if (sTb->mode == TB_HUB) Tb_DrawCommunityButton(live);
+        else Ps_PromptsDraw();
         ColorFade_Draw();
         Port_MenuPage(0);
         File_Stub264D90();
@@ -4934,6 +4970,7 @@ s32 PortTbo_Run(void) {
             break;
         }
     }
+    PortTbo_CommunityBounds(0, 0, 0, 0, 0);
     sceGsSyncPath(0, 0);
     Port_EscQuit(1);
     Port_TextMode(0);

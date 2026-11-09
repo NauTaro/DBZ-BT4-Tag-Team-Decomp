@@ -29,6 +29,7 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {160, 100, 50}, /* compact keyboard bar */
     {160, 107, 54}, /* compact keyboard selection */
     {2420, 2728, 0}, /* radar */
+    {512, 512, 0}, /* discord */
 };
 
 #endif

@@ -27,9 +27,9 @@ int Port_RankedTopTen(Bt4RankedEntry out[10]);
 void Port_RankedPage(int direction);
 void Port_RankedSearch(int selected);
 int Port_RankedActive(void);
-void Port_RankedObserve(int battleState,int outcomeBits,unsigned tick,unsigned confirmed,int resimulating);
+void Port_RankedObserve(int battleState,int outcomeBits,unsigned tick,unsigned confirmed,int resimulating,int localConcession);
 int Port_RankedResult(int *rating,int *delta);
-void Port_RankedDisconnected(int intentional);
+void Port_RankedDisconnected(int peerGone);
 int Port_RankedTakeSettlement(int *rating,int *delta);
 enum {
     BT4_NICKNAME_LOADING, BT4_NICKNAME_READY, BT4_NICKNAME_REQUIRED, BT4_NICKNAME_DISABLED,

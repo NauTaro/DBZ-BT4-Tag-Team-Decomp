@@ -47,7 +47,7 @@ struct RankedWatch {
     std::string match,project;
     Uint64 next=0,until=0;
     unsigned request=0;
-    bool concede=false,pending=false,notify=false,sentConcede=false;
+    bool concede=false,peerGone=false,pending=false,notify=false,sentConcede=false,heartbeatAcknowledged=false;
     bool settled=false;
     int rating=0,delta=0;
 };
@@ -69,9 +69,13 @@ void watchStep(Uint64 now){
     while(Bt4Signal_Read(5,raw,sizeof(raw))>0){
         Dj e=Dj::parse(raw,nullptr,false);if(!e.is_object())continue;
         for(auto &w:rankedWatches)if(w.pending&&w.request==number(e,"serial")){
-            w.pending=false;w.next=w.concede&&!w.sentConcede?now:now+5000;
+            w.pending=false;w.next=now+5000;
             auto b=e.find("body");if(b==e.end()||!b->is_object())continue;
             auto state=text(*b,"state");
+            if(state=="waiting"&&!w.sentConcede){
+                w.heartbeatAcknowledged=true;
+                if(w.concede)w.next=now;
+            }
             if(state=="applied"||state=="already_applied"){
                 auto rating=b->find("rating"),delta=b->find("delta");
                 if(rating!=b->end()&&rating->is_number_integer()&&delta!=b->end()&&delta->is_number_integer()){
@@ -92,9 +96,12 @@ void watchStep(Uint64 now){
         if(w.project!=Bt4Signal_Project())continue; // a new route cannot settle an old route's match
         if(now>=w.next){
             w.request=++watchSerial;
-            auto body=Dj{{"match",w.match}}.dump();
-            w.pending=Bt4Signal_Command(5,w.request,w.concede?"ranked_forfeit":"ranked_heartbeat",body.c_str());
-            w.sentConcede=w.concede;
+            Dj args={{"match",w.match}};
+            w.sentConcede=w.concede&&w.heartbeatAcknowledged;
+            if(w.sentConcede)args["reason"]="local_quit";
+            else args["peer_gone"]=w.peerGone;
+            auto body=args.dump();
+            w.pending=Bt4Signal_Command(5,w.request,w.sentConcede?"ranked_forfeit":"ranked_heartbeat",body.c_str());
             w.next=now+(w.pending?25000:5000);
         }
     }
@@ -117,11 +124,12 @@ void watchFight(){
         if(rankedWatcher)atexit(Port_RankedShutdown);
     }
 }
-void watchFinish(bool concede,bool disconnected=false){
+void watchFinish(bool concede,bool disconnected=false,bool peerGone=false){
     auto match=text(d.descriptor,"generation");
     for(auto &w:rankedWatches)if(w.match==match&&!w.until){
         w.until=SDL_GetTicks()+120000;
         w.concede=concede&&!d.reportSerial;
+        w.peerGone=peerGone&&!d.reportSerial;
         w.notify=disconnected&&!d.reportSerial;
         if(w.settled){watchNotify(w);w.until=1;continue;}
         if(!w.pending)w.next=0;
@@ -341,9 +349,9 @@ extern "C" void Port_RankedShutdown(void){
     if(rankedWatcher){SDL_WaitThread(rankedWatcher,nullptr);rankedWatcher=nullptr;}
     std::lock_guard<std::mutex> guard(lock);rankedWatches.clear();
 }
-extern "C" void Port_RankedDisconnected(int intentional){
+extern "C" void Port_RankedDisconnected(int peerGone){
     std::lock_guard<std::mutex> guard(lock);
-    if(d.ranked&&d.sawFight)watchFinish(intentional!=0,true);
+    if(d.ranked&&d.sawFight)watchFinish(false,true,peerGone!=0);
 }
 extern "C" int Port_RankedTakeSettlement(int *rating,int *delta){
     if(!settlementReady)return 0;
@@ -360,7 +368,7 @@ extern "C" int Port_RankedResult(int *rating,int *delta){
     std::lock_guard<std::mutex> g(lock);
     if(rating)*rating=d.resultRating;if(delta)*delta=d.resultDelta;return d.reportState;
 }
-extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsigned confirmed,int resimulating){
+extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsigned confirmed,int resimulating,int localConcession){
     std::lock_guard<std::mutex> g(lock);
     if(!d.on||!d.ranked||resimulating||!d.descriptor.is_object())return;
     // Discovery polling ends after the handshake. Consume result acknowledgments
@@ -375,9 +383,13 @@ extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsign
         return;
     }
     if(battleState==3){if(!d.sawFight)watchFight();d.sawFight=true;d.outcomeBits=0;return;}
-    if(!d.sawFight||battleState<4||battleState>6||(bits&8)||!(bits&7)){d.outcomeBits=0;return;}
-    bits&=7;
+    if(!d.sawFight||battleState<4||battleState>6||!(bits&15)){d.outcomeBits=0;return;}
+    bits=bits&8?8:bits&7;
     if(d.outcomeBits!=bits){d.outcomeBits=bits;d.outcomeTick=tick;return;}
+    if(bits==8){
+        if(localConcession>=0&&confirmed>=d.outcomeTick+2)watchFinish(localConcession!=0,true,localConcession==0);
+        return;
+    }
     // A tentative finish must outlive the rollback window and confirmed input.
     if(tick-d.outcomeTick<20||confirmed<d.outcomeTick+2)return;
     int winner=(bits&3)==1?0:(bits&3)==2?1:2;

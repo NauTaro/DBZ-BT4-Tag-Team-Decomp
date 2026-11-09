@@ -75,8 +75,8 @@ f32 Ps_ButtonW(s32 kind, f32 size);
 void Ps_Button(s32 kind, f32 cx, f32 cy, f32 size);
 void Ps_PromptsClear(void); /* once a frame, before the page sets its prompts */
 void Ps_Prompt(s32 kind, char *label);
-f32 Ps_PromptX(s32 k);
 void Ps_PromptsDraw(void);
+void Ps_PromptsDrawAt(f32 right);
 void Ps_Text(f32 x, f32 y, char *s, f32 scale, f32 width, s32 style);
 void Ps_Disc(f32 cx, f32 cy, f32 r, u32 mid, u32 edge);
 #endif

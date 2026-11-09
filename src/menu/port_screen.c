@@ -589,8 +589,7 @@ void Ps_Prompt(s32 kind, char *label) {
     }
 }
 
-f32 Ps_PromptX(s32 k) { /* where prompt k starts: laid from the right edge leftwards */
-    f32 x = 470.0f;
+static f32 Ps_PromptX(s32 k, f32 x) { /* where prompt k starts: laid from the right edge leftwards */
     s32 i;
 
     for (i = sPsPromptCount - 1; i >= k; i--) {
@@ -599,16 +598,20 @@ f32 Ps_PromptX(s32 k) { /* where prompt k starts: laid from the right edge leftw
     return x;
 }
 
-void Ps_PromptsDraw(void) {
+void Ps_PromptsDrawAt(f32 right) {
     s32 k;
 
     for (k = 0; k < sPsPromptCount; k++) {
         f32 bw = Ps_ButtonW(sPsPromptKind[k], 19.0f);
-        f32 x = Ps_PromptX(k);
+        f32 x = Ps_PromptX(k, right);
 
         Ps_Button(sPsPromptKind[k], x + bw * 0.5f, 425.0f, 19.0f);
         Ps_Msg(x + bw + 5.0f, 425.0f - (PS_MSG_BASE - PS_MSG_CAP * 0.5f), sPsPromptLabel[k], 1.0f, 0x80); /* its capitals beside the button's middle */
     }
+}
+
+void Ps_PromptsDraw(void) {
+    Ps_PromptsDrawAt(470.0f);
 }
 
 void Ps_Text(f32 x, f32 y, char *s, f32 scale, f32 width, s32 style) {

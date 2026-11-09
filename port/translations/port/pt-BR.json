@@ -5243,6 +5243,7 @@
       "original": "Ranked is a one-on-one competition that starts you at 1000 points. Winning earns points and losing costs points based on both players' ratings. The Global Top refreshes every 10 minutes. The weekly standings renew on Sundays at 23:59 Argentina time (UTC-3), and you carry your points into the next week.",
       "text": "Nas ranqueadas, você joga um contra um e começa com 1000 pontos. Vitórias somam pontos e derrotas descontam, de acordo com a pontuação dos dois jogadores. O Top global é atualizado a cada 10 minutos. A classificação semanal se renova aos domingos, às 23h59 da Argentina (UTC-3), e você mantém seus pontos para a próxima semana."
     },
+    "tbo/hub/community": {"original": "Join our DBZ BT4 Decomp community!", "text": "Junte-se à nossa comunidade DBZ BT4 Decomp!"},
     "tbo/ranked/most-wanted": {"original": "Most Dangerous Fighters", "text": "Lutadores mais perigosos"},
     "tbo/ranked/top-interval": {"original": "Updates every 10 minutes.", "text": "Atualiza a cada 10 minutos."},
     "tbo/ranked/top-loading": {"original": "Loading Global Top...", "text": "Carregando o Top global..."},

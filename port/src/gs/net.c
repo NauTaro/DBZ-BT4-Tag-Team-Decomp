@@ -2891,10 +2891,12 @@ static void spec_tick(unsigned tick) {
 
 static void ranked_outcome(unsigned tick){
     extern int Port_BattleOutcome(int *);
+    extern int Port_RankedPauseAbortPad(void);
     static int notified;
     if(sMode!=3&&sSession&&Port_RankedActive()){
         int bits=0,state=Port_BattleOutcome(&bits);
-        Port_RankedObserve(state,bits,tick,sRollMax>0?sChecked:tick,sResim||gPortResim);
+        int abortPad=bits&8?Port_RankedPauseAbortPad():-1;
+        Port_RankedObserve(state,bits,tick,sRollMax>0?sChecked:tick,sResim||gPortResim,abortPad<0?-1:abortPad==sMe);
         if(!sResim&&!gPortResim){
             int rating=0,delta=0,result=Port_RankedResult(&rating,&delta);
             if(result!=2)notified=0;
@@ -3301,7 +3303,7 @@ void Port_NetArrived(void) {
 /* The session is over (the game went back to the main menu, or the other side is gone): back to the game as it
    normally is. */
 void Port_NetLeave(void) {
-    Port_RankedDisconnected(sGone == 0 && sByeWhy == 0);
+    Port_RankedDisconnected(sByeWhy == BYE_LOST || (sGone == 1 && sByeHeard != BYE_LOST));
     PortVoice_Leave(1);sVoiceRoomKeyKnown=0;sVoiceRoomKeySent=0;memset(sVoiceRoomKey,0,sizeof(sVoiceRoomKey));
     fprintf(stderr, "bt3: net: the session has ended\n");
     Lobby_SessionLeaving(); /* (a lobby's owner: everyone back to the lobby, before the goodbyes) */
