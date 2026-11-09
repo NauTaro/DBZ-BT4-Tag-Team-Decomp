@@ -15,6 +15,8 @@
 
 BT4decomp adapts **BT4 B14 Rev2** for Windows, Linux and Apple Silicon. It runs the game code natively rather than emulating a console. Installation requires your own compatible Spanish or English BT4 ISO; disc images and extracted game data are not distributed here.
 
+> **Windows security review in progress:** antivirus alerts have been reported for the R5 package. See the [investigation and executable hashes](docs/security/windows-antivirus-review.md) before downloading or running it. R5 Hotfix remains a draft during this review.
+
 ## Fight together
 
 <img src="docs/presentation/tag-team-battle.jpg" width="960" alt="Simultaneous five-versus-five Tag Team combat with ally health bars, target indicators and radar">
