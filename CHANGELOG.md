@@ -1,6 +1,6 @@
 # 0.1.39.5 R5 Hotfix
 
-> **Windows antivirus review in progress:** users reported alerts for the R5 executable and libdatachannel.dll. The vendor verdicts have not been resolved. See the [investigation and published hashes](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/blob/main/docs/security/windows-antivirus-review.md). This hotfix remains a draft during the review.
+> **Windows antivirus review in progress.** Users reported alerts for the R5 executable and libdatachannel.dll. The vendor verdicts remain unresolved. See the [investigation](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/blob/main/docs/security/windows-antivirus-review.md) and the [SHA-256 manifests for the Hotfix](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/tree/main/checksums/v0.1.39.5-R5.1).
 
 - Add authenticated Ranked fight liveness and a fixed 16-point transfer for forfeits, applied once after both players have started fighting. Failed room connections and character selection do not cost points; two disconnected clients do not receive a timeout win.
 - Allow 30 minutes without room communication before established lobbies and tournaments time out; renew active room leases instead of imposing a total playtime limit.

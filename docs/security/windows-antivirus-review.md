@@ -23,7 +23,7 @@ The EXE SHA-256 in the screenshot matches the EXE extracted from the official R5
 - Verified that the shipped `libdatachannel.dll` matches the SHA-256 pinned in `port/runtime-assets.json` and its Windows build receipt, `port/voice-runtime/licenses/voice/WINDOWS-BUILD.json`.
 - The source lock for libdatachannel and its dependencies is public in `port/release/rtc-sources.lock.json`. The package includes the corresponding source/license material. This provenance check does not replace malware analysis.
 - A custom Microsoft Defender scan of every extracted Windows PE executable and DLL completed with “found no threats.” This is one engine's result, not confirmation that every vendor considers the package clean. The scan used `-DisableRemediation`, which scans without changing detections, exclusions or protection settings.
-- R5 Hotfix is being held as a draft while the newly reported alerts are reviewed. No executable has been changed merely to alter its detection hash.
+- The R5 Hotfix Windows package contains a new game executable with the online fixes and the same pinned libdatachannel DLL as R5. Microsoft Defender reported no threats when scanning the extracted Windows executables and DLLs in the signed Hotfix ZIP. The vendor review remains open. See the [Hotfix SHA-256 manifests](../../checksums/v0.1.39.5-R5.1).
 
 ## What remains open
 
