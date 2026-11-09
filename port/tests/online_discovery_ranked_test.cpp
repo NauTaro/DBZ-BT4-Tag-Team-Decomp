@@ -26,7 +26,7 @@ int main(){
     assert(!Bt4Room_IsIdleNs(UINT64_C(1799999999999),0));
     assert(Bt4Room_IsIdleNs(UINT64_C(1800000000000),0));
     watchQuit=true; // run the liveness state machine deterministically below
-    Bt4Signal_Listen(4,1);rankedStatusRequest=1;rankedTopRequest=2;
+    Bt4Signal_Listen(4,1);profileRoute();rankedStatusRequest=1;rankedTopRequest=2;
     emit(4,{{"event","reply"},{"serial",1u},{"body",{{"enabled",true},{"season","2026-11-01"},{"rating",1234u},{"wins",3u},{"losses",1u}}}});
     Dj entries=Dj::array();
     for(int i=0;i<110;++i)entries.push_back({{"name","Fighter "+std::to_string(i+1)},{"rating",2000u-i},{"wins",2u}});
@@ -42,11 +42,30 @@ int main(){
     Port_RankedView(&v);assert(v.page==0&&!strcmp(v.top[0].name,"Fighter 1"));
     emit(4,{{"event","reply"},{"serial",99u},{"body",{{"rating",99999u}}}});
     Port_RankedView(&v);assert(v.rating==1234);
-    emit(4,{{"event","reply"},{"serial",2u},{"body",{{"entries",Dj::array()}}}});
+    Bt4RankedEntry top[10]={};
+    assert(Port_RankedTopTen(top)==10&&!strcmp(top[9].name,"Fighter 10"));
+    Port_RankedRefresh(0);assert(capturedCommands.back().op=="ranked_top");
+    assert(nextRankedTop>=600000&&capturedCommands.back().args["ruleset"]=="solo");
+    assert(Port_RankedTopTen(top)==10); // A refresh does not clear the visible ranking.
+    emit(4,{{"event","reply"},{"serial",rankedTopRequest},{"body",{{"error","SIGNALING_UNAVAILABLE"}}}});
+    Port_RankedView(&v);assert(v.count==5&&Port_RankedTopTen(top)==10);
+    rankedTopRequest=3;
+    emit(4,{{"event","reply"},{"serial",3u},{"body",{{"entries",Dj::array()}}}});
     Port_RankedView(&v);assert(v.count==0&&v.pages==1);
+    char nickname[20];
+    Port_OnlineNicknameBegin();assert(Port_OnlineNicknameView(nickname)==BT4_NICKNAME_LOADING);
+    emit(4,{{"event","reply"},{"serial",nicknameRequest},{"body",{{"state","required"}}}});
+    assert(Port_OnlineNicknameView(nickname)==BT4_NICKNAME_REQUIRED);
+    Port_OnlineNicknameSubmit("Nova");
+    emit(4,{{"event","reply"},{"serial",nicknameRequest},{"body",{{"error","NICKNAME_TAKEN"}}}});
+    assert(Port_OnlineNicknameView(nickname)==BT4_NICKNAME_TAKEN);
+    Port_OnlineNicknameSubmit("Blue Phoenix");
+    emit(4,{{"event","reply"},{"serial",nicknameRequest},{"body",{{"state","ready"},{"name","Blue Phoenix"}}}});
+    assert(Port_OnlineNicknameView(nickname)==BT4_NICKNAME_READY&&!strcmp(nickname,"Blue Phoenix"));
     assert(!Bt4Signal_Command(0,50,"ranked_top","{}"));
     assert(!Bt4Signal_Command(4,51,"create","{}"));
     Bt4Signal_Listen(4,0);
+    capturedCommands.clear();
 
     Bt4Signal_Listen(0,1);d.on=true;d.init=77;d.descriptor=Dj();d.waiting=false;
     Dj oldRoom={{"generation","11111111-1111-4111-8111-111111111111"},{"code","OLD123"},

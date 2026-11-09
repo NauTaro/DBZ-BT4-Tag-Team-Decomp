@@ -400,7 +400,8 @@ typedef struct TboScreen {
     s32 oldTold;
     char sayLine[256];
     s32 hubCur;
-    s32 rankedCur, rankedPage, rankedBattle; /* individual and native team queues */
+    s32 rankedCur, rankedPage;
+    s32 nicknameState, nicknameRequired, nicknameSaving;
     f32 hubY;           /* where the hub's cursor plate is drawn: it glides */
     /* the host's choices (kept in the settings) */
     s32 battle;         /* 0 one on one, 1 teams of up to five */
@@ -1205,6 +1206,28 @@ static void Tb_TagRoomUpdate(s32 live){
     if(pad->gamePressed&PADG_TRIANGLE){if(sTb->tagMoving>=0){sTb->tagMoving=-1;return;}Port_TagClose();sTb->tagSetup=0;sTb->tagCur=0;Tb_SetMode(TB_TAG);}
 }
 /* ---------------------------------------------------------------------------------------------- the hub */
+static void Tb_OpenName(s32 required) {
+    const char *current = Port_NetNameGet();
+    Ps_Copy(sTb->typed, required && !strcmp(current,"Player") ? "" : current, 20);
+    sTb->typedLen = Ps_Len(sTb->typed);
+    sTb->nicknameRequired = required;
+    sTb->nicknameSaving = 0;
+    sTb->keyRow = sTb->keyCol = 0;
+    Tb_SetMode(TB_NAME);
+}
+
+static s32 Tb_NicknameCanPlay(void) {
+    if (getenv("BT4_RENDER_TEST") || sTb->nicknameState == BT4_NICKNAME_READY ||
+        sTb->nicknameState == BT4_NICKNAME_DISABLED) return 1;
+    if (sTb->nicknameState == BT4_NICKNAME_UNAVAILABLE) {
+        Port_OnlineNicknameBegin();
+        Tb_Note("Could not verify your nickname. Try again.");
+    } else {
+        Tb_Note("Checking your online nickname...");
+    }
+    return 0;
+}
+
 static void Tb_HubUpdate(s32 live) {
     Pad *pad = &gPad[0];
     int min = 0;
@@ -1222,6 +1245,7 @@ static void Tb_HubUpdate(s32 live) {
     }
     Ps_Move(&sTb->hubCur, HUB_COUNT);
     if (pad->gamePressed & PADG_CROSS) {
+        if (sTb->hubCur != HUB_RANKED && sTb->hubCur != HUB_PROFILE && !Tb_NicknameCanPlay()) return;
         switch (sTb->hubCur) {
         case HUB_QUICK:
             Snd_PlaySe(1, 1);
@@ -1239,7 +1263,7 @@ static void Tb_HubUpdate(s32 live) {
             Snd_PlaySe(1, 1);
             sTb->rankedCur = 0;
             sTb->rankedPage = 0;
-            if(!getenv("BT4_RENDER_TEST"))Port_RankedRefresh(sTb->rankedBattle);
+            if(!getenv("BT4_RENDER_TEST"))Port_RankedRefresh(1);
             Tb_SetMode(TB_RANKED);
             break;
         case HUB_JOIN:
@@ -1274,18 +1298,20 @@ static void Tb_HubUpdate(s32 live) {
     }
 }
 
-/* Ranked admission uses separate queues and one scored battle per match. */
+/* Ranked uses one scored battle per individual match. */
 static char *sTbRankedActions[3] = {"Find Ranked Match", "Global Top", "How Ranked Works"};
 static void Tb_RankedStart(void){
     Bt4RankedView view={0};s32 state;
     Port_RankedView(&view);
+    if(!Tb_NicknameCanPlay())return;
+    if(!view.state){Tb_Say("Loading Ranked status...");return;}
     if(view.state!=1){Tb_Say("Ranked is temporarily unavailable. Please try again later.");return;}
     if(!Tb_Vanilla(1))return;
     Port_NetSpeedSet(Port_NetSpeedStandard());
-    Port_NetRulesSet(sTb->rankedBattle,0,3); // 240-second matches, native individual/teams
+    Port_NetRulesSet(0,0,3); // 240-second individual matches
     Port_NetOptions(Port_RollCan()?4:0,-2);
     Port_LobbyQuickArea("any");Port_RankedSearch(1);
-    state=Port_LobbyStartQuick(sTb->rankedBattle);
+    state=Port_LobbyStartQuick(0);
     if(state<0){Port_RankedSearch(0);Tb_Note("THE NETWORK COULD NOT BE OPENED ON THIS PC");return;}
     sTb->host=2;sTb->waitFrom=sTb->frames;sTb->found=0;sTb->waitBack=TB_RANKED;
     Tb_SetMode(TB_WAIT);
@@ -1309,14 +1335,6 @@ static void Tb_RankedUpdate(s32 live) {
         return;
     }
     Ps_Move(&sTb->rankedCur, 3);
-    if(!sTb->rankedCur){
-        Ps_Prompt(3,"Change");
-        if(Ps_Side()){
-            sTb->rankedBattle=!sTb->rankedBattle;
-            Snd_PlaySe(1,0);
-            if(!getenv("BT4_RENDER_TEST"))Port_RankedRefresh(sTb->rankedBattle);
-        }
-    }
     if (pad->gamePressed & PADG_CROSS) {
         if (!sTb->rankedCur) {
             Snd_PlaySe(1, 1);
@@ -1324,6 +1342,10 @@ static void Tb_RankedUpdate(s32 live) {
         } else {
             Snd_PlaySe(1, 1);
             sTb->rankedPage = sTb->rankedCur;
+            if(sTb->rankedPage==1){
+                Port_RankedPage(0);
+                if(!getenv("BT4_RENDER_TEST"))Port_RankedRefresh(0);
+            }
         }
     }
 }
@@ -1582,11 +1604,7 @@ static void Tb_ProfileUpdate(s32 live) {
     Ps_Move(&sTb->prCur, PR_COUNT);
     if ((pad->gamePressed & PADG_CROSS) && sTb->prCur == PR_NAME) {
         Snd_PlaySe(1, 1);
-        Ps_Copy(sTb->typed, Port_NetNameGet(), 20);
-        sTb->typedLen = Ps_Len(sTb->typed);
-        Tb_SetMode(TB_NAME);
-        sTb->keyRow = 0;
-        sTb->keyCol = 0;
+        Tb_OpenName(0);
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
         Tb_SaveChoices();
@@ -1614,7 +1632,7 @@ static s32 Tb_NameKey(s32 c) {
 }
 
 static void Tb_NameAdd(s32 c) {
-    if (Tb_NameKey(c) && sTb->typedLen < 16) {
+    if (Tb_NameKey(c) && sTb->typedLen < 19) {
         sTb->typed[sTb->typedLen++] = (char)c;
         sTb->typed[sTb->typedLen] = 0;
         Snd_PlaySe(1, 0);
@@ -1633,6 +1651,7 @@ static void Tb_NameUpdate(s32 live) {
     s32 c;
     s32 done = 0;
 
+    if(sTb->nicknameSaving)return;
     Ps_Prompt(0, "Enter");
     Ps_Prompt(1, "Delete");
     Ps_Prompt(2, "Cancel");
@@ -1672,15 +1691,48 @@ static void Tb_NameUpdate(s32 live) {
         while (sTb->typedLen > 0 && sTb->typed[sTb->typedLen - 1] == ' ') {
             sTb->typed[--sTb->typedLen] = 0;
         }
-        if (sTb->typedLen > 0) {
+        if (sTb->typedLen == 0) {
+            Tb_Note("Choose a nickname before playing online.");
+            return;
+        }
+        if (getenv("BT4_RENDER_TEST") || sTb->nicknameState == BT4_NICKNAME_DISABLED) {
             Port_NetNameSave(sTb->typed);
             Tb_Note("SAVED: YOUR RIVALS WILL SEE THIS NAME");
+            Tb_SetMode(TB_PROFILE);
+        } else if (sTb->nicknameState != BT4_NICKNAME_LOADING) {
+            Port_OnlineNicknameSubmit(sTb->typed);
+            sTb->nicknameSaving = 1;
+            Tb_Note("Reserving your nickname...");
         }
         Snd_PlaySe(1, 1);
-        Tb_SetMode(TB_PROFILE);
     } else if (done == -1) {
         Snd_PlaySe(1, 2);
-        Tb_SetMode(TB_PROFILE);
+        if(sTb->nicknameRequired){sTb->leaving=1;ColorFade_StartOut(0,0,0,0x14);}
+        else {Port_OnlineNicknameBegin();Tb_SetMode(TB_PROFILE);}
+    }
+}
+
+static void Tb_NicknameUpdate(s32 live) {
+    char name[20];
+    s32 previous=sTb->nicknameState;
+    sTb->nicknameState=Port_OnlineNicknameView(name);
+    if(sTb->nicknameSaving&&sTb->nicknameState!=BT4_NICKNAME_SAVING&&sTb->nicknameState!=BT4_NICKNAME_LOADING){
+        sTb->nicknameSaving=0;
+        if(sTb->nicknameState==BT4_NICKNAME_READY){
+            Port_NetNameSave(name);
+            Tb_Note("SAVED: YOUR RIVALS WILL SEE THIS NAME");
+            Tb_SetMode(sTb->nicknameRequired?TB_HUB:TB_PROFILE);
+            sTb->nicknameRequired=0;
+        }else{
+            Tb_Note(sTb->nicknameState==BT4_NICKNAME_TAKEN?"That nickname is already taken.":
+                    sTb->nicknameState==BT4_NICKNAME_INVALID?"Choose a valid nickname.":"Could not verify your nickname. Try again.");
+        }
+    }else if(sTb->nicknameState==BT4_NICKNAME_READY&&previous!=BT4_NICKNAME_READY){
+        Port_NetNameSet(name);
+    }
+    if(live&&sTb->nicknameState==BT4_NICKNAME_REQUIRED&&(sTb->mode==TB_HUB||sTb->mode==TB_RANKED)){
+        Tb_OpenName(1);
+        Tb_Note("Choose a nickname before playing online.");
     }
 }
 
@@ -1762,12 +1814,25 @@ static f32 Tb_HubBadgeWidth(void){
     f32 width=Ps_TextWidth("SOON",0.34f)+12.0f;
     return width<40?40:width>90?90:width;
 }
+static f32 Tb_MostWantedLeft(void){
+    return 512.0f-Ps_Left()-159.0f;
+}
+
 static void Tb_DrawHub(void) {
     s32 i;
     f32 slide = (1.0f - Tb_In(0)) * -160.0f;
     f32 target = Tb_HubRowY(sTb->hubCur);
 
-    Tb_Hosts(TBO_HOSTS_MIC_WAVE, 396.0f - slide * 0.6f, 350.0f, 262.0f);
+    f32 panel=Tb_MostWantedLeft();
+    f32 hostX=panel-36.0f;
+    if(hostX>396.0f)hostX=396.0f;
+    Tb_Hosts(TBO_HOSTS_MIC_WAVE, hostX - slide * 0.6f, 350.0f, panel<390.0f?196.0f:262.0f);
+    Ps_Panel(TBO_KIT_WINDOW,panel,59.0f,panel+154.0f,265.0f,0x80);
+    Ps_Pill(TBO_KIT_SEL,panel+5.0f,64.0f,panel+149.0f,87.0f,0x80);
+    for(i=0;i<10;++i){
+        f32 y=108.0f+15.0f*i;
+        Ps_Pill(i<3?TBO_KIT_BAR:TBO_KIT_STEEL,panel+6.0f,y,panel+148.0f,y+14.0f,i<3?0x75:0x60);
+    }
     sTb->hubY += (target - sTb->hubY) * 0.35f;
     for (i = 0; i < HUB_COUNT; i++) {
         f32 y = Tb_HubRowY(i);
@@ -1786,11 +1851,44 @@ static void Tb_DrawHub(void) {
     }
 }
 
+static void Tb_DrawMostWanted(void){
+    Bt4RankedEntry entries[10];
+    f32 x=Tb_MostWantedLeft();
+    s32 i,count=-2;
+    if(!getenv("BT4_RENDER_TEST"))count=Port_RankedTopTen(entries);
+    else if(getenv("BT4_RENDER_TBO")&&!strcmp(getenv("BT4_RENDER_TBO"),"most-wanted")){
+        static const char *names[]={"Nova", "Blue Phoenix", "Kairo", "Stellar", "Ryuu", "Kaioken", "Mirai", "Arashi", "Mako", "Zenith"};
+        count=10;
+        for(i=0;i<count;++i){Ps_Copy(entries[i].name,names[i],sizeof(entries[i].name));entries[i].rating=1876-47*i;}
+    }
+    Ps_Align(1);
+    Ps_TextEx(x+77.0f,Ps_TextTop(75.0f,.72f),"Most Dangerous Fighters",.72f,136.0f,
+              Ps_Rgba(83,46,12,0x80),Ps_Rgba(49,26,9,0x80),Ps_Rgba(255,230,141,0x70));
+    Ps_Text(x+77.0f,91.0f,"Global Top",.46f,132.0f,3);
+    Ps_Align(0);
+    for(i=0;i<count;++i){
+        char value[12];
+        f32 y=Ps_TextTop(115.0f+15.0f*i,.50f);
+        sprintf(value,"%02d",i+1);
+        Ps_TextRaw(x+12.0f,y,value,.48f,16.0f,i<3?1:3);
+        Ps_TextRaw(x+31.0f,y,entries[i].name,.50f,77.0f,0);
+        sprintf(value,"%d",entries[i].rating);
+        Ps_Align(2);Ps_TextRaw(x+141.0f,y,value,.50f,32.0f,i<3?1:3);Ps_Align(0);
+    }
+    if(count<=0){
+        Ps_Align(1);
+        Ps_Text(x+77.0f,171.0f,count==-2?"Loading Global Top...":count<0?"Global Top unavailable":"No ranking published yet.",.52f,136.0f,0);
+        Ps_Align(0);
+    }
+}
+
 static void Tb_DrawHubText(void) {
     s32 i;
     s32 online=getenv("BT4_RENDER_TEST")?-1:Port_OnlinePresence(1);
     char presence[80];
     f32 slide = (1.0f - Tb_In(0)) * -160.0f;
+
+    Tb_DrawMostWanted();
 
     Ps_Copy(presence,(char*)PortOnline_Text("Fighters online: "),sizeof(presence));
     if(online<0)Ps_Cat(presence,"...",sizeof(presence));
@@ -1839,8 +1937,13 @@ static void Tb_DrawRows(s32 count, s32 cur, f32 y0) {
 static void Tb_DrawRanked(void) {
     Tb_Hosts(TBO_HOSTS_ARMS_CROSSED, 408.0f, 350.0f, 250.0f);
     if (!sTb->rankedPage) {
+        s32 i;
         Ps_Panel(TBO_KIT_WINDOW, 14, 62, 300, 164, 0x80);
-        Tb_DrawRows(3, sTb->rankedCur, 196.0f);
+        Ps_Panel(TBO_KIT_WINDOW, 14, 182, 300, 304, 0x80);
+        for(i=0;i<3;++i){
+            f32 y=196.0f+34.0f*i;
+            Ps_Pill(i==sTb->rankedCur?TBO_KIT_SEL:TBO_KIT_BAR,24,y,290,y+26.0f,0x80);
+        }
     } else {
         Ps_Panel(TBO_KIT_WINDOW, 14, 62, 300, 318, 0x80);
     }
@@ -1882,11 +1985,11 @@ static void Tb_DrawRankedText(void) {
     if (!sTb->rankedPage) {
         Ps_Text(28, 76, "COMPETITIVE SEASON", .72f, 258, 2);
         Ps_Text(28, 134, "Battle", .62f, 90, 0);
-        Ps_Align(2);Ps_Text(282,134,sTb->rankedBattle?"Teams":"One on One",.62f,160,3);Ps_Align(0);
-        if(ranked.state==1&&ranked.rating){
+        Ps_Align(2);Ps_Text(282,134,"One on One",.62f,160,3);Ps_Align(0);
+        if(ranked.state==1){
             sprintf(line,Tb_Fmt("Rating: %d"),ranked.rating);
             Ps_Text(28,105,line,.62f,258,3);
-        }else Ps_Text(28,105,ranked.state<0?"Ranked service unavailable":"Rating: unranked",.62f,258,3);
+        }else Ps_Text(28,105,ranked.state<0?"Ranked service unavailable":"Loading Ranked status...",.62f,258,3);
         for (i=0; i<3; ++i) {
             Ps_Text(36, Ps_TextTop(209.0f+34.0f*i, .72f),
                     sTbRankedActions[i], .72f, 228, i==sTb->rankedCur?1:0);
@@ -1902,16 +2005,16 @@ static void Tb_DrawRankedText(void) {
             }
             sprintf(line,Tb_Fmt("Page %d/%d"),ranked.page+1,ranked.pages);
             Ps_Text(28,274,line,.60f,258,0);
-            Ps_Text(28,296,"Updates every hour.",.56f,258,3);
+            Ps_Text(28,296,"Updates every 10 minutes.",.56f,258,3);
             return;
         }
-        Ps_Text(28, 124, ranked.state<0?"Ranked service unavailable":"No ranking published yet.", .64f, 258, 0);
-        Ps_Text(28, 164, "Updates every hour.", .64f, 258, 3);
+        Ps_Text(28,124,ranked.topState==0?"Loading Global Top...":ranked.topState<0?"Global Top unavailable":"No ranking published yet.",.64f,258,0);
+        Ps_Text(28, 164, "Updates every 10 minutes.", .64f, 258, 3);
         Ps_Text(28, 202, "Weekly reset: Sunday 23:59", .60f, 258, 0);
         Ps_Text(28, 228, "Argentina time (UTC-3)", .60f, 258, 3);
     } else {
         Ps_Text(28, 78, "How Ranked Works", .76f, 258, 2);
-        Tb_RankedParagraph(PortOnline_Text("Ranked starts you at 1000 points in each format, with separate ratings for solo and team battles. Winning adds points and losing subtracts them; the amount depends on both players' ratings. The Global Top updates hourly, and the weekly standings renew every Sunday at 23:59 Argentina time (UTC-3). Your points carry over, so each new week gives you another chance to climb without losing your progress."));
+        Tb_RankedParagraph(PortOnline_Text("Ranked is a one-on-one competition that starts you at 1000 points. Winning earns points and losing costs points based on both players' ratings. The Global Top refreshes every 10 minutes. The weekly standings renew on Sundays at 23:59 Argentina time (UTC-3), and you carry your points into the next week."));
     }
 }
 
@@ -2127,7 +2230,7 @@ static void Tb_DrawWaitText(void) {
 
         Ps_Text(22.0f, 94.0f, sTb->waitBack==TB_RANKED?"Ranked":"QUICK MATCH", 0.56f, 0.0f, 0);
         Ps_Align(1);
-        Ps_Text(95.0f, 124.0f, (sTb->waitBack==TB_RANKED?sTb->rankedBattle:sTb->queue) ? "TEAMS" : "ONE ON ONE", 0.86f, 156.0f, 1);
+        Ps_Text(95.0f, 124.0f, sTb->waitBack!=TB_RANKED&&sTb->queue ? "TEAMS" : "ONE ON ONE", 0.86f, 156.0f, 1);
         Ps_Align(0);
         s32 widen = Port_LobbyWiden(), y = 214;
         const char *from = Port_LobbyRivalRegion();
@@ -4620,6 +4723,7 @@ s32 PortTbo_Run(void) {
     if (getenv("BT4_TAG_PREVIEW") != NULL) { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
     if (Port_TagCapacity() > 0) Tb_SetMode(TB_TAG_ROOM);
     Port_NetNameGet();
+    if(!getenv("BT4_RENDER_TEST"))Port_OnlineNicknameBegin();
     gPortTboSpar = 0;
     if (Port_LobbyWantsScreen()) { /* in a lobby (joined from Dragon Net Battle, or the screens left meanwhile): its page */
         Port_LobbyView(&sTbLv);
@@ -4648,6 +4752,7 @@ s32 PortTbo_Run(void) {
         else if (which[0] == 'p' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_PROFILE);
         else if (which[0] == 'n' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_NAME);
         else if (which[0] == 'q' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_QUICK);
+        else if (!strcmp(which,"most-wanted")&&getenv("BT4_RENDER_TEST")) {sTb->hubCur=HUB_RANKED;sTb->hubY=Tb_HubRowY(HUB_RANKED);}
         else if (which[0] == 'h') { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
         else { sTb->host = 1; Tb_SetMode(TB_WAIT); }
     }
@@ -4703,6 +4808,18 @@ s32 PortTbo_Run(void) {
         ColorFade_Update();
         if(!getenv("BT4_RENDER_TEST"))Port_OnlinePresence(1);
         live = !sTb->leaving && ColorFade_IsInDone();
+        if(live&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST")&&sTb->mode==TB_RANKED){
+            if(sTb->frames==45)gPad[0].gameRepeat|=PADG_DOWN;
+            if(sTb->frames==50)gPad[0].gamePressed|=PADG_CROSS;
+            if(sTb->frames==100){
+                fprintf(stderr,"ranked top input: page=%d\n",sTb->rankedPage);
+                exit(sTb->rankedPage!=1);
+            }
+        }
+        if(!getenv("BT4_RENDER_TEST")){
+            if(sTb->mode==TB_HUB||sTb->mode==TB_NAME||sTb->mode==TB_PROFILE||sTb->mode==TB_RANKED)Tb_NicknameUpdate(live);
+            if(sTb->mode==TB_HUB||sTb->mode==TB_RANKED)Port_RankedRefresh(sTb->mode==TB_RANKED&&!sTb->rankedPage);
+        }
         if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TEXT_CAPTURE")&&sTb->frames==90){
             extern void Port_TagUiCapture(int);Port_TagUiCapture(1);
             fprintf(stderr,"tag typography preview: page=%d menu-ready=1\n",sTb->mode);
@@ -4741,7 +4858,7 @@ s32 PortTbo_Run(void) {
         }
         Ps_PromptsClear();
         Port_LobbyView(&sTbLv);
-        if (getenv("BT4_RENDER_TBO") == NULL) switch (sTb->mode) {
+        if (getenv("BT4_RENDER_TBO") == NULL || (getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST"))) switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);
             break;

@@ -140,6 +140,7 @@ void error(const std::string &code){
         code=="BAD_CODE"?"Enter the six-character room code again.":
         code=="UPDATE_REQUIRED"?"This is an old or incompatible version. Please update the complete BT4 launcher.":
         code=="AUTH_REQUIRED"?"Online sign-in failed. Check your connection and try again.":
+        code=="NICKNAME_REQUIRED"?"Choose a nickname before playing online.":
         code=="ROOM_ROUTE_EXPIRED"?"This room code belongs to an older online route. Ask the host for a new code.":
         code=="ROUTE_CHANGED"||code=="ROUTE_REFRESH_REQUIRED"||code=="ROUTE_RECOVERING"?"The online room service is changing over. Wait a moment and try again.":
         code=="BAD_REQUEST"||code=="BAD_PROFILE"||code=="BAD_CAPACITY"?"The room settings are invalid. Review them and try again.":
@@ -283,7 +284,7 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     d.resultRating=d.resultDelta=0;
     char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.content=hash;d.wire="bt4-duel-"+std::to_string(protocol);
     d.profile={{"mode",role==5?"lobby":"duel"},{"wire",d.wire},{"content",d.content},{"rules",queue&&*queue?queue:"S"},{"name",std::string(name).substr(0,19)},{"capacity",8}};
-    if(d.ranked)d.profile["ruleset"]=queue&&!strcmp(queue,"T")?"teams":"solo";
+    if(d.ranked){d.profile["ruleset"]="solo";d.profile["rules"]="S";}
     d.began=SDL_GetTicks();d.leaseAt=d.began+60000;
     if(!Bt4Signal_Open()){d.on=false;rankedActive=false;return 0;}
     // Explicit reset precedes the new admission in the single HTTP queue.
@@ -423,9 +424,11 @@ namespace {
 std::mutex rankedLock;
 Bt4RankedView rankedView={};
 std::array<Bt4RankedEntry,100> rankedEntries={};int rankedTotal=0;
-unsigned rankedStatusRequest=0,rankedTopRequest=0,rankedSerial=800000;
-Uint64 rankedRequestedAt=0;
-int rankedRuleset=-1;
+unsigned rankedStatusRequest=0,rankedTopRequest=0,nicknameRequest=0,rankedSerial=800000;
+Uint64 nextRankedStatus=0,nextRankedTop=0,rankedStatusDeadline=0,rankedTopDeadline=0,nicknameDeadline=0;
+int nicknameState=BT4_NICKNAME_LOADING;
+std::string nickname,profileProject;
+constexpr Uint64 ProfileTimeout=45000,TopInterval=600000;
 void rankedPage(){
     rankedView.pages=std::max(1,(rankedTotal+4)/5);
     rankedView.page=std::max(0,std::min(rankedView.page,rankedView.pages-1));
@@ -433,43 +436,59 @@ void rankedPage(){
     memset(rankedView.top,0,sizeof(rankedView.top));
     for(int i=0;i<rankedView.count;++i)rankedView.top[i]=rankedEntries[rankedView.page*5+i];
 }
+void profileRoute(){
+    const char *project=Bt4Signal_Project();
+    if(profileProject==project)return;
+    profileProject=project;
+    rankedStatusRequest=rankedTopRequest=nicknameRequest=0;
+    nextRankedStatus=nextRankedTop=0;
+    rankedView.state=0;rankedView.rating=rankedView.wins=rankedView.losses=0;
+    rankedView.season[0]=0;
+    nicknameState=BT4_NICKNAME_LOADING;nickname.clear();
 }
-extern "C" void Port_RankedPage(int direction){
-    std::lock_guard<std::mutex> guard(rankedLock);
-    rankedView.page+=direction<0?-1:direction>0?1:0;rankedPage();
+unsigned profileRequest(const char *op,const char *args){
+    unsigned id=++rankedSerial;
+    return Bt4Signal_Command(4,id,op,args)?id:0;
 }
-extern "C" void Port_RankedRefresh(int nativeTeams){
-    std::lock_guard<std::mutex> guard(rankedLock);
-    Uint64 now=SDL_GetTicks();
-    nativeTeams=nativeTeams!=0;
-    if(rankedRequestedAt&&now-rankedRequestedAt<15000&&rankedRuleset==nativeTeams)return;
-    rankedRuleset=nativeTeams;
-    Bt4Signal_Listen(4,0); // discard stale reads when switching competitive formats
-    rankedRequestedAt=now;rankedView={};rankedEntries={};rankedTotal=0;
-    rankedStatusRequest=++rankedSerial;rankedTopRequest=++rankedSerial;
-    const char *args=nativeTeams?"{\"ruleset\":\"teams\"}":"{\"ruleset\":\"solo\"}";
-    if(!Bt4Signal_Command(4,rankedStatusRequest,"ranked_status",args)||
-       !Bt4Signal_Command(4,rankedTopRequest,"ranked_top",args))rankedView.state=-1;
-}
-extern "C" void Port_RankedView(Bt4RankedView *out){
-    if(!out)return;std::lock_guard<std::mutex> guard(rankedLock);
+void profilePump(Uint64 now){
     char buffer[24577];
     while(Bt4Signal_Read(4,buffer,sizeof(buffer))>0){
         Dj event=Dj::parse(buffer,nullptr,false);unsigned id=number(event,"serial");
-        if(id!=rankedStatusRequest&&id!=rankedTopRequest)continue;
+        auto project=text(event,"project");
+        if(!id||(!project.empty()&&project!=profileProject))continue;
         auto body=event.find("body");if(body==event.end()||!body->is_object())continue;
-        if(body->contains("error")){rankedView.state=-1;continue;}
+        if(id==nicknameRequest){
+            nicknameRequest=0;
+            auto state=text(*body,"state"),error=text(*body,"error");
+            if(state=="ready"){
+                nickname=text(*body,"name");
+                nicknameState=!nickname.empty()&&nickname.size()<=19?BT4_NICKNAME_READY:BT4_NICKNAME_UNAVAILABLE;
+            }else if(state=="required")nicknameState=BT4_NICKNAME_REQUIRED;
+            else if(state=="disabled"||(error=="BAD_REQUEST"&&nicknameState==BT4_NICKNAME_LOADING))nicknameState=BT4_NICKNAME_DISABLED;
+            else if(error=="NICKNAME_TAKEN")nicknameState=BT4_NICKNAME_TAKEN;
+            else if(error=="INVALID_NICKNAME")nicknameState=BT4_NICKNAME_INVALID;
+            else nicknameState=BT4_NICKNAME_UNAVAILABLE;
+            continue;
+        }
         if(id==rankedStatusRequest){
+            rankedStatusRequest=0;
             auto enabled=body->find("enabled");
             rankedView.state=enabled!=body->end()&&enabled->is_boolean()&&enabled->get<bool>()?1:-1;
             snprintf(rankedView.season,sizeof(rankedView.season),"%s",text(*body,"season").c_str());
             rankedView.rating=(int)std::min(100000u,number(*body,"rating"));
             rankedView.wins=(int)std::min(100000u,number(*body,"wins"));
             rankedView.losses=(int)std::min(100000u,number(*body,"losses"));
-        }else{
-            auto entries=body->find("entries");rankedTotal=0;
+        }else if(id==rankedTopRequest){
+            rankedTopRequest=0;
+            auto entries=body->find("entries");
+            if(entries==body->end()||!entries->is_array()){
+                if(rankedView.topState==0)rankedView.topState=-1;
+                nextRankedTop=now+15000;
+                continue;
+            }
+            rankedTotal=0;rankedView.topState=1;
             snprintf(rankedView.updated,sizeof(rankedView.updated),"%s",text(*body,"updated_at").c_str());
-            if(entries!=body->end()&&entries->is_array())for(const auto &row:*entries){
+            for(const auto &row:*entries){
                 if(!row.is_object()||rankedTotal>=100)continue;
                 auto &r=rankedEntries[rankedTotal++];
                 snprintf(r.name,sizeof(r.name),"%s",text(row,"name").c_str());
@@ -480,6 +499,70 @@ extern "C" void Port_RankedView(Bt4RankedView *out){
             rankedPage();
         }
     }
-    if(!rankedView.state&&rankedRequestedAt&&SDL_GetTicks()-rankedRequestedAt>45000)rankedView.state=-1;
+    if(rankedStatusRequest&&now>=rankedStatusDeadline){rankedStatusRequest=0;rankedView.state=-1;}
+    if(rankedTopRequest&&now>=rankedTopDeadline){
+        rankedTopRequest=0;nextRankedTop=now+15000;
+        if(rankedView.topState==0)rankedView.topState=-1;
+    }
+    if(nicknameRequest&&now>=nicknameDeadline){nicknameRequest=0;nicknameState=BT4_NICKNAME_UNAVAILABLE;}
+}
+}
+extern "C" void Port_RankedPage(int direction){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    if(direction)rankedView.page+=direction<0?-1:1;
+    else rankedView.page=0;
+    rankedPage();
+}
+extern "C" void Port_RankedRefresh(int refreshStatus){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    Uint64 now=SDL_GetTicks();
+    profileRoute();profilePump(now);
+    const char *args="{\"ruleset\":\"solo\"}";
+    if(refreshStatus&&!rankedStatusRequest&&now>=nextRankedStatus){
+        rankedStatusRequest=profileRequest("ranked_status",args);
+        nextRankedStatus=now+15000;rankedStatusDeadline=now+ProfileTimeout;
+        if(!rankedStatusRequest)rankedView.state=-1;
+    }
+    if(!rankedTopRequest&&now>=nextRankedTop){
+        rankedTopRequest=profileRequest("ranked_top",args);
+        nextRankedTop=now+(rankedTopRequest?TopInterval:15000);rankedTopDeadline=now+ProfileTimeout;
+        if(!rankedTopRequest&&rankedView.topState==0)rankedView.topState=-1;
+    }
+}
+extern "C" void Port_RankedView(Bt4RankedView *out){
+    if(!out)return;
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profilePump(SDL_GetTicks());
     *out=rankedView;
+}
+extern "C" int Port_RankedTopTen(Bt4RankedEntry out[10]){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    if(rankedView.topState!=1)return rankedView.topState<0?-1:-2;
+    int count=std::min(10,rankedTotal);
+    std::copy_n(rankedEntries.begin(),count,out);
+    return count;
+}
+extern "C" void Port_OnlineNicknameBegin(void){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profileRoute();
+    if(nicknameState==BT4_NICKNAME_SAVING)return;
+    nicknameRequest=0;nicknameState=BT4_NICKNAME_LOADING;
+}
+extern "C" int Port_OnlineNicknameView(char name[20]){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    Uint64 now=SDL_GetTicks();
+    profileRoute();profilePump(now);
+    if(nicknameState==BT4_NICKNAME_LOADING&&!nicknameRequest){
+        nicknameRequest=profileRequest("nickname_get","{}");nicknameDeadline=now+ProfileTimeout;
+        if(!nicknameRequest)nicknameState=BT4_NICKNAME_UNAVAILABLE;
+    }
+    if(name)snprintf(name,20,"%s",nickname.c_str());
+    return nicknameState;
+}
+extern "C" void Port_OnlineNicknameSubmit(const char *name){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    if(nicknameRequest||!name||!*name)return;
+    std::string args=Dj{{"name",name}}.dump(-1,' ',false,Dj::error_handler_t::replace);
+    nicknameRequest=profileRequest("nickname_set",args.c_str());nicknameDeadline=SDL_GetTicks()+ProfileTimeout;
+    nicknameState=nicknameRequest?BT4_NICKNAME_SAVING:BT4_NICKNAME_UNAVAILABLE;
 }

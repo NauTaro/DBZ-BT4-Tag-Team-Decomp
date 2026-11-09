@@ -6,7 +6,7 @@ extern int Port_GameProfileEnglish(void);
 static int sRaw;
 void PortOnline_Raw(int on){if(on)sRaw++;else if(sRaw)sRaw--;}
 static const char *const kText[][2]={
-{"Ranked starts you at 1000 points in each format, with separate ratings for solo and team battles. Winning adds points and losing subtracts them; the amount depends on both players' ratings. The Global Top updates hourly, and the weekly standings renew every Sunday at 23:59 Argentina time (UTC-3). Your points carry over, so each new week gives you another chance to climb without losing your progress.","Empiezas con 1000 puntos en cada formato, con una puntuaci\u00f3n independiente para los combates individuales y por equipos. Al ganar sumas puntos y al perder los descuentas; la cantidad depende de la puntuaci\u00f3n de ambos jugadores. El Top global se actualiza cada hora y la clasificaci\u00f3n semanal se renueva los domingos a las 23:59 de Argentina (UTC-3). Tus puntos se conservan, as\u00ed que cada semana puedes volver a competir por el Top sin perder tu progreso."},
+{"Ranked is a one-on-one competition that starts you at 1000 points. Winning earns points and losing costs points based on both players' ratings. The Global Top refreshes every 10 minutes. The weekly standings renew on Sundays at 23:59 Argentina time (UTC-3), and you carry your points into the next week.","En Clasificatorias juegas uno contra uno y empiezas con 1000 puntos. Al ganar sumas y al perder restas seg\u00fan el puntaje de ambos jugadores. El Top global se actualiza cada 10 minutos y la tabla semanal se renueva los domingos a las 23:59 de Argentina (UTC-3). Conservas tus puntos de una semana a la siguiente."},
 {"Your points carry over each week.","Tus puntos se conservan cada semana."},
 {"Weekly records reset: Sunday 23:59","Registro semanal: reinicio domingo 23:59"},
 {"Solo and teams have separate ratings.","Individual y equipos tienen puntos separados."},
@@ -30,7 +30,17 @@ static const char *const kText[][2]={
 {"Ranked matchmaking","Combate clasificatorio"},
 {"Rating: unranked","Puntos: sin clasificar"},
 {"No ranking published yet.","A\u00fan no hay clasificaci\u00f3n."},
-{"Updates every hour.","Actualizaci\u00f3n cada hora."},
+{"Updates every 10 minutes.","Se actualiza cada 10 minutos."},
+{"Most Dangerous Fighters","Luchadores m\u00e1s peligrosos"},
+{"Loading Global Top...","Cargando el Top global..."},
+{"Global Top unavailable","Top global no disponible"},
+{"Loading Ranked status...","Cargando Clasificatorias..."},
+{"Choose a nickname before playing online.","Elige un apodo para jugar en l\u00ednea."},
+{"Checking your online nickname...","Comprobando tu apodo..."},
+{"Reserving your nickname...","Reservando tu apodo..."},
+{"That nickname is already taken.","Ese apodo ya est\u00e1 en uso."},
+{"Choose a valid nickname.","Elige un apodo v\u00e1lido."},
+{"Could not verify your nickname. Try again.","No pudimos comprobar tu apodo. Int\u00e9ntalo de nuevo."},
 {"Weekly reset: Sunday 23:59","Reinicio: domingo 23:59"},
 {"Argentina time (UTC-3)","Hora de Argentina (UTC-3)"},
 {"Weekly competitive seasons.","Temporadas semanales."},

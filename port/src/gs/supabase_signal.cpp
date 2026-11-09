@@ -218,17 +218,19 @@ static int entry(void*){
         if(workWanted&&now>=nextPolicy){
             nextPolicy=now+60000;char envelope[8193];bt4route::Policy next;
             if(Update_FetchOnlineRoute(envelope,sizeof(envelope))&&bt4route::decode<Sj>(envelope,(uint64_t)time(nullptr),policy,next)){
+                bool switched=next.epoch>policy.epoch&&next.active!=policy.active;
                 bool changed=next.epoch!=policy.epoch||next.active!=policy.active;policy=std::move(next);writeCache(envelope);
                 Update_SetOnlineRequired(policy.needsUpdate());
                 if(changed&&pinnedGeneration.empty()){
-                    // Known waiting queues are retried only on the authority's route.
-                    // If cancellation cannot be acknowledged, wait out the old lease.
+                    // A signed route change follows the old route's confirmed fence.
+                    // Retrying an unpaired search needs no round trip to the failed endpoint.
+                    if(switched)uncertain[activeProject]=0;
                     for(int c=0;c<2;c++)if(queued[c]){
-                        Sj cancelled;bool acknowledged=authenticate()&&http("/rest/v1/rpc/bt4_api",{{"p_op","cancel"},{"p_args",Sj::object()}},true,cancelled)
-                            &&str(cancelled,"state")=="cancelled"&&!cancelled.contains("error");
+                        Sj cancelled;bool acknowledged=switched||(authenticate()&&http("/rest/v1/rpc/bt4_api",{{"p_op","cancel"},{"p_args",Sj::object()}},true,cancelled)
+                            &&str(cancelled,"state")=="cancelled"&&!cancelled.contains("error"));
                         // The queue may have matched just before cancellation. A
                         // leave acknowledgement also clears that newly formed room.
-                        Sj left;if(acknowledged)acknowledged=http("/rest/v1/rpc/bt4_api",{{"p_op","leave"},{"p_args",Sj::object()}},true,left)
+                        Sj left;if(acknowledged&&!switched)acknowledged=http("/rest/v1/rpc/bt4_api",{{"p_op","leave"},{"p_args",Sj::object()}},true,left)
                             &&str(left,"state")=="left"&&!left.contains("error");
                         // A lost queue response can already have formed a thirty-minute room.
                         // Do not re-enter another project before that lease can expire.
@@ -313,7 +315,7 @@ static int entry(void*){
             else if(now<retryHttp){reply={{"error","SIGNALING_UNAVAILABLE"}};blocked=true;}
             if(!blocked){
                 if(admit)job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",1},{"epoch",policy.epoch}};
-                bool rankedRpc=job.consumer>=4||job.op=="ranked_queue"||job.op=="ranked_report";
+                bool rankedRpc=job.op.compare(0,7,"ranked_")==0;
                 const char *rpcPath=rankedRpc?"/rest/v1/rpc/bt4_ranked_api":"/rest/v1/rpc/bt4_api";
                 auto operation=rankedRpc?job.op.substr(7):job.op;
                 bool ok=authenticate()&&http(rpcPath,{{"p_op",operation},{"p_args",job.args}},true,reply);
@@ -352,7 +354,7 @@ static int entry(void*){
                     Job cleanup;cleanup.consumer=job.consumer;cleanup.op="cancel";cleanup.args=Sj::object();cleanup.project=activeProject;
                     std::lock_guard<std::mutex> g(state.lock);cleanup.session=state.sessions[job.consumer];state.jobs.push_front(std::move(cleanup));
                 }
-            }else if(currentJob(job))emit(job.consumer,{{"event","reply"},{"serial",job.serial},{"body",reply}});
+            }else if(currentJob(job))emit(job.consumer,{{"event","reply"},{"serial",job.serial},{"project",endpoint().url},{"body",reply}});
         }
         SDL_WaitSemaphoreTimeout(state.wake,have?0:20);
     }
@@ -374,9 +376,9 @@ extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,con
     if(consumer<0||consumer>5||!op||!args||strlen(args)>18000)return 0;
     if((consumer==3)!=(!strcmp(op,"presence")))return 0;
     bool lifecycle=!strcmp(op,"ranked_heartbeat")||!strcmp(op,"ranked_forfeit");if((consumer==5)!=lifecycle)return 0;
-    bool ranked=!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top");if((consumer==4)!=ranked)return 0;
+    bool profile=!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top")||!strcmp(op,"nickname_get")||!strcmp(op,"nickname_set");if((consumer==4)!=profile)return 0;
     if((!strcmp(op,"ranked_queue")||!strcmp(op,"ranked_report"))&&consumer!=0)return 0;
-    static const char *allowed[]={"create","join","get","get_signals","lease","leave","list","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit"};bool found=false;
+    static const char *allowed[]={"create","join","get","get_signals","lease","leave","list","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","nickname_get","nickname_set"};bool found=false;
     for(auto kind:allowed)if(!strcmp(op,kind)){found=true;break;}if(!found)return 0;
     Sj body=Sj::parse(args,nullptr,false);if(!body.is_object())return 0;
     if(!Bt4Signal_Open())return 0;std::lock_guard<std::mutex> g(state.lock);if(state.jobs.size()>=64)return 0;state.consumers|=1u<<consumer;
