@@ -1,4 +1,4 @@
 {
-  "payload": "{\"checked_at\":1794170668,\"sha256\":{\"BT4decomp-linux-x64.zip\":\"01bf40b7b939f4b4e43915bf8374e1f36dc62b585d7889d774f036b2176d150a\",\"BT4decomp-macos-arm64.zip\":\"607af65c8ded0cbccdb0d9fce779babd509b85ed60dcdd9382d389178e408e27\",\"BT4decomp-windows-x64.zip\":\"0824e3c91a3214dd818e36f92434c9eb80bd7c4b7c2453361de385abed4ee14f\"},\"tag\":\"v0.1.39.5-R5\"}",
-  "signature": "a29805f60cbf79d1aa83d53d32c67ee6ceb2adb6d0304034b07a2161939b201ade2c589d279d867ec46472ad95ea47c86cb18b12fe5c5b36b35d30df6954cc0a"
+  "payload": "{\"checked_at\":1794252068,\"sha256\":{\"BT4decomp-linux-x64.zip\":\"940cb2c9ca2f148936bb74353438d4e4adb8c859588319f401ed4f195d9d2524\",\"BT4decomp-macos-arm64.zip\":\"c4ac8c0918af3bc0d063c5be81e32effa971459ffe5bbd68c4f2d80cafb3c363\",\"BT4decomp-windows-x64.zip\":\"5b45512bd2bf36d3bf6fd3b6e7d5f34b2b080a7d342bc4cd4f368a6c7e2fa657\"},\"tag\":\"v0.1.39.5-R5.3\"}",
+  "signature": "f8f0bc9250bacfdd097a12b27f9301636591eada2ce42d19659654cb52512107183ace089754d546df07f52d75b7e4a7b00aa9c08ba5e03d14ec1a8787dd5909"
 }
