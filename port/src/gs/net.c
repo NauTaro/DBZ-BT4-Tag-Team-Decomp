@@ -67,6 +67,7 @@ enum { NET_VERSION = 0x42543414, IN_HEAD = 44 }; /* Shared bilingual stream timi
 static int sVersionBad; /* the other side answered with another version */
 static const uint32_t kVersion = NET_VERSION;
 #include "net_match.h"
+#include "match_supabase.h"
 #include "net_relay.h"
 #include "net_chat.h"
 #include "voice.h"
@@ -2388,6 +2389,8 @@ static void sample_local(unsigned tick) {
 #define QUIET_NS 6000000000ull /* this long without the input the game is waiting for: the other player is gone */
 
 static void ended(const char *why, unsigned tick) {
+    /* A transport-triggered exit is never a voluntary surrender. */
+    if (sByeWhy == 0) sByeWhy = BYE_LOST;
     Gs_NetworkWait(0);
     fprintf(stderr, "bt3: net: %s (blank %u)\n", why, tick);
     Port_UiNotice(why);
@@ -2887,9 +2890,7 @@ static void spec_tick(unsigned tick) {
 }
 
 static void ranked_outcome(unsigned tick){
-    extern int Port_RankedActive(void),Port_BattleOutcome(int *);
-    extern void Port_RankedObserve(int,int,unsigned,unsigned,int);
-    extern int Port_RankedResult(int *,int *);
+    extern int Port_BattleOutcome(int *);
     static int notified;
     if(sMode!=3&&sSession&&Port_RankedActive()){
         int bits=0,state=Port_BattleOutcome(&bits);
@@ -2908,6 +2909,12 @@ void Port_NetBeginTick(unsigned tick) {
     uint64_t t0, last;
 
     if (!Port_NetActive()) {
+        int rating,delta;
+        if(Port_RankedTakeSettlement(&rating,&delta)){
+            char line[128];
+            snprintf(line,sizeof(line),PortOnline_Text("Ranked: %+d points (%d total)"),delta,rating);
+            Port_UiBanner(line,2000);
+        }
         return;
     }
     sTick = tick;
@@ -3294,8 +3301,7 @@ void Port_NetArrived(void) {
 /* The session is over (the game went back to the main menu, or the other side is gone): back to the game as it
    normally is. */
 void Port_NetLeave(void) {
-    extern void Port_RankedDisconnected(int);
-    Port_RankedDisconnected(sByeWhy == 0);
+    Port_RankedDisconnected(sGone == 0 && sByeWhy == 0);
     PortVoice_Leave(1);sVoiceRoomKeyKnown=0;sVoiceRoomKeySent=0;memset(sVoiceRoomKey,0,sizeof(sVoiceRoomKey));
     fprintf(stderr, "bt3: net: the session has ended\n");
     Lobby_SessionLeaving(); /* (a lobby's owner: everyone back to the lobby, before the goodbyes) */

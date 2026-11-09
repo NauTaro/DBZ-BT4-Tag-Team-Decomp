@@ -43,29 +43,58 @@ bool rankedNext=false;
 std::atomic<bool> rankedActive{false};
 // Keep an authenticated liveness proof while fighting, then briefly after a
 // remote disconnect. No simulation, GPU or blocking network work runs here.
-struct RankedWatch {std::string match,project;Uint64 next=0,until=0;unsigned request=0;bool concede=false,pending=false;};
+struct RankedWatch {
+    std::string match,project;
+    Uint64 next=0,until=0;
+    unsigned request=0;
+    bool concede=false,pending=false,notify=false,sentConcede=false;
+    bool settled=false;
+    int rating=0,delta=0;
+};
 std::vector<RankedWatch> rankedWatches;
+std::deque<std::pair<int,int>> rankedSettlements;
+std::atomic<bool> settlementReady{false};
+Uint64 nextSettlement;
 SDL_Thread *rankedWatcher=nullptr;
 std::atomic<bool> watchQuit{false};
 unsigned watchSerial=900000;
+void watchNotify(const RankedWatch &w){
+    if(!w.notify||!w.settled)return;
+    if(rankedSettlements.size()==4)rankedSettlements.pop_front();
+    rankedSettlements.emplace_back(w.rating,w.delta);
+    settlementReady=true;
+}
 void watchStep(Uint64 now){
     char raw[2048];
     while(Bt4Signal_Read(5,raw,sizeof(raw))>0){
         Dj e=Dj::parse(raw,nullptr,false);if(!e.is_object())continue;
-        for(auto &w:rankedWatches)if(w.request==number(e,"serial")){
-            w.pending=false;w.next=now+5000;auto b=e.find("body");if(b==e.end()||!b->is_object())continue;
+        for(auto &w:rankedWatches)if(w.pending&&w.request==number(e,"serial")){
+            w.pending=false;w.next=w.concede&&!w.sentConcede?now:now+5000;
+            auto b=e.find("body");if(b==e.end()||!b->is_object())continue;
             auto state=text(*b,"state");
+            if(state=="applied"||state=="already_applied"){
+                auto rating=b->find("rating"),delta=b->find("delta");
+                if(rating!=b->end()&&rating->is_number_integer()&&delta!=b->end()&&delta->is_number_integer()){
+                    w.settled=true;
+                    w.rating=rating->get<int>();
+                    w.delta=delta->get<int>();
+                    // The server can settle a concession before UDP sees the peer leave.
+                    if(!w.until)continue;
+                    watchNotify(w);
+                }
+            }
             if(state=="applied"||state=="already_applied"||state=="not_started"||state=="expired"||
                text(*b,"error")=="NOT_A_PARTICIPANT")w.until=1;
         }
     }
     for(auto &w:rankedWatches){
-        if(w.until&&now>=w.until)continue;
+        if(w.settled||(w.until&&now>=w.until))continue;
         if(w.project!=Bt4Signal_Project())continue; // a new route cannot settle an old route's match
         if(now>=w.next){
             w.request=++watchSerial;
             auto body=Dj{{"match",w.match}}.dump();
             w.pending=Bt4Signal_Command(5,w.request,w.concede?"ranked_forfeit":"ranked_heartbeat",body.c_str());
+            w.sentConcede=w.concede;
             w.next=now+(w.pending?25000:5000);
         }
     }
@@ -88,11 +117,14 @@ void watchFight(){
         if(rankedWatcher)atexit(Port_RankedShutdown);
     }
 }
-void watchFinish(bool concede){
+void watchFinish(bool concede,bool disconnected=false){
     auto match=text(d.descriptor,"generation");
-    for(auto &w:rankedWatches)if(w.match==match){
-        if(d.reportSerial)concede=false;
-        w.until=SDL_GetTicks()+120000;w.concede=concede;w.next=0;
+    for(auto &w:rankedWatches)if(w.match==match&&!w.until){
+        w.until=SDL_GetTicks()+120000;
+        w.concede=concede&&!d.reportSerial;
+        w.notify=disconnected&&!d.reportSerial;
+        if(w.settled){watchNotify(w);w.until=1;continue;}
+        if(!w.pending)w.next=0;
     }
 }
 bool rpc(const char *op,const Dj &args,unsigned id=0){
@@ -310,7 +342,18 @@ extern "C" void Port_RankedShutdown(void){
 }
 extern "C" void Port_RankedDisconnected(int intentional){
     std::lock_guard<std::mutex> guard(lock);
-    if(d.ranked&&d.sawFight)watchFinish(intentional!=0);
+    if(d.ranked&&d.sawFight)watchFinish(intentional!=0,true);
+}
+extern "C" int Port_RankedTakeSettlement(int *rating,int *delta){
+    if(!settlementReady)return 0;
+    std::lock_guard<std::mutex> guard(lock);
+    Uint64 now=SDL_GetTicks();
+    if(rankedSettlements.empty()||now<nextSettlement)return 0;
+    *rating=rankedSettlements.front().first;
+    *delta=rankedSettlements.front().second;
+    rankedSettlements.pop_front();settlementReady=!rankedSettlements.empty();
+    nextSettlement=now+2000;
+    return 1;
 }
 extern "C" int Port_RankedResult(int *rating,int *delta){
     std::lock_guard<std::mutex> g(lock);

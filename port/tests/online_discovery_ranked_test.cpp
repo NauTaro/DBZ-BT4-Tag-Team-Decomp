@@ -88,18 +88,42 @@ int main(){
     assert(capturedCommands.size()==3&&text(capturedCommands.back().args,"digest")==firstDigest);
     // Liveness is HTTP-only and continues after the room is left. A local
     // concession names only our own match; remote loss keeps proving presence.
+    Bt4Signal_Listen(5,1);
     capturedCommands.clear();rankedWatches.clear();d.reportSerial=0;d.sawFight=false;
     Port_RankedDisconnected(1);assert(rankedWatches.empty());
     Port_RankedObserve(3,0,300,300,0);assert(rankedWatches.size()==1);
-    watchStep(1000);assert(capturedCommands.size()==1&&capturedCommands.back().op=="ranked_heartbeat");
+    const Uint64 now=SDL_GetTicks()+1000;
+    watchStep(now);assert(capturedCommands.size()==1&&capturedCommands.back().op=="ranked_heartbeat");
     assert(text(capturedCommands.back().args,"match")==text(d.descriptor,"generation"));
-    watchStep(1001);assert(capturedCommands.size()==1); // no burst behind an in-flight request
+    watchStep(now+1);assert(capturedCommands.size()==1); // no burst behind an in-flight request
     Port_RankedDisconnected(0);assert(!rankedWatches[0].concede&&rankedWatches[0].until);
-    Port_RankedDisconnected(1);assert(rankedWatches[0].concede);
-    watchStep(2000);assert(capturedCommands.back().op=="ranked_forfeit");
-    Bt4Signal_Listen(5,1);
-    emit(5,{{"event","reply"},{"serial",rankedWatches[0].request},{"body",{{"state","already_applied"}}}});
-    watchStep(2001);assert(rankedWatches.empty());
+    Port_RankedDisconnected(1);assert(!rankedWatches[0].concede); // a second teardown cannot change the cause
+    watchStep(now+2);assert(capturedCommands.size()==1);
+    auto reply=[](const Dj &body){emit(5,{{"event","reply"},{"serial",rankedWatches[0].request},{"body",body}});};
+    reply({{"state","applied"},{"rating",1016},{"delta",16}});
+    watchStep(now+3);assert(rankedWatches.empty());
+    int rating=0,delta=0;
+    assert(Port_RankedTakeSettlement(&rating,&delta)&&rating==1016&&delta==16);
+    assert(!Port_RankedTakeSettlement(&rating,&delta));
+
+    // An acknowledged heartbeat must not swallow the player's own surrender.
+    capturedCommands.clear();d.sawFight=false;nextSettlement=0;
+    Port_RankedObserve(3,0,301,301,0);watchStep(now+4);
+    Port_RankedDisconnected(1);watchStep(now+5);
+    assert(rankedWatches[0].concede&&capturedCommands.size()==1);
+    reply({{"state","waiting"}});watchStep(now+6);
+    assert(capturedCommands.size()==2&&capturedCommands.back().op=="ranked_forfeit");
+    reply({{"state","already_applied"},{"rating",984},{"delta",-16}});
+    watchStep(now+7);assert(rankedWatches.empty());
+    assert(Port_RankedTakeSettlement(&rating,&delta)&&rating==984&&delta==-16);
+
+    // The result can arrive before the peer's goodbye reaches the gameplay socket.
+    d.sawFight=false;nextSettlement=0;
+    Port_RankedObserve(3,0,302,302,0);watchStep(now+8);
+    reply({{"state","already_applied"},{"rating",1032},{"delta",16}});
+    watchStep(now+9);assert(rankedWatches.size()==1&&!Port_RankedTakeSettlement(&rating,&delta));
+    Port_RankedDisconnected(0);watchStep(now+10);
+    assert(rankedWatches.empty()&&Port_RankedTakeSettlement(&rating,&delta)&&rating==1032&&delta==16);
     assert(!Bt4Signal_Command(0,52,"ranked_forfeit","{}"));
     assert(!Bt4Signal_Command(5,53,"create","{}"));
     Port_RankedShutdown();Bt4Signal_Listen(5,0);
@@ -107,5 +131,5 @@ int main(){
     Bt4Signal_Listen(0,0);
     assert(!state.thread&&state.jobs.empty());
     SDL_Quit();
-    std::cout<<"PASS native Ranked pagination, stale-room recovery and confirmed/idempotent result reporting\n";
+    std::cout<<"PASS native Ranked pagination, stale-room recovery, confirmed results and abandonments\n";
 }

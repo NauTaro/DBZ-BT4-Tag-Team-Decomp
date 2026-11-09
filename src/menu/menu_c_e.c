@@ -1334,6 +1334,44 @@ void CharSel_Input(s32 *running) {
     s32 r;
 
 #ifdef PORT
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_FIGHTER_SELECTION_TEST") &&
+        (gCharSel->flash[0].flags & MFLASH_PAD) && (gCharSel->flags & CHARSEL_STARTED)) {
+        static int frame, positioned;
+        s32 wanted = atoi(getenv("BT4_FIGHTER_SELECTION_TEST"));
+        if (!positioned) {
+            for (j = 0; j < gCharSel->masterCount[0]; ++j) {
+                MChrCell *cell = &gCharSel->cells[0][j];
+                if (cell->id != wanted) continue;
+                CharSel_ClipGoto(1, 0, CHARSEL_CLIP_CHIP, "fl_off_start");
+                gCharSel->side[0]->col = j % 7;
+                gCharSel->side[0]->row = j / 7;
+                CharSel_SetRowChips(0);
+                gCharSel->side[0]->chara = cell->id;
+                CharSel_RequestFace(0);
+                CharSel_ClipGoto(1, 0, CHARSEL_CLIP_CHIP, "fl_on_start");
+                {
+                    u8 *table = gCharSel->nameText;
+                    u16 *name = (u16 *)(table + (((u32 *)table)[wanted + 1] & ~3));
+                    fprintf(stderr, "fighter selection: requested=%d slot=%d forms=%d name=", wanted, j, cell->formCount);
+                    for (n = 0; n < 40 && name[n]; ++n) if (name[n] < 128) fputc(name[n], stderr);
+                    fputc('\n', stderr);
+                }
+                positioned = 1;
+                break;
+            }
+            if (!positioned) exit(3);
+        }
+        if (gCharSel->turn == 1 || gCharSel->side[0]->state == CHARSEL_ST_DONE) {
+            fprintf(stderr, "fighter selection: confirmed=%d costume=%d\n", gCharSel->side[0]->picked, gCharSel->side[0]->colorPlate);
+            exit(gCharSel->side[0]->picked != wanted);
+        }
+        if (++frame % 30 == 0) {
+            const char *stale = getenv("BT4_FIGHTER_SELECTION_STALE");
+            CharSelSide *side = gCharSel->side[0];
+            if (stale && side->state == CHARSEL_ST_COLOR) side->chip[side->col] = atoi(stale);
+            gPad[0].gamePressed = PADG_CROSS;
+        }
+    }
     /* Opt-in render regression: traverse the real training selector, then capture its map reel. */
     if (getenv("BT4_RENDER_TEST") && (getenv("BT4_MAP_SELECTOR_TEST") || getenv("BT4_COSTUME_SELECTOR_TEST"))) {
         static int fixtureTick, fixtureSelected, fixtureShot;
@@ -1864,7 +1902,8 @@ void CharSel_Input(s32 *running) {
                         }
                         CS_SIDE->picked = chara;
                     } else {
-                        CS_SIDE->picked = CS_SIDE->chip[CS_SIDE->col];
+                        /* The reel can still contain the previous row or form. */
+                        CS_SIDE->picked = CS_CELL.id;
                         n = CS_SIDE->col + CS_SIDE->row * 7;
                     }
                     if (CS_SIDE->customPlate != 0) {

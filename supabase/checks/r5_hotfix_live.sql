@@ -69,6 +69,15 @@ begin
     perform set_config('request.jwt.claim.sub',b::text,true);
     reply:=public.bt4_ranked_api('heartbeat',args);
     if reply->>'state' is distinct from 'already_applied' then raise exception 'RETRY_FAILED: %',reply;end if;
+    if (reply->>'delta')::integer is distinct from (case when scenario in (3,7) then -16 else 16 end) then
+     raise exception 'OTHER_PLAYER_DELTA %/%: %',format,scenario,reply;
+    end if;
+    perform set_config('request.jwt.claim.sub',a::text,true);
+    reply:=public.bt4_ranked_api('forfeit',args);
+    if reply->>'state' is distinct from 'already_applied' or
+     (reply->>'delta')::integer is distinct from (case when scenario in (3,7) then 16 else -16 end) then
+     raise exception 'FORFEIT_RETRY %/%: %',format,scenario,reply;
+    end if;
     if (select count(*) from bt4_private.ranked_rating_history where match_id=generation_id)<>2 then raise exception 'DUPLICATE_SCORE';end if;
    elsif exists(select 1 from bt4_private.ranked_rating_history where match_id=generation_id) then raise exception 'FALSE_PENALTY';
    end if;

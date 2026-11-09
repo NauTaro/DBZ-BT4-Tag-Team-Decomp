@@ -27,6 +27,8 @@ void Port_RankedSearch(int selected);
 int Port_RankedActive(void);
 void Port_RankedObserve(int battleState,int outcomeBits,unsigned tick,unsigned confirmed,int resimulating);
 int Port_RankedResult(int *rating,int *delta);
+void Port_RankedDisconnected(int intentional);
+int Port_RankedTakeSettlement(int *rating,int *delta);
 #ifdef __cplusplus
 }
 #endif

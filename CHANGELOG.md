@@ -1,3 +1,19 @@
+# 0.1.39.5 R5 1.1
+
+- Keep an opponent's disconnect separate from your own surrender in Ranked. When the server confirms an abandonment, the player who stayed gains 16 points and the player who left loses 16, within the rating limits. The result is shown for two seconds even if the game has already returned to the menu.
+- Confirm the selected fighter from the roster in individual and native team battles so a stale portrait cannot replace Yamcha with another fighter.
+- Join the [official Discord community](https://discord.gg/EBhh5ef3T6) for matchmaking and support.
+
+<!-- bt4-update:en
+- Fix Ranked abandonment notices and confirm the selected fighter from the roster.
+-->
+<!-- bt4-update:es
+- Corrige los avisos de abandono en Clasificatorias y confirma al luchador desde su casilla.
+-->
+<!-- bt4-update:pt
+- Corrige os avisos de abandono nas ranqueadas e confirma o lutador pelo elenco.
+-->
+
 # 0.1.39.5 R5 Hotfix
 
 > **Windows antivirus review in progress.** Users reported alerts for the R5 executable and libdatachannel.dll. The vendor verdicts remain unresolved. See the [investigation](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/blob/main/docs/security/windows-antivirus-review.md) and the [SHA-256 manifests for the Hotfix](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/tree/main/checksums/v0.1.39.5-R5.1).

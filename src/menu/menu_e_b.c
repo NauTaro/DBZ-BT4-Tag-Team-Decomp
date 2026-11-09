@@ -2051,7 +2051,7 @@ f32 TeamSel_Input(s32 *result) {
                             } while (!TeamSel_IsCharaFree(CUR_N, chara));
                             CUR_MEMBER.chara = chara;
                         } else {
-                            CUR_MEMBER.chara = CUR_SIDE->chip[0][CUR_MEMBER.col];
+                            CUR_MEMBER.chara = CUR_CELL.id;
                             idx = CUR_MEMBER.col + CUR_MEMBER.row * TS_COLS;
                         }
                         if (CUR_MEMBER.plate != 0) {
