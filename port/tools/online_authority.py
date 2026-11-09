@@ -65,6 +65,12 @@ def health(project):
         return 200,h
     except (ValueError,KeyError,TypeError):return 422,None
 
+def service_health(project):
+    status,route=health(project)
+    if status!=200:return status,route
+    auth,_=request(f"https://{project['ref']}.supabase.co/auth/v1/health",headers={'apikey':project['key']})
+    return auth,route
+
 def route_config_matches(project,epoch,admission,until,c):
     status,h=health(project)
     if status!=200:return False
@@ -254,15 +260,15 @@ def main():
         print('Published policy activated; existing rooms were not changed.');return
     active=prior['active'] if prior else 'primary';statuses={p['id']:None for p in PROJECTS};observations={}
     project=next(p for p in PROJECTS if p['id']==active)
-    status,h=health(project);statuses[active]=status;observations[active]=h
+    status,h=service_health(project);statuses[active]=status;observations[active]=h
     if global_failure(status):
         for _ in range(2):
-            time.sleep(2);status,h=health(project);statuses[active]=status;observations[active]=h
+            time.sleep(2);status,h=service_health(project);statuses[active]=status;observations[active]=h
             if not global_failure(status):break
     # The reserve is not polled continuously when the active endpoint is healthy.
     if statuses[active]!=200 or args.route!='auto' or prior is None:
         other=next(p for p in PROJECTS if p['id']!=active)
-        statuses[other['id']],observations[other['id']]=health(other)
+        statuses[other['id']],observations[other['id']]=service_health(other)
     selected=choose(prior,statuses,args.route)
     if statuses[selected]!=200:raise AuthorityError('No verified healthy route is available; no policy published')
     if args.prepare:

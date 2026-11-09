@@ -12,6 +12,12 @@ class AdmissionFenceTests(unittest.TestCase):
     project = authority.PROJECTS[1]
     config = {'minimum': '0.1.39.5-R5', 'require_update': True}
 
+    def test_auth_outage_can_trigger_failover_while_rest_responds(self):
+        with patch.object(authority, 'health', return_value=(200, {'epoch': 4})), \
+             patch.object(authority, 'request', return_value=(503, b'')):
+            status, _ = authority.service_health(self.project)
+            self.assertEqual(authority.choose({'active': 'secondary'}, {'primary': 200, 'secondary': status}), 'primary')
+
     def test_committed_close_during_public_rest_failure(self):
         receipt = json.dumps([{'epoch': 4, 'backend_id': 1, 'admission_open': False,
                                'admission_until': 500}]).encode()
