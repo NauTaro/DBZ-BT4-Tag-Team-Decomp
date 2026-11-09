@@ -2,7 +2,6 @@
 
 - Keep an opponent's disconnect separate from your own surrender in Ranked. When the server confirms an abandonment, the player who stayed gains 16 points and the player who left loses 16, within the rating limits. The result is shown for two seconds even if the game has already returned to the menu.
 - Confirm the selected fighter from the roster in individual and native team battles so a stale portrait cannot replace Yamcha with another fighter.
-- Join the [official Discord community](https://discord.gg/EBhh5ef3T6) for matchmaking and support.
 
 <!-- bt4-update:en
 - Fix Ranked abandonment notices and confirm the selected fighter from the roster.
