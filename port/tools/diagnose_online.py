@@ -6,12 +6,12 @@ from urllib.request import Request,urlopen
 from urllib.error import HTTPError
 
 now=datetime.now(timezone.utc)
-window={'iso_timestamp_start':(now-timedelta(minutes=40)).isoformat(),'iso_timestamp_end':now.isoformat()}
+window={'iso_timestamp_start':(now-timedelta(minutes=40)).strftime('%Y-%m-%dT%H:%M:%SZ'),'iso_timestamp_end':now.strftime('%Y-%m-%dT%H:%M:%SZ')}
 for name,ref,key in [('secondary','houhjsfukkkicjejvett','SUPABASE_SECONDARY_MANAGEMENT_TOKEN'),
                      ('primary','mhgksaiitqoijnatpurf','SUPABASE_PRIMARY_MANAGEMENT_TOKEN')]:
     headers={'Authorization':'Bearer '+os.environ[key],'Content-Type':'application/json'}
     logs="select source, event_message, count(*) as occurrences from logs where source in ('postgres_logs','auth_logs','realtime_logs','postgrest_logs') and (positionCaseInsensitive(event_message,'error')>0 or positionCaseInsensitive(event_message,'fatal')>0 or positionCaseInsensitive(event_message,'timeout')>0) group by source,event_message order by occurrences desc limit 25"
-    for label,path,body in [('project','',None),('logs','/analytics/endpoints/logs?'+urlencode({**window,'sql':logs}),None),('database','/database/query',{'query':"select state,wait_event_type,count(*) from pg_stat_activity group by state,wait_event_type;"})]:
+    for label,path,body in [('project','',None),('health','/health?services=auth,rest,realtime,db&timeout_ms=5000',None),('disk','/config/disk/util',None),('logs','/analytics/endpoints/logs?'+urlencode({**window,'sql':logs}),None),('database','/database/query',{'query':"select state,wait_event_type,count(*) from pg_stat_activity group by state,wait_event_type;"})]:
         request=Request('https://api.supabase.com/v1/projects/'+ref+path,
                         data=json.dumps(body).encode() if body else None,headers=headers)
         try:
