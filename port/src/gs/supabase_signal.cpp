@@ -2,6 +2,7 @@
  * Network work is owned by one background thread. Credentials are never logged.
  */
 #include <SDL3/SDL.h>
+#include "../../include/online_room_policy.h"
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -229,9 +230,9 @@ static int entry(void*){
                         // leave acknowledgement also clears that newly formed room.
                         Sj left;if(acknowledged)acknowledged=http("/rest/v1/rpc/bt4_api",{{"p_op","leave"},{"p_args",Sj::object()}},true,left)
                             &&str(left,"state")=="left"&&!left.contains("error");
-                        // A lost queue response can already have formed a five-minute room.
+                        // A lost queue response can already have formed a thirty-minute room.
                         // Do not re-enter another project before that lease can expire.
-                        if(!acknowledged)uncertain[activeProject]=std::max(uncertain[activeProject],SDL_GetTicks()+305000);
+                        if(!acknowledged)uncertain[activeProject]=std::max(uncertain[activeProject],SDL_GetTicks()+BT4_ROOM_IDLE_MS+5000);
                         Job retry=queueJob[c];retry.project=-1;retry.generation.clear();
                         retry.notBefore=acknowledged?0:uncertain[activeProject];
                         std::lock_guard<std::mutex> g(state.lock);
@@ -322,7 +323,7 @@ static int entry(void*){
                     auto business=reply.is_object()?str(reply,"error"):std::string();
                     if(business!="RATE_LIMITED"&&business!="AUTH_REQUIRED")reply={{"error","SIGNALING_UNAVAILABLE"}};
                     if(job.consumer!=4){httpFailures=std::min(5u,httpFailures+1);retryHttp=now+(1000u<<httpFailures);nextPolicy=std::min(nextPolicy,now+5000);}
-                    if(lastHttpStatus==0&&(job.op=="create"||job.op=="join"||job.op=="queue"||job.op=="ranked_queue"))uncertain[activeProject]=SDL_GetTicks()+305000;
+                    if(lastHttpStatus==0&&(job.op=="create"||job.op=="join"||job.op=="queue"||job.op=="ranked_queue"))uncertain[activeProject]=SDL_GetTicks()+BT4_ROOM_IDLE_MS+5000;
                 }else{if(job.consumer!=4){httpFailures=0;retryHttp=0;}
                     if(job.op=="presence")onlineMenu=job.args.value("active",false);
                     if(job.consumer<2&&(job.op=="queue"||job.op=="ranked_queue")&&str(reply,"state")=="waiting"){queueJob[job.consumer]=job;queued[job.consumer]=true;}

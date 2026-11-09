@@ -99,7 +99,7 @@ enum { CLOSE_CLOSED = 1, CLOSE_KICKED = 2 };
 #define NAMEB 20
 #define TEXT 160
 #define SEC 1000000000ull
-#define QUIET_NS (15 * SEC)    /* a member, or the owner, silent this long is gone */
+#include "../../include/online_room_policy.h"
 #define CONNECT_NS (25 * SEC)  /* a member that has not reached the owner in this long gives up */
 #define MATCH_CONNECT_NS (40 * SEC) /* the two players have not connected to each other in this long: back to the lobby */
 #define RESULT_WAIT_NS (20 * SEC)  /* a tournament's match: one player's result and not the other's this long: played again */
@@ -2184,7 +2184,7 @@ static void timers(void) {
             if (!m->on) {
                 continue;
             }
-            if (now > m->heardNs && now - m->heardNs > QUIET_NS) {
+            if (Bt4Room_IsIdleNs(now,m->heardNs)) {
                 member_drop(k, "lost the connection to the lobby", 1);
                 continue;
             }
@@ -2257,7 +2257,7 @@ static void timers(void) {
             if (now - sL.aliveNs > SEC) {
                 alive_send();
             }
-            if (now > sL.heardNs && now - sL.heardNs > QUIET_NS) {
+            if (Bt4Room_IsIdleNs(now,sL.heardNs)) {
                 SDL_strlcpy(sL.error, "The connection to the lobby's owner was lost: the lobby is closed.", sizeof(sL.error));
                 sL.closedBy = 1;
                 if (NetIo_SessionMode() != 0 || NetIo_SessionStarting()) {

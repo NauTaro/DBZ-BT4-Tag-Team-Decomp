@@ -13,6 +13,7 @@
 #include <atomic>
 #include <mutex>
 #include "tag_team_p2p.h"
+#include "../../include/online_room_policy.h"
 #include "supabase_signal.h"
 #include "voice_platform.inc"
 #include "../../third_party/voice/rtc/rtc.h"
@@ -253,7 +254,7 @@ struct Session {
             if(waiting&&now>=nextLease){initSerial=++rpcSerial;rpc("queue",queueProfile,initSerial);nextLease=now+60000;}
             if(service.status==0&&!waiting&&now-began>60000){service.status=-1;break;}
             if(self!=1&&self&&now>=nextPing){nextPing=now+500;if(auto *p=find(1)){Packet packet={};Ttw_Request(packet.data(),pingCommand,epoch);unsigned n=++probeSerial;probes[n%32]={n,now};Ttw_Write(packet.data()+12,n);send(*p,packet,false);
-                if(p->admitted&&now-p->heard>10000){service.status=-1;break;}}}
+                if(p->admitted&&Bt4Room_IsIdleMs(now,p->heard)){service.status=-1;break;}}}
             if(self==1&&(now>=nextLease||publishedPhase!=Kernel_Phase())){nextLease=now+60000;publishedPhase=Kernel_Phase();rpc("lease",{{"joinable",publishedPhase==TT_LOBBY}});}
             if(self==1&&clock&&Kernel_Phase()==TT_FIGHT){const Uint64 step=1000000000ULL*10/342;unsigned burst=0;Uint64 ns=SDL_GetTicksNS();
                 while(ns>=nextTick&&burst++<4){Kernel_DeadlineFrame();if(Kernel_TakeFrame()){Wire f;memcpy(f.bytes.data(),Kernel_Output(),512);f.at=SDL_GetTicks();emit(f.bytes,f.at);history.push_back(f);if(history.size()>512)history.pop_front();recent.push_back(f);if(recent.size()>3)recent.pop_front();

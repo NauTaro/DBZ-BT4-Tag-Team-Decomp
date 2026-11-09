@@ -37,6 +37,11 @@ for name, ref, key in PROJECTS:
         query(ref, secret, (ROOT / "supabase/migrations/20261108224635_ranked_abandonment.sql").read_text())
     query(ref, secret, (ROOT / "supabase/checks/r5_hotfix_live.sql").read_text())
     print(name + ": forfeits, handshake protection, timeout idempotence and retained ICE checks passed (rolled back)", flush=True)
+    lease = query(ref, secret, "select position('30 minutes' in pg_get_functiondef('public.bt4_room_lease(boolean)'::regprocedure))>0 as ready")
+    if not lease[0]["ready"]:
+        query(ref, secret, (ROOT / "supabase/migrations/20261109021420_room_inactivity_30_minutes.sql").read_text())
+    query(ref, secret, (ROOT / "supabase/checks/room_inactivity_live.sql").read_text())
+    print(name + ": 30-minute room creation, lease renewal and expired-room checks passed (rolled back)", flush=True)
     result = query(ref, secret, "select enabled,authority_backend,to_regclass('bt4_private.ranked_reports') is not null as reports,has_function_privilege('authenticated','public.bt4_ranked_api(text,jsonb)','execute') as authenticated_api from bt4_private.ranked_config where singleton")
     if len(result) != 1 or result[0]["authority_backend"] != 1 or not result[0]["reports"] or not result[0]["authenticated_api"] or (result[0]["enabled"] and (not ACTIVATE or name != "secondary")):
         raise RuntimeError("Unexpected staged Ranked state on " + name)

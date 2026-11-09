@@ -19,6 +19,12 @@ extern "C" int Update_OnlineRequired(void){return 0;}
 
 int main(){
     assert(SDL_Init(0));
+    assert(!Bt4Room_IsIdleMs(1799999,0));
+    assert(Bt4Room_IsIdleMs(1800000,0));
+    assert(!Bt4Room_IsIdleMs(1800000,1000));
+    assert(!Bt4Room_IsIdleMs(999,1000));
+    assert(!Bt4Room_IsIdleNs(UINT64_C(1799999999999),0));
+    assert(Bt4Room_IsIdleNs(UINT64_C(1800000000000),0));
     watchQuit=true; // run the liveness state machine deterministically below
     Bt4Signal_Listen(4,1);rankedStatusRequest=1;rankedTopRequest=2;
     emit(4,{{"event","reply"},{"serial",1u},{"body",{{"enabled",true},{"season","2026-11-01"},{"rating",1234u},{"wins",3u},{"losses",1u}}}});

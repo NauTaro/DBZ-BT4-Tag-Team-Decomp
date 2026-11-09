@@ -1,6 +1,7 @@
 # 0.1.39.5 R5 Hotfix
 
 - Add authenticated Ranked fight liveness and a fixed 16-point transfer for forfeits, applied once after both players have started fighting. Failed room connections and character selection do not cost points; two disconnected clients do not receive a timeout win.
+- Allow 30 minutes without room communication before established lobbies and tournaments time out; renew active room leases instead of imposing a total playtime limit.
 - Expire Ranked result notifications after two seconds, including when switching menus.
 - Keep advertised UDP mappings alive during long matchmaking waits, discover alternate public endpoints on UDP 3478, and add an independent STUN fallback to Tag Team.
 - Retry unacknowledged Tag Team negotiation messages within a bounded connection window.
