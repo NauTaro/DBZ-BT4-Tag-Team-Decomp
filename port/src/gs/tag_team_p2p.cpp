@@ -45,6 +45,7 @@ static unsigned number(const Pj &j,const char *key){auto p=j.find(key);return p!
 static std::string text(const Pj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
 struct Peer {std::atomic<unsigned> id{0};std::atomic<int> pc{-1},control{-1},input{-1};bool remote=false,admitted=false;std::string name;std::vector<Pj> candidates;Uint64 heard=0;};
 struct PendingSignal {Pj body;Uint64 at;};
+struct OutgoingSignal {Pj body;Uint64 next,expires;};
 static std::array<Peer,10> stablePeers;
 struct Session {
     std::array<Peer,10> &peers=stablePeers;unsigned self=0,epoch=0,lo=0,hi=0,initSerial=0,reconcile=0;
@@ -54,6 +55,8 @@ struct Session {
     std::array<unsigned,8> pingSamples={};unsigned pingCount=0,pingCursor=0;
     std::deque<Wire> history,recent;std::map<unsigned,Wire> reordered;
     std::deque<PendingSignal> earlySignals;
+    std::map<unsigned,OutgoingSignal> outgoing;
+    uint64_t signalCursor=0;unsigned recovery=0;Uint64 recoverAt=0;
     void pingSample(unsigned sample){
         if(sample>=10000)return;
         pingSamples[pingCursor++%pingSamples.size()]=sample;
@@ -84,14 +87,27 @@ struct Session {
         if((!reliable&&!input)||(reliable?p.control.load():p.input.load())>=0){rtc.rtcDeleteDataChannel(dc);return;}
         if(reliable)p.control=dc;else p.input=dc;rtc.rtcSetUserPointer(dc,&p);rtc.rtcSetOpenCallback(dc,opened);rtc.rtcSetMessageCallback(dc,message);
     }
-    void open(Peer &p){const char *stun[]={"stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"};rtcConfiguration cfg={};cfg.iceServers=stun;cfg.iceServersCount=2;cfg.disableAutoNegotiation=true;cfg.maxMessageSize=2048;
+    void open(Peer &p){const char *stun[]={"stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302","stun:global.stun.twilio.com:3478"};rtcConfiguration cfg={};cfg.iceServers=stun;cfg.iceServersCount=3;cfg.disableAutoNegotiation=true;cfg.maxMessageSize=2048;
         int pc=rtc.rtcCreatePeerConnection(&cfg);if(pc<0){service.status=-1;return;}p.pc=pc;p.heard=SDL_GetTicks();rtc.rtcSetUserPointer(pc,&p);
         rtc.rtcSetLocalDescriptionCallback(pc,description);rtc.rtcSetLocalCandidateCallback(pc,candidate);rtc.rtcSetDataChannelCallback(pc,channel);rtc.rtcSetStateChangeCallback(pc,changed);
         if(self==1){rtcDataChannelInit control={};control.protocol="bt4-room-control-v1";bind(p,rtc.rtcCreateDataChannelEx(pc,"BT4 Room",&control));
             rtcDataChannelInit input={};input.protocol="bt4-tag-input-v1";input.reliability.unordered=true;input.reliability.unreliable=true;input.reliability.maxRetransmits=0;
             bind(p,rtc.rtcCreateDataChannelEx(pc,"BT4 Inputs",&input));rtc.rtcSetLocalDescription(pc,"offer");}}
     void rpc(const char *op,const Pj &args,unsigned serial=0){if(!Bt4Signal_Command(1,serial?serial:++rpcSerial,op,args.dump().c_str())){if(initializing)service.status=-1;}}
-    void signal(unsigned to,const char *kind,const Pj &body){rpc("signal",{{"generation",generation},{"to",to},{"channel","tag"},{"kind",kind},{"body",body}});}
+    void signal(unsigned to,const char *kind,const Pj &body){
+        Pj args={{"generation",generation},{"to",to},{"channel","tag"},{"kind",kind},{"body",body}};
+        unsigned id=++rpcSerial;
+        if(outgoing.size()<96)outgoing.emplace(id,OutgoingSignal{args,SDL_GetTicks()+25000,SDL_GetTicks()+60000});
+        rpc("signal",args,id);
+    }
+    void retrySignals(Uint64 now){
+        for(auto it=outgoing.begin();it!=outgoing.end();){
+            if(now>=it->second.expires){it=outgoing.erase(it);continue;}
+            if(now>=it->second.next){auto item=it->second;it=outgoing.erase(it);item.next=now+25000;
+                unsigned id=++rpcSerial;outgoing.emplace(id,item);rpc("signal",item.body,id);
+            }else ++it;
+        }
+    }
     void snapshot(unsigned target,int result=TT_OK,unsigned ack=0){Kernel_Snapshot(target,result,code.c_str());Packet packet;memcpy(packet.data(),Kernel_Output(),512);Ttw_Write(packet.data()+508,ack);
         if(target==self)emit(packet);else if(auto *p=find(target))send(*p,packet,true);}
     void notify(){snapshot(self);for(auto &p:peers)if(p.id&&p.admitted)snapshot(p.id);}
@@ -113,7 +129,7 @@ struct Session {
         auto *p=find(number(body,"from"));if(!p||p->pc<0)return false;
         auto &b=body["body"];auto kind=text(body,"kind");
         if(kind=="offer"||kind=="answer"){
-            if((kind=="offer"&&(self==1||p->id!=1))||(kind=="answer"&&self!=1))return true;
+            if((kind=="offer"&&(self==1||p->id!=1))||(kind=="answer"&&self!=1)||p->remote)return true;
             if(rtc.rtcSetRemoteDescription(p->pc,text(b,"sdp").c_str(),kind.c_str())<0)return true;
             p->remote=true;
             for(auto &c:p->candidates)rtc.rtcAddRemoteCandidate(p->pc,text(c,"candidate").c_str(),text(c,"mid").c_str());
@@ -171,6 +187,20 @@ struct Session {
         while(count++<64&&Bt4Signal_Read(1,raw,sizeof(raw))>0){Pj j=Pj::parse(raw,nullptr,false);if(!j.is_object())continue;auto body=j.find("body");if(body==j.end()||!body->is_object())continue;
             auto event=text(j,"event");
             if(event=="reply"){
+                if(recovery&&number(j,"serial")==recovery){
+                    recovery=0;
+                    auto signals=body->find("signals");
+                    if(signals!=body->end()&&signals->is_array())for(const auto &packet:*signals)receiveSignal(packet);
+                    auto cursor=body->find("cursor");if(cursor!=body->end()&&cursor->is_number_unsigned())signalCursor=std::max(signalCursor,cursor->get<uint64_t>());
+                    recoverAt=SDL_GetTicks()+1000;
+                    continue;
+                }
+                auto pending=outgoing.find(number(j,"serial"));
+                if(pending!=outgoing.end()){
+                    if(text(*body,"state")=="sent")outgoing.erase(pending);
+                    else pending->second.next=SDL_GetTicks()+2000;
+                    continue;
+                }
                 if(number(j,"serial")==initSerial||number(j,"serial")==reconcile){if(body->contains("error")){if(!self){fprintf(stderr,"tag P2P admission failed: %s\n",text(*body,"error").c_str());service.status=-1;}}else if(text(*body,"state")=="waiting"){waiting=true;nextLease=SDL_GetTicks()+60000;}else metadata(*body);}
             }else if(event=="bt4.ready"&&!room.empty()){reconcile=++rpcSerial;rpc("get",Pj::object(),reconcile);
             }else if(event=="bt4.room"&&(!room.empty()||queued))metadata(*body);
@@ -217,9 +247,11 @@ struct Session {
             for(auto &e:events)event(e);
             for(auto &packet:requests){unsigned cmd=Ttw_Read(packet.data()+4);if(!self){if(!initializing&&(cmd==TTW_OPEN||cmd==TTW_JOIN))initialize(packet);continue;}
                 if(self==1)command(self,packet);else if(auto *p=find(1)){if(cmd==TTW_INPUT)send(*p,packet,false);else send(*p,packet,true);}}
-            Uint64 now=SDL_GetTicks();
+            Uint64 now=SDL_GetTicks();retrySignals(now);
+            bool negotiating=!room.empty()&&std::any_of(peers.begin(),peers.end(),[](const Peer &p){return p.id&&!p.admitted;});
+            if(negotiating&&now>=recoverAt){recovery=++rpcSerial;recoverAt=now+25000;rpc("get_signals",{{"generation",generation},{"after",signalCursor}},recovery);}
             if(waiting&&now>=nextLease){initSerial=++rpcSerial;rpc("queue",queueProfile,initSerial);nextLease=now+60000;}
-            if(service.status==0&&!waiting&&now-began>30000){service.status=-1;break;}
+            if(service.status==0&&!waiting&&now-began>60000){service.status=-1;break;}
             if(self!=1&&self&&now>=nextPing){nextPing=now+500;if(auto *p=find(1)){Packet packet={};Ttw_Request(packet.data(),pingCommand,epoch);unsigned n=++probeSerial;probes[n%32]={n,now};Ttw_Write(packet.data()+12,n);send(*p,packet,false);
                 if(p->admitted&&now-p->heard>10000){service.status=-1;break;}}}
             if(self==1&&(now>=nextLease||publishedPhase!=Kernel_Phase())){nextLease=now+60000;publishedPhase=Kernel_Phase();rpc("lease",{{"joinable",publishedPhase==TT_LOBBY}});}

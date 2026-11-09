@@ -1,3 +1,27 @@
+# 0.1.39.5 R5 Hotfix
+
+- Add authenticated Ranked fight liveness and a fixed 16-point transfer for forfeits, applied once after both players have started fighting. Failed room connections and character selection do not cost points; two disconnected clients do not receive a timeout win.
+- Expire Ranked result notifications after two seconds, including when switching menus.
+- Keep advertised UDP mappings alive during long matchmaking waits, discover alternate public endpoints on UDP 3478, and add an independent STUN fallback to Tag Team.
+- Retry unacknowledged Tag Team negotiation messages within a bounded connection window.
+- Join the [official Discord community](https://discord.gg/EBhh5ef3T6) for matchmaking, news and support.
+
+<!-- bt4-update:en
+- Award the remaining player 16 points and deduct them from a Ranked opponent who leaves a started fight.
+- Dismiss rating notifications after two seconds.
+- Improve connection discovery and retry Tag Team negotiation messages.
+-->
+<!-- bt4-update:es
+- Suma 16 puntos al rival que permanece y los descuenta a quien abandona un combate clasificatorio iniciado.
+- Oculta los avisos de puntos después de dos segundos.
+- Mejora el descubrimiento de conexiones y reintenta los mensajes de conexión de Tag Team.
+-->
+<!-- bt4-update:pt
+- Adiciona 16 pontos ao jogador que permanece e desconta de quem abandona uma luta ranqueada iniciada.
+- Oculta os avisos de pontos após dois segundos.
+- Melhora a descoberta de conexões e repete as mensagens de negociação do Tag Team.
+-->
+
 # 0.1.39.5 R5
 
 - Add separate Ranked queues for solo and native Team Battle, with independent ratings and matchmaking rules.

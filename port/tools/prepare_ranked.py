@@ -32,6 +32,11 @@ for name, ref, key in PROJECTS:
         raise RuntimeError("Ranked foundation not installed on " + name)
     if not state[0]["ready"]:
         query(ref, secret, (ROOT / "supabase/migrations/202611080005_ranked_admission_reports.sql").read_text())
+    hotfix = query(ref, secret, "select exists(select 1 from information_schema.columns where table_schema='bt4_private' and table_name='ranked_matches' and column_name='forfeit_by') as ready")
+    if not hotfix[0]["ready"]:
+        query(ref, secret, (ROOT / "supabase/migrations/20261108224635_ranked_abandonment.sql").read_text())
+    query(ref, secret, (ROOT / "supabase/checks/r5_hotfix_live.sql").read_text())
+    print(name + ": forfeits, handshake protection, timeout idempotence and retained ICE checks passed (rolled back)", flush=True)
     result = query(ref, secret, "select enabled,authority_backend,to_regclass('bt4_private.ranked_reports') is not null as reports,has_function_privilege('authenticated','public.bt4_ranked_api(text,jsonb)','execute') as authenticated_api from bt4_private.ranked_config where singleton")
     if len(result) != 1 or result[0]["authority_backend"] != 1 or not result[0]["reports"] or not result[0]["authenticated_api"] or (result[0]["enabled"] and (not ACTIVATE or name != "secondary")):
         raise RuntimeError("Unexpected staged Ranked state on " + name)

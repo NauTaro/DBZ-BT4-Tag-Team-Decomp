@@ -12,10 +12,12 @@
 #include <set>
 #include <mutex>
 #include <atomic>
+#include <vector>
 #include "match_supabase.h"
 #include "supabase_signal.h"
 #include "voice.h"
 #include "update_sign.h"
+extern "C" void Port_RankedShutdown(void);
 #define JSON_NOEXCEPTION
 #include "../../third_party/voice/json.hpp"
 using Dj=nlohmann::json;
@@ -39,6 +41,60 @@ struct Discovery {
 } d;
 bool rankedNext=false;
 std::atomic<bool> rankedActive{false};
+// Keep an authenticated liveness proof while fighting, then briefly after a
+// remote disconnect. No simulation, GPU or blocking network work runs here.
+struct RankedWatch {std::string match,project;Uint64 next=0,until=0;unsigned request=0;bool concede=false,pending=false;};
+std::vector<RankedWatch> rankedWatches;
+SDL_Thread *rankedWatcher=nullptr;
+std::atomic<bool> watchQuit{false};
+unsigned watchSerial=900000;
+void watchStep(Uint64 now){
+    char raw[2048];
+    while(Bt4Signal_Read(5,raw,sizeof(raw))>0){
+        Dj e=Dj::parse(raw,nullptr,false);if(!e.is_object())continue;
+        for(auto &w:rankedWatches)if(w.request==number(e,"serial")){
+            w.pending=false;w.next=now+5000;auto b=e.find("body");if(b==e.end()||!b->is_object())continue;
+            auto state=text(*b,"state");
+            if(state=="applied"||state=="already_applied"||state=="not_started"||state=="expired"||
+               text(*b,"error")=="NOT_A_PARTICIPANT")w.until=1;
+        }
+    }
+    for(auto &w:rankedWatches){
+        if(w.until&&now>=w.until)continue;
+        if(w.project!=Bt4Signal_Project())continue; // a new route cannot settle an old route's match
+        if(now>=w.next){
+            w.request=++watchSerial;
+            auto body=Dj{{"match",w.match}}.dump();
+            w.pending=Bt4Signal_Command(5,w.request,w.concede?"ranked_forfeit":"ranked_heartbeat",body.c_str());
+            w.next=now+(w.pending?25000:5000);
+        }
+    }
+    rankedWatches.erase(std::remove_if(rankedWatches.begin(),rankedWatches.end(),[&](const RankedWatch &w){return w.until&&now>=w.until;}),rankedWatches.end());
+}
+int SDLCALL watchThread(void*){
+    SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_LOW);
+    while(!watchQuit){SDL_Delay(250);std::lock_guard<std::mutex> guard(lock);watchStep(SDL_GetTicks());}
+    return 0;
+}
+void watchFight(){
+    auto match=text(d.descriptor,"generation");if(match.empty())return;
+    auto it=std::find_if(rankedWatches.begin(),rankedWatches.end(),[&](const RankedWatch &w){return w.match==match;});
+    if(it==rankedWatches.end()){
+        if(rankedWatches.size()>=4)return;
+        rankedWatches.push_back({match,Bt4Signal_Project()});
+    }else if(it->until)return; // a completed/left match is not revived by a later presentation frame
+    if(!rankedWatcher&&!watchQuit){
+        rankedWatcher=SDL_CreateThread(watchThread,"BT4 Ranked liveness",nullptr);
+        if(rankedWatcher)atexit(Port_RankedShutdown);
+    }
+}
+void watchFinish(bool concede){
+    auto match=text(d.descriptor,"generation");
+    for(auto &w:rankedWatches)if(w.match==match){
+        if(d.reportSerial)concede=false;
+        w.until=SDL_GetTicks()+120000;w.concede=concede;w.next=0;
+    }
+}
 bool rpc(const char *op,const Dj &args,unsigned id=0){
     if(d.ranked&&!strcmp(op,"queue"))op="ranked_queue";
     return Bt4Signal_Command(0,id?id:++serial,op,args.dump().c_str());
@@ -230,6 +286,7 @@ extern "C" void Bt4Discovery_End(unsigned generation){std::lock_guard<std::mutex
     // Realtime is only the discovery channel. Cancellation and leave are HTTP
     // operations, so always queue them even if the inbox is disconnected.
     if(d.waiting)rpc("cancel",Dj::object());
+    if(d.ranked&&d.sawFight){auto m=text(d.descriptor,"generation");for(auto &w:rankedWatches)if(w.match==m&&!w.until){w.until=SDL_GetTicks()+120000;w.next=0;}}
     Dj leave=Dj::object();auto generationId=text(d.descriptor,"generation");if(!generationId.empty())leave["generation"]=generationId;
     rpc("leave",leave);d.earlySignals.clear();d.on=false;rankedActive=false;}
 extern "C" int Bt4Discovery_Counts(int protocol,uint64_t content,int out[5]){
@@ -246,6 +303,15 @@ extern "C" int Bt4Discovery_TagCounts(uint64_t content,int out[3]){
 }
 extern "C" void Port_RankedSearch(int selected){std::lock_guard<std::mutex> g(lock);rankedNext=selected!=0;}
 extern "C" int Port_RankedActive(void){return rankedActive.load();}
+extern "C" void Port_RankedShutdown(void){
+    watchQuit=true;
+    if(rankedWatcher){SDL_WaitThread(rankedWatcher,nullptr);rankedWatcher=nullptr;}
+    std::lock_guard<std::mutex> guard(lock);rankedWatches.clear();
+}
+extern "C" void Port_RankedDisconnected(int intentional){
+    std::lock_guard<std::mutex> guard(lock);
+    if(d.ranked&&d.sawFight)watchFinish(intentional!=0);
+}
 extern "C" int Port_RankedResult(int *rating,int *delta){
     std::lock_guard<std::mutex> g(lock);
     if(rating)*rating=d.resultRating;if(delta)*delta=d.resultDelta;return d.reportState;
@@ -264,7 +330,7 @@ extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsign
         }
         return;
     }
-    if(battleState==3){d.sawFight=true;d.outcomeBits=0;return;}
+    if(battleState==3){if(!d.sawFight)watchFight();d.sawFight=true;d.outcomeBits=0;return;}
     if(!d.sawFight||battleState<4||battleState>6||(bits&8)||!(bits&7)){d.outcomeBits=0;return;}
     bits&=7;
     if(d.outcomeBits!=bits){d.outcomeBits=bits;d.outcomeTick=tick;return;}
@@ -277,6 +343,7 @@ extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsign
     UpdSha256_Hex(canonical,strlen(canonical),digest);
     d.report={{"match",text(d.descriptor,"generation")},{"outcome",winner},{"digest",digest}};
     d.reportState=1;d.reportSerial=++serial;d.reportAt=now+3000;
+    watchFinish(false);
     d.reportPending=rpc("ranked_report",d.report,d.reportSerial);
 }
 

@@ -19,6 +19,7 @@ extern "C" int Update_OnlineRequired(void){return 0;}
 
 int main(){
     assert(SDL_Init(0));
+    watchQuit=true; // run the liveness state machine deterministically below
     Bt4Signal_Listen(4,1);rankedStatusRequest=1;rankedTopRequest=2;
     emit(4,{{"event","reply"},{"serial",1u},{"body",{{"enabled",true},{"season","2026-11-01"},{"rating",1234u},{"wins",3u},{"losses",1u}}}});
     Dj entries=Dj::array();
@@ -79,6 +80,23 @@ int main(){
     d.reportSerial=0;d.reportState=0;d.reportPending=false;d.outcomeBits=0;d.sawFight=true;
     Port_RankedObserve(4,1,200,200,0);Port_RankedObserve(4,1,225,225,0);
     assert(capturedCommands.size()==3&&text(capturedCommands.back().args,"digest")==firstDigest);
+    // Liveness is HTTP-only and continues after the room is left. A local
+    // concession names only our own match; remote loss keeps proving presence.
+    capturedCommands.clear();rankedWatches.clear();d.reportSerial=0;d.sawFight=false;
+    Port_RankedDisconnected(1);assert(rankedWatches.empty());
+    Port_RankedObserve(3,0,300,300,0);assert(rankedWatches.size()==1);
+    watchStep(1000);assert(capturedCommands.size()==1&&capturedCommands.back().op=="ranked_heartbeat");
+    assert(text(capturedCommands.back().args,"match")==text(d.descriptor,"generation"));
+    watchStep(1001);assert(capturedCommands.size()==1); // no burst behind an in-flight request
+    Port_RankedDisconnected(0);assert(!rankedWatches[0].concede&&rankedWatches[0].until);
+    Port_RankedDisconnected(1);assert(rankedWatches[0].concede);
+    watchStep(2000);assert(capturedCommands.back().op=="ranked_forfeit");
+    Bt4Signal_Listen(5,1);
+    emit(5,{{"event","reply"},{"serial",rankedWatches[0].request},{"body",{{"state","already_applied"}}}});
+    watchStep(2001);assert(rankedWatches.empty());
+    assert(!Bt4Signal_Command(0,52,"ranked_forfeit","{}"));
+    assert(!Bt4Signal_Command(5,53,"create","{}"));
+    Port_RankedShutdown();Bt4Signal_Listen(5,0);
     rankedActive=false;
     Bt4Signal_Listen(0,0);
     assert(!state.thread&&state.jobs.empty());

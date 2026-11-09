@@ -2899,7 +2899,7 @@ static void ranked_outcome(unsigned tick){
             if(result!=2)notified=0;
             else if(!notified){
                 char line[128];snprintf(line,sizeof(line),PortOnline_Text("Ranked: %+d points (%d total)"),delta,rating);
-                Port_UiBanner(line,0);notified=1;
+                Port_UiBanner(line,2000);notified=1;
             }
         }
     }
@@ -3294,6 +3294,8 @@ void Port_NetArrived(void) {
 /* The session is over (the game went back to the main menu, or the other side is gone): back to the game as it
    normally is. */
 void Port_NetLeave(void) {
+    extern void Port_RankedDisconnected(int);
+    Port_RankedDisconnected(sByeWhy == 0);
     PortVoice_Leave(1);sVoiceRoomKeyKnown=0;sVoiceRoomKeySent=0;memset(sVoiceRoomKey,0,sizeof(sVoiceRoomKey));
     fprintf(stderr, "bt3: net: the session has ended\n");
     Lobby_SessionLeaving(); /* (a lobby's owner: everyone back to the lobby, before the goodbyes) */
