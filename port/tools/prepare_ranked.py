@@ -1,6 +1,7 @@
 """Prepare R5 result reporting on both backends without opening Ranked admission."""
 import json
 import os
+import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
@@ -14,11 +15,17 @@ def query(ref, secret, sql):
     request = Request("https://api.supabase.com/v1/projects/" + ref + "/database/query",
         data=json.dumps({"query": sql}).encode(),
         headers={"Authorization": "Bearer " + secret, "Content-Type": "application/json"}, method="POST")
-    try:
-        with urlopen(request, timeout=60) as response:
-            result = json.load(response)
-    except HTTPError as exc:
-        raise RuntimeError("Management query failed with HTTP " + str(exc.code)) from None
+    for attempt in range(3):
+        try:
+            with urlopen(request, timeout=60) as response:
+                result = json.load(response)
+            break
+        except HTTPError as exc:
+            # Read-only readiness probes can safely retry a transient gateway
+            # failure. Never blindly replay a migration after an unknown result.
+            if attempt<2 and sql.lstrip().lower().startswith('select ') and exc.code in (429,500,502,503,504,544):
+                time.sleep(2**(attempt+1));continue
+            raise RuntimeError("Management query failed with HTTP " + str(exc.code)) from None
     if not isinstance(result, list):
         raise RuntimeError("Unexpected Management response")
     return result
