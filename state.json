@@ -1,4 +1,4 @@
 {
-  "payload": "{\"admission_until\":{\"primary\":1794250155,\"secondary\":1794336557},\"schema\":1}",
-  "signature": "0b6bc3d6a9ea0e078ac5ec7f35a4ba55322e36cc6a6762a79d0210f848642741a89d8c6ae5d3d17ce1629776810dc89389c3d555429562269698b59bd8d47a03"
+  "payload": "{\"admission_until\":{\"primary\":1794250155,\"secondary\":1794337975},\"schema\":1}",
+  "signature": "57494c04372c19ffa6f8752b5754d2f192fd84b0a28ec01f91f92db7e662c66e3e2b60371386e051bdc3676632bed03108ca55a5c1226a331bd404ce3da5f502"
 }
