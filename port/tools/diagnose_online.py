@@ -25,6 +25,18 @@ for name,ref,key in [('secondary','houhjsfukkkicjejvett','SUPABASE_SECONDARY_MAN
     probes=[('project','',None),('health','/health?services=auth,rest,realtime,db',None),('disk','/config/disk/util',None),('logs','/analytics/endpoints/logs?'+urlencode({**window,'sql':logs}),None),('database','/database/query',{'query':"select state,wait_event_type,count(*) from pg_stat_activity group by state,wait_event_type;"})]
     if name=='secondary':
         probes += [
+            ('ranked_settlements','/database/query',{'query':"""with recent as (
+              select m.*, (select count(*) from bt4_private.ranked_reports r where r.match_id=m.id) reports
+              from bt4_private.ranked_matches m where m.admitted_at>now()-interval '12 hours'
+              ) select case when completed_at is not null and forfeit_by is not null then 'forfeit'
+                  when completed_at is not null then 'result' when abandonment_void then 'void'
+                  when disputed then 'disputed' else 'open' end settlement,
+              (started_a is not null)::int+(started_b is not null)::int started,reports,count(*) as matches,
+              count(*) filter(where forfeit_by=winner) forfeiter_won,
+              count(*) filter(where forfeit_by is not null and
+                (case when forfeit_by=player_a then seen_a-seen_b else seen_b-seen_a end)>interval '2 seconds') as forfeiter_seen_later,
+              count(*) filter(where completed_at-admitted_at<interval '45 seconds') as quick_settlements
+              from recent group by 1,2,3 order by 1,2,3"""}),
             ('metrics','/analytics/endpoints/metrics',None),
             ('hot_queries','/database/query',{'query':"""select queryid,calls,
               round(total_exec_time::numeric) total_ms,round(mean_exec_time::numeric,2) mean_ms,
