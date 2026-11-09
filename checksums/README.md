@@ -11,6 +11,9 @@ Each platform folder contains the SHA-256 of every file inside the corresponding
 - [R5 1.1 Windows](v0.1.39.5-R5.2/windows-x64/SHA256SUMS.txt)
 - [R5 1.1 Linux](v0.1.39.5-R5.2/linux-x64/SHA256SUMS.txt)
 - [R5 1.1 macOS](v0.1.39.5-R5.2/macos-arm64/SHA256SUMS.txt)
+- [R5 1.2 Windows](v0.1.39.5-R5.3/windows-x64/SHA256SUMS.txt)
+- [R5 1.2 Linux](v0.1.39.5-R5.3/linux-x64/SHA256SUMS.txt)
+- [R5 1.2 macOS](v0.1.39.5-R5.3/macos-arm64/SHA256SUMS.txt)
 
 Verify a complete ZIP without extracting or executing its contents:
 
