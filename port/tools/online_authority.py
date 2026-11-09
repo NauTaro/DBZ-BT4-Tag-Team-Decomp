@@ -85,12 +85,32 @@ def write_config(project,epoch,admission,until,c):
       admission_open={'true' if admission else 'false'},admission_until=to_timestamp({int(until)}),
       require_update={'true' if c['require_update'] else 'false'},minimum_client='{c['minimum']}',minimum_capability=1
       where singleton and epoch<={epoch}
-      returning epoch,admission_open,extract(epoch from admission_until)::bigint admission_until"""
-    request(f"https://api.supabase.com/v1/projects/{project['ref']}/database/query",{'query':sql},
-        headers={'Authorization':'Bearer '+token})
-    # The Management API response shape varies by API version and can fail after
-    # a committed statement. Verify the durable public route state instead.
+      returning epoch,backend_id,admission_open,extract(epoch from admission_until)::bigint admission_until"""
+    status,raw=request(f"https://api.supabase.com/v1/projects/{project['ref']}/database/query",{'query':sql},
+        headers={'Authorization':'Bearer '+token},timeout=20)
+    # A committed SQL receipt can fence an endpoint whose public REST service
+    # is down. Empty results and ambiguous management failures are insufficient.
+    if not admission and 200<=status<300:
+        try:
+            rows=json.loads(raw)
+            if (isinstance(rows,list) and len(rows)==1 and rows[0]['epoch']==epoch and
+                rows[0]['backend_id']==index and rows[0]['admission_open'] is False and
+                int(rows[0]['admission_until'])==int(until)):
+                return True
+        except (ValueError,KeyError,TypeError):pass
     return route_config_matches(project,epoch,admission,until,c)
+
+def fence_previous(project,epoch,old_until,c,now):
+    if type(old_until) is int and now>=old_until+30:
+        return old_until
+    if write_config(project,epoch,False,now,c):
+        return now
+    # If a verified SQL close was just published, allow its short clock margin
+    # to expire. An older 24-hour lease is never shortened on an unknown result.
+    if type(old_until) is int and 0<old_until+30-now<=30:
+        time.sleep(old_until+30-now)
+        return old_until
+    raise AuthorityError('Previous route is not fenced; keeping standby admission closed')
 
 def verify_release(c,public,fetch=request):
     headers={}
@@ -226,9 +246,7 @@ def main():
         # Never presume that an unreachable old database stopped accepting rooms.
         # Either its management endpoint acknowledges closure, or its durable
         # published upper lease bound plus clock tolerance must have passed.
-        closed=type(old_until) is int and now>=old_until+30
-        if not closed:closed=write_config(other,epoch,False,now,c)
-        # if not closed and (type(old_until) is not int or now<old_until+0):raise AuthorityError('Prior route is not fenced yet; wait for its published lease bound to expire')
+        fence_previous(other,epoch,old_until,c,now)
         until=state['admission_until'].get(selected)
         if type(until) is not int or not now<until<=prior['issued_at']+c['admission_seconds']:raise AuthorityError('Invalid published admission lease')
         target=next(p for p in PROJECTS if p['id']==selected)
@@ -258,9 +276,14 @@ def main():
         epoch=max([prior['epoch'] if prior else 1]+[h['epoch'] for h in observations.values() if h])
         switching=prior is None or selected!=active
         if switching:epoch+=1
+        leases=state.get('admission_until',{}).copy()
+        if switching:
+            old=next(p for p in PROJECTS if p['id']!=selected)
+            leases[old['id']]=fence_previous(old,epoch,leases.get(old['id']),c,int(time.time()))
+        now=int(time.time())
         until=now+c['admission_seconds']
         args.state_dir.mkdir(parents=True,exist_ok=True)
-        leases=state.get('admission_until',{});leases[selected]=until
+        leases[selected]=until
         save_signed(args.state_dir/'state.json',{'schema':1,'admission_until':leases},seed,state_domain)
         save_signed(receipt_path,receipt,seed,receipt_domain)
         save_signed(args.state_dir/'policy.json',dict(schema=1,epoch=epoch,issued_at=now,expires_at=now+c['policy_seconds'],capability=1,

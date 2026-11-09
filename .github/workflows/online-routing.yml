@@ -69,6 +69,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
           REQUESTED_ROUTE: ${{ inputs.route || 'auto' }}
         run: python3 port/tools/online_authority.py --state-dir "$RUNNER_TEMP/online-routing" --route "$REQUESTED_ROUTE" --prepare
       - name: Check both administrative credentials before publishing
