@@ -1,3 +1,25 @@
+# 0.1.39.5 R5 1.2
+
+- See the ten highest-ranked fighters and their scores in the Online menu. Open the Global Top directly from Ranked and keep the last standings visible while new data loads. The standings refresh every ten minutes.
+- Reserve an online nickname for your account. Existing scores and match history stay with the account when its nickname changes.
+- Resume waiting searches more quickly when the Online service switches routes.
+
+<!-- bt4-update:en
+- See the Top 10 in the Online menu, with standings refreshed every ten minutes.
+- Reserve a unique online nickname and keep your Ranked progress.
+- Resume waiting searches more quickly during Online failover.
+-->
+<!-- bt4-update:es
+- Consulta el Top 10 en el menú Online, con una tabla que se actualiza cada diez minutos.
+- Reserva un apodo único y conserva tu progreso en Clasificatorias.
+- Reanuda más rápido las búsquedas cuando cambia el servidor Online.
+-->
+<!-- bt4-update:pt
+- Consulte o Top 10 no menu Online, atualizado a cada dez minutos.
+- Reserve um apelido exclusivo e mantenha seu progresso nas ranqueadas.
+- Retome as buscas mais rapidamente quando o servidor Online mudar.
+-->
+
 # 0.1.39.5 R5 1.1
 
 - Keep an opponent's disconnect separate from your own surrender in Ranked. When the server confirms an abandonment, the player who stayed gains 16 points and the player who left loses 16, within the rating limits. The result is shown for two seconds even if the game has already returned to the menu.

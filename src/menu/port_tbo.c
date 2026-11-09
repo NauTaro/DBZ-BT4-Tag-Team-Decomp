@@ -1218,7 +1218,7 @@ static void Tb_OpenName(s32 required) {
 
 static s32 Tb_NicknameCanPlay(void) {
     if (getenv("BT4_RENDER_TEST") || sTb->nicknameState == BT4_NICKNAME_READY ||
-        sTb->nicknameState == BT4_NICKNAME_DISABLED) return 1;
+        sTb->nicknameState == BT4_NICKNAME_DISABLED || sTb->nicknameState == BT4_NICKNAME_OPTIONAL) return 1;
     if (sTb->nicknameState == BT4_NICKNAME_UNAVAILABLE) {
         Port_OnlineNicknameBegin();
         Tb_Note("Could not verify your nickname. Try again.");
@@ -1699,8 +1699,7 @@ static void Tb_NameUpdate(s32 live) {
             Port_NetNameSave(sTb->typed);
             Tb_Note("SAVED: YOUR RIVALS WILL SEE THIS NAME");
             Tb_SetMode(TB_PROFILE);
-        } else if (sTb->nicknameState != BT4_NICKNAME_LOADING) {
-            Port_OnlineNicknameSubmit(sTb->typed);
+        } else if (sTb->nicknameState != BT4_NICKNAME_LOADING && Port_OnlineNicknameSubmit(sTb->typed)) {
             sTb->nicknameSaving = 1;
             Tb_Note("Reserving your nickname...");
         }
@@ -1729,6 +1728,10 @@ static void Tb_NicknameUpdate(s32 live) {
         }
     }else if(sTb->nicknameState==BT4_NICKNAME_READY&&previous!=BT4_NICKNAME_READY){
         Port_NetNameSet(name);
+    }
+    if(sTb->mode==TB_NAME&&sTb->nicknameRequired&&
+       (sTb->nicknameState==BT4_NICKNAME_OPTIONAL||sTb->nicknameState==BT4_NICKNAME_DISABLED)){
+        sTb->nicknameRequired=0;Tb_SetMode(TB_HUB);
     }
     if(live&&sTb->nicknameState==BT4_NICKNAME_REQUIRED&&(sTb->mode==TB_HUB||sTb->mode==TB_RANKED)){
         Tb_OpenName(1);

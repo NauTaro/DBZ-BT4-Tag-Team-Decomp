@@ -33,11 +33,12 @@ void Port_RankedDisconnected(int intentional);
 int Port_RankedTakeSettlement(int *rating,int *delta);
 enum {
     BT4_NICKNAME_LOADING, BT4_NICKNAME_READY, BT4_NICKNAME_REQUIRED, BT4_NICKNAME_DISABLED,
-    BT4_NICKNAME_SAVING, BT4_NICKNAME_TAKEN, BT4_NICKNAME_INVALID, BT4_NICKNAME_UNAVAILABLE
+    BT4_NICKNAME_SAVING, BT4_NICKNAME_TAKEN, BT4_NICKNAME_INVALID, BT4_NICKNAME_UNAVAILABLE,
+    BT4_NICKNAME_OPTIONAL
 };
 void Port_OnlineNicknameBegin(void);
 int Port_OnlineNicknameView(char name[20]);
-void Port_OnlineNicknameSubmit(const char *name);
+int Port_OnlineNicknameSubmit(const char *name);
 #ifdef __cplusplus
 }
 #endif

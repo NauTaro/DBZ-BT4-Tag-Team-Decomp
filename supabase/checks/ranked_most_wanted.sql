@@ -26,7 +26,7 @@ begin
  if reply->>'state' is distinct from 'waiting' then raise exception 'LEGACY_WAIT: %',reply; end if;
  perform set_config('request.jwt.claim.sub',b::text,true);
  reply:=public.bt4_api('nickname_get','{}');
- if reply->>'state' is distinct from 'required' then raise exception 'COLLISION_PROMPT: %',reply; end if;
+ if reply->>'state' is distinct from 'optional' then raise exception 'STAGED_COLLISION: %',reply; end if;
  reply:=public.bt4_api('nickname_set','{"name":" NOVA "}');
  if reply->>'error' is distinct from 'NICKNAME_TAKEN' then raise exception 'CASE_COLLISION: %',reply; end if;
  reply:=public.bt4_api('nickname_set','{"name":" Blue Phoenix "}');
@@ -50,6 +50,8 @@ begin
 
  args:=args||'{"ruleset":"solo","rules":"S"}';
  perform set_config('request.jwt.claim.sub',c::text,true);
+ reply:=public.bt4_api('nickname_get','{}');
+ if reply->>'state' is distinct from 'required' then raise exception 'REQUIRED_PROMPT: %',reply; end if;
  reply:=public.bt4_ranked_api('queue',args);
  if reply->>'error' is distinct from 'NICKNAME_REQUIRED' then raise exception 'NICKNAME_GATE: %',reply; end if;
  perform set_config('request.jwt.claim.sub',a::text,true);

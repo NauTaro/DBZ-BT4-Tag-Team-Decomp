@@ -426,6 +426,7 @@ Bt4RankedView rankedView={};
 std::array<Bt4RankedEntry,100> rankedEntries={};int rankedTotal=0;
 unsigned rankedStatusRequest=0,rankedTopRequest=0,nicknameRequest=0,rankedSerial=800000;
 Uint64 nextRankedStatus=0,nextRankedTop=0,rankedStatusDeadline=0,rankedTopDeadline=0,nicknameDeadline=0;
+Uint64 nextNicknameCheck=0;
 int nicknameState=BT4_NICKNAME_LOADING;
 std::string nickname,profileProject;
 constexpr Uint64 ProfileTimeout=45000,TopInterval=600000;
@@ -445,6 +446,7 @@ void profileRoute(){
     rankedView.state=0;rankedView.rating=rankedView.wins=rankedView.losses=0;
     rankedView.season[0]=0;
     nicknameState=BT4_NICKNAME_LOADING;nickname.clear();
+    nextNicknameCheck=0;
 }
 unsigned profileRequest(const char *op,const char *args){
     unsigned id=++rankedSerial;
@@ -464,10 +466,12 @@ void profilePump(Uint64 now){
                 nickname=text(*body,"name");
                 nicknameState=!nickname.empty()&&nickname.size()<=19?BT4_NICKNAME_READY:BT4_NICKNAME_UNAVAILABLE;
             }else if(state=="required")nicknameState=BT4_NICKNAME_REQUIRED;
+            else if(state=="optional")nicknameState=BT4_NICKNAME_OPTIONAL;
             else if(state=="disabled"||(error=="BAD_REQUEST"&&nicknameState==BT4_NICKNAME_LOADING))nicknameState=BT4_NICKNAME_DISABLED;
             else if(error=="NICKNAME_TAKEN")nicknameState=BT4_NICKNAME_TAKEN;
             else if(error=="INVALID_NICKNAME")nicknameState=BT4_NICKNAME_INVALID;
             else nicknameState=BT4_NICKNAME_UNAVAILABLE;
+            nextNicknameCheck=now+(nicknameState==BT4_NICKNAME_READY?300000:30000);
             continue;
         }
         if(id==rankedStatusRequest){
@@ -552,17 +556,19 @@ extern "C" int Port_OnlineNicknameView(char name[20]){
     std::lock_guard<std::mutex> guard(rankedLock);
     Uint64 now=SDL_GetTicks();
     profileRoute();profilePump(now);
-    if(nicknameState==BT4_NICKNAME_LOADING&&!nicknameRequest){
+    bool recheck=(nicknameState==BT4_NICKNAME_OPTIONAL||nicknameState==BT4_NICKNAME_REQUIRED)&&now>=nextNicknameCheck;
+    if(!nicknameRequest&&(nicknameState==BT4_NICKNAME_LOADING||recheck)){
         nicknameRequest=profileRequest("nickname_get","{}");nicknameDeadline=now+ProfileTimeout;
         if(!nicknameRequest)nicknameState=BT4_NICKNAME_UNAVAILABLE;
     }
     if(name)snprintf(name,20,"%s",nickname.c_str());
     return nicknameState;
 }
-extern "C" void Port_OnlineNicknameSubmit(const char *name){
+extern "C" int Port_OnlineNicknameSubmit(const char *name){
     std::lock_guard<std::mutex> guard(rankedLock);
-    if(nicknameRequest||!name||!*name)return;
+    if(nicknameRequest||!name||!*name)return 0;
     std::string args=Dj{{"name",name}}.dump(-1,' ',false,Dj::error_handler_t::replace);
     nicknameRequest=profileRequest("nickname_set",args.c_str());nicknameDeadline=SDL_GetTicks()+ProfileTimeout;
     nicknameState=nicknameRequest?BT4_NICKNAME_SAVING:BT4_NICKNAME_UNAVAILABLE;
+    return nicknameRequest!=0;
 }

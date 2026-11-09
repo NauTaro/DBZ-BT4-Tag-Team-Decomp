@@ -50,7 +50,9 @@ begin
  if not bt4_private.nickname_authority() then return jsonb_build_object('state','disabled'); end if;
  if p_op='nickname_get' then
   select name into chosen from bt4_private.online_nicknames where user_id=who;
-  if chosen is null then return jsonb_build_object('state','required'); end if;
+  if chosen is null then return jsonb_build_object('state',case
+   when (select enforce from bt4_private.online_nickname_config where singleton) then 'required'
+   else 'optional' end); end if;
  else
   perform bt4_private.budget('nickname_set',10);
   if jsonb_typeof(p_args->'name') is distinct from 'string' then
