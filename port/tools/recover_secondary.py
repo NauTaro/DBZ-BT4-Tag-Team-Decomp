@@ -6,7 +6,8 @@ BASE='https://api.supabase.com/v1/projects/'+REF
 HEADERS={'Authorization':'Bearer '+os.environ['SUPABASE_SECONDARY_MANAGEMENT_TOKEN'],'Content-Type':'application/json'}
 def call(path,body=None):
     with urlopen(Request(BASE+path,headers=HEADERS,data=None if body is None else json.dumps(body).encode()),timeout=35) as r:
-        return json.load(r)
+        raw=r.read()
+        return json.loads(raw) if raw.strip() else {}
 def healthy():
     h=call('/health?services=auth,rest,db')
     print('Secondary services:',json.dumps([{k:x.get(k) for k in ('name','healthy','status')} for x in h]),flush=True)
