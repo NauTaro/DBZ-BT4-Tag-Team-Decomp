@@ -11,11 +11,17 @@ for name,ref,key in [('secondary','houhjsfukkkicjejvett','SUPABASE_SECONDARY_MAN
                      ('primary','mhgksaiitqoijnatpurf','SUPABASE_PRIMARY_MANAGEMENT_TOKEN')]:
     headers={'Authorization':'Bearer '+os.environ[key],'Content-Type':'application/json'}
     logs="select source, event_message, count(*) as occurrences from logs where source in ('postgres_logs','auth_logs','realtime_logs','postgrest_logs') and (positionCaseInsensitive(event_message,'error')>0 or positionCaseInsensitive(event_message,'fatal')>0 or positionCaseInsensitive(event_message,'timeout')>0) group by source,event_message order by occurrences desc limit 25"
-    for label,path,body in [('project','',None),('health','/health?services=auth,rest,realtime,db&timeout_ms=5000',None),('disk','/config/disk/util',None),('logs','/analytics/endpoints/logs?'+urlencode({**window,'sql':logs}),None),('database','/database/query',{'query':"select state,wait_event_type,count(*) from pg_stat_activity group by state,wait_event_type;"})]:
+    probes=[('project','',None),('health','/health?services=auth,rest,realtime,db',None),('disk','/config/disk/util',None),('logs','/analytics/endpoints/logs?'+urlencode({**window,'sql':logs}),None),('database','/database/query',{'query':"select state,wait_event_type,count(*) from pg_stat_activity group by state,wait_event_type;"})]
+    if name=='secondary':
+        probes += [('metrics','/analytics/endpoints/metrics',None),('hot_queries','/database/query',{'query':"select queryid,calls,round(total_exec_time::numeric) total_ms,round(mean_exec_time::numeric,2) mean_ms,rows,shared_blks_read,temp_blks_written,left(query,500) query from extensions.pg_stat_statements order by total_exec_time desc limit 12"}),('active_work','/database/query',{'query':"select usename,application_name,state,wait_event_type,wait_event,round(extract(epoch from clock_timestamp()-query_start)) seconds,left(query,600) query from pg_stat_activity where pid<>pg_backend_pid() and state is distinct from 'idle' and query<>'' order by query_start limit 12"})]
+    for label,path,body in probes:
         request=Request('https://api.supabase.com/v1/projects/'+ref+path,
                         data=json.dumps(body).encode() if body else None,headers=headers)
         try:
-            with urlopen(request,timeout=40) as response:result=json.load(response)
+            with urlopen(request,timeout=25) as response:
+                if label=='metrics':
+                    result=[line for line in response.read().decode().splitlines() if not line.startswith('#') and any(term in line.lower() for term in ('memory','memavailable','cpu','load','swap','connection','disk_io'))][:90]
+                else:result=json.load(response)
             if label=='project':result={k:result.get(k) for k in ('id','name','status','region')}
             safe=json.dumps(result)
             safe=re.sub(r'[\w.+-]+@[\w.-]+','[email]',safe)
