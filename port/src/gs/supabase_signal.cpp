@@ -116,13 +116,15 @@ static bool emit(int consumer,const Sj &j){
     if(state.events[consumer].size()>=128){state.status=-1;return false;}
     state.events[consumer].push_back(std::move(body));return true;
 }
-static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &answer){
+static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &answer,bool optional=false){
     auto &identity=currentIdentity();lastHttpStatus=0;
     const std::string data=body.dump();std::string result;long code=0;
     if(data.size()>20000)return false;
 #ifdef _WIN32
     HINTERNET session=WinHttpOpen(L"BT4decomp signaling",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);
-    if(!session)return false;WinHttpSetTimeouts(session,10000,10000,10000,20000);
+    if(!session)return false;
+    if(optional)WinHttpSetTimeouts(session,700,700,700,900);
+    else WinHttpSetTimeouts(session,10000,10000,10000,20000);
     HINTERNET connection=WinHttpConnect(session,pathWide(endpoint().host).c_str(),443,0);
     std::wstring wide(path.begin(),path.end());
     HINTERNET request=connection?WinHttpOpenRequest(connection,L"POST",wide.c_str(),nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE):nullptr;
@@ -142,7 +144,7 @@ static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &a
     std::string url=std::string(endpoint().url)+path;
     curl_easy_setopt(request,CURLOPT_URL,url.c_str());curl_easy_setopt(request,CURLOPT_HTTPHEADER,headers);
     curl_easy_setopt(request,CURLOPT_POSTFIELDS,data.c_str());curl_easy_setopt(request,CURLOPT_POSTFIELDSIZE,(long)data.size());
-    curl_easy_setopt(request,CURLOPT_TIMEOUT,8L);curl_easy_setopt(request,CURLOPT_CONNECTTIMEOUT,4L);curl_easy_setopt(request,CURLOPT_NOSIGNAL,1L);
+    curl_easy_setopt(request,CURLOPT_TIMEOUT_MS,optional?1600L:8000L);curl_easy_setopt(request,CURLOPT_CONNECTTIMEOUT_MS,optional?750L:4000L);curl_easy_setopt(request,CURLOPT_NOSIGNAL,1L);
     curl_easy_setopt(request,CURLOPT_WRITEFUNCTION,+[](char *data,size_t size,size_t n,void *p)->size_t{auto &out=*static_cast<std::string*>(p);if(n>65536||size>65536||size*n>65536-out.size())return 0;out.append(data,size*n);return size*n;});
     curl_easy_setopt(request,CURLOPT_WRITEDATA,&result);
     auto rc=curl_easy_perform(request);curl_easy_getinfo(request,CURLINFO_RESPONSE_CODE,&code);
@@ -283,7 +285,7 @@ static int entry(void*){
             // A deferred search must not block a cancellation, presence or room leave.
             auto it=std::find_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){
                 bool retainedUdp=j.consumer==0&&j.op=="signal"&&str(j.args,"channel")=="duel"&&str(j.args,"kind")=="udp";
-                bool httpOnly=j.op=="presence"||j.op=="counts"||j.op=="list"||j.op=="leave"||j.op=="cancel"||j.op=="lease"||j.op=="get"||j.op=="get_signals"||j.op=="ranked_report"||retainedUdp||j.consumer>=4;
+                bool httpOnly=j.op=="presence"||j.op=="counts"||j.op=="list"||j.op=="leave"||j.op=="cancel"||j.op=="lease"||j.op=="get"||j.op=="get_signals"||j.op=="turn_credentials"||j.op=="ranked_report"||retainedUdp||j.consumer>=4;
                 bool admission=j.consumer!=1&&(j.op=="create"||j.op=="join"||j.op=="queue"||j.op=="ranked_queue");
                 // Native UDP discovery can recover announcements through get.
                 // Tag Team SDP/ICE is transient, so its recipient must finish
@@ -316,15 +318,22 @@ static int entry(void*){
             if(!blocked){
                 if(admit)job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",1},{"epoch",policy.epoch}};
                 bool rankedRpc=job.op.compare(0,7,"ranked_")==0;
-                const char *rpcPath=rankedRpc?"/rest/v1/rpc/bt4_ranked_api":"/rest/v1/rpc/bt4_api";
+                const bool turn=job.op=="turn_credentials";
+                const char *rpcPath=turn?"/rest/v1/rpc/bt4_turn_credentials":
+                    rankedRpc?"/rest/v1/rpc/bt4_ranked_api":"/rest/v1/rpc/bt4_api";
                 auto operation=rankedRpc?job.op.substr(7):job.op;
-                bool ok=authenticate()&&http(rpcPath,{{"p_op",operation},{"p_args",job.args}},true,reply);
-                if(!ok&&lastHttpStatus==401){identity.access.clear();identity.renewAt=0;ok=authenticate()&&http(rpcPath,{{"p_op",operation},{"p_args",job.args}},true,reply);}
+                Sj request=turn?Sj{{"p_generation",str(job.args,"generation")}}:
+                    Sj{{"p_op",operation},{"p_args",job.args}};
+                lastHttpStatus=0;
+                bool ok=authenticate()&&http(rpcPath,request,true,reply,turn);
+                if(!turn&&!ok&&lastHttpStatus==401){identity.access.clear();identity.renewAt=0;ok=authenticate()&&http(rpcPath,request,true,reply);}
+                if(turn&&!ok&&lastHttpStatus==404){reply={{"state","disabled"}};ok=true;}
                 if(!ok){
                     fprintf(stderr,"bt4: signaling: RPC %s failed (HTTP %ld)\n",job.op.c_str(),lastHttpStatus);
                     auto business=reply.is_object()?str(reply,"error"):std::string();
-                    if(business!="RATE_LIMITED"&&business!="AUTH_REQUIRED")reply={{"error","SIGNALING_UNAVAILABLE"}};
-                    if(job.consumer!=4){httpFailures=std::min(5u,httpFailures+1);retryHttp=now+(1000u<<httpFailures);nextPolicy=std::min(nextPolicy,now+5000);}
+                    if(lastHttpStatus==429)reply={{"error","RATE_LIMITED"}};
+                    else if(business!="RATE_LIMITED"&&business!="AUTH_REQUIRED")reply={{"error","SIGNALING_UNAVAILABLE"}};
+                    if(job.consumer!=4&&!turn){httpFailures=std::min(5u,httpFailures+1);retryHttp=now+(1000u<<httpFailures);nextPolicy=std::min(nextPolicy,now+5000);}
                     if(lastHttpStatus==0&&(job.op=="create"||job.op=="join"||job.op=="queue"||job.op=="ranked_queue"))uncertain[activeProject]=SDL_GetTicks()+BT4_ROOM_IDLE_MS+5000;
                 }else{if(job.consumer!=4){httpFailures=0;retryHttp=0;}
                     if(job.op=="presence")onlineMenu=job.args.value("active",false);
@@ -378,7 +387,8 @@ extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,con
     bool lifecycle=!strcmp(op,"ranked_heartbeat")||!strcmp(op,"ranked_forfeit");if((consumer==5)!=lifecycle)return 0;
     bool profile=!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top")||!strcmp(op,"nickname_get")||!strcmp(op,"nickname_set");if((consumer==4)!=profile)return 0;
     if((!strcmp(op,"ranked_queue")||!strcmp(op,"ranked_report"))&&consumer!=0)return 0;
-    static const char *allowed[]={"create","join","get","get_signals","lease","leave","list","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","nickname_get","nickname_set"};bool found=false;
+    if(!strcmp(op,"turn_credentials")&&consumer!=0&&consumer!=1)return 0;
+    static const char *allowed[]={"create","join","get","get_signals","turn_credentials","lease","leave","list","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","nickname_get","nickname_set"};bool found=false;
     for(auto kind:allowed)if(!strcmp(op,kind)){found=true;break;}if(!found)return 0;
     Sj body=Sj::parse(args,nullptr,false);if(!body.is_object())return 0;
     if(!Bt4Signal_Open())return 0;std::lock_guard<std::mutex> g(state.lock);if(state.jobs.size()>=64)return 0;state.consumers|=1u<<consumer;

@@ -32,7 +32,7 @@ typedef struct {
 } UpdateStatus;
 
 const char *Update_Version(void);          /* this build's full number */
-void Update_Cleanup(void);                 /* at start: the files the last update left (*.old) go */
+void Update_Cleanup(void);                 /* at start: remove the updater's recorded backups */
 void Update_Check(void);                   /* asks GitHub once (in a thread of its own) */
 void Update_Recheck(void);                 /* manual retry; leaves an active download/install alone */
 void Update_Status(UpdateStatus *out);

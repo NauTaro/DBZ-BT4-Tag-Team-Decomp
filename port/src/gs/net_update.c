@@ -22,13 +22,12 @@
  *           own files are never written, even if a zip had them (user_file: saves, settings, gamedata, mods, texture
  *           packs, songs, stages, logs...); fonts/fonts.tsv takes the new list with the player's own lines added
  *           back. A failure here: the .new files go, nothing else was touched.
- *        b. each file in place is renamed to <name>.old and its .new to its name. A running program and its loaded
+ *        b. each file in place is moved to a rollback file inside update/ and its .new takes its name. A running program and its loaded
  *           libraries can be renamed (Windows does not let them be written or deleted, but renamed, yes): that is
  *           the trick that lets the game replace itself. A failure here: every swap done so far is undone (the
- *           .old back to its name), and the old version goes on as it was.
+ *           backups back to their names), and the old version goes on as it was.
  *      Then update/result.txt says the new number, the new program is started and this one closes. The new one reports
- *      its installed version and removes the .old files (Update_Cleanup, by the list in update/cleanup.txt).
- *      Nothing is ever deleted but those .old files and the update's own downloads.
+ *      its installed version and removes the rollback files (Update_Cleanup, by the list in update/cleanup.txt).
  *
  * HTTPS as the rest of the port has it (gs/net_match.c): WinHTTP on Windows, the system's curl library on Linux, and
  * failing those the `curl` program (BT3_MATCH_CURL=1 asks for the program).
@@ -1038,6 +1037,19 @@ static void path_of(char *out, size_t size, const char *rel, const char *suffix)
     SDL_snprintf(out, size, "%s%s%s", sU.root, rel, suffix);
 }
 
+static void rollback_name(char *out, size_t size, Uint64 transaction, int item) {
+    SDL_snprintf(out, size, "update/rollback-%016llx-%04d.bak", (unsigned long long)transaction, item);
+}
+
+static int is_rollback_name(const char *name) {
+    const char prefix[] = "update/rollback-";
+    size_t n = sizeof(prefix) - 1;
+    if (strlen(name) != n + 25 || strncmp(name, prefix, n) != 0) return 0;
+    name += n;
+    return strspn(name, "0123456789abcdef") == 16 && name[16] == '-' &&
+           strspn(name + 17, "0123456789") == 4 && strcmp(name + 21, ".bak") == 0;
+}
+
 /* The script mods that come with a release (port/tools/package.py, mods/<name>/...): a file of one the player does not
    have yet is installed like the program's own; one they have, changed or not, stays theirs (user_file). So a new
    example mod reaches a player who updates, and nothing of theirs is overwritten. (One the player deleted comes back,
@@ -1095,17 +1107,19 @@ static int write_file(const char *path, const void *data, size_t size, unsigned 
     return ok;
 }
 
-static void undo(Item *items, int count, char (*made)[512], int madeCount) {
+static void undo(Item *items, int count, char (*made)[512], int madeCount, Uint64 transaction) {
     char path[1600], old[1600];
     int i;
     for (i = count - 1; i >= 0; i--) {
         path_of(path, sizeof(path), items[i].rel, "");
-        path_of(old, sizeof(old), items[i].rel, ".old");
+        char backup[64];
+        rollback_name(backup, sizeof(backup), transaction, i);
+        path_of(old, sizeof(old), backup, "");
         if (items[i].swapped) {
             if (items[i].existed) { /* the new file goes, the old one comes back */
                 SDL_RemovePath(path);
                 if (!SDL_RenamePath(old, path)) {
-                    fprintf(stderr, "bt3: update: could NOT put back %s (it is %s.old): %s\n", items[i].rel, items[i].rel, SDL_GetError());
+                    fprintf(stderr, "bt3: update: could NOT put back %s (backup at %s): %s\n", items[i].rel, backup, SDL_GetError());
                 }
             } else {
                 SDL_RemovePath(path); /* (a file the update had added) */
@@ -1128,6 +1142,7 @@ static int SDLCALL install_thread(void *arg) {
     char path[1600], other[1600], why[700] = "", hex[65];
     int count = 0, madeCount = 0, kept = 0, haveGame = 0, failAt = -1, i, n;
     size_t zipSize = 0;
+    const Uint64 transaction = SDL_GetPerformanceCounter();
     void *zipData;
     mz_zip_archive zip;
     SDL_IOStream *list;
@@ -1243,18 +1258,20 @@ static int SDLCALL install_thread(void *arg) {
     }
     mz_zip_reader_end(&zip);
     SDL_free(zipData);
-    /* b. the swap: <name> -> <name>.old, <name>.new -> <name> */
+    /* b. Keep rollback copies on the same volume, outside the game files. */
     for (i = 0; i < count && why[0] == '\0'; i++) {
         Item *it = &items[i];
         path_of(path, sizeof(path), it->rel, "");
-        path_of(other, sizeof(other), it->rel, ".old");
+        char backup[64];
+        rollback_name(backup, sizeof(backup), transaction, i);
+        path_of(other, sizeof(other), backup, "");
         if (i == failAt) {
             SDL_snprintf(why, sizeof(why), "%s could not be replaced (BT3_UPDATE_FAIL_AT, a test).", it->rel);
             break;
         }
         if (it->existed) {
-            SDL_RemovePath(other); /* (one left by an update before, if the cleanup could not take it) */
-            if (!SDL_RenamePath(path, other)) {
+            SDL_PathInfo info;
+            if (SDL_GetPathInfo(other, &info) || !SDL_RenamePath(path, other)) {
                 SDL_snprintf(why, sizeof(why), "%s could not be renamed (%s).", it->rel, SDL_GetError());
                 break;
             }
@@ -1268,18 +1285,21 @@ static int SDLCALL install_thread(void *arg) {
         it->staged = 0;
     }
     if (why[0] != '\0') {
-        undo(items, count, made, madeCount);
+        undo(items, count, made, madeCount, transaction);
         fprintf(stderr, "bt3: update: install failed, everything put back: %s\n", why);
         SDL_strlcat(why, " Everything was put back: this version goes on as it was.", sizeof(why));
         fail(why);
         return 0;
     }
-    /* done: the .old files to remove at the next start, and what to say then */
+    /* Remove unlocked backups now. The running Windows binaries are cleaned on restart. */
     SDL_snprintf(path, sizeof(path), "%scleanup.txt", sU.work);
     list = SDL_IOFromFile(path, "ab"); /* (SDL: the folder's path may have any letters; '\n' alone on every system) */
     for (i = 0; i < count; i++) {
-        if (items[i].existed && list != NULL) {
-            SDL_IOprintf(list, "%s.old\n", items[i].rel);
+        if (items[i].existed) {
+            char backup[64];
+            rollback_name(backup, sizeof(backup), transaction, i);
+            path_of(other, sizeof(other), backup, "");
+            if (!SDL_RemovePath(other) && list != NULL) SDL_IOprintf(list, "%s\n", backup);
         }
     }
     if (list != NULL) {
@@ -1366,7 +1386,7 @@ int Update_Relaunch(void) {
     return 1;
 }
 
-/* At start: the .old files the last update left (by its list), and the leftovers of a download. */
+/* At start: the last update's recorded backups, including ones from legacy clients. */
 void Update_Cleanup(void) {
     char path[1300], *data, *line, *next, *keep;
     size_t size = 0, kept = 0;
@@ -1389,12 +1409,13 @@ void Update_Cleanup(void) {
         while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r' || line[len - 1] == ' ')) {
             len--; /* (also a list written by hand on Windows) */
         }
-        if (len <= 4 || len >= 512 || memcmp(line + len - 4, ".old", 4) != 0) {
-            continue; /* (only the update's own .old files, by their place in the folder) */
+        if (len <= 4 || len >= 512) {
+            continue;
         }
         memcpy(old, line, len);
         old[len] = '\0';
-        if (strstr(old, "..") != NULL) {
+        if (old[0] == '/' || strpbrk(old, "\\:") != NULL || strstr(old, "..") != NULL ||
+            (!is_rollback_name(old) && strcmp(old + len - 4, ".old") != 0)) {
             continue;
         }
         path_of(path, sizeof(path), old, "");
@@ -1424,7 +1445,7 @@ int Update_LastResult(const char **version) {
         size_t size = 0;
         char *data;
         read = 1;
-        folders();
+        Update_Cleanup();
         SDL_snprintf(path, sizeof(path), "%sresult.txt", sU.work);
         data = (char *)SDL_LoadFile(path, &size);
         if (data != NULL) {

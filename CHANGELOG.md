@@ -1,3 +1,21 @@
+# 0.1.39.5 R5 1.4
+
+- Online play can fall back to a relay when a direct connection fails. Duel adjusts input delay for relayed connections to reduce stalls, and Tag Team measures round-trip time for both hosts and guests.
+- The updater keeps temporary rollback files in its own folder and cleans them up after installation.
+
+<!-- bt4-update:en
+- Online matches can use a relay when direct connection fails. Relayed duels adjust input delay to reduce stalls.
+- Update backups are kept in the updater folder and cleaned up after installation.
+-->
+<!-- bt4-update:es
+- Las partidas online pueden usar un relay si falla la conexión directa. Duelo ajusta el retardo por relay para reducir tirones.
+- Los respaldos de la actualización quedan en la carpeta del actualizador y se limpian tras instalar.
+-->
+<!-- bt4-update:pt
+- As partidas online podem usar um relay quando a conexão direta falha. No Duelo, o atraso é ajustado para reduzir travamentos.
+- Os backups da atualização ficam na pasta do atualizador e são removidos após a instalação.
+-->
+
 # 0.1.39.5 R5 1.3
 
 - Ranked now identifies which player confirmed a surrender in the pause menu. A verified abandonment transfers 16 points to the opponent, subject to rating limits. Inconclusive disconnects leave both ratings unchanged.

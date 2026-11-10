@@ -58,6 +58,8 @@ void UpdateVer_Display(const char *text,char *out,size_t size) {
         SDL_snprintf(out,size,"0.1.39.2 R7 Hotfix");
     else if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==2 && revision==8 && revision_patch==1)
         SDL_snprintf(out,size,"0.1.39.2 R8 Hotfix");
+    else if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==5 && revision==5 && revision_patch==5)
+        SDL_snprintf(out,size,"0.1.39.5 R5 1.4");
     else if(revision_patch)SDL_snprintf(out,size,"%d.%d.%d.%d R%d.%d",base[0],base[1],base[2],base[3],revision,revision_patch);
     else if(revision)SDL_snprintf(out,size,"%d.%d.%d.%d R%d",base[0],base[1],base[2],base[3],revision);
     else SDL_snprintf(out,size,"%s",text);

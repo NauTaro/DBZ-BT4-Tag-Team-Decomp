@@ -12,6 +12,7 @@
 #include <map>
 #include <atomic>
 #include <mutex>
+#include <ctime>
 #include "tag_team_p2p.h"
 #include "../../include/online_room_policy.h"
 #include "supabase_signal.h"
@@ -44,7 +45,18 @@ struct Service {
 static std::atomic<unsigned> rpcSerial{1000};
 static unsigned number(const Pj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_number_unsigned()?p->get<unsigned>():0;}
 static std::string text(const Pj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
-struct Peer {std::atomic<unsigned> id{0};std::atomic<int> pc{-1},control{-1},input{-1};bool remote=false,admitted=false;std::string name;std::vector<Pj> candidates;Uint64 heard=0;};
+static std::string iceCredential(const std::string &value){
+    static const char hex[]="0123456789ABCDEF";
+    std::string out;
+    for(unsigned char c:value){
+        if((c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='-')out+=c;
+        else{out+='%';out+=hex[c>>4];out+=hex[c&15];}
+    }
+    return out;
+}
+struct Peer {std::atomic<unsigned> id{0};std::atomic<int> pc{-1},control{-1},input{-1};bool remote=false,admitted=false,routeLogged=false;std::string name;std::vector<Pj> candidates;Uint64 heard=0,openedAt=0;
+    unsigned probe=0;Uint64 probeAt=0,pingAt=0;int measuredPing=-1;
+};
 struct PendingSignal {Pj body;Uint64 at;};
 struct OutgoingSignal {Pj body;Uint64 next,expires;};
 static std::array<Peer,10> stablePeers;
@@ -52,14 +64,21 @@ struct Session {
     std::array<Peer,10> &peers=stablePeers;unsigned self=0,epoch=0,lo=0,hi=0,initSerial=0,reconcile=0;
     std::string room,generation,code,content;Packet opening={};Pj queueProfile;bool creating=false,initializing=false,clock=false,queued=false,waiting=false;int phase=TT_CLOSED;
     Uint64 nextTick=0,nextPing=0,nextLease=0,began=SDL_GetTicks(),lastReplay=0;int publishedPhase=-1;
-    unsigned expected=0,probeSerial=0;std::array<std::pair<unsigned,Uint64>,32> probes={};
+    unsigned expected=0,probeSerial=0;
     std::array<unsigned,8> pingSamples={};unsigned pingCount=0,pingCursor=0;
     std::deque<Wire> history,recent;std::map<unsigned,Wire> reordered;
     std::deque<PendingSignal> earlySignals;
     std::map<unsigned,OutgoingSignal> outgoing;
     uint64_t signalCursor=0;unsigned recovery=0;Uint64 recoverAt=0;
+    Pj pendingPeers;
+    unsigned turnRequest=0;
+    Uint64 turnDeadline=0,turnRetryAt=0;
+    std::string turnUri;
+    unsigned turnExpires=0;
+    const bool routeLog=SDL_getenv("BT4_TAG_ROUTE_LOG")!=nullptr;
     void pingSample(unsigned sample){
         if(sample>=10000)return;
+        if(routeLog)fprintf(stderr,"tag P2P rtt_ms=%u\n",sample);
         pingSamples[pingCursor++%pingSamples.size()]=sample;
         if(pingCount<pingSamples.size())++pingCount;
         unsigned best=sample;
@@ -76,7 +95,7 @@ struct Session {
     static void RTC_API message(int dc,const char *bytes,int size,void *ptr){auto &p=*static_cast<Peer*>(ptr);if((dc!=p.control&&dc!=p.input)||size!=528)return;Event e;e.kind=6;e.peer=p.id;e.pc=p.pc;e.dc=dc;e.reliable=dc==p.control;e.at=SDL_GetTicks();e.bytes.assign(bytes,bytes+size);service.event(std::move(e));}
     void close(Peer &p){int pc=p.pc.exchange(-1),control=p.control.exchange(-1),input=p.input.exchange(-1);p.id=0;
         if(control>=0)rtc.rtcDeleteDataChannel(control);if(input>=0)rtc.rtcDeleteDataChannel(input);
-        if(pc>=0){rtc.rtcClosePeerConnection(pc);rtc.rtcDeletePeerConnection(pc);}p.remote=p.admitted=false;p.candidates.clear();p.name.clear();}
+        if(pc>=0){rtc.rtcClosePeerConnection(pc);rtc.rtcDeletePeerConnection(pc);}p.remote=p.admitted=p.routeLogged=false;p.probe=0;p.probeAt=p.pingAt=0;p.measuredPing=-1;p.candidates.clear();p.name.clear();}
     bool send(Peer &p,const Packet &packet,bool reliable){int dc=reliable?p.control:p.input;if(dc<0||!rtc.rtcIsOpen(dc)||rtc.rtcGetBufferedAmount(dc)>=65536)return false;
         std::array<unsigned char,528> wire={};Ttw_Write(wire.data(),magic);Ttw_Write(wire.data()+4,lo);Ttw_Write(wire.data()+8,hi);Ttw_Write(wire.data()+12,self);memcpy(wire.data()+16,packet.data(),512);
         return rtc.rtcSendMessage(dc,(const char*)wire.data(),528)>=0;}
@@ -88,12 +107,25 @@ struct Session {
         if((!reliable&&!input)||(reliable?p.control.load():p.input.load())>=0){rtc.rtcDeleteDataChannel(dc);return;}
         if(reliable)p.control=dc;else p.input=dc;rtc.rtcSetUserPointer(dc,&p);rtc.rtcSetOpenCallback(dc,opened);rtc.rtcSetMessageCallback(dc,message);
     }
-    void open(Peer &p){const char *stun[]={"stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302","stun:global.stun.twilio.com:3478"};rtcConfiguration cfg={};cfg.iceServers=stun;cfg.iceServersCount=3;cfg.disableAutoNegotiation=true;cfg.maxMessageSize=2048;
-        int pc=rtc.rtcCreatePeerConnection(&cfg);if(pc<0){service.status=-1;return;}p.pc=pc;p.heard=SDL_GetTicks();rtc.rtcSetUserPointer(pc,&p);
+    void open(Peer &p){const char *servers[]={"stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302","stun:global.stun.twilio.com:3478",turnUri.c_str()};
+        rtcConfiguration cfg={};cfg.iceServers=servers;cfg.iceServersCount=turnUri.empty()?3:4;cfg.disableAutoNegotiation=true;cfg.maxMessageSize=2048;
+        if(!turnUri.empty()&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ICE_RELAY_TEST"))cfg.iceTransportPolicy=RTC_TRANSPORT_POLICY_RELAY;
+        int pc=rtc.rtcCreatePeerConnection(&cfg);if(pc<0){service.status=-1;return;}p.pc=pc;p.heard=p.openedAt=SDL_GetTicks();rtc.rtcSetUserPointer(pc,&p);
         rtc.rtcSetLocalDescriptionCallback(pc,description);rtc.rtcSetLocalCandidateCallback(pc,candidate);rtc.rtcSetDataChannelCallback(pc,channel);rtc.rtcSetStateChangeCallback(pc,changed);
         if(self==1){rtcDataChannelInit control={};control.protocol="bt4-room-control-v1";bind(p,rtc.rtcCreateDataChannelEx(pc,"BT4 Room",&control));
             rtcDataChannelInit input={};input.protocol="bt4-tag-input-v1";input.reliability.unordered=true;input.reliability.unreliable=true;input.reliability.maxRetransmits=0;
             bind(p,rtc.rtcCreateDataChannelEx(pc,"BT4 Inputs",&input));rtc.rtcSetLocalDescription(pc,"offer");}}
+    void logRoute(Peer &p){
+        if(!routeLog||p.routeLogged||p.control<0||p.input<0||!rtc.rtcIsOpen(p.control)||!rtc.rtcIsOpen(p.input))return;
+        char local[2049]={},remote[2049]={};
+        const char *path="unknown";
+        if(rtc.rtcGetSelectedCandidatePair(p.pc,local,sizeof(local),remote,sizeof(remote))>=0&&
+           strstr(local," typ ")&&strstr(remote," typ ")){
+            path=strstr(local," typ relay")||strstr(remote," typ relay")?"relay":"direct";
+        }
+        fprintf(stderr,"tag P2P route=%s setup_ms=%llu\n",path,(unsigned long long)(SDL_GetTicks()-p.openedAt));
+        p.routeLogged=true;
+    }
     void rpc(const char *op,const Pj &args,unsigned serial=0){if(!Bt4Signal_Command(1,serial?serial:++rpcSerial,op,args.dump().c_str())){if(initializing)service.status=-1;}}
     void signal(unsigned to,const char *kind,const Pj &body){
         Pj args={{"generation",generation},{"to",to},{"channel","tag"},{"kind",kind},{"body",body}};
@@ -147,6 +179,46 @@ struct Session {
             if(now-it->at>10000||takeSignal(it->body))it=earlySignals.erase(it);else ++it;
         }
     }
+    void openPeers(const Pj &members){
+        for(const auto &m:members){
+            unsigned id=number(m,"peer");
+            if(!id||id==self||(self!=1&&id!=1)||find(id))continue;
+            auto slot=std::find_if(peers.begin(),peers.end(),[](const Peer &p){return !p.id;});
+            if(slot==peers.end()){service.status=-1;return;}
+            slot->id=id;slot->name=text(m,"name");open(*slot);
+        }
+        drainSignals();
+    }
+    void finishTurn(const Pj &reply){
+        turnRequest=0;turnRetryAt=SDL_GetTicks()+60000;turnUri.clear();
+        auto host=text(reply,"hostname"),user=text(reply,"username"),pass=text(reply,"credential");
+        unsigned port=number(reply,"udp_port"),expires=number(reply,"expires_at");
+        if(text(reply,"state")=="ready"&&port>0&&port<=65535&&expires>(uint64_t)std::time(nullptr)+120&&
+            host.size()>=2&&host.size()<=253&&host.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-")==std::string::npos&&
+            !user.empty()&&user.size()<=128&&!pass.empty()&&pass.size()<=128){
+            turnExpires=expires;
+            turnUri="turn:"+iceCredential(user)+":"+iceCredential(pass)+"@"+host+":"+std::to_string(port)+"?transport=udp";
+        }
+        openPeers(pendingPeers);
+        pendingPeers=Pj();
+    }
+    void preparePeers(const Pj &members){
+        if(!turnUri.empty()&&turnExpires<=(uint64_t)std::time(nullptr)+120)turnUri.clear();
+        bool newPeer=std::any_of(members.begin(),members.end(),[&](const Pj &m){
+            unsigned id=number(m,"peer");return id&&id!=self&&(self==1||id==1)&&!find(id);
+        });
+        if(turnRequest){pendingPeers=members;return;}
+        Uint64 now=SDL_GetTicks();
+        if(newPeer&&turnUri.empty()&&now>=turnRetryAt){
+            unsigned request=++rpcSerial;
+            auto args=Pj{{"generation",generation}}.dump();
+            if(Bt4Signal_Command(1,request,"turn_credentials",args.c_str())){
+                turnRequest=request;turnDeadline=now+2500;pendingPeers=members;return;
+            }
+            turnRetryAt=now+60000;
+        }
+        openPeers(members);
+    }
     void receiveSignal(const Pj &body){
         if(!validSignal(body))return;
         drainSignals();
@@ -171,15 +243,13 @@ struct Session {
             std::string id;for(char c:generation)if(c!='-')id+=c;if(id.size()!=32){service.status=-1;return;}
             lo=(unsigned)strtoul(id.substr(0,8).c_str(),nullptr,16);hi=(unsigned)strtoul(id.substr(8,8).c_str(),nullptr,16);
             if(queued)creating=self==1;
-            if(creating){Kernel_Reset();Kernel_Pacing(1);memcpy(Kernel_Input(),opening.data(),512);int result=Kernel_Command(self);if(result!=TT_OK){fprintf(stderr,"P2P local room rejected: %d\n",result);service.status=-1;return;}Kernel_Seed((unsigned)SDL_GetTicksNS());epoch=Kernel_Epoch();snapshot(self);service.ping=0;service.status=1;}
+            if(creating){Kernel_Reset();Kernel_Pacing(1);memcpy(Kernel_Input(),opening.data(),512);int result=Kernel_Command(self);if(result!=TT_OK){fprintf(stderr,"P2P local room rejected: %d\n",result);service.status=-1;return;}Kernel_Seed((unsigned)SDL_GetTicksNS());epoch=Kernel_Epoch();snapshot(self);service.status=1;}
             nextLease=SDL_GetTicks()+60000;began=SDL_GetTicks();initializing=false;waiting=false;
         }
         if(nextRoom!=room||nextGeneration!=generation)return;
         {std::lock_guard<std::mutex> g(service.lock);service.descriptor=j.dump();}
         auto members=j.find("members");if(members==j.end()||!members->is_array()||members->size()>10)return;
-        for(const auto &m:*members){unsigned id=number(m,"peer");if(!id||id==self||(self!=1&&id!=1))continue;
-            Peer *p=find(id);if(!p){for(auto &candidate:peers)if(!candidate.id){p=&candidate;break;}if(!p){service.status=-1;return;}p->id=id;p->name=text(m,"name");open(*p);}
-        }
+        preparePeers(*members);
         // Database expiry/temporary signaling loss cannot delete a live P2P
         // player. Departures are detected on the peer transport itself.
         drainSignals();
@@ -188,6 +258,7 @@ struct Session {
         while(count++<64&&Bt4Signal_Read(1,raw,sizeof(raw))>0){Pj j=Pj::parse(raw,nullptr,false);if(!j.is_object())continue;auto body=j.find("body");if(body==j.end()||!body->is_object())continue;
             auto event=text(j,"event");
             if(event=="reply"){
+                if(turnRequest&&number(j,"serial")==turnRequest){finishTurn(*body);continue;}
                 if(recovery&&number(j,"serial")==recovery){
                     recovery=0;
                     auto signals=body->find("signals");
@@ -213,15 +284,23 @@ struct Session {
         if(e.kind==1)signal(p->id,e.a.c_str(),{{"sdp",e.b}});
         else if(e.kind==2)signal(p->id,"candidate",{{"candidate",e.a},{"mid",e.b}});
         else if(e.kind==3)bind(*p,e.dc);
-        else if(e.kind==4){if(self==1){unsigned id=p->id;close(*p);Kernel_Leave(id);notify();}else service.status=-1;}
-        else if(e.kind==5){if(self==1&&!p->admitted&&p->control>=0&&p->input>=0&&rtc.rtcIsOpen(p->control)&&rtc.rtcIsOpen(p->input)){
+        else if(e.kind==4){if(routeLog)fprintf(stderr,"tag P2P transport closed after_ms=%llu channels_ready=%d\n",(unsigned long long)(SDL_GetTicks()-p->openedAt),(int)p->routeLogged);if(self==1){unsigned id=p->id;close(*p);Kernel_Leave(id);notify();}else service.status=-1;}
+        else if(e.kind==5){logRoute(*p);if(self==1&&!p->admitted&&p->control>=0&&p->input>=0&&rtc.rtcIsOpen(p->control)&&rtc.rtcIsOpen(p->input)){
             Packet join={};Ttw_Request(join.data(),TTW_JOIN,Kernel_Epoch());uint64_t hash=strtoull(content.c_str(),nullptr,16);Ttw_Write(join.data()+24,(unsigned)hash);Ttw_Write(join.data()+28,(unsigned)(hash>>32));snprintf((char*)join.data()+32,20,"%s",p->name.c_str());
             memcpy(Kernel_Input(),join.data(),512);int result=Kernel_Command(p->id);if(result==TT_OK){p->admitted=true;notify();}else snapshot(p->id,result);
         }}else if(e.kind==6){
             if(e.bytes.size()!=528||Ttw_Read(e.bytes.data())!=magic||Ttw_Read(e.bytes.data()+4)!=lo||Ttw_Read(e.bytes.data()+8)!=hi||Ttw_Read(e.bytes.data()+12)!=p->id)return;
             Packet packet;memcpy(packet.data(),e.bytes.data()+16,512);if(Ttw_Read(packet.data())!=TT_PROTOCOL)return;p->heard=e.at;unsigned cmd=Ttw_Read(packet.data()+4),packetEpoch=Ttw_Read(packet.data()+8);
-            if(cmd==pingCommand&&self==1){Ttw_Write(packet.data()+4,pongCommand);send(*p,packet,false);return;}
-            if(cmd==pongCommand&&self!=1){unsigned sequence=Ttw_Read(packet.data()+12);auto sample=probes[sequence%32];if(sample.first==sequence&&e.at>=sample.second)pingSample((unsigned)(e.at-sample.second));return;}
+            if(cmd==pingCommand){Ttw_Write(packet.data()+4,pongCommand);send(*p,packet,false);return;}
+            if(cmd==pongCommand){
+                if(p->probeAt&&Ttw_Read(packet.data()+12)==p->probe&&e.at>=p->probeAt&&e.at-p->probeAt<3000){
+                    const unsigned sample=(unsigned)(e.at-p->probeAt);
+                    p->probeAt=0;p->pingAt=e.at;p->measuredPing=(int)sample;
+                    if(self!=1)pingSample(sample);
+                    else if(routeLog)fprintf(stderr,"tag P2P rtt_ms=%u peer=%u\n",sample,p->id.load());
+                }
+                return;
+            }
             if(cmd==replayCommand&&e.reliable&&self==1&&packetEpoch==epoch){unsigned wanted=Ttw_Read(packet.data()+12),sent=0;for(auto &f:history)if(Ttw_Read(f.bytes.data()+12)>=wanted&&sent++<16)send(*p,f.bytes,true);return;}
             if(self==1){if(!p->admitted)return;if(cmd==TTW_INPUT||e.reliable)command(p->id,packet);return;}
             if(cmd==TTW_STATE&&e.reliable){TtRoom r;unsigned target;int result;char roomCode[7];if(!Ttw_Decode(packet.data(),&r,&target,&result,roomCode)||target!=self||r.host!=1)return;
@@ -249,12 +328,26 @@ struct Session {
             for(auto &packet:requests){unsigned cmd=Ttw_Read(packet.data()+4);if(!self){if(!initializing&&(cmd==TTW_OPEN||cmd==TTW_JOIN))initialize(packet);continue;}
                 if(self==1)command(self,packet);else if(auto *p=find(1)){if(cmd==TTW_INPUT)send(*p,packet,false);else send(*p,packet,true);}}
             Uint64 now=SDL_GetTicks();retrySignals(now);
+            if(turnRequest&&now>=turnDeadline)finishTurn(Pj::object());
             bool negotiating=!room.empty()&&std::any_of(peers.begin(),peers.end(),[](const Peer &p){return p.id&&!p.admitted;});
             if(negotiating&&now>=recoverAt){recovery=++rpcSerial;recoverAt=now+25000;rpc("get_signals",{{"generation",generation},{"after",signalCursor}},recovery);}
             if(waiting&&now>=nextLease){initSerial=++rpcSerial;rpc("queue",queueProfile,initSerial);nextLease=now+60000;}
             if(service.status==0&&!waiting&&now-began>60000){service.status=-1;break;}
-            if(self!=1&&self&&now>=nextPing){nextPing=now+500;if(auto *p=find(1)){Packet packet={};Ttw_Request(packet.data(),pingCommand,epoch);unsigned n=++probeSerial;probes[n%32]={n,now};Ttw_Write(packet.data()+12,n);send(*p,packet,false);
-                if(p->admitted&&Bt4Room_IsIdleMs(now,p->heard)){service.status=-1;break;}}}
+            if(self&&now>=nextPing){
+                nextPing=now+500;
+                int hostPing=-1;
+                for(auto &p:peers){
+                    if(!p.id)continue;
+                    if(!p.probeAt||now-p.probeAt>=3000){
+                        Packet packet={};Ttw_Request(packet.data(),pingCommand,epoch);
+                        p.probe=++probeSerial;Ttw_Write(packet.data()+12,p.probe);
+                        p.probeAt=send(p,packet,false)?now:0;
+                    }
+                    if(p.pingAt&&now-p.pingAt<4000)hostPing=std::max(hostPing,p.measuredPing);
+                }
+                if(self==1)service.ping=hostPing;
+                else if(auto *p=find(1);p&&p->admitted&&Bt4Room_IsIdleMs(now,p->heard)){service.status=-1;break;}
+            }
             if(self==1&&(now>=nextLease||publishedPhase!=Kernel_Phase())){nextLease=now+60000;publishedPhase=Kernel_Phase();rpc("lease",{{"joinable",publishedPhase==TT_LOBBY}});}
             if(self==1&&clock&&Kernel_Phase()==TT_FIGHT){const Uint64 step=1000000000ULL*10/342;unsigned burst=0;Uint64 ns=SDL_GetTicksNS();
                 while(ns>=nextTick&&burst++<4){Kernel_DeadlineFrame();if(Kernel_TakeFrame()){Wire f;memcpy(f.bytes.data(),Kernel_Output(),512);f.at=SDL_GetTicks();emit(f.bytes,f.at);history.push_back(f);if(history.size()>512)history.pop_front();recent.push_back(f);if(recent.size()>3)recent.pop_front();
@@ -271,6 +364,7 @@ struct Session {
 };
 static int thread(void*){Session s;s.run();return 0;}
 }
+
 extern "C" int TagPeer_Open(void){
     TagPeer_Close();if(!rtc.load()||!Bt4Signal_Open())return 0;Bt4Signal_Listen(1,1);service.quit=false;service.status=0;service.ping=-1;
     service.wake=SDL_CreateSemaphore(0);if(!service.wake)return 0;service.thread=SDL_CreateThread(thread,"BT4 P2P room",nullptr);return service.thread!=nullptr;

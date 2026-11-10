@@ -23,6 +23,11 @@ for name,ref,key in [('secondary','houhjsfukkkicjejvett','SUPABASE_SECONDARY_MAN
       or positionCaseInsensitive(event_message,'timeout')>0)
       group by source,category order by occurrences desc"""
     probes=[('project','',None),('health','/health?services=auth,rest,realtime,db',None),('disk','/config/disk/util',None),('logs','/analytics/endpoints/logs?'+urlencode({**window,'sql':logs}),None),('database','/database/query',{'query':"select state,wait_event_type,count(*) from pg_stat_activity group by state,wait_event_type;"})]
+    probes.append(('turn_schema','/database/query',{'read_only':True,'query':"""
+        select to_regprocedure('public.bt4_turn_credentials(uuid)') is not null as rpc,
+               to_regclass('bt4_private.turn_config') is not null as config,
+               to_regclass('vault.decrypted_secrets') is not null as vault
+    """}))
     if name=='secondary':
         probes += [
             ('ranked_settlements','/database/query',{'query':"""with recent as (
@@ -69,6 +74,19 @@ for name,ref,key in [('secondary','houhjsfukkkicjejvett','SUPABASE_SECONDARY_MAN
             safe=re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b','[ip]',safe)
             safe=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[jwt]',safe)
             print(name,label,safe[:18000],flush=True)
+            if label=='turn_schema' and result and all(result[0].values()):
+                body={'read_only':True,'query':"""
+                    select provider,enabled,
+                      exists(select 1 from vault.decrypted_secrets
+                         where name='bt4_turn_shared_secret' and length(decrypted_secret)>=32) as shared_secret_present,
+                      exists(select 1 from vault.decrypted_secrets
+                         where name='bt4_turn_managed_credentials') as managed_credentials_present
+                    from bt4_private.turn_config where singleton
+                """}
+                status=Request('https://api.supabase.com/v1/projects/'+ref+'/database/query',
+                               data=json.dumps(body).encode(),headers=headers)
+                with urlopen(status,timeout=25) as turn:
+                    print(name,'turn_status',json.dumps(json.load(turn)),flush=True)
         except HTTPError as exc:
             print(name,label,'HTTP '+str(exc.code),flush=True)
         except Exception as exc:print(name,label,type(exc).__name__,flush=True)

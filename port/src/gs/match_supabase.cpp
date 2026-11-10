@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctime>
 #include <algorithm>
 #include <string>
 #include <array>
@@ -26,13 +27,18 @@ std::mutex lock;unsigned serial=20000;
 std::string text(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
 unsigned number(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_number_unsigned()?p->get<unsigned>():0;}
 struct Discovery {
-    unsigned generation=0,init=0,countsRequest=0,tagCountsRequest=0,reconcile=0;bool on=false,waiting=false;
+    unsigned generation=0,init=0,countsRequest=0,tagCountsRequest=0,reconcile=0;bool on=false,waiting=false,refreshRoom=false;
     Bt4DiscoveryStatus status={};Dj descriptor,profile,localAddresses;std::string wire,content;
     std::map<unsigned,Dj> addresses;std::map<unsigned,bool> announced;
     std::map<unsigned,unsigned> announcements;
     std::map<unsigned,Uint64> retryAt;
     std::deque<Dj> earlySignals;
     Uint64 leaseAt=0,began=0,lastCounts=0,reconcileAt=0;std::array<int,5> counts={};bool countsKnown=false;
+    Uint64 admissionRetryAt=0;unsigned admissionRetries=0;
+    const char *admissionOp=nullptr;Dj admissionArgs;
+    enum TurnState { NoPeer, Requesting, Ready, Allocating, Finished } turnState=NoPeer;
+    unsigned turnRequest=0;Uint64 turnDeadline=0;
+    Bt4RoomTurn turn={};
     Uint64 lastTagCounts=0;std::array<int,3> tagCounts={};bool tagCountsKnown=false;
     bool ranked=false,sawFight=false,reportPending=false;
     unsigned outcomeTick=0,reportSerial=0;int outcomeBits=0,reportState=0;
@@ -139,6 +145,11 @@ bool rpc(const char *op,const Dj &args,unsigned id=0){
     if(d.ranked&&!strcmp(op,"queue"))op="ranked_queue";
     return Bt4Signal_Command(0,id?id:++serial,op,args.dump().c_str());
 }
+bool requestAdmission(){
+    d.init=++serial;
+    if(rpc(d.admissionOp,d.admissionArgs,d.init))return true;
+    d.init=0;return false;
+}
 void error(const std::string &code){
     if(d.status.state==3)return;d.status.state=-1;
     fprintf(stderr,"bt4: discovery: admission failed (%s)\n",code.c_str());
@@ -175,7 +186,8 @@ void refreshStatus(){
     d.status.peerCount=0;memset(d.status.peerAddr,0,sizeof(d.status.peerAddr));
     d.status.peerName[0]=0;
     auto remote=d.addresses.find(target);
-    if(target&&remote!=d.addresses.end()&&remote->second.is_array()&&!remote->second.empty()){
+    if(d.turnState!=Discovery::Requesting&&d.turnState!=Discovery::Ready&&d.turnState!=Discovery::Allocating&&
+       target&&remote!=d.addresses.end()&&remote->second.is_array()&&!remote->second.empty()){
         d.status.peerCount=0;for(const auto &value:remote->second)if(value.is_string()&&value.get_ref<const std::string&>().size()<64&&d.status.peerCount<4)
             snprintf(d.status.peerAddr[d.status.peerCount++],64,"%s",value.get_ref<const std::string&>().c_str());
         for(const auto &member:*members)if(number(member,"peer")==target)snprintf(d.status.peerName,sizeof(d.status.peerName),"%s",text(member,"name").c_str());
@@ -205,7 +217,17 @@ bool takeSignal(const Dj &body){
     auto addresses=value->find("addresses");
     if(addresses==value->end()||!addresses->is_array()||addresses->empty()||addresses->size()>4)return false;
     for(const auto &a:*addresses)if(!a.is_string()||a.get_ref<const std::string&>().size()>=64)return false;
-    d.addresses[from]=*addresses;return true;
+    auto decoded = *addresses;
+    for(auto &item:decoded){
+        const auto &address=item.get_ref<const std::string&>();
+        // [IPv4]:port distinguishes a relay using the existing SQL wire grammar.
+        const auto end=address.find("]:");
+        if(!address.empty()&&address.front()=='['&&end!=std::string::npos&&
+           address.find(':')==end+1&&address.find('.')!=std::string::npos){
+            item="relay="+address.substr(1,end-1)+address.substr(end+1);
+        }
+    }
+    d.addresses[from]=std::move(decoded);return true;
 }
 void metadata(const Dj &body){
     auto generation=text(body,"generation");if(generation.empty())return;
@@ -221,12 +243,23 @@ void metadata(const Dj &body){
     }
     PortVoice_P2PSession(1,body.dump().c_str(),nullptr,0);
     unsigned self=number(body,"self");std::string nonce;for(char c:generation)if(c!='-')nonce+=c;
+    if(d.turnState==Discovery::NoPeer&&self&&members->size()>1){
+        d.turnRequest=++serial;
+        auto args=Dj{{"generation",generation}}.dump();
+        if(Bt4Signal_Command(0,d.turnRequest,"turn_credentials",args.c_str())){
+            d.turnState=Discovery::Requesting;
+            d.turnDeadline=SDL_GetTicks()+2500;
+        }else{
+            d.turnRequest=0;
+            d.turnState=Discovery::Finished;
+        }
+    }
     std::set<unsigned> present;for(const auto &member:*members)present.insert(number(member,"peer"));
     for(auto it=d.retryAt.begin();it!=d.retryAt.end();)if(!present.count(it->first)){
         d.announced.erase(it->first);d.addresses.erase(it->first);it=d.retryAt.erase(it);
     }else ++it;
     for(auto it=d.announcements.begin();it!=d.announcements.end();)if(!present.count(it->second))it=d.announcements.erase(it);else ++it;
-    for(const auto &member:*members){unsigned peer=number(member,"peer");if(!peer||peer==self||d.announced[peer]||SDL_GetTicks()<d.retryAt[peer])continue;
+    for(const auto &member:*members){unsigned peer=number(member,"peer");if(d.turnState!=Discovery::Finished||!peer||peer==self||d.announced[peer]||SDL_GetTicks()<d.retryAt[peer])continue;
         bool pending=false;for(const auto &request:d.announcements)if(request.second==peer)pending=true;
         if(pending)continue;
         unsigned id=++serial;
@@ -243,6 +276,24 @@ void pump(){
         auto kind=text(event,"event");
         if(kind=="reply"){
             unsigned reply=number(event,"serial");
+            if(d.turnRequest&&reply==d.turnRequest){
+                d.turnRequest=0;
+                auto host=text(*body,"hostname"),user=text(*body,"username"),password=text(*body,"credential");
+                unsigned port=number(*body,"udp_port"),expires=number(*body,"expires_at");
+                if(text(*body,"state")=="ready"&&port>0&&port<=65535&&expires>(uint64_t)std::time(nullptr)+120&&
+                   host.size()>=2&&host.size()<=253&&host.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-")==std::string::npos&&
+                   !user.empty()&&user.size()<=128&&!password.empty()&&password.size()<=128&&
+                   user.find('\0')==std::string::npos&&password.find('\0')==std::string::npos){
+                    snprintf(d.turn.server,sizeof(d.turn.server),"%s:%u",host.c_str(),port);
+                    SDL_strlcpy(d.turn.username,user.c_str(),sizeof(d.turn.username));
+                    SDL_strlcpy(d.turn.password,password.c_str(),sizeof(d.turn.password));
+                    d.turnState=Discovery::Ready;
+                }else{
+                    d.turnState=Discovery::Finished;
+                    if(d.descriptor.is_object()){auto current=d.descriptor;metadata(current);}
+                }
+                continue;
+            }
             if(d.reportSerial&&reply==d.reportSerial){
                 d.reportPending=false;d.reportAt=SDL_GetTicks()+3000;
                 std::string state=text(*body,"state"),failure=text(*body,"error");
@@ -257,18 +308,37 @@ void pump(){
             auto announcement=d.announcements.find(reply);
             if(announcement!=d.announcements.end()){
                 d.announced[announcement->second]=body->is_object()&&text(*body,"state")=="sent";
-                if(body->is_object()&&body->contains("error"))fprintf(stderr,"bt4: discovery: endpoint announcement failed (%s)\n",text(*body,"error").c_str());
+                auto failure=text(*body,"error");
+                if(!failure.empty()){
+                    if(failure=="RATE_LIMITED")d.retryAt[announcement->second]=SDL_GetTicks()+15000;
+                    fprintf(stderr,"bt4: discovery: endpoint announcement failed (%s)\n",failure.c_str());
+                }
                 d.announcements.erase(announcement);
             }else if(reply==d.countsRequest&&body->is_object()&&!body->contains("error")){const char *keys[]={"S","T","D10","D15","D20"};for(int i=0;i<5;++i)d.counts[i]=(int)number(*body,keys[i]);d.countsKnown=true;}
             else if(reply==d.tagCountsRequest&&body->is_object()&&!body->contains("error")){const char *keys[]={"F6","T2","T5"};for(int i=0;i<3;++i)d.tagCounts[i]=(int)number(*body,keys[i]);d.tagCountsKnown=true;}
-            else if((reply==d.init||reply==d.reconcile)&&body->is_object()){
-                if(body->contains("error")){error(text(*body,"error"));continue;}
-                if(reply==d.reconcile)d.reconcile=0;
+            else if(reply&&(reply==d.init||reply==d.reconcile)&&body->is_object()){
+                auto failure=text(*body,"error");
+                if(d.reconcile&&reply==d.reconcile){
+                    d.reconcile=0;
+                    if(failure=="RATE_LIMITED"||failure=="SIGNALING_UNAVAILABLE"){
+                        d.refreshRoom=true;
+                        d.reconcileAt=SDL_GetTicks()+(failure=="RATE_LIMITED"?15000:8000);
+                        fprintf(stderr,"bt4: discovery: room refresh delayed (%s)\n",failure.c_str());
+                        continue;
+                    }
+                }else{
+                    d.init=0;
+                    if(failure=="RATE_LIMITED"&&d.status.state==1&&!d.descriptor.is_object()&&d.admissionRetries<2){
+                        d.admissionRetryAt=SDL_GetTicks()+(d.admissionRetries++?30000:15000);
+                        fprintf(stderr,"bt4: discovery: admission delayed (RATE_LIMITED)\n");
+                        continue;
+                    }
+                }
+                if(!failure.empty()){error(failure);continue;}
                 if(text(*body,"state")=="waiting")d.waiting=true;else metadata(*body);
             }
         }else if(kind=="bt4.ready"&&d.on&&d.descriptor.is_object()){
-            d.announced.clear();d.announcements.clear();d.retryAt.clear();d.reconcile=++serial;
-            if(!rpc("get",Dj::object(),d.reconcile))d.reconcile=0;
+            d.announced.clear();d.announcements.clear();d.retryAt.clear();d.refreshRoom=true;
         }else if(kind=="bt4.room"&&d.on&&body->is_object()&&(d.descriptor.is_object()||d.waiting)){
             // A delayed notification from the room just left must not establish
             // the identity of a new create/join before its admission reply.
@@ -285,7 +355,7 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     std::lock_guard<std::mutex> g(lock);if(generation<d.generation||!name||!addresses)return 0;
     Dj local=Dj::parse(addresses,nullptr,false);if(!local.is_array()||local.empty()||local.size()>4)return 0;
     d.generation=generation;d.on=true;d.waiting=false;d.status={};d.status.state=1;d.descriptor=Dj();d.addresses.clear();d.announced.clear();d.localAddresses=local;
-    d.announcements.clear();d.retryAt.clear();d.earlySignals.clear();d.reconcile=0;d.reconcileAt=0;
+    d.announcements.clear();d.retryAt.clear();d.earlySignals.clear();d.reconcile=0;d.reconcileAt=0;d.refreshRoom=false;
     d.ranked=rankedNext&&role==3;rankedNext=false;d.sawFight=false;d.reportPending=false;
     rankedActive=d.ranked;
     d.outcomeTick=d.reportSerial=0;d.outcomeBits=d.reportState=0;d.reportAt=0;d.report=Dj();
@@ -297,24 +367,36 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     if(!Bt4Signal_Open()){d.on=false;rankedActive=false;return 0;}
     // Explicit reset precedes the new admission in the single HTTP queue.
     if(!rpc("leave",Dj::object())){d.on=false;rankedActive=false;return 0;}
-    d.init=++serial;
-    if(role==1||role==5)return rpc("create",d.profile,d.init);
-    if(role==3)return rpc("queue",d.profile,d.init);
-    return rpc("join",{{"code",code?code:""},{"wire",d.wire},{"content",d.content},{"name",d.profile["name"]},{"role",role==4?"spectator":"player"}},d.init);
+    d.admissionRetryAt=0;d.admissionRetries=0;
+    d.turnState=Discovery::NoPeer;d.turnRequest=0;d.turn={};
+    d.admissionOp=role==1||role==5?"create":role==3?"queue":"join";
+    d.admissionArgs=d.profile;
+    if(role!=1&&role!=5&&role!=3){
+        d.admissionArgs={{"code",code?code:""},{"wire",d.wire},{"content",d.content},{"name",d.profile["name"]},{"role",role==4?"spectator":"player"}};
+    }
+    return requestAdmission();
 }
 extern "C" int Bt4Discovery_Poll(unsigned generation,Bt4DiscoveryStatus *out){
     std::lock_guard<std::mutex> g(lock);if(!out||!d.on||generation!=d.generation)return 0;pump();Uint64 now=SDL_GetTicks();
-    // Reconcile membership and retained endpoints while the UDP connection is
-    // being established. Reads stop once discovery has both sides' addresses.
-    if(d.descriptor.is_object()&&(d.status.state==1||d.status.state==2)&&!d.reconcile&&now>=d.reconcileAt){
-        d.reconcile=++serial;d.reconcileAt=now+2000;
-        if(!rpc("get",Dj::object(),d.reconcile))d.reconcile=0;
+    if(d.turnState==Discovery::Requesting&&now>=d.turnDeadline){
+        d.turnRequest=0;d.turnState=Discovery::Finished;
+        if(d.descriptor.is_object()){auto current=d.descriptor;metadata(current);}
     }
-    if(now>=d.leaseAt){d.leaseAt=now+60000;if(d.waiting){d.init=++serial;rpc("queue",d.profile,d.init);}else if(number(d.descriptor,"self")==1)rpc("lease",Dj::object());}
+    if(d.admissionRetryAt&&now>=d.admissionRetryAt){
+        if(d.status.state!=1||requestAdmission())d.admissionRetryAt=0;
+        else d.admissionRetryAt=now+1000;
+    }
+    // The server allows 30 reads per minute. Reconnects share the same budget.
+    if(d.descriptor.is_object()&&d.status.state>0&&(d.refreshRoom||d.status.state<3)&&!d.reconcile&&now>=d.reconcileAt){
+        d.reconcile=++serial;d.reconcileAt=now+3500;
+        if(rpc("get",Dj::object(),d.reconcile))d.refreshRoom=false;
+        else d.reconcile=0;
+    }
+    if(now>=d.leaseAt){d.leaseAt=now+60000;if(d.waiting&&!d.init&&!d.admissionRetryAt)requestAdmission();else if(number(d.descriptor,"self")==1)rpc("lease",Dj::object());}
     // First-run admission may perform anonymous auth and then the room RPC;
     // both have bounded 20 s HTTP receive timeouts. Do not cancel the UI while
     // that request is still within its legitimate deadline.
-    if(d.status.state==1&&Bt4Signal_Status()<0&&now-d.began>45000)error("SIGNALING_UNAVAILABLE");
+    if(d.status.state==1&&!d.admissionRetryAt&&Bt4Signal_Status()<0&&now-d.began>45000)error("SIGNALING_UNAVAILABLE");
     // A queued RPC is not an acknowledgement; retry failed announcements at a bounded rate.
     bool retry=false;for(const auto &entry:d.retryAt)if(!d.announced[entry.first]&&now>=entry.second){
         bool pending=false;for(const auto &request:d.announcements)if(request.second==entry.first)pending=true;
@@ -323,13 +405,26 @@ extern "C" int Bt4Discovery_Poll(unsigned generation,Bt4DiscoveryStatus *out){
     if(retry&&d.descriptor.is_object())metadata(d.descriptor);
     *out=d.status;return 1;
 }
+extern "C" int Bt4Discovery_TakeTurn(unsigned generation,Bt4RoomTurn *out){
+    std::lock_guard<std::mutex> g(lock);
+    if(!d.on||generation!=d.generation||d.turnState!=Discovery::Ready)return 0;
+    *out=d.turn;d.turn={};d.turnState=Discovery::Allocating;
+    return 1;
+}
+extern "C" void Bt4Discovery_TurnReady(unsigned generation,const char *address){
+    std::lock_guard<std::mutex> g(lock);
+    if(!d.on||generation!=d.generation||d.turnState!=Discovery::Allocating)return;
+    if(address&&d.localAddresses.size()<4)d.localAddresses.push_back(address);
+    d.turnState=Discovery::Finished;
+    if(d.descriptor.is_object()){auto current=d.descriptor;metadata(current);}
+}
 extern "C" void Bt4Discovery_End(unsigned generation){std::lock_guard<std::mutex> g(lock);if(!d.on||generation!=d.generation)return;
     // Realtime is only the discovery channel. Cancellation and leave are HTTP
     // operations, so always queue them even if the inbox is disconnected.
     if(d.waiting)rpc("cancel",Dj::object());
     if(d.ranked&&d.sawFight){auto m=text(d.descriptor,"generation");for(auto &w:rankedWatches)if(w.match==m&&!w.until){w.until=SDL_GetTicks()+120000;w.next=0;}}
     Dj leave=Dj::object();auto generationId=text(d.descriptor,"generation");if(!generationId.empty())leave["generation"]=generationId;
-    rpc("leave",leave);d.earlySignals.clear();d.on=false;rankedActive=false;}
+    rpc("leave",leave);d.earlySignals.clear();d.on=false;d.turn={};d.turnRequest=0;rankedActive=false;}
 extern "C" int Bt4Discovery_Counts(int protocol,uint64_t content,int out[5]){
     std::lock_guard<std::mutex> g(lock);if(!out)return 0;pump();Uint64 now=SDL_GetTicks();
     if(!d.lastCounts||now-d.lastCounts>=30000){d.lastCounts=now;char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.countsRequest=++serial;
