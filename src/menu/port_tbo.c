@@ -4720,18 +4720,18 @@ static void Tb_WinTerm(void) {
 }
 
 static void Tb_DrawCommunityButton(s32 live) {
-    const f32 right = 512.0f - Ps_Left() - 12.0f;
-    const f32 left = right - 195.0f;
-    const f32 top = 413.0f, bottom = 437.0f, center = (top + bottom) * 0.5f;
-    const f32 emblemX = left + 11.0f, labelX = left + 25.0f, hintX = right - 8.0f;
-    const char *original = "Join our DBZ BT4 Decomp community!";
+    const char *original = "Join our Discord Server!";
     char label[96];
     extern int Port_TrLine(const char *original, char *out, int size);
     if (!Port_TrLine(original, label, sizeof(label)))
         Ps_Copy(label, PortOnline_Text(original), sizeof(label));
-    const f32 available = hintX - Ps_ButtonW(1, 14.0f) * 0.5f - 4.0f - labelX;
+
     const f32 textWidth = Ps_MsgWidthLiteral(label, 1.0f);
-    const f32 scale = textWidth * 0.90f > available ? available / textWidth : 0.90f;
+    const f32 scale = textWidth * 0.90f > 140.0f ? 140.0f / textWidth : 0.90f;
+    const f32 right = 512.0f - Ps_Left() - 12.0f;
+    const f32 left = right - (textWidth * scale + 46.0f);
+    const f32 top = 413.0f, bottom = 437.0f, center = (top + bottom) * 0.5f;
+    const f32 emblemX = left + 11.0f, labelX = left + 25.0f, hintX = right - 8.0f;
     const f32 underlineEnd = labelX + textWidth * scale;
     const u32 gold = Ps_Rgba(0xFF, 0xC4, 0x68, 0x5A), clearGold = Ps_Rgba(0xFF, 0xC4, 0x68, 0);
 
