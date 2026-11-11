@@ -22,8 +22,13 @@ static Uint64 now=1000;
 Uint64 SDL_GetTicks(void){return now;}
 extern "C" int Bt4Signal_Open(void){return 1;}
 extern "C" int Bt4Signal_Status(void){return 1;}
+extern "C" const char *Bt4Signal_Project(void){return "test-project";}
+extern "C" void UpdSha256_Hex(const void*,size_t,char*){assert(false&&"Ranked hashing is outside this discovery test");}
 extern "C" int Bt4Signal_Command(int,unsigned id,const char *op,const char *){
-    commands.push_back({id,op});return acceptLeave||strcmp(op,"leave");
+    commands.push_back({id,op});
+    if(!strcmp(op,"turn_credentials"))
+        events.push_back(Dj({{"event","reply"},{"serial",id},{"body",{{"state","disabled"}}}}).dump());
+    return acceptLeave||strcmp(op,"leave");
 }
 extern "C" int Bt4Signal_Read(int,char *out,size_t capacity){
     if(events.empty())return 0;
@@ -45,7 +50,12 @@ static Dj room(unsigned self,const char *mode){
     if(mode)j["mode"]=mode;return j;
 }
 static Bt4DiscoveryStatus deliver(Dj j){
-    events.push_back(Dj({{"event","reply"},{"serial",d.init},{"body",j}}).dump());
+    unsigned request=d.init;
+    if(!request){
+        if(!d.reconcile){d.reconcile=++serial;assert(rpc("get",Dj::object(),d.reconcile));}
+        request=d.reconcile;
+    }
+    events.push_back(Dj({{"event","reply"},{"serial",request},{"body",j}}).dump());
     Bt4DiscoveryStatus status={};assert(Bt4Discovery_Poll(d.generation,&status));return status;
 }
 int main(){
@@ -86,6 +96,8 @@ int main(){
     // Departure clears stale peer candidates rather than retaining the last fighter.
     begin(1);d.addresses[3]=Dj::array({"127.0.0.1:33"});status=deliver(room(1,"duel"));assert(status.peerCount==1);
     auto alone=room(1,"duel");alone["members"]=Dj::array({{{"peer",1u},{"name","Host"},{"role","player"}}});
+    events.push_back(Dj({{"event","reply"},{"serial",0u},{"body",alone}}).dump());
+    Bt4Discovery_Poll(d.generation,&status);assert(status.peerCount==1); // No request owns serial zero.
     status=deliver(alone);assert(status.state==2&&status.peerCount==0&&status.peerAddr[0][0]==0);
     acceptLeave=false;commands.clear();
     assert(!Bt4Discovery_Begin(d.generation+1,1,1234,123,"Tester","","[\"127.0.0.1:12\"]","S"));
@@ -94,7 +106,23 @@ int main(){
 '''.replace('SOURCE', (ROOT/'port/src/gs/match_supabase.cpp').as_posix())
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);include=root/'SDL3';include.mkdir()
-            (include/'SDL.h').write_text('#pragma once\n#include <stdint.h>\ntypedef uint64_t Uint64;\ntypedef struct SDL_Event {int type;} SDL_Event;\nUint64 SDL_GetTicks(void);\n')
+            (include/'SDL.h').write_text('''#pragma once
+#include <stdint.h>
+#include <cstring>
+typedef uint64_t Uint64;
+typedef struct SDL_Event {int type;} SDL_Event;
+typedef struct SDL_Thread SDL_Thread;
+#define SDLCALL
+#define SDL_THREAD_PRIORITY_LOW 0
+Uint64 SDL_GetTicks(void);
+inline void SDL_SetCurrentThreadPriority(int) {}
+inline void SDL_Delay(unsigned) {}
+inline SDL_Thread *SDL_CreateThread(int (*)(void*),const char*,void*) { return nullptr; }
+inline void SDL_WaitThread(SDL_Thread*,int*) {}
+inline size_t SDL_strlcpy(char *out,const char *in,size_t n) {
+ size_t length=strlen(in); if(n){size_t copied=length<n-1?length:n-1;memcpy(out,in,copied);out[copied]=0;}return length;
+}
+''')
             source=root/'discovery.cpp';source.write_text(code,encoding='utf8')
             exe=root/('discovery.exe' if os.name=='nt' else 'discovery')
             flags={'creationflags':0x08000000} if os.name=='nt' else {}

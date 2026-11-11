@@ -13,6 +13,8 @@ class TagPingTests(unittest.TestCase):
             depth+=(source[end]=='{')-(source[end]=='}');end+=1
         code='''#include <array>
 #include <cassert>
+#include <cstdio>
+static bool routeLog=false;
 static struct {int ping=-1;} service;
 struct Session {
 std::array<unsigned,8> pingSamples={};unsigned pingCount=0,pingCursor=0;
