@@ -1,0 +1,32 @@
+name: Configure optional room relay
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Configure the relay in both projects without changing room routing
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: online-room-relay
+  cancel-in-progress: false
+jobs:
+  relay:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Inspect relay dependencies and protect existing online functions
+        if: ${{ !inputs.apply }}
+        env:
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+        run: python3 port/tools/configure_room_turn.py
+      - name: Enable the relay using encrypted server-side credentials
+        if: ${{ inputs.apply }}
+        env:
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+          BT4_TURN_MANAGED_CONFIG: ${{ secrets.BT4_TURN_MANAGED_CONFIG }}
+        run: python3 port/tools/configure_room_turn.py --apply

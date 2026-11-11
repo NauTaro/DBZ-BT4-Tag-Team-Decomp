@@ -1,5 +1,7 @@
 -- The TURN provider carries game traffic. Supabase only serves room credentials.
 begin;
+set local lock_timeout = '3s';
+set local statement_timeout = '20s';
 
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
@@ -51,7 +53,13 @@ begin
     begin
       select decrypted_secret::jsonb into managed from vault.decrypted_secrets
         where name='bt4_turn_managed_credentials' limit 1;
-      expires_at := (managed->>'expires_at')::bigint;
+      -- Static managed credentials have no provider expiry. Bound the client
+      -- cache lease to six hours. An explicit provider expiry takes precedence.
+      if not (managed ? 'expires_at') then
+        expires_at := floor(extract(epoch from clock_timestamp()))::bigint+21600;
+      else
+        expires_at := (managed->>'expires_at')::bigint;
+      end if;
     exception when invalid_text_representation or numeric_value_out_of_range then
       return jsonb_build_object('state','disabled');
     end;
