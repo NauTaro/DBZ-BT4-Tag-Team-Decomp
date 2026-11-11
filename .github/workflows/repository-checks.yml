@@ -29,6 +29,8 @@ jobs:
           python-version: '3.12'
       - name: Test portable layout checker without game data
         run: python -m unittest discover -s tools/review/tests -v
+      - name: Test Authenticode repackaging integrity
+        run: python port/tests/test_windows_authenticode.py
       - name: Test DDS formats and large texture archive offsets
         if: runner.os == 'Linux'
         run: python port/tests/texture_pack/run.py

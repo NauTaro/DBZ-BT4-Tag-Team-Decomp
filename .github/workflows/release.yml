@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       title: ${{ steps.version.outputs.title }}
+      canonical: ${{ steps.version.outputs.canonical }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,9 +27,11 @@ jobs:
         id: version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          WINDOWS_SIGNING_MODE: ${{ vars.BT4_WINDOWS_SIGNING }}
         run: |
           python3 - <<'PY'
           import os, pathlib, re
+          assert os.environ['WINDOWS_SIGNING_MODE'] in ('', 'signpath'), 'Unsupported Windows signing configuration'
           source = pathlib.Path('port/include/bt4_version.h').read_text()
           def value(name):
               return re.search(r'^#define ' + name + r' "([^"]+)"$', source, re.M)[1]
@@ -52,6 +55,7 @@ jobs:
               assert '<!-- bt4-update:' + locale + '\n' in notes, 'Missing localized updater notes: ' + locale
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('title=BT4decomp ' + title + '\n')
+              output.write('canonical=' + canonical + '\n')
           PY
 
       - uses: docker/setup-buildx-action@v3
@@ -86,16 +90,87 @@ jobs:
       platform: all
     secrets: inherit
 
+  windows-authenticode:
+    if: startsWith(github.ref, 'refs/tags/v') && vars.BT4_WINDOWS_SIGNING == 'signpath'
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: windows-package
+      - name: Stage the game and setup executables
+        shell: pwsh
+        env:
+          API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          ORGANIZATION: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          POLICY: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          SIGNER: ${{ vars.BT4_WINDOWS_SIGNER_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($key in 'API_TOKEN','ORGANIZATION','PROJECT','POLICY','SIGNER') {
+            if (![Environment]::GetEnvironmentVariable($key)) { throw "Missing signing configuration: $key" }
+          }
+          python port/tools/windows_authenticode.py stage windows-package/BT4decomp-windows-x64.zip signing-input
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        id: unsigned
+        with:
+          name: BT4-Windows-Authenticode-input
+          path: signing-input
+          if-no-files-found: error
+      - uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: bt4-windows
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signing-output
+          parameters: |
+            version: ${{ toJSON(needs.build.outputs.canonical) }}
+      - name: Verify publisher and timestamp before repackaging
+        shell: pwsh
+        env:
+          SIGNER_SHA1: ${{ vars.BT4_WINDOWS_SIGNER_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SIGNER_SHA1 -notmatch '^[A-Fa-f0-9]{40}$') { throw 'Configure the trusted signer certificate thumbprint.' }
+          foreach ($name in 'BT4decomp.exe', 'BT4decomp-setup.exe') {
+            $signature = Get-AuthenticodeSignature -LiteralPath (Join-Path signing-output $name)
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $env:SIGNER_SHA1 -or !$signature.TimeStamperCertificate) {
+              throw "Missing valid, timestamped Authenticode signature from the configured publisher on $name."
+            }
+          }
+          python port/tools/windows_authenticode.py replace windows-package/BT4decomp-windows-x64.zip signing-output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BT4decomp-windows-x64-authenticode
+          path: windows-package/BT4decomp-windows-x64.zip
+          if-no-files-found: error
+
   prepare-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, native]
+    if: >-
+      ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') &&
+      needs.build.result == 'success' && needs.native.result == 'success' &&
+      (vars.BT4_WINDOWS_SIGNING != 'signpath' || needs.windows-authenticode.result == 'success') }}
+    needs: [build, native, windows-authenticode]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          name: ${{ vars.BT4_WINDOWS_SIGNING == 'signpath' && 'BT4decomp-windows-x64-authenticode' || 'DBZ-BT4-Tag-Team-Decomp-windows-x64' }}
           path: release-assets
       - uses: actions/download-artifact@v4
         with:

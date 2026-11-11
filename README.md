@@ -119,6 +119,8 @@ Support work on BT4decomp through [NauTaro's Ko-fi](https://ko-fi.com/nautaro).
 
 ## Credits and licenses
 
+Windows publisher verification is being prepared through a SignPath Foundation application. See the [code signing policy](docs/security/code-signing-policy.md) for its current status, scope and verification process, and the [privacy notice](docs/security/privacy.md) for the online and download services. Existing unsigned files are not represented as Authenticode-signed.
+
 The original decompilation and native runtime are developed by the [Tenkaichi3Decomp contributors](https://github.com/z3xox/Tenkaichi3Decomp). BT4decomp adapts that work for BT4 B14 Rev2. [UPSTREAM_LOCK.json](UPSTREAM_LOCK.json) records the exact source revision; [README_UPSTREAM.md](README_UPSTREAM.md) preserves the upstream reference.
 
 BT4 content, artwork and icons retain their respective authors' rights. See [presentation credits](docs/presentation/CREDITS.md), [AGPL](LICENSE), [MIT](LICENSE-MIT) and the bundled third-party notices.

@@ -1,0 +1,13 @@
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="BT4decomp.exe" product-name="BT4decomp" product-version="${version}" file-version="${version}" original-filename="BT4decomp.exe">
+      <authenticode-sign/>
+    </pe-file>
+    <pe-file path="BT4decomp-setup.exe" product-name="BT4decomp" product-version="${version}" file-version="${version}" original-filename="BT4decomp-setup.exe">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
