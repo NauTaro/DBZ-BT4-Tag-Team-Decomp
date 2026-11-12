@@ -4,6 +4,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      signpath_test:
+        description: Test SignPath onboarding without publishing or replacing any release
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -89,6 +94,103 @@ jobs:
       version: ${{ github.ref_name }}
       platform: all
     secrets: inherit
+
+  windows-authenticode-test:
+    if: github.event_name == 'workflow_dispatch' && inputs.signpath_test && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: windows-package
+      - name: Stage an isolated onboarding test
+        shell: pwsh
+        env:
+          API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          ORGANIZATION: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          TEST_SIGNER: ${{ vars.BT4_WINDOWS_TEST_SIGNER_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($key in 'API_TOKEN','ORGANIZATION','PROJECT','TEST_SIGNER') {
+            if (![Environment]::GetEnvironmentVariable($key)) { throw "Missing test signing configuration: $key" }
+          }
+          python port/tools/windows_authenticode.py stage windows-package/BT4decomp-windows-x64.zip signing-test-input
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        id: unsigned-test
+        with:
+          name: BT4-Windows-Authenticode-TEST-input
+          path: signing-test-input
+          if-no-files-found: error
+          retention-days: 7
+      - uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        id: signpath-test
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: test-signing
+          artifact-configuration-slug: bt4-windows
+          github-artifact-id: ${{ steps.unsigned-test.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signing-test-output
+          parameters: |
+            version: "onboarding-${{ github.sha }}"
+      - name: Check the test signer and unchanged executable payloads
+        shell: pwsh
+        env:
+          TEST_SIGNER_SHA1: ${{ vars.BT4_WINDOWS_TEST_SIGNER_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:TEST_SIGNER_SHA1 -notmatch '^[A-Fa-f0-9]{40}$') { throw 'Configure the test certificate thumbprint.' }
+          $report = foreach ($name in 'BT4decomp.exe', 'BT4decomp-setup.exe') {
+            $file = Join-Path signing-test-output $name
+            $signature = Get-AuthenticodeSignature -LiteralPath $file
+            if ($signature.Status -in 'HashMismatch','NotSigned' -or $signature.SignatureType -ne 'Authenticode' -or $signature.SignerCertificate.Thumbprint -ne $env:TEST_SIGNER_SHA1 -or !$signature.TimeStamperCertificate) {
+              throw "Invalid onboarding signature on $name."
+            }
+            # Windows may report NotTrusted or UnknownError for the self-signed
+            # test root. Check the CMS signature without installing that root.
+            # Production below still requires Windows Status=Valid.
+            $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $file))
+            $optional = [BitConverter]::ToInt32($bytes,60) + 24
+            if ([BitConverter]::ToUInt16($bytes,$optional) -ne 0x20b) { throw 'Expected a PE32+ test artifact.' }
+            $directory = $optional + 112 + 32
+            $certOffset = [BitConverter]::ToInt32($bytes,$directory)
+            $certSize = [BitConverter]::ToInt32($bytes,$directory+4)
+            if ($certOffset -lt 0 -or $certSize -lt 8 -or [long]$certOffset+$certSize -gt $bytes.Length) { throw 'Invalid certificate bounds.' }
+            $certLength = [BitConverter]::ToInt32($bytes,$certOffset)
+            if ($certLength -lt 8 -or $certLength -gt $certSize) { throw 'Invalid certificate length.' }
+            $cms = [System.Security.Cryptography.Pkcs.SignedCms]::new()
+            $cms.Decode([byte[]]$bytes[($certOffset+8)..($certOffset+$certLength-1)])
+            $cms.CheckSignature($true)
+            [ordered]@{file=$name; sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash; status=$signature.Status.ToString(); signer=$signature.SignerCertificate.Thumbprint; cmsSignatureVerified=$true; testOnly=$true}
+          }
+          # The helper compares code/resources/data against the unsigned build.
+          # This isolated test ZIP is never uploaded to a GitHub release.
+          python port/tools/windows_authenticode.py replace windows-package/BT4decomp-windows-x64.zip signing-test-output
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $report | ConvertTo-Json | Set-Content signing-test-output/signature-report.json -Encoding utf8
+          'TEST CERTIFICATE ONLY. DO NOT DISTRIBUTE OR INSTALL AS A TRUSTED ROOT.' | Set-Content signing-test-output/TEST-ONLY.txt -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TEST-ONLY-BT4-SignPath-onboarding
+          path: signing-test-output
+          if-no-files-found: error
+          retention-days: 7
+      - name: Report the onboarding request
+        shell: pwsh
+        env:
+          REQUEST_URL: ${{ steps.signpath-test.outputs.signing-request-web-url }}
+        run: |
+          "Test certificate only; no release was modified. SignPath request: $env:REQUEST_URL" >> $env:GITHUB_STEP_SUMMARY
 
   windows-authenticode:
     if: startsWith(github.ref, 'refs/tags/v') && vars.BT4_WINDOWS_SIGNING == 'signpath'
