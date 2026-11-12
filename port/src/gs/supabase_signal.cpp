@@ -82,14 +82,15 @@ static bool identitySlotFor(Identity &identity,const std::string &projectRef){
         static bool registered=false;if(!registered){atexit(unlockIdentities);registered=true;}
         identity.file=file+".json";
         if(auto input=SDL_IOFromFile(identity.file.c_str(),"rb")){Sint64 size=SDL_GetIOSize(input);if(size>0&&size<4096){std::string data((size_t)size,0);if(SDL_ReadIO(input,&data[0],data.size())==data.size()){
-            auto saved=Sj::parse(data,nullptr,false);if(saved.is_object()){auto token=str(saved,"refresh_token");if(token.size()<=1024)identity.refresh=token;}}}SDL_CloseIO(input);}
+            auto saved=Sj::parse(data,nullptr,false);if(saved.is_object()){auto token=str(saved,"refresh_token");if(token.size()<=1024)identity.refresh=token;
+                auto user=str(saved,"user_id");if(user.size()==36)identity.user=user;}}}SDL_CloseIO(input);}
         return true;
     }return false;
 }
 static bool identitySlot(){std::string ref=endpoint().host;return identitySlotFor(currentIdentity(),ref.substr(0,ref.find('.')));}
 static void saveIdentityFor(Identity &identity){
     if(identity.file.empty())return;
-    std::string temp=identity.file+".tmp",data=Sj{{"refresh_token",identity.refresh}}.dump();
+    std::string temp=identity.file+".tmp",data=Sj{{"refresh_token",identity.refresh},{"user_id",identity.user}}.dump();
     auto out=SDL_IOFromFile(temp.c_str(),"wb");if(!out)return;bool good=SDL_WriteIO(out,data.data(),data.size())==data.size();good=SDL_CloseIO(out)&&good;if(!good)return;
 #ifdef _WIN32
     auto a=pathWide(temp),b=pathWide(identity.file);MoveFileExW(a.c_str(),b.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH);

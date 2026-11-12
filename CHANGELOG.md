@@ -1,3 +1,19 @@
+# 0.1.39.5 R5 1.6
+
+- Recover a rejected online session through the installation's verified existing account, instead of retrying the same rejected credentials indefinitely. Registered profiles and competitive records are retained.
+- Retry authentication when a connection rejects a cached access token before its local renewal time. Apply the recovery to both WebSocket and HTTPS signaling.
+- Check the primary saved session when an obsolete secondary session prevents the initial migration. Existing account IDs are retained in the session cache and checked before recovery can replace it.
+
+<!-- bt4-update:en
+- Fix online access getting stuck after a saved session is rejected. Recover through your verified existing account and retain your profile and progress.
+-->
+<!-- bt4-update:es
+- Corrige el acceso online bloqueado por una sesión guardada rechazada. Recupera tu cuenta existente verificada y conserva tu perfil y progreso.
+-->
+<!-- bt4-update:pt
+- Corrige o acesso online bloqueado por uma sessão salva rejeitada. Recupera sua conta existente verificada e mantém seu perfil e progresso.
+-->
+
 # 0.1.39.5 R5 1.5
 
 - Move online accounts, unique nicknames and competitive profiles to the Cloudflare service. Existing installations migrate their identity automatically when first connecting.

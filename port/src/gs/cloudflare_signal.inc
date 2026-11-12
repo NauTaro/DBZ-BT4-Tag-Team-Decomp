@@ -19,9 +19,14 @@ static bool cloudAuthenticate(){
     auto &i=identities[2];if(!i.access.empty()&&SDL_GetTicks()<i.renewAt)return true;
     if(!identitySlotFor(i,"cloudflare-v5"))return false;
     Sj answer;
-    if(!i.refresh.empty()){
-        // A failed renewal must never silently replace a registered profile.
-        return http("/v5/auth/refresh",{{"refresh_token",i.refresh}},false,answer,false,cloudHost)&&cloudStoreSession(answer);
+    const bool recovering=!i.refresh.empty();
+    if(recovering){
+        if(http("/v5/auth/refresh",{{"refresh_token",i.refresh}},false,answer,false,cloudHost))return cloudStoreSession(answer);
+        // A rejected local token must not permanently block every menu. Recover
+        // using an existing, authenticated legacy identity, never a nickname or
+        // a fresh anonymous account. Temporary transport failures keep the token.
+        if(lastHttpStatus!=401||!answer.is_object()||str(answer,"error")!="AUTH_REQUIRED")return false;
+        i.access.clear();i.renewAt=0;
     }
     const int previous=activeProject;
     bool found=false,success=false;
@@ -31,16 +36,28 @@ static bool cloudAuthenticate(){
         found=true;
         // Refresh only a pre-existing identity, never sign up on the old host.
         Sj old;
-        if(!http("/auth/v1/token?grant_type=refresh_token",{{"refresh_token",currentIdentity().refresh}},false,old))break;
+        if(!http("/auth/v1/token?grant_type=refresh_token",{{"refresh_token",currentIdentity().refresh}},false,old)){
+            const auto error=old.is_object()?str(old,"error_code"):std::string();
+            // A stale secondary cache must not hide a valid primary session.
+            if(error=="refresh_token_not_found"||error=="refresh_token_already_used"||error=="session_not_found")continue;
+            break;
+        }
         if(str(old,"access_token").empty()||str(old,"refresh_token").empty())break;
         currentIdentity().access=str(old,"access_token");currentIdentity().refresh=str(old,"refresh_token");saveIdentity();
+        auto user=old.find("user");
+        const auto subject=user!=old.end()&&user->is_object()?str(*user,"id"):std::string();
+        // New caches record the established account ID. Recovery is forbidden
+        // from replacing it with another account held by this installation.
+        if(recovering&&!i.user.empty()&&subject!=i.user)continue;
         if(http("/v5/auth/exchange",{{"source",project==1?"secondary":"primary"},{"access_token",currentIdentity().access}},false,answer,false,cloudHost)){
-            success=cloudStoreSession(answer);
+            auto account=answer.find("user");
+            if(account!=answer.end()&&account->is_object()&&
+               (!recovering||i.user.empty()||str(*account,"id")==i.user))success=cloudStoreSession(answer);
         }
         break;
     }
     activeProject=previous;
-    if(found)return success;
+    if(found||recovering)return success;
     return http("/v5/auth/start",Sj::object(),false,answer,false,cloudHost)&&cloudStoreSession(answer);
 }
 static int cloudEntry(void*){
@@ -78,6 +95,10 @@ static int cloudEntry(void*){
     };
     auto disconnect=[&](){
         if(diagnostics)fprintf(stderr,"bt4: Cloudflare reconnect ready=%d pending=%u\n",(int)ready,(unsigned)pending.size());
+        // The server can reject a cached access token before the local renewal
+        // deadline. Refresh it after a failed socket authentication instead of
+        // presenting the same rejected token on every reconnect.
+        if(authSent&&!ready){identities[2].access.clear();identities[2].renewAt=0;}
         socket.reset();ready=false;authSent=false;state.status=0;
         for(auto &item:pending){Job j=std::move(item.second.first);j.notBefore=SDL_GetTicks()+1000;
             std::lock_guard<std::mutex> guard(state.lock);if(state.jobs.size()<64)state.jobs.push_front(std::move(j));}
@@ -144,6 +165,10 @@ static int cloudEntry(void*){
             if(bt4route::admission(job.op))job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",2}};
             if(httpFallback){
                 Sj body;bool ok=cloudAuthenticate()&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
+                if(!ok&&lastHttpStatus==401&&body.is_object()&&str(body,"error")=="AUTH_REQUIRED"){
+                    identities[2].access.clear();identities[2].renewAt=0;
+                    ok=cloudAuthenticate()&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
+                }
                 if(!ok&&!body.is_object())body={{"error","SIGNALING_UNAVAILABLE"}};
                 complete(job,body);state.status=ok?1:-1;
             }else{
