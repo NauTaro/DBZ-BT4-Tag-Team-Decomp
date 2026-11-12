@@ -774,8 +774,17 @@ static int gl_init_api(int api) {
     if (api) {
         char egl[2048], gles[2048];
         const char *base = SDL_GetBasePath();
-        snprintf(egl, sizeof(egl), "%stbo/renderers/angle/bt4_egl.dll", base ? base : "");
-        snprintf(gles, sizeof(gles), "%stbo/renderers/angle/av_libglesv2.dll", base ? base : "");
+        /* Resolve the pinned runtime from its own directory, without changing PATH,
+           searching the current directory or depending on a separately installed SDK. */
+        static SDL_SharedObject *dependencies[4];
+        const char *names[4] = {"libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll", "zlib1.dll"};
+        for (int n=0;n<4;n++) if (!dependencies[n]) {
+            char file[2048]; snprintf(file,sizeof(file),"%stbo/renderers/angle/%s",base?base:"",names[n]);
+            dependencies[n]=SDL_LoadObject(file);
+            if (!dependencies[n]) { fprintf(stderr,"bt3: D3D11 runtime dependency %s: %s\n",names[n],SDL_GetError()); sAngleApi=0; return 0; }
+        }
+        snprintf(egl, sizeof(egl), "%stbo/renderers/angle/libEGL.dll", base ? base : "");
+        snprintf(gles, sizeof(gles), "%stbo/renderers/angle/libGLESv2.dll", base ? base : "");
         SDL_SetHint(SDL_HINT_VIDEO_FORCE_EGL, "1");
         SDL_SetHint(SDL_HINT_OPENGL_LIBRARY, gles);
         SDL_SetHint(SDL_HINT_EGL_LIBRARY, egl);
@@ -798,7 +807,7 @@ static int gl_init_api(int api) {
     }
 #endif
     sWindow = GsDraw_WindowCreate(1);
-    if (sWindow == NULL) { sAngleApi = 0; return 0; }
+    if (sWindow == NULL) { fprintf(stderr,"bt3: graphics window: %s\n",SDL_GetError()); sAngleApi = 0; return 0; }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: the window is there\n"); }
     if (!api) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -1352,7 +1361,7 @@ static int gl_target_read(int i, uint8_t *rgba) {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     for (y = 0; y < 448; y++) { /* (rows come back in texture order: the first is the scene's top) */
         for (x = 0; x < 512; x++) {
-            memcpy(rgba + (y * 512 + x) * 4, px + ((size_t)(y * SCALE + SCALE / 2) * w + x * SCALE + SCALE / 2) * 4, 4);
+            memcpy(rgba + (y * 512 + x) * 4, px + ((size_t)((y + .5f) * SCALE) * w + (size_t)((x + .5f) * SCALE)) * 4, 4);
         }
     }
     free(px);

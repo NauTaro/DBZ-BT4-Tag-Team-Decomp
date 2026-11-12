@@ -125,7 +125,7 @@ void Gs_HoldFrame(void) {
 extern int Bt4MenuHD_Request(const uint32_t *, int, int, int, uint64_t, uint32_t **);
 /* BT4 R3: native artworks and glyph sprites come only from disc or the external pack. */
 static const int sMenuHD = 0;
-static int sOnlineQualityScale = -1;
+static float sOnlineQualityScale = -1;
 extern int Port_GameProfileMenuActive(void);
 static int sSmooth2d = 1; /* the setting "2D filtering" (smooth_2d; BT3_2D_SMOOTH=0/1 wins): 1 smooth */
 static int sWholeFrame; /* the draw being set up shows a frame the game read back (the cross-fade) */
@@ -147,8 +147,8 @@ static int sFullscreen;
 static float sWantAspect;
 static int sDisplaySetting;
 
-int gsScale = 2;
-int gsPendingScale;
+float gsScale = 2;
+float gsPendingScale;
 GsTex gsWhite;
 GsDraw *gsDraws;
 uint32_t gsDrawCount;
@@ -1019,7 +1019,7 @@ static GsTex texture_get(int ctx, int menuHd) {
     }
     /* Font replacements follow their settings and resolution. A new label catalog also refreshes cached Battle
        texture identities when the artwork is still on "Original". */
-    gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale(SCALE));
+    gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale((int)ceilf(SCALE)));
     if (menuHd) { gen ^= 0xB7404D00u + (uint32_t)sMenuHD; }
     if (originalBootText) { gen ^= 0xB007F017u; }
     gen ^= bits <= 8 ? MenuLabels_ArtKey() : 0; /* the chosen language's menu art ready: decoded again */
@@ -1154,7 +1154,7 @@ static GsTex texture_get(int ctx, int menuHd) {
     if ((!replaced || localizedMenu || selectedFont) && px != NULL) {
         int mw, mh;
         uint64_t font_t0 = gpu_now();
-        int textScale = MenuText_RasterScale(SCALE);
+        int textScale = MenuText_RasterScale((int)ceilf(SCALE));
         uint8_t *text = MenuText_RenderGlyphs((uint8_t *)px, (int)tw, (int)th, (int)tbp, (int)cbp, textScale, &mw, &mh);
         sharedText = text != NULL;
         if (text == NULL) { text = MenuText_Render((uint8_t *)px, (int)tw, (int)th, bits <= 8, textScale, &mw, &mh); }
@@ -1714,7 +1714,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     d->misc[2] = (float)(gGs.fba[ctx] & 1);
     d->blendc = (float)((gGs.alpha[ctx] >> 32) & 0xFF) / 128.0f;
     {
-        int ts = lowres_now(d->target) ? 1 : SCALE; /* (a work buffer at the PS2's resolution: target_lowres) */
+        float ts = lowres_now(d->target) ? 1.0f : SCALE; /* (a work buffer at the PS2's resolution: target_lowres) */
         d->scissor[0] = (int)(sc & 0x7FF) * ts;
         d->scissor[1] = (int)((sc >> 32) & 0x7FF) * ts;
         d->scissor[2] = ((int)((sc >> 16) & 0x7FF) + 1) * ts - d->scissor[0];
@@ -2829,7 +2829,7 @@ static int scale_apply(void) {
     gsPendingScale = 0;
     sBackend->scaleChanged();
     gsTargetCount = 0;
-    fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
+    fprintf(stderr, "bt3: internal resolution %.2fx (%d x %d)\n", (double)gsScale, (int)(512 * gsScale), (int)(448 * gsScale));
     return 1;
 }
 
@@ -2876,6 +2876,16 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     sDisplaySetting = Port_Setting("display", 0);
     pick = getenv("BT3_DISPLAY") != NULL ? atoi(getenv("BT3_DISPLAY")) : sDisplaySetting;
     sFullscreen = (getenv("BT3_FULLSCREEN") != NULL ? atoi(getenv("BT3_FULLSCREEN")) : Port_Setting("fullscreen", 0)) != 0;
+    if (!sFullscreen && !getenv("BT3_WINDOW") && !getenv("BT4_RENDER_TEST")) {
+        int percent = Port_Setting("window_percent", 0);
+        SDL_Rect usable;
+        SDL_DisplayID display = pick >= 1 && pick <= count ? displays[pick - 1] : SDL_GetPrimaryDisplay();
+        if ((percent == 50 || percent == 75 || percent == 100) && SDL_GetDisplayUsableBounds(display, &usable)) {
+            h = (int)fminf(usable.h * percent / 100.0f, usable.w * percent / (100.0f * want));
+            if (h < 240) h = 240;
+            w = (int)(h * want + .5f);
+        }
+    }
     sWantAspect = want;
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "BT4decomp");
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
@@ -2912,7 +2922,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     if (sWindow != NULL && !sFullscreen) {
         SDL_SetWindowSize(sWindow, (int)((float)h * want + 0.5f), h); /* (the height BT3_WINDOW asked for, at the picture's shape) */
     }
-    fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
+    fprintf(stderr, "bt3: internal resolution %.2fx (%d x %d)\n", (double)gsScale, (int)(512 * gsScale), (int)(448 * gsScale));
     return sWindow;
 }
 
@@ -2958,6 +2968,8 @@ int Port_FxOff(int bit) {
 
 void GsGpu_GetSettings(PortVideo *v) {
     v->scale = sOnlineQualityScale>=0?sOnlineQualityScale:(gsPendingScale ? gsPendingScale : gsScale);
+    v->performance = sPerformanceMode;
+    v->windowPercent = Port_Setting("window_percent", 0);
     v->aspectMilli = Port_AspectMilli();
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
@@ -2982,16 +2994,31 @@ void GsGpu_GetSettings(PortVideo *v) {
 
 /* Applies what differs from the current state, all of it at once, and keeps it for the next run. */
 void GsGpu_SetSettings(const PortVideo *v) {
-    PortVideo limited;
-    if (sPerformanceMode) {
-        limited = *v; limited.scale = 1; limited.fxOff |= 1 | 2 | 32;
-        limited.glow = 15; limited.glare = 0; limited.sharpBlur = 0; limited.texPack = 0;
-        v = &limited;
-    }
-    PortVideo now;
+    PortVideo adjusted, now;
     GsGpu_GetSettings(&now);
+    if (!!v->performance != sPerformanceMode) {
+        adjusted = *v;
+        if (v->performance) {
+            Port_SettingSave("quality_scale_percent", (int)(now.scale * 100.0f + .5f));
+            Port_SettingSave("quality_fx_off", now.fxOff);
+            Port_SettingSave("quality_glow", now.glow);
+            Port_SettingSave("quality_glare", now.glare);
+            Port_SettingSave("quality_sharp_blur", now.sharpBlur);
+            adjusted.scale = now.scale < 1.0f ? now.scale : 1.0f;
+            adjusted.fxOff |= 8 | 16 | 32 | 64; /* post-processing and weather; never remove attacks */
+            adjusted.glow = 30; adjusted.glare = 0; adjusted.sharpBlur = 0;
+        } else {
+            adjusted.scale = Port_Setting("quality_scale_percent", 200) / 100.0f;
+            adjusted.fxOff = Port_Setting("quality_fx_off", 0);
+            adjusted.glow = Port_Setting("quality_glow", GLOW_DEFAULT);
+            adjusted.glare = Port_Setting("quality_glare", GLOW_DEFAULT);
+            adjusted.sharpBlur = Port_Setting("quality_sharp_blur", 1);
+        }
+        sPerformanceMode = !!v->performance;
+        v = &adjusted;
+    }
     if (v->scale != now.scale) {
-        int requested=v->scale<1?1:v->scale>8?8:v->scale;
+        float requested = v->scale <= .5f ? .5f : v->scale < 1.0f ? .75f : v->scale > 8.0f ? 8.0f : (float)(int)v->scale;
         if(sOnlineQualityScale>=0){sOnlineQualityScale=requested;gsPendingScale=requested;}
         else gsPendingScale=requested; /* applied between two frames */
     }
@@ -3024,6 +3051,16 @@ void GsGpu_SetSettings(const PortVideo *v) {
         GsGl_Vsync(v->vsync);
         Port_SettingSave("vsync", v->vsync);
     }
+    if (v->windowPercent != now.windowPercent && sWindow && !sFullscreen && !getenv("BT4_RENDER_TEST")) {
+        int percent = v->windowPercent == 50 || v->windowPercent == 75 || v->windowPercent == 100 ? v->windowPercent : 0;
+        SDL_Rect usable;
+        if (percent && SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(sWindow), &usable)) {
+            int h = (int)fminf(usable.h * percent / 100.0f, usable.w * percent / (100.0f * sWantAspect));
+            if (h < 240) h = 240;
+            SDL_SetWindowSize(sWindow, (int)(h * sWantAspect + .5f), h);
+        }
+        Port_SettingSave("window_percent", percent);
+    }
     sDisplaySetting = v->display;
     sTexPackOn = v->texPack != 0;
     MenuText_SetFont(v->menuFont);
@@ -3034,14 +3071,17 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("menu_font_id", MenuText_FontIdToSave());
     sSmooth2d = v->smooth2d != 0;
     Port_SettingSave("smooth_2d", sSmooth2d);
-    if (!sPerformanceMode) Port_SettingSave("texture_pack", sTexPackOn);
-    if (!sPerformanceMode) Port_SettingSave("scale", sOnlineQualityScale>=0?sOnlineQualityScale:(gsPendingScale ? gsPendingScale : gsScale));
+    Port_SettingSave("texture_pack", sTexPackOn);
+    float chosenScale = sOnlineQualityScale >= 0 ? sOnlineQualityScale : (gsPendingScale ? gsPendingScale : gsScale);
+    Port_SettingSave("scale_percent", (int)(chosenScale * 100.0f + .5f));
+    Port_SettingSave("scale", (int)ceilf(chosenScale)); /* older clients keep a valid preference */
+    Port_SettingSave("performance_mode", sPerformanceMode);
     Port_SettingSave("aspect_milli", Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
-    if (!sPerformanceMode) Port_SettingSave("fx_off", (int)gsFxOff);
-    if (!sPerformanceMode) Port_SettingSave("glow", gsGlowPercent);
-    if (!sPerformanceMode) Port_SettingSave("glare", gsGlarePercent);
-    if (!sPerformanceMode) Port_SettingSave("sharp_blur", gsSharpBlur);
+    Port_SettingSave("fx_off", (int)gsFxOff);
+    Port_SettingSave("glow", gsGlowPercent);
+    Port_SettingSave("glare", gsGlarePercent);
+    Port_SettingSave("sharp_blur", gsSharpBlur);
     Port_SettingSave("music", gPortMusicPercent);
     Port_SettingSave("effects", gPortSePercent);
     Port_SettingSave("voices", gPortVoicePercent);
@@ -3055,8 +3095,9 @@ int GsGpu_Init(void) {
     const char *api = getenv("BT3_GPU_API");
     GsBackend *sb;
 
-    gsScale = getenv("BT3_SCALE") != NULL ? atoi(getenv("BT3_SCALE")) : Port_Setting("scale", 2);
-    gsScale = gsScale < 1 ? 1 : gsScale > 8 ? 8 : gsScale;
+    gsScale = getenv("BT3_SCALE") != NULL ? (float)atof(getenv("BT3_SCALE")) : Port_Setting("scale_percent", Port_Setting("scale", 2) * 100) / 100.0f;
+    gsScale = !isfinite(gsScale) || gsScale <= 0 ? 2.0f : gsScale <= .5f ? .5f : gsScale < 1.0f ? .75f : gsScale > 8 ? 8 : (float)(int)gsScale;
+    sPerformanceMode = Port_Setting("performance_mode", 0) != 0;
     gsPendingScale = 0;
     gsVerts = malloc(MAX_VERTS * sizeof(Vtx));
     gsVuVerts = malloc(MAX_VU_VERTS * 48);
@@ -3069,7 +3110,8 @@ int GsGpu_Init(void) {
         sb = saved == 1 ? &sGlBackend : &sVulkanBackend;
 #ifdef _WIN32
         if (saved == 2) { sb = &sDirect3D12Backend; }
-        if (saved == 3 || saved == 4) {
+        if (saved == 3) { sb = &sDirect3D11Backend; }
+        if (saved == 4) {
             sb=&sDirect3D12Backend;Port_SettingSave("gpu_api",2);Port_SettingsWrite();
             fprintf(stderr,"bt4: retired DirectX preference migrated to DirectX 12\n");
         }
@@ -3083,22 +3125,19 @@ int GsGpu_Init(void) {
     } else if (strcmp(api, "dx9") == 0 || strcmp(api, "direct3d9") == 0) {
         sb = &sDirect3D12Backend; /* retired legacy request */
     } else if (strcmp(api, "dx11") == 0 || strcmp(api, "direct3d11") == 0) {
-        sb = &sDirect3D12Backend; /* retired legacy request */
+        sb = &sDirect3D11Backend;
     } else if (strcmp(api, "dx12") == 0 || strcmp(api, "direct3d12") == 0) {
         sb = &sDirect3D12Backend;
 #endif
     } else {
-        fprintf(stderr, "bt3: unknown BT3_GPU_API=%s (try vulkan, gl, dx12 or auto)\n", api);
+        fprintf(stderr, "bt3: unknown BT3_GPU_API=%s (try vulkan, gl, dx11, dx12 or auto)\n", api);
         return 0;
     }
-    int qualityScale = gsScale;
-#ifdef _WIN32
-    sPerformanceMode = sb == &sDirect3D9Backend && !getenv("BT4_DX9_QUALITY_TEST");
-    if (sPerformanceMode) gsScale = 1;
-#endif
+    float qualityScale = gsScale;
+
     sBackend = sb;
     if (!sb->init()) {
-        gsScale = qualityScale; sPerformanceMode = 0;
+        gsScale = qualityScale;
         sBackend = NULL;
         if (api != NULL) { return 0; }
         if (sb != &sVulkanBackend) {
@@ -3124,12 +3163,6 @@ renderer_ready:
     MenuText_SetSharedFontId(Port_Setting("text_font_id", 0));
     sTexPackOn = Port_Setting("texture_pack", 1) != 0;
     sSmooth2d = getenv("BT3_2D_SMOOTH") != NULL ? atoi(getenv("BT3_2D_SMOOTH")) != 0 : Port_Setting("smooth_2d", 1) != 0;
-    if (sPerformanceMode) {
-        extern int gsInterp; gsInterp = 0;
-        gsFxOff |= 1u | 2u | 32u; /* outline, glare, camera blur; keep attack effects */
-        gsGlowPercent = 15; gsGlarePercent = 0; gsSharpBlur = 0;
-        fprintf(stderr,"bt4: DX9 Performance: scale=1 outline=off glare=off camera-blur=off texture-pack=%s\n",sTexPackOn?"on":"off");
-    }
     gPortMusicPercent = Port_Setting("music", 100);
     gPortSePercent = Port_Setting("effects", 100);
 
@@ -5542,7 +5575,11 @@ void GsGpu_InterpPump(int ahead_ms, int all) {
 }
 
 int GsGpu_BackendIsGl(void) {
-    return sBackend == &sGlBackend;
+    return sBackend == &sGlBackend
+#ifdef _WIN32
+        || sBackend == &sDirect3D11Backend
+#endif
+        ;
 }
 
 void GsGpu_InterpFlush(void) { /* (the name Port_VBlank knew it by) */

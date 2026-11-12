@@ -1,3 +1,23 @@
+# 0.1.39.5 R5 1.5
+
+- Move online accounts, unique nicknames and competitive profiles to the Cloudflare service. Existing installations migrate their identity automatically when first connecting.
+- Use an authenticated WebSocket for rooms, matchmaking and signaling, with HTTPS recovery on networks that block WebSocket connections. Combat remains peer to peer, with temporary Cloudflare TURN credentials available when a relay is needed.
+- Add a reversible Performance mode, 0.5x and 0.75x internal resolution, and window resolution controls. Effects and HD texture preferences remain adjustable.
+- Add DirectX 11 on Windows through a pinned ANGLE runtime, including its dependencies, source references and licenses.
+
+<!-- bt4-update:en
+- Online accounts and matchmaking move to Cloudflare, with automatic identity migration and temporary relay credentials.
+- Performance mode adds lower resolution options and adjustable effects. Windows also supports DirectX 11.
+-->
+<!-- bt4-update:es
+- Las cuentas y el emparejamiento pasan a Cloudflare, con migración automática de identidad y credenciales temporales de relay.
+- El modo rendimiento añade resoluciones más bajas y efectos ajustables. Windows también admite DirectX 11.
+-->
+<!-- bt4-update:pt
+- As contas e o pareamento passam para a Cloudflare, com migração automática de identidade e credenciais temporárias de relay.
+- O modo de desempenho oferece resoluções menores e efeitos ajustáveis. O Windows também suporta DirectX 11.
+-->
+
 # 0.1.39.5 R5 1.4
 
 - Online play can fall back to a relay when a direct connection fails. Duel adjusts input delay for relayed connections to reduce stalls, and Tag Team measures round-trip time for both hosts and guests.

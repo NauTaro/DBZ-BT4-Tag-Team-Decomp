@@ -180,7 +180,7 @@ int read_target(int i,uint8_t *rgba){
     if(!DX(dev->GetRenderTargetData(colSurf[i],read))){drop(read);return 0;}D3DLOCKED_RECT lock={};
     if(!DX(read->LockRect(&lock,nullptr,D3DLOCK_READONLY))){drop(read);return 0;}
     for(int y=0;y<448;y++)for(int x=0;x<512;x++){
-        const uint8_t *p=(const uint8_t *)lock.pBits+(y*SCALE+SCALE/2)*lock.Pitch+(x*SCALE+SCALE/2)*4;uint8_t *q=rgba+(y*512+x)*4;
+        const uint8_t *p=(const uint8_t *)lock.pBits+(size_t)((y+.5f)*SCALE)*lock.Pitch+(size_t)((x+.5f)*SCALE)*4;uint8_t *q=rgba+(y*512+x)*4;
         q[0]=p[2];q[1]=p[1];q[2]=p[0];q[3]=p[3];}
     read->UnlockRect();drop(read);return 1;
 }
@@ -326,7 +326,7 @@ void frame(){
     unbind();dev->SetDepthStencilSurface(nullptr);dev->SetRenderTarget(1,nullptr);dev->SetRenderTarget(0,back);
     int sw,sh;SDL_GetWindowSizeInPixels(window,&sw,&sh);float aspect=Port_AspectMilli()/1000.0f;
     int w=sw,h=(int)(sw/aspect+.5f);if(h>sh){h=sh;w=(int)(sh*aspect+.5f);}int x=(sw-w)/2,y=(sh-h)/2;
-    RECT src={0,0,512*SCALE,448*SCALE},dest={x,y,x+w,y+h};dev->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE);
+    RECT src={0,0,(LONG)(512*SCALE),(LONG)(448*SCALE)},dest={x,y,x+w,y+h};dev->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE);
     DX(dev->Clear(0,nullptr,D3DCLEAR_TARGET,0,0,0));DX(dev->StretchRect(colSurf[best],&src,back,&dest,D3DTEXF_LINEAR));
     gUiPresentX=x;gUiPresentY=y;gUiPresentW=w;gUiPresentH=h;
     viewport(sw,sh);begin();Ui_DrawD3D9();end();window_shot();DX(dev->Present(nullptr,nullptr,nullptr,nullptr));

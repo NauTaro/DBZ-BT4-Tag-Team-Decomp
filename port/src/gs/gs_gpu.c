@@ -2295,7 +2295,7 @@ static int vk_target_read(int i, uint8_t *rgba) {
     if (px != NULL) {
         for (y = 0; y < 448; y++) {
             for (x = 0; x < 512; x++) {
-                memcpy(rgba + (y * 512 + x) * 4, px + ((size_t)(y * SCALE + SCALE / 2) * w + x * SCALE + SCALE / 2) * 4, 4);
+                memcpy(rgba + (y * 512 + x) * 4, px + ((size_t)((y + .5f) * SCALE) * w + (size_t)((x + .5f) * SCALE)) * 4, 4);
             }
         }
         SDL_UnmapGPUTransferBuffer(sDev, tb);

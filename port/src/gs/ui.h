@@ -7,7 +7,9 @@ extern "C" {
 #endif
 
 typedef struct PortVideo {
-    int scale;       /* internal resolution multiplier, 1..8 */
+    float scale;     /* internal resolution multiplier: .5, .75, 1..8 */
+    int performance; /* reversible quality preset, independent of graphics API */
+    int windowPercent; /* 0 retain window size, otherwise 50/75/100 percent of desktop height */
     int aspectMilli; /* width / height of the picture * 1000 */
     int fullscreen;
     int fxOff;       /* bits: 1 outline, 2 see-through tint, 4 depth tint, 8 glare and glow, 16 distance blur, 32 movement blur, 64 weather,

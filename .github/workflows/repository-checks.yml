@@ -40,5 +40,8 @@ jobs:
       - name: Test health tiers and native palette cache identities
         if: runner.os == 'Linux'
         run: python port/tests/palette/run.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: Test authenticated Tag Team negotiation and recovery
-        run: node --test cloudflare/tests/tag_link.test.mjs cloudflare/tests/voice_hibernation.test.mjs
+        run: node --test cloudflare/tests/tag_link.test.mjs cloudflare/tests/voice_hibernation.test.mjs cloudflare/tests/online_core.test.mjs cloudflare/tests/online_migration.test.mjs

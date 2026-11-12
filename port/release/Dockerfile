@@ -6,7 +6,7 @@
 FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC LANG=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl gnupg build-essential binutils python3 cmake ninja-build pkg-config git p7zip-full \
+        ca-certificates curl gnupg build-essential binutils python3 cmake ninja-build pkg-config git p7zip-full zstd \
         libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev libx11-dev libxext-dev libxrandr-dev \
         libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libpulse-dev libpipewire-0.3-dev libasound2-dev \
         libdrm-dev libgbm-dev libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libvulkan-dev libudev-dev libdbus-1-dev \

@@ -40,13 +40,20 @@ class VoiceWs {
             if(!stop)fprintf(stderr,"bt4: realtime: WebSocket handshake failed (%lu)\n",GetLastError());return fail();}
         DWORD code=0,size=sizeof(code);WinHttpQueryHeaders(request,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,WINHTTP_HEADER_NAME_BY_INDEX,&code,&size,WINHTTP_NO_HEADER_INDEX);
         if(code!=101){fprintf(stderr,"bt4: realtime: WebSocket handshake returned HTTP %lu\n",code);return fail();}
-        if(!adopt(ws,WinHttpWebSocketCompleteUpgrade(request,0)))return fail();status=1;if(sendWake)SetEvent(sendWake);
+        if(!adopt(ws,WinHttpWebSocketCompleteUpgrade(request,0))){if(SDL_getenv("BT4_SIGNAL_DIAGNOSTICS"))fprintf(stderr,"bt4: realtime: upgrade completion failed (%lu)\n",GetLastError());return fail();}status=1;if(sendWake)SetEvent(sendWake);
+        if(SDL_getenv("BT4_SIGNAL_DIAGNOSTICS"))fprintf(stderr,"bt4: realtime: websocket connected\n");
         while(!stop){
             unsigned char data[16385];DWORD got=0;unsigned used=0;WINHTTP_WEB_SOCKET_BUFFER_TYPE kind;
             do{
                 DWORD received=WinHttpWebSocketReceive(ws,data+used,sizeof(data)-used,&got,&kind);
                 if(received!=NO_ERROR){if(!stop)fprintf(stderr,"bt4: realtime: WebSocket receive failed (%lu)\n",received);return fail();}used+=got;
-                if(kind==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE||used>16384)return fail();
+                if(kind==WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE){
+                    if(SDL_getenv("BT4_SIGNAL_DIAGNOSTICS")){USHORT closeCode=0;char reason[192]={};DWORD reasonSize=0;
+                        if(WinHttpWebSocketQueryCloseStatus(ws,&closeCode,reason,sizeof(reason)-1,&reasonSize)==NO_ERROR)
+                            fprintf(stderr,"bt4: realtime: peer closed code=%u reason=%.*s\n",(unsigned)closeCode,(int)reasonSize,reason);}
+                    return fail();
+                }
+                if(used>16384)return fail();
             }while(kind==WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE||kind==WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE);
             if(kind!=WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE&&kind!=WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)return fail();
             {std::lock_guard<std::mutex> g(lock);
@@ -61,7 +68,9 @@ class VoiceWs {
             if(status<0)break;VoiceWsMessage msg;bool have=false;
             if(status==1){std::lock_guard<std::mutex> g(lock);if(!out.empty()){msg=std::move(out.front());out.pop_front();have=true;}}
             if(have){if(!orderedFrames&&msg.binary&&SDL_GetTicks()-msg.at>160)continue;
-                if(WinHttpWebSocketSend(ws,msg.binary?WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE:WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,msg.bytes.data(),(DWORD)msg.bytes.size())!=NO_ERROR)return fail();
+                auto sent=WinHttpWebSocketSend(ws,msg.binary?WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE:WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,msg.bytes.data(),(DWORD)msg.bytes.size());
+                if(sent!=NO_ERROR){if(SDL_getenv("BT4_SIGNAL_DIAGNOSTICS"))fprintf(stderr,"bt4: realtime: websocket send failed (%lu)\n",sent);return fail();}
+                if(SDL_getenv("BT4_SIGNAL_DIAGNOSTICS"))fprintf(stderr,"bt4: realtime: websocket sent bytes=%u\n",(unsigned)msg.bytes.size());
             }else if(sendWake)WaitForSingleObject(sendWake,1000);else SDL_Delay(2);
         }return 0;
     }

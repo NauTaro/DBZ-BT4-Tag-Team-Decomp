@@ -49,7 +49,7 @@ struct Identity {
     int lock=-1;
 #endif
 };
-std::array<Identity,2> identities;
+std::array<Identity,3> identities;
 int activeProject=0;long lastHttpStatus=0;
 const bt4route::Endpoint &endpoint(){return bt4route::endpoints[activeProject];}
 Identity &currentIdentity(){return identities[activeProject];}
@@ -68,10 +68,9 @@ static std::string sessionFolder(){
     char *pref=SDL_GetPrefPath("NauTaro","BT4decomp");if(!pref)return {};
     std::string folder=std::string(pref)+"network";SDL_free(pref);return folder;
 }
-static bool identitySlot(){
-    auto &identity=currentIdentity();if(!identity.file.empty())return true;
+static bool identitySlotFor(Identity &identity,const std::string &projectRef){
+    if(!identity.file.empty())return true;
     auto folder=sessionFolder();if(folder.empty()||!SDL_CreateDirectory(folder.c_str()))return false;
-    std::string projectRef=endpoint().host;projectRef=projectRef.substr(0,projectRef.find('.'));
     for(int slot=0;slot<16;++slot){std::string file=folder+"/"+projectRef+"-"+std::to_string(slot);
 #ifdef _WIN32
         auto wide=pathWide(file+".lock");identity.lock=CreateFileW(wide.c_str(),GENERIC_READ|GENERIC_WRITE,0,nullptr,OPEN_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
@@ -87,8 +86,9 @@ static bool identitySlot(){
         return true;
     }return false;
 }
-static void saveIdentity(){
-    auto &identity=currentIdentity();if(identity.file.empty())return;
+static bool identitySlot(){std::string ref=endpoint().host;return identitySlotFor(currentIdentity(),ref.substr(0,ref.find('.')));}
+static void saveIdentityFor(Identity &identity){
+    if(identity.file.empty())return;
     std::string temp=identity.file+".tmp",data=Sj{{"refresh_token",identity.refresh}}.dump();
     auto out=SDL_IOFromFile(temp.c_str(),"wb");if(!out)return;bool good=SDL_WriteIO(out,data.data(),data.size())==data.size();good=SDL_CloseIO(out)&&good;if(!good)return;
 #ifdef _WIN32
@@ -97,6 +97,7 @@ static void saveIdentity(){
     chmod(temp.c_str(),0600);rename(temp.c_str(),identity.file.c_str());
 #endif
 }
+static void saveIdentity(){saveIdentityFor(currentIdentity());}
 struct State {
     std::mutex lock;SDL_Thread *thread=nullptr;SDL_Semaphore *wake=nullptr;
     std::atomic<bool> quit{false};std::atomic<int> status{0};
@@ -116,7 +117,7 @@ static bool emit(int consumer,const Sj &j){
     if(state.events[consumer].size()>=128){state.status=-1;return false;}
     state.events[consumer].push_back(std::move(body));return true;
 }
-static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &answer,bool optional=false){
+static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &answer,bool optional=false,const char *hostOverride=nullptr,const std::string *accessOverride=nullptr){
     auto &identity=currentIdentity();lastHttpStatus=0;
     const std::string data=body.dump();std::string result;long code=0;
     if(data.size()>20000)return false;
@@ -125,11 +126,12 @@ static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &a
     if(!session)return false;
     if(optional)WinHttpSetTimeouts(session,700,700,700,900);
     else WinHttpSetTimeouts(session,10000,10000,10000,20000);
-    HINTERNET connection=WinHttpConnect(session,pathWide(endpoint().host).c_str(),443,0);
+    HINTERNET connection=WinHttpConnect(session,pathWide(hostOverride?hostOverride:endpoint().host).c_str(),443,0);
     std::wstring wide(path.begin(),path.end());
     HINTERNET request=connection?WinHttpOpenRequest(connection,L"POST",wide.c_str(),nullptr,WINHTTP_NO_REFERER,WINHTTP_DEFAULT_ACCEPT_TYPES,WINHTTP_FLAG_SECURE):nullptr;
-    std::string headers="Content-Type: application/json\r\napikey: "+std::string(endpoint().key)+"\r\n";
-    if(authenticated)headers+="Authorization: Bearer "+identity.access+"\r\n";
+    std::string headers="Content-Type: application/json\r\n";
+    if(!hostOverride)headers+="apikey: "+std::string(endpoint().key)+"\r\n";
+    if(authenticated)headers+="Authorization: Bearer "+(accessOverride?*accessOverride:identity.access)+"\r\n";
     std::wstring wh(headers.begin(),headers.end());
     bool ok=request&&WinHttpSendRequest(request,wh.c_str(),(DWORD)wh.size(),(void*)data.data(),(DWORD)data.size(),(DWORD)data.size(),0)&&WinHttpReceiveResponse(request,nullptr);
     if(ok){DWORD status=0,size=sizeof(status),got;ok=WinHttpQueryHeaders(request,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,WINHTTP_HEADER_NAME_BY_INDEX,&status,&size,WINHTTP_NO_HEADER_INDEX);code=status;
@@ -139,9 +141,9 @@ static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &a
 #else
     CURL *request=curl_easy_init();if(!request)return false;curl_slist *headers=nullptr;
     headers=curl_slist_append(headers,"Content-Type: application/json");
-    headers=curl_slist_append(headers,("apikey: "+std::string(endpoint().key)).c_str());
-    if(authenticated)headers=curl_slist_append(headers,("Authorization: Bearer "+identity.access).c_str());
-    std::string url=std::string(endpoint().url)+path;
+    if(!hostOverride)headers=curl_slist_append(headers,("apikey: "+std::string(endpoint().key)).c_str());
+    if(authenticated)headers=curl_slist_append(headers,("Authorization: Bearer "+(accessOverride?*accessOverride:identity.access)).c_str());
+    std::string url=(hostOverride?std::string("https://")+hostOverride:std::string(endpoint().url))+path;
     curl_easy_setopt(request,CURLOPT_URL,url.c_str());curl_easy_setopt(request,CURLOPT_HTTPHEADER,headers);
     curl_easy_setopt(request,CURLOPT_POSTFIELDS,data.c_str());curl_easy_setopt(request,CURLOPT_POSTFIELDSIZE,(long)data.size());
     curl_easy_setopt(request,CURLOPT_TIMEOUT_MS,optional?1600L:8000L);curl_easy_setopt(request,CURLOPT_CONNECTTIMEOUT_MS,optional?750L:4000L);curl_easy_setopt(request,CURLOPT_NOSIGNAL,1L);
@@ -370,13 +372,14 @@ static int entry(void*){
     ws.reset();state.status=0;return 0;
 }
 
+#include "cloudflare_signal.inc"
 }
-extern "C" const char *Bt4Signal_Project(void){return bt4route::endpoints[state.projectIndex.load()].url;}
+extern "C" const char *Bt4Signal_Project(void){return cloudBackend()?cloudUrl:bt4route::endpoints[state.projectIndex.load()].url;}
 extern "C" void Bt4Signal_ReleaseRoom(const char *generation){if(!generation||strlen(generation)!=36)return;std::lock_guard<std::mutex> g(state.lock);if(state.releasedGenerations.size()<8)state.releasedGenerations.emplace_back(generation);wake(nullptr);}
 extern "C" int Bt4Signal_Open(void){
     std::lock_guard<std::mutex> lifecycleGuard(lifecycle);
     if(state.thread)return 1;state.quit=false;state.status=0;state.wake=SDL_CreateSemaphore(0);if(!state.wake)return 0;
-    state.thread=SDL_CreateThread(entry,"BT4 Supabase signaling",nullptr);if(!state.thread){SDL_DestroySemaphore(state.wake);state.wake=nullptr;return 0;}return 1;
+    state.thread=SDL_CreateThread(cloudBackend()?cloudEntry:entry,"BT4 online signaling",nullptr);if(!state.thread){SDL_DestroySemaphore(state.wake);state.wake=nullptr;return 0;}return 1;
 }
 extern "C" int Bt4Signal_Status(void){return state.status;}
 extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consumer>5)return;std::lock_guard<std::mutex> g(state.lock);if(enabled){state.consumers|=1u<<consumer;if(consumer<3)state.realtime|=1u<<consumer;}else{state.consumers&=~(1u<<consumer);state.realtime&=~(1u<<consumer);state.events[consumer].clear();++state.sessions[consumer];

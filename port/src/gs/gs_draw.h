@@ -11,7 +11,7 @@
    pixels at SCALE times the PS2's resolution, about 9 MB of video memory each at 1x, 36 MB at 2x, 144 MB at
    4x; a fight uses 7 to 16 of them. Shared: the capture scales coordinates with it, the back ends size
    their attachments with it. */
-extern int gsScale;
+extern float gsScale;
 #define SCALE gsScale
 #define GS_W 1024
 #define GS_H 1024
@@ -126,7 +126,7 @@ extern GsTarget gsTargets[MAX_TARGETS];
 extern int gsTargetCount;
 extern int gsTexCount;          /* textures in the shared decode cache */
 extern GsTex gsWhite;           /* the back end's 1x1 white texture */
-extern int gsPendingScale;      /* the user asked for a new SCALE: applied between two frames */
+extern float gsPendingScale;      /* the user asked for a new SCALE: applied between two frames */
 extern unsigned gsFxOff;        /* effects the user can switch off (BT3_FX_OFF, or F1..F5 while running) */
 extern int gsGlowPercent, gsGlarePercent, gsSharpBlur;
 extern int gsAnchor;            /* widescreen: which part of the screen the 2D pieces being drawn belong to */

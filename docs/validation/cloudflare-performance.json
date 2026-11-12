@@ -1,0 +1,28 @@
+{
+  "platform": "Windows x64, Intel Iris Xe",
+  "runtime_conditions": "Hidden isolated native demo, no HD pack and no Lua mods, native 30 FPS simulation, approximately eight seconds of combat per sample",
+  "graphics": [
+    {"api":"DirectX 12","scale":0.5,"fps":29.97,"simulation_percent":99.92,"peak_private_mib":501.2},
+    {"api":"DirectX 12","scale":0.75,"fps":30.02,"simulation_percent":100.06,"peak_private_mib":528.5},
+    {"api":"DirectX 12","scale":1,"fps":30.09,"simulation_percent":100.31,"peak_private_mib":559.3},
+    {"api":"DirectX 12","scale":2,"fps":29.94,"simulation_percent":99.81,"peak_private_mib":844.5},
+    {"api":"DirectX 11 ANGLE","scale":1,"fps":30.02,"simulation_percent":100.07,"peak_private_mib":618.4}
+  ],
+  "online": {
+    "isolated_deployed_authority": true,
+    "synthetic_users": 300,
+    "unique_duels": 150,
+    "admission_seconds": 9.098,
+    "https_response_p50_ms":223,
+    "https_response_p95_ms":326,
+    "private_both_host_directions":true,
+    "native_windows_websocket":true,
+    "native_windows_https_fallback":true,
+    "lobby_tournament_eight_members":true,
+    "tag_queue_sizes":[4,6,10],
+    "temporary_cloudflare_turn_credentials":true,
+    "existing_account_uuid_preserved":true,
+    "ranked_quit_penalizes_quitter_only":true
+  },
+  "limits": "Admission and signaling tests do not measure remote combat latency or real-world packet loss. The graphics measurements cover one computer and a short native demo, not every mode or hardware configuration."
+}

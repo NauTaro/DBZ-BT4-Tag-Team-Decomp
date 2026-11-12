@@ -1,0 +1,87 @@
+{
+  "format": 1,
+  "packages": [
+    {
+      "url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-angleproject-2.1.r25748.890b5d8f-6-any.pkg.tar.zst",
+      "sha256": "3c184061a3a3ef6478055e11eb786e20c40e62c1c239a1d65bf1399b7e2e7113",
+      "files": {
+        "ucrt64/bin/libEGL.dll": {
+          "target": "tbo/renderers/angle/libEGL.dll",
+          "sha256": "625af4e343a115422c906ecee1cc1c7cb9d9f1a5b3827620f80f30e6577f8a4a"
+        },
+        "ucrt64/bin/libGLESv2.dll": {
+          "target": "tbo/renderers/angle/libGLESv2.dll",
+          "sha256": "710e246f405a6f63005c0d91f385a1b7e62fb1cfc566fd0fbde01b7319a0d6a4"
+        },
+        "ucrt64/share/licenses/angleproject/LICENSE": {
+          "target": "licenses/angle/angleproject/LICENSE",
+          "sha256": "bf4da21bd20bcfb5b60b7ecc67fa864a79be049e21d6178076887f178dd6c71a"
+        }
+      }
+    },
+    {
+      "url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libgcc-16.2.0-6-any.pkg.tar.zst",
+      "sha256": "80b2497f019977dd9528b1abc8621b1328a0115ab1f724047ccbb56bf323f11d",
+      "files": {
+        "ucrt64/bin/libgcc_s_seh-1.dll": {
+          "target": "tbo/renderers/angle/libgcc_s_seh-1.dll",
+          "sha256": "791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270"
+        },
+        "ucrt64/share/licenses/libgcc/COPYING.RUNTIME": {
+          "target": "licenses/angle/libgcc/COPYING.RUNTIME",
+          "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+        },
+        "ucrt64/share/licenses/libgcc/COPYING3": {
+          "target": "licenses/angle/libgcc/COPYING3",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        }
+      }
+    },
+    {
+      "url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libstdc++-16.2.0-6-any.pkg.tar.zst",
+      "sha256": "33c5e58a85a538cf843a8672991cce591f0231d66da3b66a57629712d64be17f",
+      "files": {
+        "ucrt64/bin/libstdc++-6.dll": {
+          "target": "tbo/renderers/angle/libstdc++-6.dll",
+          "sha256": "4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5"
+        },
+        "ucrt64/share/licenses/libstdc++/COPYING.RUNTIME": {
+          "target": "licenses/angle/libstdc++/COPYING.RUNTIME",
+          "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+        },
+        "ucrt64/share/licenses/libstdc++/COPYING3": {
+          "target": "licenses/angle/libstdc++/COPYING3",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        }
+      }
+    },
+    {
+      "url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libwinpthread-14.0.0.r495.g63ebe6cdb-1-any.pkg.tar.zst",
+      "sha256": "1f847f4f5d56d8f54cbc9b5ce339c36f4f208353e813d4b1e5648cf33138b9a2",
+      "files": {
+        "ucrt64/bin/libwinpthread-1.dll": {
+          "target": "tbo/renderers/angle/libwinpthread-1.dll",
+          "sha256": "a5df05bf091bc2ba0a89f83a60d2049e9d434bb9631fec82faf20ff64a53456a"
+        },
+        "ucrt64/share/licenses/libwinpthread/COPYING": {
+          "target": "licenses/angle/libwinpthread/COPYING",
+          "sha256": "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177"
+        }
+      }
+    },
+    {
+      "url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-zlib-1.3.2-2-any.pkg.tar.zst",
+      "sha256": "841401182976d2f9e17e5c0ebaac51f2a8014140ea53d67625e91c8fb3c85ea0",
+      "files": {
+        "ucrt64/bin/zlib1.dll": {
+          "target": "tbo/renderers/angle/zlib1.dll",
+          "sha256": "11cd91171765cd65f1c3362e3df67e5f5a618a6b88c8cdec899b802eaf1c7b0d"
+        },
+        "ucrt64/share/licenses/zlib/LICENSE": {
+          "target": "licenses/angle/zlib/LICENSE",
+          "sha256": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+        }
+      }
+    }
+  ]
+}

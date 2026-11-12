@@ -277,6 +277,11 @@ static const char *f1_text(const char *english) {
         {"Test", "Probar", "Testar"},
         {"Reset", "Restablecer", "Redefinir"},
         {"Internal resolution", "Resolución interna", "Resolução interna"},
+        {"Performance mode", "Modo rendimiento", "Modo de desempenho"},
+        {"Reduces resolution, post-processing and weather. Attack effects stay visible. Disable it to restore your previous quality settings.", "Reduce la resolución, el posprocesado y los efectos ambientales. Los ataques siguen siendo visibles. Al desactivarlo, recuperas tus ajustes de calidad anteriores.", "Reduz a resolução, o pós-processamento e os efeitos ambientais. Os ataques continuam visíveis. Desative para restaurar suas configurações de qualidade anteriores."},
+        {"Window resolution", "Resolución de la ventana", "Resolução da janela"},
+        {"Keep current size", "Conservar tamaño actual", "Manter tamanho atual"},
+        {"Window size relative to the desktop height. Available in windowed mode; the desktop display mode is unchanged.", "Tamaño de la ventana respecto a la altura del escritorio. Disponible en modo ventana, sin cambiar la resolución del monitor.", "Tamanho da janela em relação à altura da área de trabalho. Disponível no modo janela, sem alterar a resolução do monitor."},
         {"Aspect ratio", "Relación de aspecto", "Proporção da tela"},
         {"2D filtering", "Filtro 2D", "Filtro 2D"},
         {"Sharp (console)", "Nítido (consola)", "Nítido (console)"},
@@ -1820,25 +1825,31 @@ static void video_tab(PortVideo &v) {
     const char *hudLabel=PortHud_Hidden() ? f1_text("Show HUD") : f1_text("Hide HUD");
     if(ImGui::Button(hudLabel))PortHud_Toggle();
     ImGui::Separator();
-    if (GsDraw_PerformanceMode()) {
-        ImGui::TextWrapped("%s", f1_text("Performance mode: 1x resolution, reduced post-processing and no HD texture pack. Your other renderers keep their saved quality settings."));
-        ImGui::Separator();
-    }
+    bool performance = v.performance != 0;
+    if (ImGui::Checkbox(f1_text("Performance mode"), &performance)) v.performance = performance;
+    ImGui::SetItemTooltip(f1_text("Reduces resolution, post-processing and weather. Attack effects stay visible. Disable it to restore your previous quality settings."));
     static const struct { const char *name; int milli; } aspects[] = {{"4:3 (original)", 1333}, {"16:10", 1600}, {"16:9", 1778}, {"21:9", 2389}, {"32:9", 3556}};
     char label[64];
     int best = 0, count = 0;
 
-    snprintf(label, sizeof(label), "%dx  (%d x %d)", v.scale, 512 * v.scale, 448 * v.scale);
-    ImGui::BeginDisabled(GsDraw_PerformanceMode() != 0);
+    snprintf(label, sizeof(label), "%gx  (%d x %d)", (double)v.scale, (int)(512 * v.scale), (int)(448 * v.scale));
     if (ImGui::BeginCombo(f1_text("Internal resolution"), label)) {
-        for (int n = 1; n <= 8; n++) {
-            snprintf(label, sizeof(label), "%dx  (%d x %d)", n, 512 * n, 448 * n);
+        static const float scales[] = {.5f, .75f, 1, 2, 3, 4, 5, 6, 7, 8};
+        for (float n : scales) {
+            snprintf(label, sizeof(label), "%gx  (%d x %d)", (double)n, (int)(512 * n), (int)(448 * n));
             if (ImGui::Selectable(label, n == v.scale)) { v.scale = n; }
         }
         ImGui::EndCombo();
     }
-    ImGui::EndDisabled();
     ImGui::SetItemTooltip(f1_text("How finely the game is drawn. 1x is the PlayStation 2's own resolution.\nHigher is sharper and uses more video memory."));
+    ImGui::BeginDisabled(v.fullscreen != 0);
+    const char *sizes[] = {f1_text("Keep current size"), "50%", "75%", "100%"};
+    int output = v.windowPercent == 50 ? 1 : v.windowPercent == 75 ? 2 : v.windowPercent == 100 ? 3 : 0;
+    if (ImGui::Combo(f1_text("Window resolution"), &output, sizes, 4)) {
+        static const int percent[] = {0, 50, 75, 100}; v.windowPercent = percent[output];
+    }
+    ImGui::SetItemTooltip(f1_text("Window size relative to the desktop height. Available in windowed mode; the desktop display mode is unchanged."));
+    ImGui::EndDisabled();
     for (int i = 1; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
         if (abs(aspects[i].milli - v.aspectMilli) < abs(aspects[best].milli - v.aspectMilli)) { best = i; }
     }
@@ -1910,7 +1921,7 @@ static void video_tab(PortVideo &v) {
     {   // Persisted choice; the active device is reported separately after fallback.
         static const char *const kApi[] = {"Vulkan", "OpenGL",
 #ifdef _WIN32
-                                          "DirectX 12"
+                                          "DirectX 12", "DirectX 11"
 #endif
         };
         static int api = -1;
@@ -1918,10 +1929,11 @@ static void video_tab(PortVideo &v) {
         int active = sGL ? 1 : 0;
 #ifdef _WIN32
         if (!sGL && sDevice && strcmp(SDL_GetGPUDeviceDriver(sDevice), "direct3d12") == 0) { active = 2; }
+        if (sGL && GsGl_DirectXVersion() == 11) { active = 3; }
 #endif
         if (api < 0) {
             api = Port_Setting("gpu_api", 0);
-            if (api == 3 || api == 4) { api = 2; }
+            if (api == 4) { api = 2; }
             if (api < 0 || api >= count) { api = 0; }
         }
         if (ImGui::Combo(f1_text("Renderer"), &api, kApi, count)) {
@@ -1944,7 +1956,7 @@ static void video_tab(PortVideo &v) {
         const char *kSmooth[] = {f1_text("Off (30, as the console)"), f1_text("60 pictures a second"), f1_text("120 pictures a second"), f1_text("240 pictures a second")};
         int smooth = gsInterp < 0 ? 1 : gsInterp > 3 ? 3 : gsInterp;
         ImGui::SetNextItemWidth(U(416.0f));
-        ImGui::BeginDisabled(GsDraw_PerformanceMode());
+        ImGui::BeginDisabled(false);
         if (ImGui::Combo(f1_text("Smooth motion"), &smooth, kSmooth, 4)) {
             gsInterp = smooth;
             Port_SettingSave("interp", gsInterp);
@@ -2999,7 +3011,7 @@ static void build(void) {
         ImGui::BeginChild("body", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing() - ImGui::GetStyle().ItemSpacing.y), ImGuiChildFlags_NavFlattened);
         if (ImGui::BeginTabBar("tabs")) {
             if (tab(f1_text("Video"), 0)) { video_tab(v); ImGui::EndTabItem(); }
-            if (tab(f1_text("Effects"), 1)) { ImGui::BeginDisabled(GsDraw_PerformanceMode() != 0); effects_tab(v); ImGui::EndDisabled(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Effects"), 1)) { ImGui::BeginDisabled(false); effects_tab(v); ImGui::EndDisabled(); ImGui::EndTabItem(); }
             if (tab(f1_text("Audio"), 2)) { audio_tab(v); ImGui::EndTabItem(); }
             if (tab(f1_text("UI"), 3)) { ui_tab(v); ImGui::EndTabItem(); }
             if (tab(f1_text("Controls"), 4)) {

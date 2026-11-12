@@ -1,0 +1,12 @@
+{
+  "name": "bt4-online-v5",
+  "main": "online_worker.mjs",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "services": [{"binding": "TURN_GATEWAY", "service": "bt4-tag-direct-r3"}],
+  "durable_objects": {"bindings": [{"name": "ONLINE", "class_name": "OnlineCoordinator"}]},
+  "migrations": [{"tag": "online-v5-1", "new_sqlite_classes": ["OnlineCoordinator"]}],
+  "observability": {"enabled": false},
+  "preview_urls": false,
+  "limits": {"cpu_ms": 50}
+}
