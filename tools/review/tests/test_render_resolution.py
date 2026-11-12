@@ -18,6 +18,7 @@ static void *sWindow=(void*)1;
 static int Port_UpdateMenuScreen(void){return screen;}
 static void SDL_GetWindowSizeInPixels(void *window,int *width,int *height){*height=windowHeight;}
 static int sInterpNext=2,sInterpRepeat=1,sInterpPrevCount=12,sInterpPrevPrimCount=7,sInterpPrevVertCount=40;
+static unsigned sInterpPlanFrame=10;
 static int sInterpSaved[16];
 static int active=1,rebuilds;
 static int Port_GameProfileMenuActive(void){return active;}
@@ -25,7 +26,7 @@ static void rebuilt(void){++rebuilds;}
 static struct {void (*scaleChanged)(void);} backend={rebuilt},*sBackend=&backend;
 '''+clear+resize+'''
 static void remember(void){sInterpNext=3;sInterpRepeat=1;sInterpPrevCount=10;sInterpPrevPrimCount=20;sInterpPrevVertCount=40;memset(sInterpSaved,1,sizeof(sInterpSaved));}
-static void retired(void){int i;assert(!sInterpNext&&!sInterpRepeat&&!sInterpPrevCount&&!sInterpPrevPrimCount&&!sInterpPrevVertCount);for(i=0;i<16;++i)assert(sInterpSaved[i]==0);}
+static void retired(void){int i;assert(sInterpPlanFrame==~0u);assert(!sInterpNext&&!sInterpRepeat&&!sInterpPrevCount&&!sInterpPrevPrimCount&&!sInterpPrevVertCount);for(i=0;i<16;++i)assert(sInterpSaved[i]==0);}
 int main(void){
  /* Non-online pages and battles keep the user's scale. */
  remember();assert(scale_apply()==0);assert(gsScale==2&&rebuilds==0&&sInterpNext==3);

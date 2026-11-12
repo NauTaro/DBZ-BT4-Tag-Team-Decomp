@@ -3,19 +3,20 @@
 - Move online accounts, unique nicknames and competitive profiles to the Cloudflare service. Existing installations migrate their identity automatically when first connecting.
 - Use an authenticated WebSocket for rooms, matchmaking and signaling, with HTTPS recovery on networks that block WebSocket connections. Combat remains peer to peer, with temporary Cloudflare TURN credentials available when a relay is needed.
 - Add a reversible Performance mode, 0.5x and 0.75x internal resolution, and window resolution controls. Effects and HD texture preferences remain adjustable.
-- Add DirectX 11 on Windows through a pinned ANGLE runtime, including its dependencies, source references and licenses.
+- Add a native Direct3D 11 renderer on Windows with offline Shader Model 5 programs, alongside the native Direct3D 12 and Vulkan backends.
+- Add unlimited presentation under Smooth motion. Additional rendered pictures use the time before the next simulation tick, without changing combat or online timing.
 
 <!-- bt4-update:en
 - Online accounts and matchmaking move to Cloudflare, with automatic identity migration and temporary relay credentials.
-- Performance mode adds lower resolution options and adjustable effects. Windows also supports DirectX 11.
+- Performance mode adds lower resolution options and adjustable effects, native DirectX 11 and unlimited presentation.
 -->
 <!-- bt4-update:es
 - Las cuentas y el emparejamiento pasan a Cloudflare, con migración automática de identidad y credenciales temporales de relay.
-- El modo rendimiento añade resoluciones más bajas y efectos ajustables. Windows también admite DirectX 11.
+- El modo rendimiento añade resoluciones más bajas y efectos ajustables, DirectX 11 nativo y renderizado sin límite de FPS.
 -->
 <!-- bt4-update:pt
 - As contas e o pareamento passam para a Cloudflare, com migração automática de identidade e credenciais temporárias de relay.
-- O modo de desempenho oferece resoluções menores e efeitos ajustáveis. O Windows também suporta DirectX 11.
+- O modo de desempenho oferece resoluções menores e efeitos ajustáveis, DirectX 11 nativo e renderização sem limite de FPS.
 -->
 
 # 0.1.39.5 R5 1.4

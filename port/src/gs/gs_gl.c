@@ -23,22 +23,7 @@
 #include "ui.h"
 
 extern int Port_AspectMilli(void);
-static int sAngleApi; /* 11: ES 3.0 through the pinned D3D11 implementation */
 static int sConservativeDepth;
-static void SDLCALL gl_debug_message(unsigned source, unsigned type, unsigned id, unsigned severity,
-                                     int length, const char *message, const void *unused) {
-    (void)source; (void)type; (void)id; (void)unused;
-    if (severity != 0x826B) { fprintf(stderr, "bt3: GL diagnostic: %.*s\n", length > 1000 ? 1000 : length, message); }
-}
-int GsGl_DirectXVersion(void) { return sAngleApi; }
-#ifdef _WIN32
-static SDL_EGLAttrib *SDLCALL angle_platform(void *unused) {
-    SDL_EGLAttrib *attrs = SDL_malloc(3 * sizeof(*attrs));
-    (void)unused;
-    if (attrs) { attrs[0] = 0x3203; attrs[1] = 0x3208; attrs[2] = 0x3038; }
-    return attrs; /* EGL_PLATFORM_ANGLE_TYPE_ANGLE = D3D11; EGL_NONE */
-}
-#endif
 
 /* ---- GL 3.3 core entry points (loaded through SDL_GL_GetProcAddress) ------------------------------ */
 typedef unsigned int GLenum; typedef unsigned int GLuint; typedef int GLint; typedef int GLsizei;
@@ -242,11 +227,7 @@ static char *translate(const char *src, int is_vertex) {
     const char *p = src;
     while (*p) {
         if (!strncmp(p, "#version 450", 12)) {
-            if (sAngleApi) {
-                PUSH("#version 300 es\n");
-                if (sConservativeDepth) { PUSH("#extension GL_EXT_conservative_depth : require\n"); }
-                PUSH("precision highp float;\nprecision highp int;\nprecision highp sampler2D;");
-            } else { PUSH("#version 330 core"); }
+            PUSH("#version 330 core");
             p += 12; continue;
         }
         if (!strncmp(p, "gl_VertexIndex", 14)) { PUSH("gl_VertexID"); p += 14; continue; }
@@ -301,15 +282,7 @@ static char *translate(const char *src, int is_vertex) {
 static GLuint compile(GLenum stage, const char *src, const char *tag) {
     GLuint sh = glCreateShader(stage);
     GLint ok = 0;
-    char *es = NULL;
-    if (sAngleApi && !strncmp(src, "#version 330 core", 17)) {
-        static const char prefix[] = "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;";
-        es = malloc(sizeof(prefix) + strlen(src + 17));
-        if (!es) { fprintf(stderr, "bt3: ANGLE shader allocation failed\n"); exit(1); }
-        strcpy(es, prefix); strcat(es, src + 17); src = es;
-    }
     glShaderSource(sh, 1, &src, NULL);
-    free(es);
     glCompileShader(sh);
     glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
     if (!ok) {
@@ -735,7 +708,7 @@ static void draw_params(const GsDraw *d, GlParams *fu) {
 }
 
 /* One streamed upload per frame; binding a range does not overwrite constants
-   still in use by earlier draws. Kept specific to ANGLE while it is validated. */
+   still in use by earlier draws. Shared by desktop OpenGL drivers. */
 static void prepare_uniforms(void) {
     size_t pbytes = (size_t)gsDrawCount * sParamStride;
     size_t ubytes = (size_t)gsVuUniCount * sUStride;
@@ -766,54 +739,16 @@ static void prepare_uniforms(void) {
 }
 
 /* ---- init --------------------------------------------------------------------------------------- */
-static int gl_init_api(int api) {
+static int gl_init(void) {
     static const uint32_t white = 0xFFFFFFFFu;
     int i;
-    sAngleApi = api;
-#ifdef _WIN32
-    if (api) {
-        char egl[2048], gles[2048];
-        const char *base = SDL_GetBasePath();
-        /* Resolve the pinned runtime from its own directory, without changing PATH,
-           searching the current directory or depending on a separately installed SDK. */
-        static SDL_SharedObject *dependencies[4];
-        const char *names[4] = {"libwinpthread-1.dll", "libgcc_s_seh-1.dll", "libstdc++-6.dll", "zlib1.dll"};
-        for (int n=0;n<4;n++) if (!dependencies[n]) {
-            char file[2048]; snprintf(file,sizeof(file),"%stbo/renderers/angle/%s",base?base:"",names[n]);
-            dependencies[n]=SDL_LoadObject(file);
-            if (!dependencies[n]) { fprintf(stderr,"bt3: D3D11 runtime dependency %s: %s\n",names[n],SDL_GetError()); sAngleApi=0; return 0; }
-        }
-        snprintf(egl, sizeof(egl), "%stbo/renderers/angle/libEGL.dll", base ? base : "");
-        snprintf(gles, sizeof(gles), "%stbo/renderers/angle/libGLESv2.dll", base ? base : "");
-        SDL_SetHint(SDL_HINT_VIDEO_FORCE_EGL, "1");
-        SDL_SetHint(SDL_HINT_OPENGL_LIBRARY, gles);
-        SDL_SetHint(SDL_HINT_EGL_LIBRARY, egl);
-        if (!SDL_Init(SDL_INIT_VIDEO)) { sAngleApi = 0; return 0; }
-        SDL_EGL_SetAttributeCallbacks(angle_platform, NULL, NULL, NULL);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-        SDL_GL_SetAttribute(SDL_GL_EGL_PLATFORM, 0x3202); /* EGL_PLATFORM_ANGLE_ANGLE */
-    } else {
-        if (!SDL_Init(SDL_INIT_VIDEO)) { return 0; }
-        SDL_ResetHint(SDL_HINT_VIDEO_FORCE_EGL);
-        SDL_ResetHint(SDL_HINT_OPENGL_LIBRARY);
-        SDL_ResetHint(SDL_HINT_EGL_LIBRARY);
-        SDL_EGL_SetAttributeCallbacks(NULL, NULL, NULL, NULL);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_EGL_PLATFORM, 0);
-    }
-#endif
+    if (!SDL_Init(SDL_INIT_VIDEO)) return 0;
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     sWindow = GsDraw_WindowCreate(1);
-    if (sWindow == NULL) { fprintf(stderr,"bt3: graphics window: %s\n",SDL_GetError()); sAngleApi = 0; return 0; }
+    if (sWindow == NULL) { fprintf(stderr,"bt3: graphics window: %s\n",SDL_GetError()); return 0; }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: the window is there\n"); }
-    if (!api) {
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    }
     if (getenv("BT3_GPU_DEBUG") != NULL) { SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG); }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: window made, creating the context\n"); }
     sCtx = SDL_GL_CreateContext(sWindow);
@@ -821,7 +756,7 @@ static int gl_init_api(int api) {
     if (sCtx == NULL || !SDL_GL_MakeCurrent(sWindow, sCtx)) {
         fprintf(stderr, "bt3: gl: no GL 3.3 core context: %s\n", SDL_GetError());
         if (sCtx) { SDL_GL_DestroyContext(sCtx); sCtx = NULL; }
-        GsDraw_WindowDestroy(); sWindow = NULL; sAngleApi = 0;
+        GsDraw_WindowDestroy(); sWindow = NULL;
         SDL_GL_UnloadLibrary();
         return 0;
     }
@@ -829,32 +764,11 @@ static int gl_init_api(int api) {
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: current, loading the functions\n"); }
     if (!load_gl()) {
         SDL_GL_DestroyContext(sCtx); sCtx = NULL;
-        GsDraw_WindowDestroy(); sWindow = NULL; sAngleApi = 0;
+        GsDraw_WindowDestroy(); sWindow = NULL;
         SDL_GL_UnloadLibrary();
         return 0;
     }
-    if (api && getenv("BT3_GL_DEBUG_MESSAGES")) {
-        typedef void (SDLCALL *DebugMessage)(void (SDLCALL *)(unsigned,unsigned,unsigned,unsigned,int,const char *,const void *), const void *);
-        DebugMessage callback = (DebugMessage)SDL_GL_GetProcAddress("glDebugMessageCallbackKHR");
-        if (callback) { callback(gl_debug_message, NULL); glEnable(0x92E0); }
-    }
     fprintf(stderr, "bt3: GL renderer: %s (%s)\n", (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
-    if (api) {
-        /* ES 3.0 exposes these through EXT_draw_buffers_indexed, not the ES
-           3.2 core entry points. ANGLE exports both but validates them separately. */
-        glEnablei = (void (*)(GLenum, GLuint))SDL_GL_GetProcAddress("glEnableiEXT");
-        glDisablei = (void (*)(GLenum, GLuint))SDL_GL_GetProcAddress("glDisableiEXT");
-        glColorMaski = (void (*)(GLuint, GLboolean, GLboolean, GLboolean, GLboolean))SDL_GL_GetProcAddress("glColorMaskiEXT");
-        const char *renderer = (const char *)glGetString(GL_RENDERER);
-        if (!renderer || !strstr(renderer, "Direct3D11") || !glEnablei || !glDisablei || !glColorMaski ||
-            !SDL_GL_ExtensionSupported("GL_EXT_draw_buffers_indexed")) {
-            fprintf(stderr, "bt3: requested D3D11 but ANGLE returned a different backend\n");
-            SDL_GL_DestroyContext(sCtx); sCtx = NULL;
-            GsDraw_WindowDestroy(); sWindow = NULL; sAngleApi = 0;
-            SDL_GL_UnloadLibrary(); return 0;
-        }
-        fprintf(stderr, "bt3: GPU renderer: direct3d11 (ANGLE)\n");
-    }
     {
         GLint alignment = 0;
         glGetIntegerv(0x8A34, &alignment); /* GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT */
@@ -863,14 +777,11 @@ static int gl_init_api(int api) {
         sUStride = (sizeof(Vu0Uniform) + alignment - 1) / alignment * alignment;
     }
     sHasIndexed = glEnablei != NULL && glColorMaski != NULL;
-    sConservativeDepth = api && SDL_GL_ExtensionSupported("GL_EXT_conservative_depth");
+    sConservativeDepth = 0;
     /* Depth as the Vulkan back end has it: clip-space z in 0..w stored as z / w, and (SDL GPU's default, depth
        clip off) nothing cut at the near and far planes, the depth clamped to 0..1 instead. */
     if (getenv("BT3_GL_NOCLIPCONTROL") == NULL && SDL_GL_ExtensionSupported("GL_ARB_clip_control")) {
         glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControl");
-    }
-    if (api && SDL_GL_ExtensionSupported("GL_EXT_clip_control")) {
-        glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControlEXT");
     }
     sHasClipControl = glClipControl != NULL;
     if (sHasClipControl) { glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE); }
@@ -997,7 +908,7 @@ static void frame_end(void) {
             if (gsInterp > 0) { was = gsInterp; gsInterp = 0; } else { gsInterp = was; }
             Port_SettingSave("interp", gsInterp);
             Port_SettingsWrite();
-            fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : "240");
+            fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : gsInterp == 3 ? "240" : "unlimited");
         }
         if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) { GsDraw_FullscreenToggle(); }
     }
@@ -1277,19 +1188,7 @@ static void frame_end(void) {
             if(file)fclose(file);free(pixels);
         }
     }
-    {
-        Uint64 start = SDL_GetTicksNS();
-        if (sAngleApi && getenv("BT4_RENDER_TEST") && getenv("BT4_ANGLE_TEST_NO_SWAP")) {
-            /* An occluded HWND may be throttled by DXGI. This test-only path
-               completes the real offscreen draws without presenting to it. */
-            glFinish();
-        } else { SDL_GL_SwapWindow(sWindow); }
-        if (sAngleApi && getenv("BT4_RENDER_TEST") && gGsFrame % 60 == 0) {
-            fprintf(stderr, "bt3: ANGLE test presentation: %.2f ms (%s)\n",
-                    (SDL_GetTicksNS() - start) / 1000000.0,
-                    getenv("BT4_ANGLE_TEST_NO_SWAP") ? "offscreen finish" : "hidden window swap");
-        }
-    }
+    SDL_GL_SwapWindow(sWindow);
     if (getenv("BT3_GS_VERBOSE") != NULL) {
         GLenum e = glGetError();
         if (e != GL_NO_ERROR) { fprintf(stderr, "bt3: gl: frame error 0x%x\n", e); }
@@ -1385,10 +1284,6 @@ static void gl_target_copy(int src, int dst) {
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 }
 
-static int gl_init(void) { return gl_init_api(0); }
-#ifdef _WIN32
-static int dx11_init(void) { return gl_init_api(11); }
-#endif
 
 GsBackend sGlBackend = {
     "opengl",
@@ -1409,25 +1304,3 @@ GsBackend sGlBackend = {
     gl_target_read,
     gl_target_copy,
 };
-
-#ifdef _WIN32
-GsBackend sDirect3D11Backend = {
-    "direct3d11",
-    dx11_init,
-    frame_end,
-    scale_changed,
-    white_tex,
-    tex_create,
-    tex_upload,
-    tex_destroy,
-    tex_slots_left,
-    target_ensure,
-    target_drop,
-    target_color,
-    target_aux,
-    target_depth,
-    pipe_get,
-    gl_target_read,
-    gl_target_copy,
-};
-#endif

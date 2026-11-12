@@ -31,10 +31,10 @@ int main(void){
 }
 '''
   self.compile(code)
- def test_dx12_and_vulkan_grade_support_excludes_unimplemented_backends(self):
+ def test_native_gpu_grade_support_excludes_unimplemented_backends(self):
   source=(ROOT/'port/src/gs/gs_draw.c').read_text(encoding='utf8')
-  code='#include <assert.h>\n#define _WIN32 1\nstatic int sVulkanBackend,sDirect3D12Backend,sGlBackend,sDirect3D9Backend;static int *sBackend;\n'+function(source,'static int grade_supported(void) {')+r'''
-int main(void){sBackend=&sVulkanBackend;assert(grade_supported());sBackend=&sDirect3D12Backend;assert(grade_supported());sBackend=&sGlBackend;assert(!grade_supported());sBackend=&sDirect3D9Backend;assert(!grade_supported());sBackend=0;assert(!grade_supported());}
+  code='#include <assert.h>\n#define _WIN32 1\nstatic int sVulkanBackend,sDirect3D12Backend,sDirect3D11Backend,sGlBackend,sDirect3D9Backend;static int *sBackend;\n'+function(source,'static int grade_supported(void) {')+r'''
+int main(void){sBackend=&sVulkanBackend;assert(grade_supported());sBackend=&sDirect3D12Backend;assert(grade_supported());sBackend=&sDirect3D11Backend;assert(grade_supported());sBackend=&sGlBackend;assert(!grade_supported());sBackend=&sDirect3D9Backend;assert(!grade_supported());sBackend=0;assert(!grade_supported());}
 '''
   self.compile(code)
  def test_hd_hue_reads_at_most_64_source_texels_without_decoding_an_image(self):

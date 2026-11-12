@@ -253,6 +253,8 @@ def main():
     (gen / "shaders.h").write_text("/* generated from port/src/gs/shaders by port/tools/undefined.py */\n" + "".join(arrays))
     import dx12_shaders
     dx12_shaders.prepare(ROOT, gen, WIN)
+    import d3d11_shaders
+    d3d11_shaders.prepare(ROOT, gen, WIN)
     import d3d9_shaders
     d3d9_shaders.prepare(ROOT, gen, WIN)
     for f in sorted((ROOT / "port/src/gs").glob("*.c")):
@@ -269,7 +271,7 @@ def main():
     # an object of the library built before it was given lacks them (delete port/build/obj/cxx_imgui*.o once).
     imgui = ROOT / "port/third_party/imgui"
     for f in sorted(imgui.glob("*.cpp")) + sorted((ROOT / "port/src/gs").glob("*.cpp")):
-        if f.name == "imgui_impl_dx9.cpp" and not WIN:
+        if f.name in ("imgui_impl_dx9.cpp", "imgui_impl_dx11.cpp") and not WIN:
             continue
         o = OBJ / ("cxx_" + f.stem + ".o")
         if f.parent == imgui and o.exists() and o.stat().st_mtime > f.stat().st_mtime:

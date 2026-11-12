@@ -1,28 +1,214 @@
 {
   "platform": "Windows x64, Intel Iris Xe",
-  "runtime_conditions": "Hidden isolated native demo, no HD pack and no Lua mods, native 30 FPS simulation, approximately eight seconds of combat per sample",
+  "runtime_conditions": "Hidden isolated native demo on one Windows PC, no HD pack and no Lua mods. Baseline samples explicitly disable interpolation. Unlimited samples render intermediate geometry while keeping the original simulation clock.",
   "graphics": [
-    {"api":"DirectX 12","scale":0.5,"fps":29.97,"simulation_percent":99.92,"peak_private_mib":501.2},
-    {"api":"DirectX 12","scale":0.75,"fps":30.02,"simulation_percent":100.06,"peak_private_mib":528.5},
-    {"api":"DirectX 12","scale":1,"fps":30.09,"simulation_percent":100.31,"peak_private_mib":559.3},
-    {"api":"DirectX 12","scale":2,"fps":29.94,"simulation_percent":99.81,"peak_private_mib":844.5},
-    {"api":"DirectX 11 ANGLE","scale":1,"fps":30.02,"simulation_percent":100.07,"peak_private_mib":618.4}
+    {
+      "api": "DirectX 12",
+      "scale": 0.5,
+      "fps": 29.97,
+      "simulation_percent": 99.92,
+      "peak_private_mib": 501.2
+    },
+    {
+      "api": "DirectX 12",
+      "scale": 0.75,
+      "fps": 30.02,
+      "simulation_percent": 100.06,
+      "peak_private_mib": 528.5
+    },
+    {
+      "api": "DirectX 12",
+      "scale": 1,
+      "fps": 30.09,
+      "simulation_percent": 100.31,
+      "peak_private_mib": 559.3
+    },
+    {
+      "api": "DirectX 12",
+      "scale": 2,
+      "fps": 29.94,
+      "simulation_percent": 99.81,
+      "peak_private_mib": 844.5
+    }
   ],
   "online": {
     "isolated_deployed_authority": true,
     "synthetic_users": 300,
     "unique_duels": 150,
     "admission_seconds": 9.098,
-    "https_response_p50_ms":223,
-    "https_response_p95_ms":326,
-    "private_both_host_directions":true,
-    "native_windows_websocket":true,
-    "native_windows_https_fallback":true,
-    "lobby_tournament_eight_members":true,
-    "tag_queue_sizes":[4,6,10],
-    "temporary_cloudflare_turn_credentials":true,
-    "existing_account_uuid_preserved":true,
-    "ranked_quit_penalizes_quitter_only":true
+    "https_response_p50_ms": 223,
+    "https_response_p95_ms": 326,
+    "private_both_host_directions": true,
+    "native_windows_websocket": true,
+    "native_windows_https_fallback": true,
+    "lobby_tournament_eight_members": true,
+    "tag_queue_sizes": [
+      4,
+      6,
+      10
+    ],
+    "temporary_cloudflare_turn_credentials": true,
+    "existing_account_uuid_preserved": true,
+    "ranked_quit_penalizes_quitter_only": true
   },
-  "limits": "Admission and signaling tests do not measure remote combat latency or real-world packet loss. The graphics measurements cover one computer and a short native demo, not every mode or hardware configuration."
+  "limits": "Measurements use hidden isolated demos on one shared Windows PC at below-normal priority, with no HD pack. They measure renderer submissions, not visible monitor scanout. GPU speed, V-sync, driver stalls and other PC activity still affect FPS; uncapped presentation does not guarantee a frame rate or exactly 100% simulation speed. DX11 memory in the 60-second runs rose from 628.6 to 839.1 MiB with interpolation and from 518.2 to 727.7 MiB without it. A multi-hour memory soak and native Linux/macOS runs have not been performed in this validation.",
+  "unlimited_graphics": [
+    {
+      "api": "dx11",
+      "interp": 4,
+      "scale": 1.0,
+      "presented_fps": 114.18,
+      "simulation_percent": 98.96,
+      "peak_private_mib": 840.5,
+      "warm_private_mib": 628.6,
+      "end_private_mib": 839.1,
+      "cache_reference_comparisons": 0,
+      "cache_reference_mismatches": 0,
+      "combat_sample_seconds": 41.57,
+      "picture_types": {
+        "B": 3492,
+        "R": 1230,
+        "S": 8,
+        "D": 17
+      },
+      "unexpected_exit": false,
+      "scope": "60-second process run; metrics exclude the victory and return-to-menu sequence"
+    },
+    {
+      "api": "gl",
+      "interp": 4,
+      "scale": 1.0,
+      "presented_fps": 118.95,
+      "simulation_percent": 99.54,
+      "peak_private_mib": 671.6,
+      "warm_private_mib": 658.6,
+      "end_private_mib": 623.1,
+      "cache_reference_comparisons": 122,
+      "cache_reference_mismatches": 0,
+      "combat_sample_seconds": 3.97,
+      "picture_types": {
+        "R": 117,
+        "B": 345,
+        "S": 3,
+        "D": 8
+      },
+      "unexpected_exit": false,
+      "scope": "Single-threaded OpenGL with byte-exact interpolation-reference comparison"
+    },
+    {
+      "api": "dx12",
+      "interp": 4,
+      "scale": 1.0,
+      "presented_fps": 114.93,
+      "simulation_percent": 99.74,
+      "peak_private_mib": 671.4,
+      "warm_private_mib": 667.0,
+      "end_private_mib": 644.7,
+      "cache_reference_comparisons": 20,
+      "cache_reference_mismatches": 0,
+      "combat_sample_seconds": 3.78,
+      "picture_types": {
+        "B": 319,
+        "R": 113,
+        "S": 1,
+        "D": 2
+      },
+      "unexpected_exit": false,
+      "scope": "Native Direct3D 12 with byte-exact interpolation-reference comparison"
+    },
+    {
+      "api": "dx11",
+      "interp": 4,
+      "scale": 1.0,
+      "presented_fps": 160.24,
+      "simulation_percent": 99.71,
+      "peak_private_mib": 673.9,
+      "warm_private_mib": 614.8,
+      "end_private_mib": 608.7,
+      "cache_reference_comparisons": 258,
+      "cache_reference_mismatches": 0,
+      "combat_sample_seconds": 13.11,
+      "picture_types": {
+        "R": 390,
+        "B": 1689,
+        "S": 5,
+        "D": 17
+      },
+      "unexpected_exit": false,
+      "scope": "Native Direct3D 11 forced to single-threaded rendering; reference comparison enabled"
+    },
+    {
+      "api": "dx11",
+      "interp": 4,
+      "scale": 1.0,
+      "presented_fps": 88.11,
+      "simulation_percent": 97.9,
+      "peak_private_mib": 708.0,
+      "warm_private_mib": 649.5,
+      "end_private_mib": 644.0,
+      "cache_reference_comparisons": 20,
+      "cache_reference_mismatches": 0,
+      "combat_sample_seconds": 10.76,
+      "picture_types": {
+        "B": 625,
+        "R": 312,
+        "S": 5,
+        "D": 7
+      },
+      "unexpected_exit": false,
+      "scope": "Native Direct3D 11 with Modern Look and reference comparison enabled"
+    }
+  ],
+  "native_d3d11_checks": {
+    "offline_sm5_source_and_bytecode_hashes": true,
+    "hidden_f1_settings_capture": true,
+    "hidden_battle_with_hud_capture": true,
+    "fractional_scales": [
+      0.5,
+      0.75,
+      1.0
+    ],
+    "api_errors_in_smoke_runs": 0,
+    "extended_memory_run": "Completed one 60-second process run with interpolation off and one with unlimited presentation. This is not a long-duration leak test.",
+    "public_release": "held",
+    "native_loaded_modules": [
+      "d3d11.dll",
+      "dxgi.dll"
+    ],
+    "angle_egl_opengl_modules_in_native_dx11": false,
+    "actual_size_correspondence_cache": true,
+    "correspondence_invalidated_per_recorded_list": true,
+    "single_thread_replay_drained_before_resource_writes": true,
+    "windows_production_macro_build": "compiled and linked locally without BT4_DEVELOPMENT_BUILD",
+    "full_interpolation_and_backend_submission_cost_budgeted": true
+  },
+  "native_30_control": {
+    "api": "dx11",
+    "interp": 0,
+    "scale": 1.0,
+    "presented_fps": 29.97,
+    "simulation_percent": 99.9,
+    "peak_private_mib": 729.1,
+    "warm_private_mib": 518.2,
+    "end_private_mib": 727.7,
+    "cache_reference_comparisons": 0,
+    "cache_reference_mismatches": 0,
+    "combat_sample_seconds": 41.17,
+    "picture_types": {
+      "S": 1235
+    },
+    "unexpected_exit": false
+  },
+  "automated_checks": {
+    "python_total": 101,
+    "python_passed": 98,
+    "python_skipped": 3,
+    "python_failures": 0,
+    "local_online_node_tests_passed": 50,
+    "shader_manifest_checks": [
+      "SM5",
+      "DXIL",
+      "SM3"
+    ]
+  }
 }

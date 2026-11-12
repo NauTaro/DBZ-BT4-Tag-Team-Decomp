@@ -1244,7 +1244,7 @@ static void vk_frame_end(void) {
             if (gsInterp > 0) { was = gsInterp; gsInterp = 0; } else { gsInterp = was; }
             Port_SettingSave("interp", gsInterp);
             Port_SettingsWrite();
-            fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : "240");
+            fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : gsInterp == 3 ? "240" : "unlimited");
         }
         if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) {
             GsDraw_FullscreenToggle();

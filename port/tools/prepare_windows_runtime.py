@@ -6,7 +6,6 @@ import json
 import pathlib
 import urllib.request
 import zipfile
-from prepare_angle_runtime import prepare_angle
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 GH_VERSION = "2.103.3"
@@ -87,7 +86,6 @@ def prepare(archive=None):
         put("tbo/setup/gh.exe", package.read(executable))
         put("licenses/GitHub-CLI-MIT.txt", package.read(license_name))
 
-    prepare_angle(put)
     (target / "manifest.json").write_text(
         json.dumps({
             "github_cli_version": GH_VERSION,

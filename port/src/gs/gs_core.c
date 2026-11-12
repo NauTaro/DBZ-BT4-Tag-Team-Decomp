@@ -1334,6 +1334,8 @@ static void *render_thread(void *arg) {
 
 /* Blocks until the render thread has nothing to do. */
 static void render_wait(void) {
+    extern void GsGpu_InterpPreempt(void);
+    GsGpu_InterpPreempt();
     pthread_mutex_lock(&sLock);
     while (sJob != 0) {
         pthread_cond_wait(&sDone, &sLock);
@@ -1406,6 +1408,7 @@ int Gs_SyncPath(int poll) {
     int busy;
     if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
     pthread_mutex_lock(&sLock);
+    if (!poll) { extern void GsGpu_InterpPreempt(void); GsGpu_InterpPreempt(); }
     if (!poll) while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
     busy = sJob != 0;
     pthread_mutex_unlock(&sLock);
@@ -1415,7 +1418,9 @@ int Gs_SyncPath(int poll) {
 /* Immediate Sony calls can draw too, including the clear during a scene
    change. Keep those calls on the context's owning thread, just like DMA. */
 static int render_register(uint32_t addr, uint64_t data) {
+    if (!sThreaded) { extern void GsGpu_InterpPreempt(void); GsGpu_InterpPreempt(); }
     if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
+    { extern void GsGpu_InterpPreempt(void); GsGpu_InterpPreempt(); }
     pthread_mutex_lock(&sLock);
     while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
     sJobReg = addr; sJobRegData = data; sJob = 4;
@@ -1426,7 +1431,9 @@ static int render_register(uint32_t addr, uint64_t data) {
 }
 
 static int render_gif(uint32_t addr, uint32_t qwc, int chain) {
+    if (!sThreaded) { extern void GsGpu_InterpPreempt(void); GsGpu_InterpPreempt(); }
     if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
+    { extern void GsGpu_InterpPreempt(void); GsGpu_InterpPreempt(); }
     pthread_mutex_lock(&sLock);
     while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
     sJobTadr = addr; sJobGifQwc = qwc; sJobGifChain = chain; sJob = 5;
@@ -1504,8 +1511,8 @@ static int render_thread_wanted(void) {
 #ifdef __APPLE__
     want = 0;
 #endif
-    if (want && ((api && (!strcmp(api, "gl") || !strcmp(api, "opengl") || !strcmp(api, "dx11") || !strcmp(api, "direct3d11"))) ||
-                             Port_Setting("gpu_api", 0) == 1 || Port_Setting("gpu_api", 0) == 3 || (e == NULL && SDL_GetNumLogicalCPUCores() <= 2))) {
+    if (want && ((api && (!strcmp(api, "gl") || !strcmp(api, "opengl"))) ||
+                             Port_Setting("gpu_api", 0) == 1 || (e == NULL && SDL_GetNumLogicalCPUCores() <= 2))) {
         want = 0;
     }
     return want;

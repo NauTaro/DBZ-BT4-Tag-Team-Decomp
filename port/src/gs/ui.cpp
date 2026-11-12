@@ -15,11 +15,15 @@
 #include "imgui_impl_opengl3.h"
 #ifdef _WIN32
 #include "imgui_impl_dx9.h"
+#include "imgui_impl_dx11.h"
+#include <d3d11.h>
+static void *sD3D11, *sD3D11Context;
+extern "C" void *GsDx11_StripTexture(const void *,int,int);
+extern "C" void GsDx11_StripTextureFree(void *);
 static void *sD3D9;
 extern "C" void *GsDx9_StripTexture(const void *, int, int);
 extern "C" void GsDx9_StripTextureFree(void *);
 #endif
-extern "C" int GsGl_DirectXVersion(void);
 #include "ui.h"
 #include "presentation.h"
 #include "namefont.h"
@@ -294,6 +298,10 @@ static const char *f1_text(const char *english) {
         {"Display", "Pantalla", "Monitor"},
         {"Chosen by the desktop", "Elegida por el sistema", "Escolhida pelo sistema"},
         {"Renderer", "Renderizador", "Renderizador"},
+        {"Unlimited (no FPS cap)", "Sin límite de FPS", "Sem limite de FPS"},
+        {"Rendering has no fixed FPS ceiling. Extra pictures use the time before the next game tick.\nThe fight, controller sampling and online clock keep their original speed. V-sync can still limit presentation to your display.",
+         "El renderizado no tiene un tope fijo de FPS. Las imágenes adicionales aprovechan el tiempo anterior al siguiente paso del juego.\nEl combate, la lectura del mando y el reloj online conservan su velocidad original. V-Sync puede limitar la presentación a la pantalla.",
+         "A renderização não tem um teto fixo de FPS. Os quadros adicionais aproveitam o tempo antes do próximo passo do jogo.\nO combate, a leitura do controle e o relógio online mantêm a velocidade original. O V-Sync pode limitar a apresentação à tela."},
         {"Smooth motion", "Movimiento fluido", "Movimento suave"},
         {"Menu size", "Tamaño de los menús", "Tamanho dos menus"},
         {"Show frame rate, and the connection in an online match", "Mostrar FPS y conexión durante una partida en línea", "Mostrar FPS e conexão durante uma partida online"},
@@ -651,6 +659,10 @@ static SDL_GPUTexture *make_strip(uint8_t *pix, size_t bytes, uint32_t w, uint32
     void *map;
 
 #ifdef _WIN32
+    if (sD3D11) {
+        void *texture=GsDx11_StripTexture(pix,w,h*count);
+        free(pix);return (SDL_GPUTexture *)texture;
+    }
     if (sD3D9) {
         void *texture = GsDx9_StripTexture(pix, w, h * count);
         free(pix); return (SDL_GPUTexture *)texture;
@@ -792,6 +804,7 @@ void Ui_TextureFree(SDL_GPUTexture *tex) {
         return;
     }
 #ifdef _WIN32
+    if (sD3D11) { GsDx11_StripTextureFree(tex); return; }
     if (sD3D9) { GsDx9_StripTextureFree(tex); return; }
 #endif
     if (sGL) {
@@ -1052,13 +1065,15 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
         }
     }
 #ifdef _WIN32
-    if (sD3D9) {
+    if (sD3D11) {
+        if (!ImGui_ImplSDL3_InitForD3D(window) || !ImGui_ImplDX11_Init((ID3D11Device *)sD3D11,(ID3D11DeviceContext *)sD3D11Context)) return 0;
+    } else if (sD3D9) {
         if (!ImGui_ImplSDL3_InitForD3D(window) || !ImGui_ImplDX9_Init((IDirect3DDevice9 *)sD3D9)) { return 0; }
     } else
 #endif
     if (device == NULL) { // the OpenGL back end (gs_gl.c), with its context current
         sGL = 1;
-        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init(GsGl_DirectXVersion() ? "#version 300 es" : "#version 330 core")) {
+        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init("#version 330 core")) {
             return 0;
         }
     } else {
@@ -1098,6 +1113,24 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
         gPortOverlayOpen = 1;
     }
     return 1;
+}
+
+int Ui_InitD3D11(SDL_Window *window,void *device,void *context,const char *gpu_name) {
+#ifdef _WIN32
+    sD3D11=device;sD3D11Context=context;
+    int ok=Ui_Init(window,NULL,NULL,gpu_name);
+    if(!ok){
+        if(ImGui::GetCurrentContext()){
+            if(ImGui::GetIO().BackendRendererUserData)ImGui_ImplDX11_Shutdown();
+            if(ImGui::GetIO().BackendPlatformUserData)ImGui_ImplSDL3_Shutdown();
+            ImGui::DestroyContext();
+        }
+        sD3D11=sD3D11Context=NULL;sReady=false;
+    }
+    return ok;
+#else
+    return 0;
+#endif
 }
 
 int Ui_InitD3D9(SDL_Window *window, void *device, const char *gpu_name) {
@@ -1850,6 +1883,50 @@ static void video_tab(PortVideo &v) {
     }
     ImGui::SetItemTooltip(f1_text("Window size relative to the desktop height. Available in windowed mode; the desktop display mode is unchanged."));
     ImGui::EndDisabled();
+    {   // Persisted choice; the active device is reported separately after fallback.
+        static const char *const kApi[] = {"Vulkan", "OpenGL",
+#ifdef _WIN32
+                                          "DirectX 12", "DirectX 11"
+#endif
+        };
+        static int api = -1;
+        const int count = IM_ARRAYSIZE(kApi);
+        int active = sGL ? 1 : 0;
+#ifdef _WIN32
+        if (!sGL && sDevice && strcmp(SDL_GetGPUDeviceDriver(sDevice), "direct3d12") == 0) { active = 2; }
+        if (sD3D11) { active = 3; }
+#endif
+        if (api < 0) {
+            api = Port_Setting("gpu_api", 0);
+            if (api == 4) { api = 2; }
+            if (api < 0 || api >= count) { api = 0; }
+        }
+        if (ImGui::Combo(f1_text("Renderer"), &api, kApi, count)) {
+            Port_SettingSave("gpu_api", api);
+            Port_SettingsWrite();
+        }
+        ImGui::SetItemTooltip(f1_text("Takes effect after restarting the game. Performance depends on your GPU and drivers.\n"
+                              "If the saved renderer is unavailable, the game tries Vulkan and then OpenGL."));
+        ImGui::TextDisabled(f1_text("Running now: %s"), kApi[active]);
+        static const int requestedAtStartup = Port_Setting("gpu_api", 0);
+        if (api != active) {
+            if (api == requestedAtStartup) { ImGui::TextWrapped(f1_text("The requested renderer could not start. Using %s."), kApi[active]); }
+            else { ImGui::TextDisabled(f1_text("After restart: %s"), kApi[api]); }
+        }
+        ImGui::TextWrapped(f1_text("Active GPU: %s"), sGpuName);
+    }
+    {
+        // Presentation is independent of the original fight and online clock.
+        const char *kSmooth[] = {f1_text("Off (30, as the console)"), f1_text("60 pictures a second"), f1_text("120 pictures a second"), f1_text("240 pictures a second"), f1_text("Unlimited (no FPS cap)")};
+        int smooth = gsInterp < 0 ? 4 : gsInterp > 4 ? 4 : gsInterp;
+        ImGui::SetNextItemWidth(U(416.0f));
+        if (ImGui::Combo(f1_text("Smooth motion"), &smooth, kSmooth, 5)) {
+            gsInterp = smooth;
+            Port_SettingSave("interp", gsInterp);
+            Port_SettingsWrite();
+        }
+        ImGui::SetItemTooltip(f1_text("Rendering has no fixed FPS ceiling. Extra pictures use the time before the next game tick.\nThe fight, controller sampling and online clock keep their original speed. V-sync can still limit presentation to your display."));
+    }
     for (int i = 1; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
         if (abs(aspects[i].milli - v.aspectMilli) < abs(aspects[best].milli - v.aspectMilli)) { best = i; }
     }
@@ -1918,56 +1995,6 @@ static void video_tab(PortVideo &v) {
     }
     ImGui::SetItemTooltip(f1_text("Takes effect the next time the game starts."));
     SDL_free(displays);
-    {   // Persisted choice; the active device is reported separately after fallback.
-        static const char *const kApi[] = {"Vulkan", "OpenGL",
-#ifdef _WIN32
-                                          "DirectX 12", "DirectX 11"
-#endif
-        };
-        static int api = -1;
-        const int count = IM_ARRAYSIZE(kApi);
-        int active = sGL ? 1 : 0;
-#ifdef _WIN32
-        if (!sGL && sDevice && strcmp(SDL_GetGPUDeviceDriver(sDevice), "direct3d12") == 0) { active = 2; }
-        if (sGL && GsGl_DirectXVersion() == 11) { active = 3; }
-#endif
-        if (api < 0) {
-            api = Port_Setting("gpu_api", 0);
-            if (api == 4) { api = 2; }
-            if (api < 0 || api >= count) { api = 0; }
-        }
-        if (ImGui::Combo(f1_text("Renderer"), &api, kApi, count)) {
-            Port_SettingSave("gpu_api", api);
-            Port_SettingsWrite();
-        }
-        ImGui::SetItemTooltip(f1_text("Takes effect after restarting the game. Performance depends on your GPU and drivers.\n"
-                              "If the saved renderer is unavailable, the game tries Vulkan and then OpenGL."));
-        ImGui::TextDisabled(f1_text("Running now: %s"), kApi[active]);
-        static const int requestedAtStartup = Port_Setting("gpu_api", 0);
-        if (api != active) {
-            if (api == requestedAtStartup) { ImGui::TextWrapped(f1_text("The requested renderer could not start. Using %s."), kApi[active]); }
-            else { ImGui::TextDisabled(f1_text("After restart: %s"), kApi[api]); }
-        }
-        ImGui::TextWrapped(f1_text("Active GPU: %s"), sGpuName);
-    }
-    {
-        // In-between pictures (gs_draw.c): the fight is computed 30 times a second, as on the console; with this
-        // on one more picture is drawn between each two. The game itself, its replays and online play are the same.
-        const char *kSmooth[] = {f1_text("Off (30, as the console)"), f1_text("60 pictures a second"), f1_text("120 pictures a second"), f1_text("240 pictures a second")};
-        int smooth = gsInterp < 0 ? 1 : gsInterp > 3 ? 3 : gsInterp;
-        ImGui::SetNextItemWidth(U(416.0f));
-        ImGui::BeginDisabled(false);
-        if (ImGui::Combo(f1_text("Smooth motion"), &smooth, kSmooth, 4)) {
-            gsInterp = smooth;
-            Port_SettingSave("interp", gsInterp);
-            Port_SettingsWrite();
-        }
-        ImGui::EndDisabled();
-        ImGui::SetItemTooltip(f1_text("The game computes a fight 30 times a second. With this, more pictures are\n"
-                              "drawn between each two. The fight itself does not change, and neither does online play.\n"
-                              "The newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\n"
-                              "Choose what your screen can show. F9 switches it off and on."));
-    }
     {
         // The size of these windows, the chat and the notices: larger with a taller picture by itself (sUiScale)
         static int steps = 20; // (in fives of a percent; while it is dragged)
@@ -3626,7 +3653,8 @@ static bool frame_build(void) {
     }
     sBuilt = true;
 #ifdef _WIN32
-    if (sD3D9) { ImGui_ImplDX9_NewFrame(); }
+    if (sD3D11) { ImGui_ImplDX11_NewFrame(); }
+    else if (sD3D9) { ImGui_ImplDX9_NewFrame(); }
     else
 #endif
     if (sGL) {
@@ -3779,6 +3807,11 @@ static bool frame_build(void) {
     return true;
 }
 
+void Ui_DrawD3D11(void) {
+#ifdef _WIN32
+    if(sD3D11 && frame_build()) ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+#endif
+}
 void Ui_DrawD3D9(void) {
 #ifdef _WIN32
     if (sD3D9 && frame_build()) { ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData()); }
