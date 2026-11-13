@@ -22,6 +22,7 @@ static Uint64 now=1000;
 Uint64 SDL_GetTicks(void){return now;}
 extern "C" int Bt4Signal_Open(void){return 1;}
 extern "C" int Bt4Signal_Status(void){return 1;}
+extern "C" int Port_BattleRoster(int,int*,int){return 0;}
 extern "C" const char *Bt4Signal_Project(void){return "test-project";}
 extern "C" void UpdSha256_Hex(const void*,size_t,char*){assert(false&&"Ranked hashing is outside this discovery test");}
 extern "C" int Bt4Signal_Command(int,unsigned id,const char *op,const char *){

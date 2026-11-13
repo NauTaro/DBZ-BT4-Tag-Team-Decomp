@@ -3,13 +3,13 @@
 - Online system maintenance and compatibility updates across matchmaking modes.
 
 <!-- bt4-update:en
-- Online system maintenance and compatibility updates.
+- Online system maintenance and compatibility updates across matchmaking modes. Update through the launcher to use the latest revision.
 -->
 <!-- bt4-update:es
-- Mantenimiento del sistema online y ajustes de compatibilidad.
+- Mantenimiento del sistema online y ajustes de compatibilidad entre modos. Actualiza desde el launcher para utilizar la versión más reciente.
 -->
 <!-- bt4-update:pt
-- Manutenção do sistema online e ajustes de compatibilidade.
+- Manutenção do sistema online e ajustes de compatibilidade entre modos. Atualize pelo launcher para utilizar a versão mais recente.
 -->
 
 # 0.1.39.5 R5 1.6
