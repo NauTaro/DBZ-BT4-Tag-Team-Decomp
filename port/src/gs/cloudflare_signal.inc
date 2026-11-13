@@ -160,7 +160,7 @@ static int cloudEntry(void*){
             auto it=std::find_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.notBefore<=now;});
             if(it!=state.jobs.end()){job=std::move(*it);state.jobs.erase(it);have=true;}}
         if(have){
-            if(!current(job)&&job.op!="leave"&&job.op!="cancel"&&job.op!="ranked_report")continue;
+            if(!current(job)&&job.op!="leave"&&job.op!="cancel"&&job.op!="ranked_report"&&job.op!="match_report")continue;
             if(bt4route::admission(job.op)&&Update_OnlineRequired()){complete(job,Sj{{"error","UPDATE_REQUIRED"}});continue;}
             if(bt4route::admission(job.op))job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",2}};
             if(httpFallback){

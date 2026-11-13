@@ -6,7 +6,7 @@ import {importRows} from '../online_migration.mjs';
 import {createSession,verifyAccess,issueAccess,sha256} from '../online_auth.mjs';
 function fixture(){
  const db=new DatabaseSync(':memory:');let time=Date.now();
- const sql={exec(q,...a){if(!a.length&&!/^SELECT/i.test(q)){db.exec(q);return [];}return db.prepare(q).all(...a);}};
+ const sql={exec(q,...a){if(!a.length&&!/^(SELECT|PRAGMA table_info)/i.test(q)){db.exec(q);return [];}return db.prepare(q).all(...a);}};
  const c=new OnlineCore(sql,()=>time);let batch=0;
  const apply=(table,rows,sync=false)=>{db.exec('BEGIN');try{const r=importRows(c,{source:'secondary',table,rows,batch:'test'+batch++,digest:'digest'},sync);db.exec('COMMIT');return r;}catch(e){db.exec('ROLLBACK');throw e;}};
  return {c,apply,tick:n=>time+=n};

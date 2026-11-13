@@ -333,6 +333,15 @@ int Port_BattleOutcome(int *winner) {
     return gBtlSeq->state;
 }
 
+int Port_BattleRoster(int side,int *ids,int capacity) {
+    extern int BattleSide_GetMemberCount(int side);
+    extern int BattleSide_GetMemberChara(int side,int index);
+    int i,n;if(!gBtlSeq||side<0||side>1||!ids)return 0;
+    n=BattleSide_GetMemberCount(side);if(n<1||n>capacity)return 0;
+    for(i=0;i<n;++i)ids[i]=BattleSide_GetMemberChara(side,i);
+    return n;
+}
+
 /* Main-menu item 4, Dragon Net Battle, was confirmed (src/menu/menu_a.c): the settings code opens the online
    screen when it sees the request (port/src/gs/ui.cpp). Without a window nothing does. */
 volatile int gPortNetMenuRequest;

@@ -1,11 +1,12 @@
 import test from 'node:test';
+import './online_characters.test.mjs';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {OnlineCore,seasonAt,clientAtLeast} from '../online_core.mjs';
 
 function fixture(){
     const db=new DatabaseSync(':memory:');let now=Date.parse('2026-11-11T15:00:00Z');
-    const sql={exec(q,...args){if(!args.length&&!/^SELECT/i.test(q)){db.exec(q);return [];}return db.prepare(q).all(...args);}};
+    const sql={exec(q,...args){if(!args.length&&!/^(SELECT|PRAGMA table_info)/i.test(q)){db.exec(q);return [];}return db.prepare(q).all(...args);}};
     const c=new OnlineCore(sql,()=>now);const ids=[];
     function user(name){const id=crypto.randomUUID();c.run('INSERT INTO online_users VALUES(?,?)',id,now);if(name)c.command(id,'nickname_set',{name});ids.push(id);return id;}
     const invoke=(u,op,a={})=>{db.exec('BEGIN');try{const r=c.command(u,op,a);db.exec('COMMIT');return r;}catch(e){db.exec('ROLLBACK');throw e;}};

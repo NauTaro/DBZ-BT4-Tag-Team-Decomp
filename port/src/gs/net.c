@@ -2936,6 +2936,10 @@ static void ranked_outcome(unsigned tick){
     extern int Port_BattleOutcome(int *);
     extern int Port_RankedPauseAbortPad(void);
     static int notified;
+    if(sMode!=3&&sSession&&!sResim&&!gPortResim){
+        int bits=0,state=Port_BattleOutcome(&bits);
+        Port_OnlineDuelObserve(state,bits,tick,sRollMax>0?sChecked:tick,0,sSeed,sNames[0],sNames[1]);
+    }
     if(sMode!=3&&sSession&&Port_RankedActive()){
         int bits=0,state=Port_BattleOutcome(&bits);
         int abortPad=bits&8?Port_RankedPauseAbortPad():-1;

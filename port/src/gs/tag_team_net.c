@@ -371,6 +371,7 @@ int main(int argc,char **argv){
 static void write64(unsigned char*p,uint64_t v){Ttw_Write(p,(uint32_t)v);Ttw_Write(p+4,(uint32_t)(v>>32));}
 
 static TtChannel client={TT_INVALID};static TtRoom state;static uint32_t member;
+static unsigned tag_stats_epoch,tag_stats_seed;static int tag_stats_finished;static char tag_stats_descriptor[8192];
 
 static char room_code[7],error[128];static time_t last_ping,last_heard;static int connecting;
 
@@ -586,7 +587,7 @@ int Port_TagConnect(const char *server){
 
 }
 
-void Port_TagClose(void){if(peer_mode)TagPeer_Close();peer_mode=0;Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_feedback_seen=0;tag_delay_adjusted=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
+void Port_TagClose(void){tag_stats_epoch=tag_stats_seed=0;tag_stats_finished=0;tag_stats_descriptor[0]=0;if(peer_mode)TagPeer_Close();peer_mode=0;Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_feedback_seen=0;tag_delay_adjusted=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
 
 int Port_TagReselect(void){
 
@@ -722,7 +723,21 @@ static int tag_read_packet(unsigned char *packet,Uint64 *at,int *direct){
     if(tag_direct_route&&state.phase==TT_FIGHT&&TagDirect_Read(packet,(uint64_t*)at)){*direct=1;return 1;}
     return 0;
 }
+static void tag_character_report(void){
+    extern int Port_BattleOutcome(int *bits);
+    extern void Port_OnlineTagObserve(const TtRoom *,const char *,int,int);
+    if(!peer_mode||state.phase!=TT_FIGHT||!Port_TagBattleRenderActive())return;
+    if(tag_stats_epoch!=state.epoch||tag_stats_seed!=state.seed){
+        if(!TagPeer_Descriptor(tag_stats_descriptor,sizeof(tag_stats_descriptor)))return;
+        tag_stats_epoch=state.epoch;tag_stats_seed=state.seed;tag_stats_finished=0;
+        Port_OnlineTagObserve(&state,tag_stats_descriptor,3,0);
+    }
+    if(!tag_stats_finished){int bits=0,battle=Port_BattleOutcome(&bits);if(battle>=4&&battle<=6&&(bits&15)){
+        Port_OnlineTagObserve(&state,tag_stats_descriptor,battle,bits);tag_stats_finished=1;
+    }}
+}
 void Port_TagPoll(void){
+    tag_character_report();
 
     int n=0,work=0,direct=0;Uint64 arrived=0;if(ws_mode?!ws_started:client.sock==TT_INVALID)return;
     if(peer_mode&&TagPeer_Status()<0){fail("Could not establish or maintain a direct connection to the room.");return;}

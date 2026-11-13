@@ -297,7 +297,7 @@ static int entry(void*){
             });
             if(it!=state.jobs.end()){job=std::move(*it);state.jobs.erase(it);have=true;}
         }
-        if(have&&!currentJob(job)&&job.op!="leave"&&job.op!="cancel"&&job.op!="ranked_report")have=false;
+        if(have&&!currentJob(job)&&job.op!="leave"&&job.op!="cancel"&&job.op!="ranked_report"&&job.op!="match_report")have=false;
         if(have&&(job.op=="queue"||job.op=="ranked_queue")&&pinnedGeneration.empty()){
             Uint64 safeAt=std::max(uncertain[0],uncertain[1]);
             if(now<safeAt){
@@ -310,7 +310,7 @@ static int entry(void*){
         if(have){
             Sj reply;bool admit=bt4route::admission(job.op),blocked=false;
             if((job.project>=0&&job.project!=activeProject)||
-                (!job.generation.empty()&&job.generation!=pinnedGeneration&&job.op!="leave"&&job.op!="ranked_report"&&job.consumer!=5)){
+                (!job.generation.empty()&&job.generation!=pinnedGeneration&&job.op!="leave"&&job.op!="ranked_report"&&job.op!="match_report"&&job.consumer!=5)){
                 reply={{"error","ROOM_ROUTE_EXPIRED"}};blocked=true;
             }
             else if(admit&&Update_OnlineRequired()){reply={{"error","UPDATE_REQUIRED"},{"minimum",policy.minimum}};blocked=true;}
@@ -384,15 +384,15 @@ extern "C" int Bt4Signal_Open(void){
 }
 extern "C" int Bt4Signal_Status(void){return state.status;}
 extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consumer>5)return;std::lock_guard<std::mutex> g(state.lock);if(enabled){state.consumers|=1u<<consumer;if(consumer<3)state.realtime|=1u<<consumer;}else{state.consumers&=~(1u<<consumer);state.realtime&=~(1u<<consumer);state.events[consumer].clear();++state.sessions[consumer];
-        state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==consumer&&j.op!="leave"&&j.op!="cancel"&&j.op!="ranked_report";}),state.jobs.end());}}
+        state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==consumer&&j.op!="leave"&&j.op!="cancel"&&j.op!="ranked_report"&&j.op!="match_report";}),state.jobs.end());}}
 extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,const char *args){
     if(consumer<0||consumer>5||!op||!args||strlen(args)>18000)return 0;
     if((consumer==3)!=(!strcmp(op,"presence")))return 0;
-    bool lifecycle=!strcmp(op,"ranked_heartbeat")||!strcmp(op,"ranked_forfeit");if((consumer==5)!=lifecycle)return 0;
+    bool lifecycle=!strcmp(op,"ranked_heartbeat")||!strcmp(op,"ranked_forfeit")||!strcmp(op,"match_report");if((consumer==5)!=lifecycle)return 0;
     bool profile=!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top")||!strcmp(op,"nickname_get")||!strcmp(op,"nickname_set");if((consumer==4)!=profile)return 0;
     if((!strcmp(op,"ranked_queue")||!strcmp(op,"ranked_report"))&&consumer!=0)return 0;
     if(!strcmp(op,"turn_credentials")&&consumer!=0&&consumer!=1)return 0;
-    static const char *allowed[]={"create","join","get","get_signals","turn_credentials","lease","leave","list","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","nickname_get","nickname_set"};bool found=false;
+    static const char *allowed[]={"create","join","get","get_signals","turn_credentials","lease","leave","list","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","match_report","nickname_get","nickname_set"};bool found=false;
     for(auto kind:allowed)if(!strcmp(op,kind)){found=true;break;}if(!found)return 0;
     Sj body=Sj::parse(args,nullptr,false);if(!body.is_object())return 0;
     if(!Bt4Signal_Open())return 0;std::lock_guard<std::mutex> g(state.lock);if(state.jobs.size()>=64)return 0;state.consumers|=1u<<consumer;

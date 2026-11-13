@@ -1,4 +1,5 @@
 import {ONLINE_SCHEMA} from './online_schema.mjs';
+import {migrateCharacters,characterSelection,saveRankedCharacters,mirrorRanked,reportOnlineMatch} from './online_characters.mjs';
 const bytes=s=>new TextEncoder().encode(s).length;
 const error=code=>{throw new Error(code);};
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -17,7 +18,7 @@ export function seasonAt(now){
 export class OnlineCore {
     constructor(sql,now=()=>Date.now(),uuid=()=>crypto.randomUUID()){
         this.sql=sql;this.now=now;this.uuid=uuid;this.events=[];
-        sql.exec('PRAGMA foreign_keys=ON');sql.exec(ONLINE_SCHEMA);
+        sql.exec('PRAGMA foreign_keys=ON');sql.exec(ONLINE_SCHEMA);migrateCharacters(sql);
     }
     rows(q,...args){return [...this.sql.exec(q,...args)];}
     one(q,...args){return this.rows(q,...args)[0];}
@@ -132,6 +133,7 @@ export class OnlineCore {
             this.run('INSERT INTO ranked_weekly VALUES(?,?,?,?) ON CONFLICT(season,user_id) DO UPDATE SET wins=wins+excluded.wins,losses=losses+excluded.losses',m.season,u,win,loss);
         }
         this.run('UPDATE ranked_matches SET completed=?,winner=?,digest=? WHERE id=?',this.now(),winner,digest,m.id);
+        mirrorRanked(this,this.one('SELECT * FROM ranked_matches WHERE id=?',m.id));
     }
     ranked(user,op,a){
         if(a.ruleset&&a.ruleset!=='solo')error('BAD_RULESET');const season=seasonAt(this.now());
@@ -149,9 +151,12 @@ export class OnlineCore {
         if(typeof a.match!=='string'||!UUID.test(a.match))error('BAD_REQUEST');
         const m=this.one('SELECT * FROM ranked_matches WHERE id=?',a.match);if(!m||![m.a,m.b].includes(user))error('NOT_A_PARTICIPANT');
         const result=state=>({state,...(this.one('SELECT after_rating rating,delta FROM ranked_history WHERE match_id=? AND user_id=?',m.id,user)||{})});
-        if(m.completed)return result('already_applied');
+        const selection=characterSelection(a);
+        if(selection&&(selection.a.length!==1||selection.b.length!==1))error('BAD_CHARACTERS');
+        if(m.completed){saveRankedCharacters(this,m,a);if(selection)mirrorRanked(this,m);return result('already_applied');}
         const now=this.now();if(m.void||m.admitted<now-5400000)return result('expired');
         if(op==='report'){
+            saveRankedCharacters(this,m,a);if(selection)mirrorRanked(this,m);
             if(!Number.isInteger(a.outcome)||a.outcome<0||a.outcome>2||typeof a.digest!=='string'||!/^[a-f0-9]{64}$/.test(a.digest))error('BAD_RESULT');
             const old=this.one('SELECT * FROM ranked_reports WHERE match_id=? AND user_id=?',m.id,user);
             if(old&&(old.digest!==a.digest||old.outcome!==a.outcome))error('RESULT_CONFLICT');
@@ -161,11 +166,13 @@ export class OnlineCore {
             this.settlement(m,a.outcome===0?m.a:a.outcome===1?m.b:null,a.digest);return result('applied');
         }
         if(!['heartbeat','forfeit'].includes(op))error('BAD_REQUEST');
-        const side=user===m.a?'a':'b';
+        const side=user===m.a?'a':'b',firstStart=m['started_'+side]==null;
         if(op==='heartbeat'){
             this.run(`UPDATE ranked_matches SET seen_${side}=?,started_${side}=coalesce(started_${side},?) WHERE id=?`,now,now,m.id);
             m['seen_'+side]=now;m['started_'+side]=m['started_'+side]??now;
         }
+        saveRankedCharacters(this,m,a);
+        if(selection&&firstStart)mirrorRanked(this,m);
         if(m.started_a==null||m.started_b==null)return result('waiting');
         let quitter=null;
         if(op==='forfeit'&&a.reason==='local_quit')quitter=user;
@@ -191,6 +198,7 @@ export class OnlineCore {
             this.run('INSERT INTO online_names VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET name=excluded.name,normalized=excluded.normalized',user,name,normalized);
             this.run('UPDATE ranked_players SET name=? WHERE user_id=?',name,user);return {state:'ready',name};
         }
+        if(op==='match_report')return reportOnlineMatch(this,user,a);
         if(op.startsWith('ranked_'))return this.ranked(user,op.slice(7),a);
         if(op==='create')return this.create(user,a);
         if(op==='join')return this.join(user,a);

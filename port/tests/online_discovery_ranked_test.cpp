@@ -17,6 +17,7 @@ extern "C" int Update_FetchOnlineRoute(char*,size_t){return 0;}
 extern "C" void Update_SetOnlineRequired(int){}
 extern "C" int Update_OnlineRequired(void){return 0;}
 
+extern "C" int Port_BattleRoster(int side,int *ids,int){ids[0]=side?310:187;return 1;}
 int main(){
     assert(SDL_Init(0));
     assert(!Bt4Room_IsIdleMs(1799999,0));
@@ -83,6 +84,7 @@ int main(){
 
     d.ranked=true;rankedActive=true;d.sawFight=false;d.reportSerial=0;d.reportState=0;
     d.profile={{"ruleset","solo"}};d.content="0123456789abcdef";
+    Port_OnlineDuelObserve(3,0,100,100,0,123,"First","Second");
     Port_RankedObserve(3,0,100,100,0,-1);
     Port_RankedObserve(4,1,101,80,0,-1);
     Port_RankedObserve(4,1,120,120,0,-1);assert(capturedCommands.empty());
@@ -92,6 +94,7 @@ int main(){
     Port_RankedObserve(4,1,130,130,0,-1);Port_RankedObserve(4,1,150,150,0,-1);
     assert(capturedCommands.size()==1&&capturedCommands[0].op=="ranked_report");
     assert(capturedCommands[0].args["outcome"]==0&&text(capturedCommands[0].args,"digest").size()==64);
+    assert(capturedCommands[0].args["char_a"]==187&&capturedCommands[0].args["char_b"]==310);
     std::string firstDigest=text(capturedCommands[0].args,"digest");
     Port_RankedObserve(4,1,151,151,0,-1);assert(capturedCommands.size()==1); // no duplicate in-flight request
     emit(0,{{"event","reply"},{"serial",d.reportSerial},{"body",{{"state","waiting"}}}});
@@ -105,15 +108,22 @@ int main(){
     d.reportSerial=0;d.reportState=0;d.reportPending=false;d.outcomeBits=0;d.sawFight=true;
     Port_RankedObserve(4,1,200,200,0,-1);Port_RankedObserve(4,1,225,225,0,-1);
     assert(capturedCommands.size()==3&&text(capturedCommands.back().args,"digest")==firstDigest);
+    char oldCanonical[256],oldDigest[65];
+    snprintf(oldCanonical,sizeof(oldCanonical),"BT4-RANKED-V1|%s|%s|%s|%d",text(d.descriptor,"generation").c_str(),d.content.c_str(),text(d.profile,"ruleset").c_str(),0);
+    UpdSha256_Hex(oldCanonical,strlen(oldCanonical),oldDigest);assert(firstDigest==oldDigest);
     // Liveness is HTTP-only and continues after the room is left. A local
     // concession names only our own match; remote loss keeps proving presence.
     Bt4Signal_Listen(5,1);
     capturedCommands.clear();rankedWatches.clear();d.reportSerial=0;d.sawFight=false;
     Port_RankedDisconnected(1);assert(rankedWatches.empty());
+    duelFight=false;d.characters=Dj();
+    Port_OnlineDuelObserve(3,0,300,300,0,123,"First","Second");
+    assert(d.characters["char_a"]==187&&d.characters["char_b"]==310);
     Port_RankedObserve(3,0,300,300,0,-1);assert(rankedWatches.size()==1);
     const Uint64 now=SDL_GetTicks()+1000;
     watchStep(now);assert(capturedCommands.size()==1&&capturedCommands.back().op=="ranked_heartbeat");
     assert(text(capturedCommands.back().args,"match")==text(d.descriptor,"generation"));
+    assert(capturedCommands.back().args["char_a"]==187&&capturedCommands.back().args["char_b"]==310);
     watchStep(now+1);assert(capturedCommands.size()==1); // no burst behind an in-flight request
     Port_RankedObserve(6,8,310,310,0,0);
     Port_RankedObserve(6,8,312,312,0,0);
@@ -150,6 +160,35 @@ int main(){
     assert(rankedWatches.empty()&&Port_RankedTakeSettlement(&rating,&delta)&&rating==1032&&delta==16);
     assert(!Bt4Signal_Command(0,52,"ranked_forfeit","{}"));
     assert(!Bt4Signal_Command(5,53,"create","{}"));
+    // The actual non-ranked adapter snapshots both sides, retries independently,
+    // and allocates a new key for a rematch rather than replacing the selection.
+    capturedCommands.clear();d.ranked=false;duelFight=false;duelFinished=false;
+    characterReports.clear();
+    Port_OnlineDuelObserve(3,0,400,400,0,123,"First","Second");
+    assert(characterReports.size()==1);
+    const auto round1=characterReports[0].args;
+    assert(round1["char_a"]==187&&round1["char_b"]==310);
+    watchStep(now+11);assert(capturedCommands.back().op=="match_report");
+    auto saved=characterReports[0];
+    emit(5,{{"event","reply"},{"serial",saved.request},{"body",{{"state","recorded"}}}});
+    watchStep(now+12);assert(characterReports[0].acknowledged);
+    Port_OnlineDuelObserve(4,1,410,410,0,123,"First","Second");
+    Port_OnlineDuelObserve(4,1,435,435,0,123,"First","Second");
+    assert(characterReports[0].args["outcome"]==0&&!characterReports[0].acknowledged);
+    Port_OnlineDuelObserve(0,0,450,450,0,123,"First","Second");
+    Port_OnlineDuelObserve(3,0,480,480,0,123,"First","Second");
+    assert(characterReports.size()==2&&characterReports[1].key!=text(round1,"match"));
+    // Tag snapshots use the room's fixed team IDs, never the locally selected view.
+    TtRoom room={};room.epoch=3;room.seed=27;
+    for(int i=0;i<4;++i){room.players[i].member=i+1;room.players[i].chara=i+200;room.players[i].team=i%2;}
+    const auto descriptor=Dj{{"generation","33333333-3333-4333-8333-333333333333"}}.dump();
+    Port_OnlineTagObserve(&room,descriptor.c_str(),3,0);
+    assert(characterReports.back().args["chars_a"]==Dj::array({200,202}));
+    assert(characterReports.back().args["chars_b"]==Dj::array({201,203}));
+    room.players[0].chara=400;Port_OnlineTagObserve(&room,descriptor.c_str(),3,0);
+    Port_OnlineTagObserve(&room,descriptor.c_str(),4,2);
+    assert(characterReports.back().args["chars_a"][0]==200&&characterReports.back().args["outcome"]==1);
+    characterReports.clear();
     Port_RankedShutdown();Bt4Signal_Listen(5,0);
     rankedActive=false;
     Bt4Signal_Listen(0,0);

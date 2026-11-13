@@ -15,6 +15,7 @@
 #include <atomic>
 #include <vector>
 #include "match_supabase.h"
+#include "../../include/tag_team.h"
 #include "supabase_signal.h"
 #include "voice.h"
 #include "update_sign.h"
@@ -43,7 +44,7 @@ struct Discovery {
     bool ranked=false,sawFight=false,reportPending=false;
     unsigned outcomeTick=0,reportSerial=0;int outcomeBits=0,reportState=0;
     int resultRating=0,resultDelta=0;
-    Uint64 reportAt=0;Dj report;
+    Uint64 reportAt=0;Dj report,characters;
 } d;
 bool rankedNext=false;
 std::atomic<bool> rankedActive{false};
@@ -56,6 +57,7 @@ struct RankedWatch {
     bool concede=false,peerGone=false,pending=false,notify=false,sentConcede=false,heartbeatAcknowledged=false;
     bool settled=false;
     int rating=0,delta=0;
+    Dj characters;
 };
 std::vector<RankedWatch> rankedWatches;
 std::deque<std::pair<int,int>> rankedSettlements;
@@ -70,10 +72,13 @@ void watchNotify(const RankedWatch &w){
     rankedSettlements.emplace_back(w.rating,w.delta);
     settlementReady=true;
 }
+bool characterReply(const Dj &,Uint64);
+void characterStep(Uint64);
 void watchStep(Uint64 now){
     char raw[2048];
     while(Bt4Signal_Read(5,raw,sizeof(raw))>0){
         Dj e=Dj::parse(raw,nullptr,false);if(!e.is_object())continue;
+        if(characterReply(e,now))continue;
         for(auto &w:rankedWatches)if(w.pending&&w.request==number(e,"serial")){
             w.pending=false;w.next=now+5000;
             auto b=e.find("body");if(b==e.end()||!b->is_object())continue;
@@ -103,6 +108,7 @@ void watchStep(Uint64 now){
         if(now>=w.next){
             w.request=++watchSerial;
             Dj args={{"match",w.match}};
+            if(w.characters.is_object())args.update(w.characters);
             w.sentConcede=w.concede&&w.heartbeatAcknowledged;
             if(w.sentConcede)args["reason"]="local_quit";
             else args["peer_gone"]=w.peerGone;
@@ -111,6 +117,7 @@ void watchStep(Uint64 now){
             w.next=now+(w.pending?25000:5000);
         }
     }
+    characterStep(now);
     rankedWatches.erase(std::remove_if(rankedWatches.begin(),rankedWatches.end(),[&](const RankedWatch &w){return w.until&&now>=w.until;}),rankedWatches.end());
 }
 int SDLCALL watchThread(void*){
@@ -124,6 +131,7 @@ void watchFight(){
     if(it==rankedWatches.end()){
         if(rankedWatches.size()>=4)return;
         rankedWatches.push_back({match,Bt4Signal_Project()});
+        rankedWatches.back().characters=d.characters;
     }else if(it->until)return; // a completed/left match is not revived by a later presentation frame
     if(!rankedWatcher&&!watchQuit){
         rankedWatcher=SDL_CreateThread(watchThread,"BT4 Ranked liveness",nullptr);
@@ -358,7 +366,7 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     d.announcements.clear();d.retryAt.clear();d.earlySignals.clear();d.reconcile=0;d.reconcileAt=0;d.refreshRoom=false;
     d.ranked=rankedNext&&role==3;rankedNext=false;d.sawFight=false;d.reportPending=false;
     rankedActive=d.ranked;
-    d.outcomeTick=d.reportSerial=0;d.outcomeBits=d.reportState=0;d.reportAt=0;d.report=Dj();
+    d.outcomeTick=d.reportSerial=0;d.outcomeBits=d.reportState=0;d.reportAt=0;d.report=Dj();d.characters=Dj();
     d.resultRating=d.resultDelta=0;
     char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.content=hash;d.wire="bt4-duel-"+std::to_string(protocol);
     d.profile={{"mode",role==5?"lobby":"duel"},{"wire",d.wire},{"content",d.content},{"rules",queue&&*queue?queue:"S"},{"name",std::string(name).substr(0,19)},{"capacity",8}};
@@ -493,6 +501,7 @@ extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsign
              d.content.c_str(),text(d.profile,"ruleset").c_str(),winner);
     UpdSha256_Hex(canonical,strlen(canonical),digest);
     d.report={{"match",text(d.descriptor,"generation")},{"outcome",winner},{"digest",digest}};
+    if(d.characters.is_object())d.report.update(d.characters);
     d.reportState=1;d.reportSerial=++serial;d.reportAt=now+3000;
     watchFinish(false);
     d.reportPending=rpc("ranked_report",d.report,d.reportSerial);
@@ -679,3 +688,5 @@ extern "C" int Port_OnlineNicknameSubmit(const char *name){
     nicknameState=nicknameRequest?BT4_NICKNAME_SAVING:BT4_NICKNAME_UNAVAILABLE;
     return nicknameRequest!=0;
 }
+
+#include "match_characters.inc"
