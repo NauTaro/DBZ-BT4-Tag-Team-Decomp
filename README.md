@@ -1,4 +1,7 @@
 <div align="center">
+
+<a href="https://recomplauncher.com/game/dbz-bt4-tag-team-decomp"><picture><source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg"><img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="48"></picture></a>
+
   <img src="docs/presentation/bt4-intro-hq.gif" width="800" alt="Dragon Ball Z Budokai Tenkaichi 4 Tag Team opening animation">
   <h1>BT4decomp</h1>
   <p><strong>Budokai Tenkaichi 4 B14 Rev2. Native desktop runtime. Simultaneous team battles.</strong></p>
