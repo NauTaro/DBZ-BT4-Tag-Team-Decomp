@@ -52,8 +52,10 @@ jobs:
           if project_match:
               project = project_match[1]
               assert re.fullmatch(r'\d+\.\d+\.\d+\.\d+', project), 'Invalid BT4 project version'
-              assert revision == 0 and revision_patch == 0, 'Project releases must not carry an R revision'
-              assert canonical == project and release_title == project, 'BT4 project release identity is inconsistent'
+              expected = project + ('-R' + suffix if revision else '')
+              assert canonical == expected, 'BT4 project release identity is inconsistent'
+              if revision == 0:
+                  assert revision_patch == 0 and release_title == project, 'Invalid base project release'
           else:
               assert canonical == upstream + '-R' + suffix, 'Canonical revision is inconsistent'
           assert value('BT4_DISPLAY_VERSION') == release_title, 'Display version and release title disagree'

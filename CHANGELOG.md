@@ -1,3 +1,17 @@
+# 0.1.39.6 R1 1.0
+
+- Restore controller and keyboard input during online combat. Public builds now deliver gameplay inputs independently of developer pause controls.
+
+<!-- bt4-update:en
+- Fix controls becoming unresponsive when an online fight starts. Update both players before creating a new match.
+-->
+<!-- bt4-update:es
+- Corrige los controles que dejan de responder al comenzar un combate online. Actualicen ambos jugadores antes de crear una nueva partida.
+-->
+<!-- bt4-update:pt
+- Corrige os controles que param de responder quando uma luta online começa. Os dois jogadores devem atualizar antes de criar uma nova partida.
+-->
+
 # BT4decomp 0.1.39.6
 
 - Expand Tag Team with a dedicated local menu, simultaneous character selection, per-fighter health and Boss rules, shared private-room options, cooperative revival, joint attacks, three-link pursuits and cooperative fusions.

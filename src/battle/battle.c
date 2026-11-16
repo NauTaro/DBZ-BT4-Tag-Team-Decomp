@@ -481,8 +481,10 @@ void Battle_Loop(void) {
             Job_Run();
         }
         Gfx_BeginFrame();
+        /* Online pad delivery belongs to gameplay, independently of the
+         * optional developer pause/rule controls. */
+        if(!TagBattle_Network()&&Port_NetActive())Pad_Update();
         if(DevRules_Online()){
-            if(!TagBattle_Network())Pad_Update();
             devPauseOwned=DevPause_Begin(DevRules_NetworkTick());
         }
         if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) {
