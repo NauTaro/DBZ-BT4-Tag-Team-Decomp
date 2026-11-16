@@ -14,8 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # clang / LLVM 23 (the version ptr32.py and irfix.py are written against), with its Python bindings
 RUN curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /usr/share/keyrings/llvm.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-23 main" > /etc/apt/sources.list.d/llvm.list \
-    && apt-get update && apt-get install -y --no-install-recommends clang-23 llvm-23 libclang-23-dev python3-clang-23 \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-23 main" > /etc/apt/sources.list.d/llvm.list \
+    && apt-get -o Acquire::Retries=5 update \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends clang-23 llvm-23 libclang-23-dev python3-clang-23 \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/clang-23 /usr/local/bin/clang && ln -s /usr/bin/llc-23 /usr/local/bin/llc
 # SDL3 from source, for any x86-64 CPU; this is also the copy the release carries in lib/

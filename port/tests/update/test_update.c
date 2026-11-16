@@ -42,6 +42,7 @@ int main(void) {
         {"0.1.39.5-R5.8", "v0.1.39.6", -1}, {"0.1.39.6", "v0.1.39.5-R5.8", 1},
         {"0.1.39.6", "v0.1.39.6", 0}, {"0.1.39.6", "v0.1.39.6-R1", -1},
         {"0.1.39.6", "v0.1.39.6-R1.1", -1}, {"0.1.39.6-R1.1", "v0.1.39.6", 1},
+        {"0.1.39.6-R1.1", "v0.1.39.6-R1.3", -1}, {"0.1.39.6-R1.2", "v0.1.39.6-R1.3", -1},
     };
     for (size_t i = 0; i < sizeof(cmp) / sizeof(cmp[0]); i++) {
         char what[96];
@@ -50,6 +51,12 @@ int main(void) {
     }
     { char shown[80];UpdateVer_Display("v0.1.39.2-R7.1",shown,sizeof(shown));
       check(!strcmp(shown,"0.1.39.2 R7 Hotfix"),"R7 Hotfix release display"); }
+    { char shown[80];UpdateVer_Display("v0.1.39.6-R1.1",shown,sizeof(shown));
+      check(!strcmp(shown,"0.1.39.6 R1 1.0"),"Previous R1 hotfix display");
+      UpdateVer_Display("v0.1.39.6-R1.2",shown,sizeof(shown));
+      check(!strcmp(shown,"0.1.39.6 R1 1.1"),"Intermediate R1 hotfix display");
+      UpdateVer_Display("v0.1.39.6-R1.3",shown,sizeof(shown));
+      check(!strcmp(shown,"0.1.39.6 R1 1.2"),"R1 1.2 public update display"); }
     /* SHA-256 (FIPS 180-4 examples) */
     {
         char hex[65];
