@@ -3652,7 +3652,9 @@ static bool frame_build(void) {
                         gUiPresentH > 0 && gUiPresentW > 0 && ballNotice.stars && ballElapsed < dragonBallNoticeDuration;
     if (sReady && !gPortMenuMode && getenv("BT4_RENDER_TEST")) {
         if (const char *sample = getenv("BT4_DRAGON_BALL_NOTICE_TEST")) {
-            ballNotice = {"NauTaro", 4, 0};
+            SDL_strlcpy(ballNotice.finder, "NauTaro", sizeof(ballNotice.finder));
+            ballNotice.stars = 4;
+            ballNotice.started = 0;
             ballElapsed = SDL_strtoul(sample, nullptr, 10);
             ballNoticeOn = gUiPresentH > 0 && gUiPresentW > 0 && ballElapsed < dragonBallNoticeDuration;
         }

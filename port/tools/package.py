@@ -198,6 +198,8 @@ def take_tbo_art(out, lic):
     (out / "tbo/ui").mkdir(parents=True, exist_ok=True)
     for p in sorted(src.glob("*.png")):
         shutil.copy2(p, out / "tbo/ui" / p.name)
+    for name in ("tag_ui_intro.pss", "tag_ui_loop.pss"):
+        shutil.copy2(src / name, out / "tbo/ui" / name)
     shutil.copy2(src / "CREDITS.md", lic / "tbo-ui-credits.txt")
 
 def bundle_sdl_dependencies(dll, out, lic, prefix):
