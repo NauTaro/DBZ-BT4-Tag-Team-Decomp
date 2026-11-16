@@ -81,7 +81,7 @@ def main(p,mac=False):
         assert out.resolve().is_relative_to((root/'port/build').resolve()) and not out.is_symlink()
         shutil.rmtree(out)
     p.take_program(exe,out);p.take_lang(out);p.take_translations(out)
-    shutil.copy2(setup,out/'BT4decomp-setup');shutil.copy2(root/'port/release/BT4_VERSION.txt',out/'BT4_VERSION.txt')
+    shutil.copy2(setup,out/'BT4decomp-setup');shutil.copy2(root/'port/release/BT4_VERSION.txt',out/'BT4_VERSION.txt');shutil.copy2(root/'recomplauncher.json',out/'recomplauncher.json')
     for name in ('lib','licenses','textures','stages','songs','mods'):(out/name).mkdir()
     licenses=out/'licenses'
     for source,target in [('LICENSE','bt4decomp-agpl.txt'),('LICENSE-MIT','bt4decomp-mit.txt'),

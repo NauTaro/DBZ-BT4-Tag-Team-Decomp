@@ -268,6 +268,7 @@ def main_win():
     take_lang(out)
     take_translations(out)
     shutil.copy2(ROOT / "port/release/BT4_VERSION.txt", out / "BT4_VERSION.txt")
+    shutil.copy2(ROOT / "recomplauncher.json", out / "recomplauncher.json")
     shutil.copy2(setup, out / "BT4decomp-setup.exe")
     shutil.copy2(dll, out / "SDL3.dll")
     (out / "README.txt").write_text(WIN_README.replace("\n", "\r\n"))

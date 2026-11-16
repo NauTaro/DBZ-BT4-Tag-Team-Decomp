@@ -1,0 +1,52 @@
+{
+    "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+    "format": 1,
+    "name": "BT4decomp",
+    "game": {
+        "kind": "iso",
+        "label": "Your Budokai Tenkaichi 4 (B14 Rev2) PS2 disc image (.iso), Spanish LATINO or English, serial SLUS-21978. Not a Budokai Tenkaichi 3 disc.",
+        "check": {
+            "iso9660": "SLUS_219.78"
+        }
+    },
+    "start": {
+        "program": [
+            "BT4decomp.exe",
+            "BT4decomp"
+        ]
+    },
+    "prepare": {
+        "program": [
+            "BT4decomp-setup.exe",
+            "BT4decomp-setup"
+        ],
+        "args": [
+            "--install",
+            "{game}"
+        ],
+        "label": "Unpacking the game from your disc",
+        "timeout": 1200
+    },
+    "folders": {
+        "saves": [
+            {
+                "path": "{install}/saves"
+            }
+        ]
+    },
+    "saves": [
+        "{install}/saves"
+    ],
+    "actions": [
+        {
+            "id": "saves",
+            "label": "Saves",
+            "help": "Your saves and settings.",
+            "open": "saves"
+        }
+    ],
+    "requires": [
+        "start",
+        "setup"
+    ]
+}
