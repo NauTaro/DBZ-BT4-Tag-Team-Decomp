@@ -34,7 +34,7 @@ int main(){bt4route::Policy before,p;
  before=p;before.active=0;assert(!bt4route::decode<J>(cases[0],10000,before,next));
  before=p;before.issued=10001;assert(!bt4route::decode<J>(cases[0],10000,before,next));
  before=p;before.minimum="0.1.39.5-R4";assert(!bt4route::decode<J>(cases[0],10000,before,next));
- assert(p.fresh(10599)&&!p.fresh(10600));p.requireUpdate=true;p.minimum="0.1.39.5-R5";assert(p.needsUpdate());
+ assert(p.fresh(10599)&&!p.fresh(10600));p.requireUpdate=true;p.minimum="9.0.0.0";assert(p.needsUpdate());
  p.minimum="0.1.39.5-R3";assert(!p.needsUpdate());p.capability=2;assert(p.needsUpdate());
  assert(bt4route::codeProject("0ABCDE")==1);assert(bt4route::codeProject("1ABCDE")==0);assert(bt4route::codeProject("ABCDEF")==0);
  assert(bt4route::admission("create")&&bt4route::admission("join")&&bt4route::admission("queue")&&bt4route::admission("list"));
