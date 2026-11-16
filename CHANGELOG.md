@@ -1,36 +1,34 @@
 # BT4decomp 0.1.39.6 R1 1.2
 
-- Correct two confirmed Tag Team crash paths in ten-fighter effects and simultaneous character selection.
-- Ginyu's Body Change reloads the new body's moves, data and voices while preserving controller ownership and body health.
-- Allow mechanical Potara effects in private rooms and tournaments, including custom Tag Team. Quick Match and Ranked retain competitive restrictions.
-- Distinguish tournament byes from pending qualifiers and align the original widescreen bracket.
-- Keep camera-relative speed-line effects in their owner's view. Tag Team starts enemy focus at the player's saved A/B/C camera distance.
-- Correct BT4 partner dialogue and online alternate voice-file routing, add a fallback for standard-layout generic USB controllers, and improve settings persistence with duplicate keys or large configurations.
-- Include RecompLauncher support from PR #64. Preserve the approved Modern HUD design.
+- Correcciones de cierres, cámaras y selección de personajes en Tag Team.
+- Corregido el cambio de cuerpo de Ginyu y varios problemas de voces.
+- Potharas habilitados en salas privadas, torneos y Tag Team. Partida rápida y Rankeds mantienen las restricciones.
+- Mejoras en torneos, compatibilidad con mandos y guardado de ajustes.
+- Compatibilidad con RecompLauncher.
 
-All participants must update and create a new room. Existing saves, language choices and personal settings are retained. This client update does not reset Ranked points or redeploy the online service.
-
-Validation: native regression suites, ten-actor executable probes, Ginyu in duel and ten-actor battles, hidden-render camera captures, and native/WASM input parity. Detailed evidence and remaining verification limits are in [the validation report](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/blob/main/docs/validation/R1_1_2.md). The reported Time Chamber flicker and long-session custom-camera cases were not reproduced exhaustively. Official Windows Authenticode signing remains pending.
+Todos los jugadores deben actualizar y crear una sala nueva.
 
 <!-- bt4-update:en
-- Fix Tag Team crashes in ten-fighter effects and simultaneous character selection, and correct Ginyu's Body Change reload.
-- Enable Potara effects in private rooms, tournaments and custom Tag Team; Quick Match and Ranked keep competitive restrictions.
-- Correct tournament byes, camera speed-line effects, saved Tag camera distance, voice routing and settings persistence. Add generic USB controller fallback and RecompLauncher support.
-- Everyone must update and create a new room. Personal saves and language settings are retained.
+- Tag Team crash, camera and character-selection fixes.
+- Fixes for Ginyu's Body Change and character voices.
+- Potaras in private rooms, tournaments and custom Tag Team. Quick Match and Ranked retain restrictions.
+- Tournament, controller and settings improvements. RecompLauncher support.
+- Everyone must update and create a new room.
 -->
 <!-- bt4-update:es
-- Corrige cierres en los efectos de diez luchadores y la selección simultánea de Tag Team, y la recarga del cambio de cuerpo de Ginyu.
-- Habilita los efectos de potharas en salas privadas, torneos y Tag Team personalizado; Partida rápida y Rankeds mantienen las restricciones competitivas.
-- Corrige pases directos, efectos de cámara, distancia guardada de Tag Team, rutas de voces y guardado de opciones. Añade soporte para mandos USB genéricos e integración con RecompLauncher.
-- Todos deben actualizar y crear una sala nueva. Se conservan guardados e idiomas.
+- Correcciones de cierres, cámaras y selección de personajes en Tag Team.
+- Corregido el cambio de cuerpo de Ginyu y varios problemas de voces.
+- Potharas en privadas, torneos y Tag Team. Partida rápida y Rankeds mantienen las restricciones.
+- Mejoras en torneos, mandos y ajustes. Compatibilidad con RecompLauncher.
+- Todos deben actualizar y crear una sala nueva.
 -->
 <!-- bt4-update:pt
-- Corrige fechamentos nos efeitos de dez lutadores e na seleção simultânea de Tag Team, além da recarga da troca de corpo de Ginyu.
-- Habilita efeitos de Potaras nas salas privadas, torneios e Tag Team personalizado; Partida Rápida e Ranked mantêm as restrições competitivas.
-- Corrige avanços diretos, efeitos de câmera, distância salva de Tag Team, rotas de vozes e gravação de opções. Adiciona suporte a controles USB genéricos e integração com RecompLauncher.
-- Todos devem atualizar e criar uma sala nova. Os saves e idiomas são mantidos.
+- Correções de fechamentos, câmeras e seleção de personagens no Tag Team.
+- Correções na troca de corpo de Ginyu e nas vozes.
+- Potaras em salas privadas, torneios e Tag Team personalizado. Partida Rápida e Ranked mantêm as restrições.
+- Melhorias em torneios, controles e configurações. Suporte ao RecompLauncher.
+- Todos devem atualizar e criar uma sala nova.
 -->
-
 
 # 0.1.39.6 R1 1.0
 
