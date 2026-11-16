@@ -1665,6 +1665,12 @@ void BtlMove_UpdateDefenseTimers(BtlMoveChr *chr) {
             chr->unk106C = -1;
         }
     }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(chr->unk1070<=0&&!BtlChar_TestFlag(chr,0x7B)&&BtlAct_GetCurrent(chr)!=0x39){
+        extern void TagBattle_ClearCounterTarget(s32);
+        TagBattle_ClearCounterTarget(chr->player);
+    }
+#endif
     chr->unk1070--;
     if (chr->unk1070 < -30) {
         chr->unk1070 = -30;

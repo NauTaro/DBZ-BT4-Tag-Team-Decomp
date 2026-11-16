@@ -6,10 +6,14 @@
  * the game does not have; which screen runs is gPortScreen, set before the mode is chosen. See docs/port/menus.md.
  */
 #define MPROG_MODE_PORT_SCREEN 80 /* (the game's modes end at 70) */
+#define PORT_TBO_OPEN_TAG 4 /* open the dedicated Tag Team menu from the online hub */
 
 enum {
     PORT_SCREEN_NONE,
     PORT_SCREEN_TBO, /* Tenkaichi Budokai Online (menu/port_tbo.c) */
+    PORT_SCREEN_TAG,
+    PORT_SCREEN_TAG_OFFLINE,
+    PORT_SCREEN_TAG_ONLINE,
 };
 
 extern s32 gPortScreen; /* the screen the mode runs next (PORT_SCREEN_*) */

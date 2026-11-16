@@ -104,6 +104,80 @@ static BtlAiWork sTagAI[8];
 static s32 sTagTargetSince[10];
 void *BtlAi_ActorWork(s32 actor) { return actor>=2 && actor<10 ? &sTagAI[actor-2] : &gBtlAi->work[actor]; }
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+/* A short cooperative formation uses ordinary collision-aware movement.
+ * Do not cancel reactions, spend dash ki, teleport, or take a human's input. */
+void BtlAi_TagAssistInput(s32 actor,f32 *goal){
+    extern void BtlCharApi_SetInjectedInput(s32,u32,f32,f32);
+    extern void BtlCharApi_GetBasePos(s32,BtlAiVec *);
+    BtlAiVec pos;
+    BtlAiMgrChr *chr=BtlChar_Get(actor);
+    f32 x=0,y=0;
+    u32 buttons=0;
+    if(goal){
+        f32 dx,dz,len,yaw=chr->yaw;
+        BtlCharApi_GetBasePos(BattleSide_GetObjId(actor),&pos);
+        dx=goal[0]-pos.x;dz=goal[2]-pos.z;len=sqrtf(dx*dx+dz*dz);
+        if(len>3){
+            f32 amount=len<12?len/12.0f:1.0f;
+            x=(Mathf_Cos(yaw)*dx-Mathf_Sin(yaw)*dz)/len*amount;
+            y=-(Mathf_Sin(yaw)*dx+Mathf_Cos(yaw)*dz)/len*amount;
+        }
+        if(goal[1]<pos.y-5)buttons|=BTLAI_BTN_ASCEND;
+        if(goal[1]>pos.y+5)buttons|=BTLAI_BTN_DESCEND;
+    }
+    BtlCharApi_SetInjectedInput(BattleSide_GetObjId(actor),buttons,x,y);
+}
+/* Rescue steering keeps ordinary collision/ki rules and the enemy lock-on.
+ * Cache a small native navigation path per actor, recomputed at most twice a
+ * second while blocked. It never changes a human controller or actor position. */
+void BtlAi_TagRescueInput(s32 actor,f32 *goal,s32 arrived,s32 charge){
+    static BtlAiMovePath path[10];
+    static s32 timer[10];
+    BtlAiVec pos,to,next;BtlAiSegment seg;s32 objId,blocked=0;
+    extern void BtlCharApi_GetBasePos(s32,BtlAiVec *);
+    extern void BtlCharApi_SetInjectedInput(s32,u32,f32,f32);
+    if(actor<0||actor>=10)return;
+    if(!goal){memset(&path[actor],0,sizeof(path[actor]));timer[actor]=0;return;}
+    objId=BattleSide_GetObjId(actor);
+    if(arrived){path[actor].count=0;timer[actor]=0;
+        BtlCharApi_SetInjectedInput(objId,charge?BTLAI_BTN_CHARGE:0,0,0);return;}
+    BtlCharApi_GetBasePos(objId,&pos);memcpy(&to,goal,sizeof(to));next=to;
+    seg.from=pos;seg.to=to;seg.from.y-=4;seg.to.y-=4;
+    blocked=StgCol_TraceSegment(&seg);
+    if(timer[actor]>0)--timer[actor];
+    if(!blocked){path[actor].count=0;timer[actor]=0;}
+    else{
+        BtlAiMovePath *p=&path[actor];
+        if(!timer[actor]){StgNav_FindPath(&pos,&to,p);timer[actor]=15;}
+        if(p->count>16||p->count<0)p->count=0;
+        while(p->count>0){
+            BtlAiMovePoint *v=&p->pts[p->count-1];
+            f32 dx=v->x-pos.x,dy=v->y-pos.y,dz=v->z-pos.z;
+            if(dx*dx+dy*dy+dz*dz>12*12){memcpy(&next,v,sizeof(next));break;}
+            --p->count;
+        }
+        if(!p->count){next=pos;next.y-=20;} /* ascend around an obstruction, then reassess */
+    }
+    {
+        BtlAiMgrChr *chr=BtlChar_Get(actor);
+        f32 dx=next.x-pos.x,dz=next.z-pos.z,len=sqrtf(dx*dx+dz*dz),x=0,y=0;
+        u32 buttons=0;
+        if(len>3){f32 speed=len<12?len/12:1;
+            x=(Mathf_Cos(chr->yaw)*dx-Mathf_Sin(chr->yaw)*dz)/len*speed;
+            y=-(Mathf_Sin(chr->yaw)*dx+Mathf_Cos(chr->yaw)*dz)/len*speed;
+        }
+        if(next.y<pos.y-5)buttons|=BTLAI_BTN_ASCEND;
+        if(next.y>pos.y+5)buttons|=BTLAI_BTN_DESCEND;
+        /* Directional native dash, only on an unobstructed long leg. Its
+         * ordinary ki debit and collisions stay in the action dispatcher. */
+        extern s32 BtlSide_GetKi(s32);
+        if(!blocked&&len>150&&BtlSide_GetKi(actor)>1000)buttons|=BTLAI_BTN_DASH;
+        BtlCharApi_SetInjectedInput(objId,buttons,x,y);
+    }
+}
+#endif
+
 /* Frees what the block owns, rebinds the shared AI data and resets both sides from their fighters. */
 void BtlAiMgr_Reset(void) {
     BtlAiWork *s;
@@ -325,6 +399,14 @@ void BtlAiMgr_Update(void) {
         }
 
         if (BtlCharApi_IsInputInjected(i) && s->param != NULL) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+            extern s32 TagFusion_CPUWaiting(s32);
+            if(TagFusion_CPUWaiting(i)){
+                extern void BtlCharApi_SetInjectedInput(s32,u32,f32,f32);
+                BtlCharApi_SetInjectedInput(s->objId,0,0,0);
+                continue;
+            }
+#endif
             if(TagBattle_Active()){TagAi_SelectTarget(i);TagAi_UpdateSight(i);}
             BtlAiSense_Update(s);
             AiThink_Think(s);

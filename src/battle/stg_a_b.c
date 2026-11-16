@@ -11,6 +11,10 @@
 #include "battle/battle_setup.h"
 #include "battle/battle_work.h"
 #include "battle/stg_a.h"
+#ifdef PORT
+#include "battle/ranked_rock.h"
+extern s32 BtlStage_GetId(void);
+#endif
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern s32 rand(void);
@@ -373,9 +377,52 @@ void BtlStage_ResetObjs(s32 broken) {
     }
 }
 
+#ifdef PORT
+extern unsigned Port_RankedRockSeed(void);
+extern int Port_BattleSeqState(void);
+
+static void StgObj_FindRankedBall(s32 fighter, s32 idx) {
+    unsigned seed = Port_RankedRockSeed();
+    if (!seed || fighter < 0 || idx < 0 || (unsigned)idx >= gBtlStage->objCount ||
+        idx >= BT4_ROCK_MAX_OBJECTS ||
+        !(gBtlStage->objs[idx].type & STG_OBJ_ITEM) || Port_BattleSeqState() != 3) return;
+    BattleResult *result = BattleResult_GetPtr();
+    if (result->unk44) return;
+    s32 side;
+    if (fighter == BattleSide_GetObjId(0)) side = 0;
+    else if (fighter == BattleSide_GetObjId(1)) side = 1;
+    else return;
+
+    // Read the original definitions so already broken rocks don't change the selected rock.
+    unsigned count = 0, ordinal = 0;
+    for (unsigned i = 0; i < gBtlStage->objCount && i < BT4_ROCK_MAX_OBJECTS; ++i) {
+        if (!(gBtlStage->data->objDefs[i].type & STG_OBJ_ITEM)) continue;
+        if (i == (unsigned)idx) ordinal = count;
+        ++count;
+    }
+    if (!count || (seed - 1) % count != ordinal) return;
+    unsigned event = RankedRock_Event(BtlStage_GetId(), idx, side);
+    if (!event) return;
+    // This result field is already included in rollback and is empty in Ranked.
+    result->unk44 = BT4_ROCK_MARKER | event;
+    StreamSe_PlayDefault(0, 0x8D3A);
+    HudTimer_ShowMark();
+}
+
+unsigned Port_RankedRockEvent(void) {
+    if (!Port_RankedRockSeed() || Port_BattleSeqState() < 3) return 0;
+    unsigned record = BattleResult_GetPtr()->unk44;
+    return (record & 0xffff0000u) == BT4_ROCK_MARKER ? record & 0xffffu : 0;
+}
+#endif
+
 /* Breaks object idx for the fighter / effect objId (< 0: nobody), with the break sound. In mode 1, when the
  * rule holds a hidden item and the object is an item holder, one rand() draw in 8 awards it. Always returns 1. */
+#ifdef PORT
+static s32 StgObj_DestroyWithOwner(s32 objId, s32 rewardOwner, s32 idx, Vec4 *hitPos) {
+#else
 s32 BtlStage_DestroyObj(s32 objId, s32 idx, Vec4 *hitPos) {
+#endif
     StgBreakInfo info;
     Vec4 itemPos;
     s32 broke;
@@ -407,9 +454,23 @@ s32 BtlStage_DestroyObj(s32 objId, s32 idx, Vec4 *hitPos) {
                 }
             }
         }
+#ifdef PORT
+        StgObj_FindRankedBall(rewardOwner, idx);
+#endif
     }
     return 1;
 }
+
+#ifdef PORT
+s32 BtlStage_DestroyObj(s32 objId, s32 idx, Vec4 *hitPos) {
+    return StgObj_DestroyWithOwner(objId, objId, idx, hitPos);
+}
+
+/* Attacks were anonymous for story rewards. Credit their owner in Ranked only. */
+s32 BtlStage_DestroyObjByAttack(s32 owner, s32 idx, Vec4 *hitPos) {
+    return StgObj_DestroyWithOwner(-1, owner, idx, hitPos);
+}
+#endif
 
 /* 1 when object idx is broken. */
 s32 BtlStage_IsObjBroken(s32 idx) {

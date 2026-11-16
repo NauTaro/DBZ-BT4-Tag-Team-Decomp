@@ -1,5 +1,8 @@
 #include "common.h"
 #include "menu/menu_a.h"
+#ifdef PORT
+#include "plat_songs.h"
+#endif
 
 /* The menu archives, one per group of modes (overlay .data, 0x3B0E84..0x3B0EB8); see menu_a.h. */
 void *gMenuArc0 = NULL;
@@ -50,6 +53,7 @@ extern void CharRefMode_Main(void);
 extern void OptMode_Main(void);
 
 #define MENU_BGM_TITLE 0x816
+extern int Port_Setting(const char *,int);
 
 #define MENU_ARC_FREE(p) \
     if ((p) != NULL) { \
@@ -150,7 +154,13 @@ s32 Progress_Main(s32 arg) {
             }
             break;
         case 4:
-            Bgm_Play(MENU_BGM_TITLE);
+            {
+                s32 track=Port_Setting("main_menu_bgm",MENU_BGM_TITLE);
+                s32 custom=track-(0x20000+PORT_SONG_FILE_INDEX);
+                if(!((track>=0x816&&track<0x900)||
+                     (custom>=0&&custom<gPortSongCount&&custom<PORT_SONG_MAX)))track=MENU_BGM_TITLE;
+                Bgm_Play(track);
+            }
             if (MainMenu_Run(2)) {
                 Adx_StopAll();
                 MENU_ARC_FREE(gMenuArc1);

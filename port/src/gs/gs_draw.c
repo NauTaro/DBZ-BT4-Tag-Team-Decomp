@@ -40,6 +40,7 @@ static uint32_t sPresentationObject;
 #include "menu_text.h"  /* editable labels in the original menu texture slots */
 #include "menu_labels.h"      /* European menu art and native language selector pictures */
 #include "mods.h"             /* the look script mods ask for (bt3.look) */
+#include "tag_menu_movie.h"
 #include <math.h>
 
 /* Stage-name overlay: defined here (C) so both the renderer (gs_gpu.c) and the game's menu (menu_c_e.c) can
@@ -493,6 +494,65 @@ static GsTex sTboTex[TBO_ART_COUNT];
 static unsigned char sTboMissing[TBO_ART_COUNT]; /* not found or not readable: not looked for again */
 static GsTex sLangTex[3];
 static unsigned char sLangMissing[3];
+static GsTex sMainTagEmblem;
+static unsigned char sMainTagEmblemMissing;
+
+static int tbo_emblem_outer_pixel(const uint8_t *pixel) {
+    unsigned hi=pixel[0],lo=pixel[0];
+    for(int i=1;i<3;++i){if(pixel[i]>hi)hi=pixel[i];if(pixel[i]<lo)lo=pixel[i];}
+    return pixel[3]<128||(hi>=80&&hi-lo<=24);
+}
+
+/* Strip white sticker outlines connected to transparent space, including the
+ * counters of letters. Keep enclosed highlights and the black contour. */
+static void tbo_remove_outer_halo(uint8_t *pixels,uint32_t w,uint32_t h) {
+    const size_t count=(size_t)w*h;
+    uint8_t *seen=calloc(count,1);
+    uint32_t *queue=malloc(count*sizeof(*queue));
+    size_t head=0,tail=0;
+    if(!seen||!queue){free(seen);free(queue);return;}
+    for(uint32_t y=0;y<h;++y)for(uint32_t x=0;x<w;++x){
+        const uint32_t i=y*w+x;
+        const uint8_t *pixel=pixels+(size_t)i*4;
+        if(pixel[3]<128||((!x||x+1==w||!y||y+1==h)&&tbo_emblem_outer_pixel(pixel))){seen[i]=1;queue[tail++]=i;}
+    }
+    while(head<tail){
+        const uint32_t i=queue[head++],x=i%w,y=i/w;
+        const uint32_t next[4]={x?i-1:i,x+1<w?i+1:i,y?i-w:i,y+1<h?i+w:i};
+        pixels[(size_t)i*4+3]=0;
+        for(int k=0;k<4;++k){const uint32_t n=next[k];
+            if(!seen[n]&&tbo_emblem_outer_pixel(pixels+(size_t)n*4)){seen[n]=1;queue[tail++]=n;}
+        }
+    }
+    free(queue);free(seen);
+}
+
+/* The crest and the T share one logo. Its former rectangular UV crop removed
+ * the right-hand rim. Keep the complete crest and mask the attached lettering
+ * outside its original ellipse. This runs once, without changing the PNG. */
+static uint8_t *tbo_tag_emblem(const SDL_Surface *rgba,uint32_t *width,uint32_t *height) {
+    if(!rgba||rgba->w<16||rgba->h<16)return NULL;
+    const uint32_t w=(uint32_t)rgba->w,h=(uint32_t)rgba->h;
+    const uint32_t cw=(w*676u+1084u)/2168u,top=(h*8u+362u)/725u,ch=(h*689u+362u)/725u;
+    uint8_t *out=malloc((size_t)cw*ch*4);
+    if(!out)return NULL;
+    for(uint32_t y=0;y<ch;++y)for(uint32_t x=0;x<cw;++x){
+        uint8_t *dst=out+((size_t)y*cw+x)*4;
+        const uint32_t sy=y+top<h?y+top:h-1;
+        const uint8_t *src=(const uint8_t*)rgba->pixels+(size_t)sy*rgba->pitch+x*4;
+        memcpy(dst,src,4);
+        const float dx=((float)x+.5f)*2168.0f/w-354.892f;
+        const float dy=((float)sy+.5f)*725.0f/h-347.878f;
+        if(dx>0){
+            const float radius=sqrtf(0.0000106049045f*dx*dx+0.00000108280035f*dx*dy+0.0000099139102f*dy*dy);
+            float coverage=(1.014f-radius)/.007f;
+            if(coverage<0)coverage=0;if(coverage>1)coverage=1;
+            dst[3]=(uint8_t)(dst[3]*coverage+.5f);
+        }
+    }
+    tbo_remove_outer_halo(out,cw,ch);
+    *width=cw;*height=ch;return out;
+}
 
 /* Makes a texture of RGBA pixels (the GS's alpha) with its smaller copies, each half the one before, averaged by
    2 x 2: these pictures are mostly shown smaller than they are (letters, the crest), and one sample of the full
@@ -595,6 +655,19 @@ static GsTex tbo_text_texture(uint32_t id) {
     return tex;
 }
 
+static GsTex sTagMovieTex;
+#include "ranked_ball_art.h"
+static GsTex sRankedBallTex[8];
+static uint32_t sTagMovieSerial;
+static uint64_t sTagMovieSeen;
+
+static void tag_movie_idle(void) {
+    TagMenuMovie_Maintain();
+    if(sTagMovieTex && SDL_GetTicksNS()-sTagMovieSeen>600000000ull) {
+        sBackend->texDestroy(sTagMovieTex);sTagMovieTex=0;sTagMovieSerial=0;
+    }
+}
+
 static GsTex tbo_texture(uint32_t id) {
     char path[1024] = {0};
     SDL_Surface *png = NULL, *rgba = NULL;
@@ -603,32 +676,69 @@ static GsTex tbo_texture(uint32_t id) {
     uint32_t *px, w, h, x, y;
     GsTex tex;
     const char *base;
+    const int tagEmblem=id==TBO_MAIN_TAG_EMBLEM;
     GsTex *cached;
     unsigned char *missing;
     int languageArt = id >= TBO_LANG_BG && id <= TBO_LANG_ARROW_RIGHT;
 
-    if(id==TBO_MAIN_ONLINE_OFF||id==TBO_MAIN_ONLINE_ON){
-        static GsTex lettering[2];static int tried;
-        if(!tried){
+    if(id>=TBO_RANKED_BALL_BASE&&id<TBO_RANKED_BALL_BASE+8){
+        unsigned ball=id-TBO_RANKED_BALL_BASE;
+        if(!sRankedBallTex[ball]&&sBackend->texSlotsLeft()>0){
+            uint32_t *pixels=RankedBall_Pixels((int)ball);
+            if(pixels)sRankedBallTex[ball]=tbo_upload(pixels,128,128);
+        }
+        return sRankedBallTex[ball]?sRankedBallTex[ball]:gsWhite;
+    }
+
+    if(id==TBO_TAG_MOVIE) {
+        uint32_t mw=0,mh=0;
+        unsigned char *movie;
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_MOVIE_DISABLE"))return tbo_texture(TBO_TAG_ART);
+        sTagMovieSeen=SDL_GetTicksNS();
+        movie=TagMenuMovie_Pixels(&mw,&mh,&sTagMovieSerial);
+        if(movie) {
+            if(!sTagMovieTex)sTagMovieTex=sBackend->texCreate(mw,mh,GS_TEXFMT_RGBA8,1);
+            if(sTagMovieTex)sBackend->texUpload(sTagMovieTex,0,mw,mh,GS_TEXFMT_RGBA8,movie,mw*mh*4);
+            else {free(movie);sTagMovieSerial=0;}
+            if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_MOVIE_CAPTURE")){
+                static unsigned captured,previous;
+                extern int gPortTagUiCaptureRequest;
+                if(sTagMovieSerial>=previous+1 && captured<240){
+                    previous=sTagMovieSerial;gPortTagUiCaptureRequest=200+(int)captured++;
+                }
+            }
+        }
+        if(sTagMovieTex&&sTagMovieSerial)return sTagMovieTex;
+        id=TBO_TAG_ART; /* silhouette poster while the first frame is decoded */
+    }
+
+    if(id==TBO_MAIN_ONLINE_OFF||id==TBO_MAIN_ONLINE_ON||id==TBO_MAIN_TAG_OFF||id==TBO_MAIN_TAG_ON){
+        static GsTex lettering[2][2];
+        static int tried[2];
+        int tag=id==TBO_MAIN_TAG_OFF||id==TBO_MAIN_TAG_ON;
+        int selected=id==TBO_MAIN_ONLINE_ON||id==TBO_MAIN_TAG_ON;
+        if(!tried[tag]){
             extern int MenuLabels_Bt4MainItem(const char *,const char *,unsigned char **);
             unsigned char *pics[2]={0};const char *root=getenv("BT3_DATA");
-            if(MenuLabels_Bt4MainItem(root?root:"gamedata","Tenkaichi Budokai Online",pics))for(int k=0;k<2;k++){
+            if(MenuLabels_Bt4MainItem(root?root:"gamedata",tag?"Tag Team":"Tenkaichi Budokai Online",pics))for(int k=0;k<2;k++){
                 for(int i=0;i<512*32;i++)pics[k][i*4+3]=(pics[k][i*4+3]*128u+127)/255;
-                lettering[k]=tbo_upload((uint32_t*)pics[k],512,32); /* upload owns the pixels */
+                lettering[tag][k]=tbo_upload((uint32_t*)pics[k],512,32); /* upload owns the pixels */
             }else for(int k=0;k<2;k++){
                 uint32_t *blank=calloc(1,4);
-                if(blank)lettering[k]=tbo_upload(blank,1,1);
-            }tried=1;
-        }return lettering[id==TBO_MAIN_ONLINE_ON]?lettering[id==TBO_MAIN_ONLINE_ON]:gsWhite;
+                if(blank)lettering[tag][k]=tbo_upload(blank,1,1);
+            }
+            tried[tag]=1;
+        }
+        return lettering[tag][selected]?lettering[tag][selected]:gsWhite;
     }
     if (id >= TBO_TEXT_BASE && id < TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         return tbo_text_texture(id);
     }
-    if (id >= TBO_ART_COUNT && !languageArt) {
+    if (id >= TBO_ART_COUNT && !languageArt && !tagEmblem) {
         return gsWhite;
     }
-    cached = languageArt ? &sLangTex[id - TBO_LANG_BG] : &sTboTex[id];
-    missing = languageArt ? &sLangMissing[id - TBO_LANG_BG] : &sTboMissing[id];
+    cached = tagEmblem ? &sMainTagEmblem : languageArt ? &sLangTex[id - TBO_LANG_BG] : &sTboTex[id];
+    missing = tagEmblem ? &sMainTagEmblemMissing : languageArt ? &sLangMissing[id - TBO_LANG_BG] : &sTboMissing[id];
     if (*missing) return gsWhite;
     if (*cached != 0) {
         return *cached;
@@ -644,20 +754,43 @@ static GsTex tbo_texture(uint32_t id) {
         }
     } else {
         base = SDL_GetBasePath();
-        snprintf(path, sizeof(path), "%stbo/ui/%s.png", base != NULL ? base : "", kTboNames[id]);
+        snprintf(path, sizeof(path), "%stbo/ui/%s.png", base != NULL ? base : "", kTboNames[tagEmblem?TBO_TAG_LOGO:id]);
         png = SDL_LoadPNG(path);
         if (png == NULL) {
-            snprintf(path, sizeof(path), "tbo/ui/%s.png", kTboNames[id]);
+            snprintf(path, sizeof(path), "tbo/ui/%s.png", kTboNames[tagEmblem?TBO_TAG_LOGO:id]);
             png = SDL_LoadPNG(path);
         }
         if (png == NULL) { /* a source checkout: the pictures where they are kept (port/tbo/ui) */
-            snprintf(path, sizeof(path), "port/tbo/ui/%s.png", kTboNames[id]);
+            snprintf(path, sizeof(path), "port/tbo/ui/%s.png", kTboNames[tagEmblem?TBO_TAG_LOGO:id]);
             png = SDL_LoadPNG(path);
         }
     }
     rgba = png != NULL ? SDL_ConvertSurface(png, SDL_PIXELFORMAT_RGBA32) : NULL;
     if (png != NULL) {
         SDL_DestroySurface(png);
+    }
+    if(tagEmblem&&rgba){
+        native=tbo_tag_emblem(rgba,&w,&h);
+        SDL_DestroySurface(rgba);rgba=NULL;
+    }else if(rgba&&(id==TBO_TAG_LOGO||id==TBO_TAG_LOGO_OFF)){
+        w=(uint32_t)rgba->w;h=(uint32_t)rgba->h;
+        native=malloc((size_t)w*h*4);
+        if(native){
+            for(uint32_t row=0;row<h;++row)
+                memcpy(native+(size_t)row*w*4,(const uint8_t*)rgba->pixels+(size_t)row*rgba->pitch,(size_t)w*4);
+            tbo_remove_outer_halo(native,w,h);
+            /* The lettering has one enclosed white speck which the exterior
+             * flood cannot reach. Its orange/yellow fill is saturated; remove
+             * neutral bright matte residue only to the right of the emblem.
+             * Keep the Dragon Ball's intentional white reflection intact. */
+            for(uint32_t row=0;row<h;++row)for(uint32_t col=w*620/2168;col<w;++col){
+                uint8_t *p=native+((size_t)row*w+col)*4;
+                unsigned hi=p[0],lo=p[0];
+                for(unsigned c=1;c<3;++c){if(p[c]>hi)hi=p[c];if(p[c]<lo)lo=p[c];}
+                if(hi>=160&&hi-lo<=24)p[3]=0;
+            }
+            SDL_DestroySurface(rgba);rgba=NULL;
+        }
     }
     if (native == NULL && rgba == NULL) {
         fprintf(stderr, "bt3: artwork: cannot read %s\n", languageArt ? "EU disc selector textures" : path);
@@ -2707,6 +2840,9 @@ static void grade_add(void) {
     sGradeFrame = gGsFrame;
 }
 
+#include "tag_hud_anchor.h"
+static ThaState sTagRenderAnchors;
+int Port_TagRenderAllyAnchor(int pane,int actor,float *x,float *y){return ThaGet(&sTagRenderAnchors,pane,actor,x,y);}
 void GsGpu_Native(int effect) {
     if((effect&0xF0000000)==0x40000000){sPresentationObject=(uint32_t)effect&0x0FFFFFFF;return;}
     if(effect==0x70 || effect==0x71){
@@ -2717,7 +2853,8 @@ void GsGpu_Native(int effect) {
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
-    if (effect >= 0x72 && effect <= 0x77) {
+    if(ThaMarker(&sTagRenderAnchors,(unsigned)effect))return;
+    if (effect >= 0x72 && effect <= 0x7B) {
         int bit = 1 << ((effect - 0x72) >> 1);
         sHudScope = (effect & 1) == 0 ? sHudScope | bit : sHudScope & ~bit;
         return;
@@ -5785,6 +5922,7 @@ static void skip_decide(void) {
 }
 
 void GsGpu_FrameEnd(void) {
+    if(sBackend)tag_movie_idle();
     if(Port_TagBattleRenderActive()){
         static int reported;
         if(!reported&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RENDER_AUDIT")){

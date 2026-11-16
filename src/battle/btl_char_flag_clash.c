@@ -29,6 +29,7 @@ extern s32 BtlChar_FrameMod(s32 n);
 extern u32 BtlChar_Rand(void);
 extern void BtlChar_PlayVoice(BtlFlagChr *chr, s32 kind);
 extern s32 Battle_GetMode(void);
+extern int Port_NetLongBeamClash(void);
 extern void ChrCam_SetCut(BtlFlagChr *chr, Vec4 *vecA, Vec4 *vecADelta, Vec4 *vecB, Vec4 *vecBDelta, Vec4 *vecC,
                           Vec4 *vecCDelta, s32 unk88, f32 valA, f32 valADelta, f32 valB, f32 valBDelta, f32 valC,
                           f32 valCDelta, s32 unk8C, s32 unk90, s32 unk94, s32 time, s32 flags);
@@ -316,7 +317,7 @@ s32 BtlClash_UpdateA(s32 state) {
             }
         }
         c->timer++;
-        if (c->timer >= 0xA4) {
+        if (c->timer >= (Port_NetLongBeamClash() ? 0x108 : 0xA4)) {
             c->timer = 0;
             state++;
         }
@@ -398,6 +399,12 @@ s32 BtlClash_UpdateA(s32 state) {
                     flags = 0x2000000;
                     break;
                 }
+#ifdef BT4_TAG_TEAM_EXPANDED
+                {
+                    extern s32 TagBattle_CombatDamage(s32,s32,s32);
+                    damage=TagBattle_CombatDamage(winner->player,loser->player,damage);
+                }
+#endif
                 BtlMember_Damage(loser, damage, flags);
                 BtlChar_PlayVoice(loser, 0x16);
                 BtlCharSnd_PlayStream(loser, 0x8D31);

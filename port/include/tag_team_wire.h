@@ -1,6 +1,27 @@
 #ifndef PORT_TAG_TEAM_WIRE_H
 #define PORT_TAG_TEAM_WIRE_H
 #include "tag_team.h"
+#define TTW_OPEN_BATTLE_RULES 68
+#define TTW_JOIN_BATTLE_RULES 68
+#define TTW_STATE_BATTLE_RULES 500
+#define TTW_BATTLE_RULES_CAPABILITY 111
+#define TTW_BATTLE_RULES 25
+#define TTW_OPTIONS 26
+#define TTW_OPTIONS_STATE 112
+#define TTW_OPTIONS_HASH 504
+#define TTW_OPEN_OPTIONS 72
+void Ttw_PutOptions(unsigned char *p,const TtOptions *o);
+int Ttw_GetOptions(const unsigned char *p,TtOptions *o);
+void Ttw_OptionsSnapshot(unsigned char *p,const TtRoom *r);
+int Ttw_ApplyOptions(const unsigned char *p,TtRoom *r);
+int Port_TagOption(const char *key,int fallback);
+int Port_TagSharedOption(const char *key,int fallback);
+int Port_TagSharedSave(const char *key,int value);
+int Port_TagSharedHealth(int team,int slot,int32_t values[5],int save);
+int Port_TagSharedReady(void);
+int Port_TagSharedHealthAll(int32_t values[2][5][5]);
+void Port_TagChoiceItems(int chara,int costume,const uint16_t items[8]);
+const uint16_t *Port_TagPlayerItems(int actor);
 #define TT_WIRE_BYTES 512
 enum { TTW_OPEN=1, TTW_JOIN, TTW_SELECT, TTW_CHOOSE, TTW_LOAD, TTW_LOADED,
        TTW_ARM, TTW_ACK, TTW_START, TTW_PING, TTW_INPUT, TTW_CANCEL_SELECT=12, TTW_TEAMS=13, TTW_SLOT=14, TTW_ARENA=15, TTW_CHAT=16, TTW_HASH=17, TTW_RESULT=18, TTW_MOVE=19, TTW_VOICE_TICKET=20, TTW_RESULT_ENDED=21, TTW_STATE=100, TTW_FRAME };
@@ -19,6 +40,7 @@ unsigned Port_TagMenuMillis(void);
 void Port_TagMenuTestAdvance(unsigned ms);
 void Port_TagPoll(void);
 void Port_TagOpen(int size, int time, int delay, const char *name, uint64_t content);
+void Port_TagOpenWithRules(int size, int time, int delay, const char *name, uint64_t content, unsigned rules);
 void Port_TagCPUOptions(int fill,int difficulty);
 void Port_TagModeOptions(int free_for_all,int quick);
 int Port_TagFreeForAll(void);

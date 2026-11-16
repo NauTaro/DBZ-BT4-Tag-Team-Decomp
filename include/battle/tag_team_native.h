@@ -1,6 +1,7 @@
 #ifndef BATTLE_TAG_TEAM_NATIVE_H
 #define BATTLE_TAG_TEAM_NATIVE_H
 #include "battle/battle.h"
+#include "battle/tag_health_rule.h"
 /* Extra actor state is separate from the original two-side PS2 data layout. */
 s32 TagBattle_Count(void);
 s32 TagBattle_Active(void);
@@ -14,6 +15,11 @@ s32 TagBattle_Target(s32 actor);
 void TagBattle_CycleTarget(s32 actor);
 s32 TagBattle_TargetDirection(s32 actor,s32 direction);
 s32 TagBattle_SetTarget(s32 actor,s32 target);
+#ifdef BT4_TAG_TEAM_EXPANDED
+s32 TagBattle_CameraMode(s32 actor);
+void TagBattle_StepCamera(s32 actor);
+void TagBattle_NavigateCamera(s32 actor,s32 direction);
+#endif
 s32 TagBattle_ConfigureLocal(void);
 void TagBattle_ClearDraftItems(void);
 void TagBattle_SetDraftItems(s32 actor, s32 chara, const u16 *ids);
@@ -22,6 +28,11 @@ s32 TagBattle_Local(void);
 s32 TagBattle_Network(void);
 s32 TagBattle_LocalActor(void);
 u8 *TagBattle_NetPad(s32 actor);
+struct Pad;
+void *TagBattle_CommandPad(s32 actor);
+void *TagBattle_SourceCommandPad(s32 seat);
+void TagBattle_ConsumeCommand(s32 actor,u32 rawMask);
+int Port_TagOption(const char *key,int fallback);
 BattleSide *TagBattle_ExtraSide(s32 actor);
 void TagBattle_Prepare(void);
 void TagBattle_End(void);
@@ -49,4 +60,11 @@ void TagBattle_ResultDraw(void);
 s32 TagBattle_ViewActor(void);
 s32 TagBattle_Spectating(void);
 void TagBattle_UpdateSpectator(s32 dir);
+#ifdef BT4_TAG_TEAM_EXPANDED
+s32 TagBattle_AllowsTransformation(s32 actor);
+s32 TagBattle_SplitViewActor(s32 player);
+s32 TagBattle_SplitSpectating(s32 player);
+void TagBattle_UpdateSplitSpectator(s32 player, s32 direction, f32 yaw, f32 pitch);
+s32 TagBattle_SplitOrbit(s32 player, f32 *yaw, f32 *pitch);
+#endif
 #endif

@@ -2,7 +2,14 @@
 #include "../../port/include/bt4_dev_rules.h"
 extern s32 Port_NetActive(void),Port_NetDevRulesPad(s32,u8 *);
 static Bt4DevRules sDevRules;
-static s32 DevRules_Online(void){return Port_NetActive()||TagBattle_Network();}
+static s32 DevRules_Online(void){
+#if !defined(BT4_DEVELOPMENT_BUILD) || defined(BT4_TAG_TEAM_PREVIEW)
+ return 0;
+#else
+ /* Tag Team uses the same simulation in Dev and the normal test client. */
+ return Port_NetActive()&&!TagBattle_Network();
+#endif
+}
 s32 DevRules_Flags(void){return DevRules_Online()?(s32)sDevRules.flags:0;}
 s32 DevRules_ProtectHealth(void){return (DevRules_Flags()&BT4_DEV_HP)!=0;}
 static void DevRules_Reset(void){memset(&sDevRules,0,sizeof(sDevRules));}

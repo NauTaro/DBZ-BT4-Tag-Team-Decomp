@@ -223,9 +223,14 @@ void HudNode_Draw(HudNode *node, s32 mirror) {
     if (node == gHud->combo) {
         Port_GsMarker(PORT_HUD_COMBO_BEGIN);
     }
+    if (node == gHud->prompt) Port_GsMarker(0x78);
+    if (node == gHud->team) Port_GsMarker(0x7A);
 #endif
     Vu0Cur_Push();
     pos[0] = node->x + node->ofsX;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(node==gHud->prompt&&TagBattle_Active()&&!Battle_IsSplitScreen())pos[0]+=160;
+#endif
     pos[1] = node->y + node->ofsY;
     pos[2] = 0.0f;
     pos[3] = 1.0f;
@@ -263,6 +268,8 @@ void HudNode_Draw(HudNode *node, s32 mirror) {
     if (node == gHud->combo) {
         Port_GsMarker(PORT_HUD_COMBO_END);
     }
+    if (node == gHud->prompt) Port_GsMarker(0x79);
+    if (node == gHud->team) Port_GsMarker(0x7B);
 #endif
 }
 
@@ -334,6 +341,10 @@ void Hud_Init(void) {
 
 /* Battle end: frees the parts and the manager. */
 void Hud_Term(void) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern void HudGauge_TagTerm(void);
+    HudGauge_TagTerm();
+#endif
     HudGauge_Term();
     HudTimer_Term();
     HudTeam_Term();
@@ -374,7 +385,8 @@ void Hud_PreUpdate(void) {
     }
     for (side = 0; side < 2; side++) {
         extern s32 TagBattle_ViewActor(void);
-        s32 actor=TagBattle_Active()?(side?TagBattle_Target(TagBattle_ViewActor()):TagBattle_ViewActor()):side;
+        s32 actor=TagBattle_Active()&&!Battle_IsSplitScreen()?
+            (side?TagBattle_Target(TagBattle_ViewActor()):TagBattle_ViewActor()):side;
         s32 v;
         s32 i;
         s32 mask;
@@ -590,6 +602,10 @@ void Hud_PreUpdate(void) {
 
 /* Round reset: resets the parts and hides them all. */
 void Hud_Reset(void) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern void HudGauge_TagTerm(void);
+    HudGauge_TagTerm();
+#endif
     HudGauge_Reset();
     HudTeam_Reset();
     HudCombo_Reset();
@@ -764,7 +780,7 @@ void Hud_Draw(void) {
                 break;
         }
     } else {
-        if (Battle_GetMode() != 1) {
+        if (Battle_GetMode() != 1&&!TagBattle_Active()) {
             if (gHud->flags & HUD_SHOW_GAUGES) {
                 HudTeam_SelectSide(0);
                 HudNode_Update(gHud->team);
@@ -774,7 +790,7 @@ void Hud_Draw(void) {
                 HudNode_Draw(gHud->team, 0);
             }
         }
-        if (gHud->flags & HUD_SHOW_GAUGES) {
+        if ((gHud->flags & HUD_SHOW_GAUGES)&&!TagBattle_Active()) {
             HudGfx_ClearAlpha();
             HudGauge_SelectSide(0);
             HudNode_Update(gHud->gauge);
@@ -784,7 +800,7 @@ void Hud_Draw(void) {
             HudNode_Update(gHud->gauge);
             HudNode_Draw(gHud->gauge, 0);
         }
-        if (gHud->flags & HUD_SHOW_TIMER) {
+        if ((gHud->flags & HUD_SHOW_TIMER)&&!TagBattle_Active()) {
             HudNode_Update(gHud->timer);
             HudNode_Draw(gHud->timer, 0);
         }

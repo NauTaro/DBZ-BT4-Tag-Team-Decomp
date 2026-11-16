@@ -117,7 +117,8 @@ again after adding or changing one. Your choices are kept in bt3_mods.txt. A mod
 
 The ones that come with the game: modern_hud (a HUD in the style of later games), modern_camera (inertia, tilt, hit
 reactions, distance, height and zoom), modern_look (anime shading, rim light, colours, ambient shadows), skill_list
-(your moves and their buttons while you hold charge), and two small examples to start from (example_hud,
+(your moves and their buttons while you hold charge), split_screen (two local cameras in online or offline
+battles, with a target or teammate view), and two small examples to start from (example_hud,
 example_camera).
 
 How to write one: docs/port/mods.md in the source repository.

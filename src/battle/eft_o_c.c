@@ -177,7 +177,8 @@ void EftBodyFx_Term(EftOTask *task) {
 
     EftEmit_TermState(w->set, w->state);
     w->flags = 0;
-    gEftBodyFx->task[arg->objId] = NULL;
+    if (gEftBodyFx != NULL && arg->objId >= 0 && arg->objId < EFT_BODYFX_FIGHTERS &&
+        gEftBodyFx->task[arg->objId] == task)gEftBodyFx->task[arg->objId] = NULL;
 }
 
 /* Update callback: follows the fighter; after the stop it lives for the pack's end frames. */
@@ -245,7 +246,9 @@ void EftBodyFxMgr_Init(EftOTask *task) {
 
     gEftBodyFx = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftBodyFxMgr));
     memset(gEftBodyFx, 0, sizeof(EftBodyFxMgr));
-    gEftBodyFxList = BtlTask_CreateChildList(task, 3, sizeof(EftBodyFx));
+    {extern s32 BtlScene_GetCharCount(void);s32 count=BtlScene_GetCharCount();
+     if(count<2)count=2;if(count>EFT_BODYFX_FIGHTERS)count=EFT_BODYFX_FIGHTERS;
+     gEftBodyFxList = BtlTask_CreateChildList(task, count+1, sizeof(EftBodyFx));}
     id[0] = 0x23F;
     for (i = 0; i < EFT_BODYFX_SETS; i++) {
         EftEmit_LoadSet(NULL, &gEftBodyFx->set[i], NULL, NULL, 1, id[i]);
@@ -274,6 +277,8 @@ void EftBodyFxMgr_Update(void) {
 
 /* Starts the effect on a fighter; fails when it is already running. */
 s32 EftBodyFx_Start(EftBodyFxArg arg) {
+    if (gEftBodyFx == NULL || gEftBodyFxList == NULL || arg.objId < 0 ||
+        arg.objId >= EFT_BODYFX_FIGHTERS || arg.unk4 < 0 || arg.unk4 >= EFT_BODYFX_SETS)return 0;
     if (gEftBodyFx->task[arg.objId] != NULL) {
         return 0;
     }
@@ -283,14 +288,16 @@ s32 EftBodyFx_Start(EftBodyFxArg arg) {
 
 /* Asks the fighter's effect to end. */
 s32 EftBodyFx_Stop(s32 objId) {
-    EftOTask *t = gEftBodyFx->task[objId];
+    EftOTask *t;
     EftBodyFx *w;
 
+    if(gEftBodyFx == NULL || objId < 0 || objId >= EFT_BODYFX_FIGHTERS)return 0;
+    t = gEftBodyFx->task[objId];
     if (t == NULL) {
         return 0;
     }
     w = t->work;
-    if (!(w->flags & 1)) {
+    if (w == NULL || w->arg.objId != objId || !(w->flags & 1)) {
         return 0;
     }
     w->flags |= 2;

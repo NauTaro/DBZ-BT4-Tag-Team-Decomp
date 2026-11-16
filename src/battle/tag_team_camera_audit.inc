@@ -19,6 +19,15 @@ static s32 TagAudit_CameraPolicy(void){
     TagAudit_Check("orphaned_victim_does_not_keep_pair_locked",TagBattle_Pair(0)<0&&TagBattle_Pair(1)<0);
     TagAudit_Clear();TagBattle_ResetPairs();
     for(i=0;i<BtlChar_GetCount();++i)BtlChar_Get(i)->action=0xB;
+    for(s32 action=0xEC;action<=0xF8;++action){
+        BtlChar_Get(0)->action=action;
+        BtlChar_SetFlag(BtlChar_Get(0),0x125);
+        BtlChars_UpdateFreeze();
+        TagAudit_Check("transformation_keeps_every_other_fighter_active",TagBattle_Preparing(0));
+        for(i=1;i<BtlChar_GetCount();++i)TagAudit_Check("transformation_does_not_freeze_opponents",!BtlChar_Get(i)->freeze);
+    }
+    BtlChar_Get(0)->action=0xB;
+    TagAudit_Clear();
     BtlChar_Get(0)->action=0x105;BtlSuper_RequestHitStop(BtlChar_Get(0),0);BtlChars_UpdateFreeze();
     TagAudit_Check("shared_preparation_owner",TagBattle_DefaultCutOwner()==0);
     for(i=0;i<BtlChar_GetCount();++i){

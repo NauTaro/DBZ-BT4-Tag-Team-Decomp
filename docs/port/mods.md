@@ -86,6 +86,8 @@ Each fighter:
 | `combo_hits`, `combo_damage` | the combo this side is landing on the other |
 | `chara`, `costume` | character id (the table of `port/src/gs/fight_panels_ui.cpp`) and costume |
 | `active`, `count`, `next` | the member fighting (1 = first), members in the team, the one a switch would bring in |
+| `switch_gauge` | readiness to switch team members, 0..100000 |
+| `prompt_shown` | a native button, Boost or clash command is showing, including its fade; leave space for it |
 | `members[i]` | each member: `present`, `chara`, `costume`, `hp`, `hp_max` |
 | `pos` (`x`, `y`, `z`), `yaw` | world position (+Y is down) and facing, in radians |
 | `status` | `attack`, `speed`, `defence`, `ki`: 1 raised, -1 lowered, 0 as it was (the game's status icons) |
@@ -119,7 +121,7 @@ under the settings window. Only what was drawn at the last blank is shown: draw 
 | `hud.image(image, x, y, w, h [, options])` | a PNG of the mod (`bt3.image`); options `u0 v0 u1 v1` (the part, 0..1), `tint`, `flip` |
 | `hud.portrait(side, x, y, w, h [, options])` | the fighter's character-select portrait (below) |
 | `hud.clip(x, y, w, h)`, `hud.unclip()` | what is drawn between them is cut to the rectangle |
-| `hud.hide_game("gauges", "timer", "combo")` | the game's own pieces are left out of the picture this blank, for a mod that draws its own (ask every blank) |
+| `hud.hide_game("gauges", "timer", "combo", "team", "prompt")` | the game's own pieces are left out of the picture this blank, for a mod that draws its own (ask every blank); team reserves and combat prompts are independent of gauges |
 
 Text options: `outline` (a colour), `outline_size`, `shadow` (a colour), `shadow_x`, `shadow_y`, `bottom` (a colour:
 the fill shaded from `colour` at the top to it), `lean` (0.16 leans the letters forward), `baseline` (y is the
@@ -137,6 +139,31 @@ At most 4096 shapes, 16384 points and 32 KB of text per blank, for all mods toge
 
 
 ## `cam`
+
+The bundled `split_screen` mod requests two local views with
+`bt3.split_screen(true, "target")` or `bt3.split_screen(true, "ally")` in `on_frame`.
+Requests expire every frame, so disabling the mod restores the normal view.
+Online, the first pane follows the local player. Tag Team's second pane follows
+the current target or a living teammate; a fused spectator remains on the fusion.
+Native local two-player matches retain the two players' cameras. Cinematic
+introductions and results use the native view. This setting does not change
+controller ownership, room options or the match's simulation screen mode.
+Rendering two views requires additional graphics work.
+
+`game.presentation_split` identifies this presentation preference. `game.split`
+also becomes true for HUD layouts while the mod is active.
+
+In Tag Team split views, `game.tag_team.floating_allies[pane]` supplies the
+visible ally HUD anchors already filtered for the corresponding camera. Each
+entry contains `actor` (1-based actor slot) and `x`, `y` (0..1 coordinates of the
+full picture). The bundled Modern HUD uses these for compact character portraits,
+health and ki; the native HUD uses the same anchors. The lists contain at most
+four non-overlapping widgets per pane and are cleared on the next scene draw.
+`hud.actor_anchor(pane, actor, x, y)` starts a drawing group tied to the position
+in the picture actually being presented; `x`, `y` are that group's original
+anchor in HUD units. `hud.unanchor()` ends the group. If that ally has no anchor
+in this picture, the group is omitted. This keeps floating widgets aligned even
+when Lua and the renderer process different frames.
 
 `on_camera(cam, game)` is given the camera the game is about to build for one side (`cam.side`, 1 or 2; both in
 split screen) and may change it: change `cam.pos` / `cam.rot` in place, or return a table with `pos` and `rot`.

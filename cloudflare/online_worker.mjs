@@ -2,6 +2,7 @@ import {OnlineCore,clientAtLeast} from './online_core.mjs';
 import {verifyAccess,legacyProof,legacyBootstrap,createSession,sha256} from './online_auth.mjs';
 import {roomTurn} from './online_turn.mjs';
 import {importRows} from './online_migration.mjs';
+import {launchRanked,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
 
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 async function readJson(request,limit=24576){
@@ -20,7 +21,10 @@ export class OnlineCoordinator {
         this.ctx=ctx;this.env=env;this.core=new OnlineCore(ctx.storage.sql);
         this.authTail=Promise.resolve();this.turnPending=new Map();
         ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
-        ctx.blockConcurrencyWhile(async()=>{if(await ctx.storage.getAlarm()===null)await ctx.storage.setAlarm(Date.now()+600000);});
+        ctx.blockConcurrencyWhile(async()=>{
+            const now=Date.now(),next=monthlyRanked(this.core)?Math.min(now+600000,rankedMonthEnd(now)):now+600000;
+            const alarm=await ctx.storage.getAlarm();if(alarm===null||alarm>next)await ctx.storage.setAlarm(next);
+        });
     }
     budget(subject,operation,maximum=120){
         const minute=Math.floor(Date.now()/60000);
@@ -104,7 +108,7 @@ export class OnlineCoordinator {
               }
             }
             const r = profile && profile.ranked && typeof profile.ranked === "object" ? profile.ranked : null;
-            if (body.source === "secondary" && r && Number.isInteger(r.rating) && r.rating >= 0 && r.rating <= 1e5 && Number.isInteger(r.wins) && Number.isInteger(r.losses))
+            if (!monthlyRanked(this.core) && body.source === "secondary" && r && Number.isInteger(r.rating) && r.rating >= 0 && r.rating <= 1e5 && Number.isInteger(r.wins) && Number.isInteger(r.losses))
               this.core.run("INSERT OR IGNORE INTO ranked_players VALUES(?,'solo',?,?,?,?)", subject, finalName ?? cutTo(wanted, 19), r.rating, r.wins, r.losses);
           });
           user=subject;
@@ -122,8 +126,25 @@ export class OnlineCoordinator {
         try{
             if(path==='/v5/health')return json({service:'BT4decomp Online',schema:5,admission:this.core.one("SELECT value FROM online_meta WHERE key='admission'")?.value||'closed'});
             if(path.startsWith('/v5/admin/')){
-                if(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET))return json({error:'AUTH_REQUIRED'},401);
+                const releaseAdmin=this.env.RELEASE_ADMIN_SECRET&&safeEqual(bearer(request),this.env.RELEASE_ADMIN_SECRET);
+                if(!releaseAdmin&&(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET)))return json({error:'AUTH_REQUIRED'},401);
                 const body=await readJson(request,1048576);
+                if(path==='/v5/admin/ranked-audit')return json({
+                    configuration:this.core.rows("SELECT key,value FROM online_meta WHERE key IN ('ranked_scoring','ranked_monthly_reset','ranked_weekly_reset','ranked_season','ranked_epoch_ms','ranked_paused','admission','minimum_client') ORDER BY key"),
+                    users:this.core.one('SELECT count(*) n FROM online_users').n,
+                    names:this.core.one('SELECT count(*) n FROM online_names').n,
+                    scores:this.core.one('SELECT count(*) n,min(rating) minimum,max(rating) maximum,sum(rating) total FROM ranked_players'),
+                    matches:this.core.one('SELECT count(*) n FROM ranked_matches').n,
+                    history:this.core.one('SELECT count(*) n FROM ranked_history').n,
+                    resets:this.core.rows('SELECT id,applied,old_season,new_season,reason FROM ranked_resets ORDER BY applied DESC LIMIT 5'),
+                    next_reset_at:monthlyRanked(this.core)?new Date(rankedMonthEnd(Date.now())).toISOString():null
+                });
+                if(path==='/v5/admin/release-snapshot'){
+                    if(!releaseAdmin)return json({error:'AUTH_REQUIRED'},401);
+                    const allowed=new Set(['online_users','online_names','online_meta','ranked_players','ranked_matches','ranked_reports','ranked_history','ranked_streaks','ranked_streak_matches','ranked_weekly','ranked_reviews','ranked_resets','ranked_reset_players','ranked_collections','ranked_rock_finds','quick_rock_finds']);
+                    if(!allowed.has(body.table)||!Number.isSafeInteger(body.offset)||body.offset<0)throw new Error('BAD_REQUEST');
+                    return json({table:body.table,offset:body.offset,rows:this.core.rows(`SELECT * FROM ${body.table} ORDER BY rowid LIMIT 500 OFFSET ?`,body.offset)});
+                }
                 if(path==='/v5/admin/import'||path==='/v5/admin/sync'){
                     if(await sha256(JSON.stringify(body.rows))!==body.digest)throw new Error('IMPORT_CHECKSUM');
                     return json(this.ctx.storage.transactionSync(()=>importRows(this.core,body,path.endsWith('/sync'))));
@@ -139,6 +160,16 @@ export class OnlineCoordinator {
                 }
                 if(path==='/v5/admin/ranked'&&['paused','open'].includes(body.state)){
                     this.core.run("INSERT INTO online_meta VALUES('ranked_paused',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",body.state==='paused'?'1':'0');return json({state:body.state});
+                }
+                if(path==='/v5/admin/ranked-scoring'&&['elo','streak'].includes(body.scoring)){
+                    if(monthlyRanked(this.core)&&body.scoring!=='streak')throw new Error('RANKED_ALREADY_LAUNCHED');
+                    this.core.run("INSERT INTO online_meta VALUES('ranked_scoring',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",body.scoring);
+                    return json({scoring:body.scoring});
+                }
+                if(path==='/v5/admin/ranked-launch'&&request.method==='POST'){
+                    const result=this.ctx.storage.transactionSync(()=>launchRanked(this.core,body));
+                    await this.ctx.storage.setAlarm(Math.min(Date.now()+600000,rankedMonthEnd(Date.now())));
+                    return json(result);
                 }
                 return json({error:'BAD_REQUEST'},400);
             }
@@ -233,7 +264,7 @@ export class OnlineCoordinator {
         }
       }
     }
-        await this.ctx.storage.setAlarm(Date.now()+600000);
+        await this.ctx.storage.setAlarm(monthlyRanked(this.core)?Math.min(Date.now()+600000,rankedMonthEnd(Date.now())):Date.now()+600000);
     }
 }
 export default {

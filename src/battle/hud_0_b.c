@@ -232,6 +232,7 @@ u16 *BtlMenu_GetText(s32 n) {
 /* Text of a menu item. */
 u16 *BtlMenu_GetItemText(s32 n) {
 #ifdef PORT
+    if(n>=0x7200&&n<=0x7250){extern u16 *Training_Text(s32);return Training_Text(n);}
     if(n>=0x7110&&n<=0x7113){extern u16 *TagBattle_ResultText(s32);return TagBattle_ResultText(n);}
     if (n==0x7100) {
         extern int PortHud_Hidden(void),Port_GameProfileEnglish(void);
@@ -258,6 +259,10 @@ u16 *BtlMenu_GetItemText(s32 n) {
         }
     }
 
+    if (n >= 0x6FF9 && n <= 0x6FFD) {
+        extern u16 *PortSpecMenu_Text(s32 k);
+        return PortSpecMenu_Text(n == 0x6FFD ? 9 : n == 0x6FFA ? 10 : n == 0x6FFB ? 11 : n == 0x6FFC ? 12 : 13);
+    }
     if (n >= 0x6FFE && n < 0x7100) { /* the port's own (port/src/spec_menu.c): a lobby's "Back to the Lobby" (0x6FFE), a spectator's
                           own pause menu (0x6FFF its header, 0x7000 on its items) */
         extern u16 *PortSpecMenu_Text(s32 k);
@@ -509,6 +514,11 @@ void BtlMenu_Draw(u64 **pkt, BtlMenu *menu) {
                 Font_PushStyle();
                 Font_PushCursor();
                 Font_SetHome(0x100, ty + 0x2A);
+#ifdef PORT
+                /* Training subpages have no native title sprite in row zero. */
+                if(menu->count>0&&menu->items[0].id>=0x7200&&menu->items[0].id<0x7250)
+                    Font_SetHome(0x100,ty+0xE);
+#endif
                 Font_SetScale(menu->scale);
                 Font_SetSpacing(0, 0x1C - Font_GetGlyphHeight());
                 Font_SetAlign(1);
@@ -525,14 +535,14 @@ void BtlMenu_Draw(u64 **pkt, BtlMenu *menu) {
                     }
                     text = menu->items[i].text[pad];
 #ifdef PORT
-                    if (text == 0x6FFF || text == 0x7110) { /* a header row in letters (a spectator's own pause menu, port/src/spec_menu.c:
+                    if (text == 0x6FFF || text == 0x7110 || text == 0x6FFA) { /* a header row in letters (a spectator's own pause menu, port/src/spec_menu.c:
                                              its note where the battle's menus have their title picture) */
                         extern u16 *PortSpecMenu_Text(s32 k);
 
                         Font_PushCursor();
                         Font_SetHome(0x100, ty + 0xE);
                         Font_SetColorRGBA(0xFF, 0xB0, 0x40, 0x80);
-                        Font_Print(text==0x7110?BtlMenu_GetItemText(text):PortSpecMenu_Text(7));
+                        Font_Print(text==0x7110||text==0x6FFA?BtlMenu_GetItemText(text):PortSpecMenu_Text(7));
                         Font_PopCursor();
                         continue;
                     }

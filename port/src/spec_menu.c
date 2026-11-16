@@ -41,7 +41,7 @@ static BtlMenuItem sItem[5], sSureItem[3];
 static int sYes = 0; /* the yes / no box's Yes (No is the next) */
 static BtlMenu sMain, sSure;
 static int sKind[5], sCount, sOpen, sClosing, sLeaveAfter, sBackAfter, sSaid = -1;
-static u16 sText[9][96]; /* (8: a lobby's "Back to the Lobby" in the players' menus) */
+static u16 sText[14][96]; /* 8: lobby return, 9: Ranked queue, 10..13: tournament result */
 static PortLobbyView sView;
 static unsigned sHeld;
 static int sRepeat;
@@ -130,7 +130,22 @@ u16 *PortSpecMenu_Text(s32 k) {
         item_line(IT_BACK, line, sizeof(line));
         put_text(sText[8], 96, line);
     }
-    if (k < 0 || k >= 9) {
+    if (k == 9) {
+        extern const char *PortOnline_Text(const char *text);
+        put_text(sText[9], 96, PortOnline_Text("Keep Searching"));
+    }
+    if (k >= 10 && k <= 13) {
+        if (k == 11) {
+            extern int Port_BattleOutcome(int *winner);
+            extern const char *Port_NetName(int player);
+            int bits = 0;
+            Port_BattleOutcome(&bits);
+            put_text(sText[k], 96, Port_NetName((bits & 3) == 2 ? 1 : 0));
+        } else {
+            put_text(sText[k], 96, PortOnline_Text(k == 10 ? "Congratulations!" : k == 12 ? "Return to Tournament" : "Exit to Tenkaichi Budokai Online"));
+        }
+    }
+    if (k < 0 || k >= 14) {
         k = 0;
     }
     return sText[k];

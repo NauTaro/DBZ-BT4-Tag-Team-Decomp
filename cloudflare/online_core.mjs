@@ -1,16 +1,19 @@
 import {ONLINE_SCHEMA} from './online_schema.mjs';
 import {migrateCharacters,characterSelection,saveRankedCharacters,mirrorRanked,reportOnlineMatch} from './online_characters.mjs';
+import {advanceRankedMonth,rankedCollection,rankedMonthAt,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
+import {claimRankedRock,claimQuickRock,RANKED_ROCK_WIRE,rollRankedRock,rollQuickRock} from './ranked_rocks.mjs';
 const bytes=s=>new TextEncoder().encode(s).length;
 const error=code=>{throw new Error(code);};
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+const ROOM_LEASE_MS=60*60*1000;
 export function clientAtLeast(actual,minimum){
-    const parse=v=>typeof v==='string'&&v.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)-R(\d+)(?:\.(\d+))?$/);
+    const parse=v=>typeof v==='string'&&v.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)(?:-R(\d+)(?:\.(\d+))?)?$/);
     const a=parse(actual),b=parse(minimum);if(!a||!b)return false;
     for(let i=1;i<=6;i++){const x=Number(a[i]||0),y=Number(b[i]||0);if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y))return false;if(x!==y)return x>y;}
     return true;
 }
 export function seasonAt(now){
-    // Argentina, UTC-3: the weekly board rolls over Sunday at 23:59, points persist.
+    // Argentina, UTC-3: the legacy board rolls over Sunday at 23:59, points persist.
     const shifted=now-3*3600000+60000, d=new Date(shifted);
     const start=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()-(d.getUTCDay()+6)%7-1);
     return new Date(start).toISOString().slice(0,10);
@@ -23,13 +26,21 @@ export class OnlineCore {
     rows(q,...args){return [...this.sql.exec(q,...args)];}
     one(q,...args){return this.rows(q,...args)[0];}
     run(q,...args){this.sql.exec(q,...args);}
+    rankedScoring(){return this.one("SELECT value FROM online_meta WHERE key='ranked_scoring'")?.value==='streak'?'streak':'elo';}
+    rankedSeason(){return monthlyRanked(this)?rankedMonthAt(this.now()):seasonAt(this.now());}
     name(user){return this.one('SELECT name FROM online_names WHERE user_id=?',user)?.name;}
     member(user){return this.one('SELECT m.*,r.generation,r.owner,r.expires FROM online_members m JOIN online_rooms r ON r.id=m.room WHERE m.user_id=?',user);}
     descriptor(user){
         const m=this.member(user);if(!m||m.expires<=this.now())return {version:1,state:'none'};
         const r=this.one('SELECT * FROM online_rooms WHERE id=?',m.room);
         const members=this.rows('SELECT peer,name,role,udp FROM online_members WHERE room=? ORDER BY peer',r.id);
+        const rock=r.wire.startsWith('ranked-v1:')&&r.wire.endsWith(RANKED_ROCK_WIRE)&&m.role==='player'
+            ?this.one('SELECT seed FROM ranked_rock_rolls WHERE match_id=?',r.generation):null;
+        const quick=m.role==='player'&&r.mode==='duel'&&!r.wire.startsWith('ranked-v1:')
+            ? this.one('SELECT seed FROM quick_rock_matches WHERE match_id=? AND (a=? OR b=?)',r.generation,user,user) : null;
         return {version:1,room:r.id,code:r.code,generation:r.generation,mode:r.mode,wire:r.wire,content:r.content,
+            ...(rock?{ranked_rock_seed:rock.seed}:{}),
+            ...(quick?{quick_rock_seed:quick.seed}:{}),
             rules:r.rules,host:1,self:m.peer,capacity:r.capacity,joinable:!!r.joinable,expires_at:new Date(r.expires).toISOString(),
             members:members.map(({peer,name,role})=>({peer,name,role})),udp:members.filter(p=>p.udp).map(p=>({peer:p.peer,addresses:JSON.parse(p.udp)}))};
     }
@@ -40,6 +51,7 @@ export class OnlineCore {
         this.run('DELETE FROM online_signals WHERE room=?',room);this.run('DELETE FROM online_members WHERE room=?',room);this.run('DELETE FROM online_rooms WHERE id=?',room);
     }
     prune(){
+        advanceRankedMonth(this);
         const now=this.now();for(const r of this.rows('SELECT id FROM online_rooms WHERE expires<=?',now))this.close(r.id);
         for(const [table,column] of [['online_queue','expires'],['online_signals','expires'],['online_presence','expires'],['online_sessions','expires']])this.run(`DELETE FROM ${table} WHERE ${column}<=?`,now);
         // Profiles, registered names, match results and rating history are never pruned.
@@ -57,7 +69,7 @@ export class OnlineCore {
         const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         do {const random=new Uint8Array(6);crypto.getRandomValues(random);code=Array.from(random,x=>alphabet[x%alphabet.length]).join('');}
         while(this.one('SELECT id FROM online_rooms WHERE code=?',code));
-        this.run('INSERT INTO online_rooms VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',id,code,generation,user,a.mode,a.wire,a.content,a.rules,capacity,a.listed?1:0,1,this.now()+1800000,2);
+        this.run('INSERT INTO online_rooms VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',id,code,generation,user,a.mode,a.wire,a.content,a.rules,capacity,a.listed?1:0,1,this.now()+ROOM_LEASE_MS,2);
         this.run('INSERT INTO online_members(user_id,room,peer,name,role) VALUES(?,?,1,?,?)',user,id,name,'player');
         this.run('DELETE FROM online_queue WHERE user_id=?',user);return this.descriptor(user);
     }
@@ -73,7 +85,7 @@ export class OnlineCore {
         const players=this.one("SELECT count(*) n FROM online_members WHERE room=? AND role='player'",r.id).n;
         if(total>=r.capacity||(r.mode==='duel'&&role==='player'&&players>=2))error('ROOM_FULL');
         this.run('INSERT INTO online_members(user_id,room,peer,name,role) VALUES(?,?,?,?,?)',user,r.id,r.next_peer,name,role);
-        this.run('UPDATE online_rooms SET next_peer=next_peer+1,expires=? WHERE id=?',this.now()+1800000,r.id);
+        this.run('UPDATE online_rooms SET next_peer=next_peer+1,expires=? WHERE id=?',this.now()+ROOM_LEASE_MS,r.id);
         this.run('DELETE FROM online_queue WHERE user_id=?',user);this.changed(r.id);return this.descriptor(user);
     }
     queue(user,a,ranked=false){
@@ -87,16 +99,26 @@ export class OnlineCore {
         // Changing queue requires an explicit cancellation; it cannot mutate an existing match.
         const own=this.one('SELECT * FROM online_queue WHERE user_id=?',user);
         if(own.mode!==a.mode||own.wire!==wire||own.content!==a.content||own.rules!==a.rules)error('ALREADY_QUEUED');
-        const waiting=this.rows('SELECT user_id FROM online_queue WHERE mode=? AND wire=? AND content=? AND rules=? AND expires>? ORDER BY made,user_id LIMIT ?',a.mode,wire,a.content,a.rules,this.now(),desired);
+        const quickRocks=!ranked&&a.mode==='duel'&&(a.rules==='S'||a.rules==='T');
+        if(quickRocks){
+            if(a.rock_version===1)this.run('INSERT OR IGNORE INTO quick_rock_queue VALUES(?)',user);
+            else this.run('DELETE FROM quick_rock_queue WHERE user_id=?',user);
+        }
+        const waiting=this.rows(`SELECT q.user_id,c.user_id IS NOT NULL AS supports_rocks
+            FROM online_queue q LEFT JOIN quick_rock_queue c ON c.user_id=q.user_id
+            WHERE q.mode=? AND q.wire=? AND q.content=? AND q.rules=? AND q.expires>?
+            ORDER BY q.made,q.user_id LIMIT ?`,a.mode,wire,a.content,a.rules,this.now(),desired);
         if(waiting.length<desired)return {version:1,state:'waiting'};
         const host=waiting[0].user_id;
         const first=this.create(host,{...a,wire,capacity:a.mode==='duel'?40:desired,listed:false});
         for(const peer of waiting.slice(1))this.join(peer.user_id,{code:first.code,wire,content:a.content,role:'player'});
         if(ranked){
-            const now=this.now(),season=seasonAt(now),b=waiting[1].user_id;
-            for(const u of [host,b])this.run("INSERT INTO ranked_players(user_id,ruleset,name) VALUES(?,'solo',?) ON CONFLICT(user_id,ruleset) DO UPDATE SET name=excluded.name",u,this.name(u));
+            const now=this.now(),season=this.rankedSeason(),b=waiting[1].user_id,streak=this.rankedScoring()==='streak';
+            for(const u of [host,b])this.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo',?,?) ON CONFLICT(user_id,ruleset) DO UPDATE SET name=excluded.name",u,this.name(u),streak?0:1000);
             this.run('INSERT INTO ranked_matches(id,season,a,b,admitted,seen_a,seen_b) VALUES(?,?,?,?,?,?,?)',first.generation,season,host,b,now,now,now);
-        }
+            if(streak)this.run('INSERT INTO ranked_streak_matches VALUES(?)',first.generation);
+            if(monthlyRanked(this)&&a.wire.endsWith(RANKED_ROCK_WIRE))rollRankedRock(this,first.generation);
+        }else if(quickRocks&&waiting.every(player=>player.supports_rocks))rollQuickRock(this,first.generation,host,waiting[1].user_id);
         this.changed(first.room);return {...this.descriptor(user),...(ranked?{ranked:true,ruleset:'solo'}:{})};
     }
     signal(user,a){
@@ -120,41 +142,85 @@ export class OnlineCore {
         this.run('INSERT INTO online_signals(room,generation,recipient,body,expires) VALUES(?,?,?,?,?)',m.room,m.generation,other.user_id,JSON.stringify(body),this.now()+60000);
         this.events.push({user:other.user_id,event:'bt4.signal',body});return {version:1,state:'sent'};
     }
+    streakReviewReason(m,winner,digest){
+        if(!winner)return null;
+        const recent=this.rows(`SELECT winner,digest FROM ranked_matches
+            WHERE ((a=? AND b=?) OR (a=? AND b=?)) AND completed>=? AND void=0
+            ORDER BY completed DESC LIMIT 4`,m.a,m.b,m.b,m.a,this.now()-3600000);
+        if(digest.startsWith('forfeit:')&&recent.filter(r=>r.winner===winner&&r.digest?.startsWith('forfeit:')).length>=2)
+            return 'repeated_forfeits';
+        if(recent.length===4&&recent.every(r=>r.winner===winner))
+            return 'repeated_one_sided_results';
+        return null;
+    }
+    streakDelta(user,rating,winner){
+        if(!winner)return 0;
+        const current=this.one('SELECT wins,points FROM ranked_streaks WHERE user_id=?',user)||{wins:0,points:0};
+        const won=user===winner;
+        const delta=won?Math.min(100000-rating,13+2*current.wins):-Math.min(rating,Math.round(current.points*37/100));
+        this.run('INSERT INTO ranked_streaks VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET wins=excluded.wins,points=excluded.points',
+            user,won?current.wins+1:0,won?current.points+delta:0);
+        return delta;
+    }
     settlement(m,winner,digest){
         if(m.completed)return;
         const a=this.one("SELECT rating FROM ranked_players WHERE user_id=? AND ruleset='solo'",m.a).rating;
         const b=this.one("SELECT rating FROM ranked_players WHERE user_id=? AND ruleset='solo'",m.b).rating;
-        const score=winner===m.a?1:winner===m.b?0:.5;
-        let gain=Math.round(32*(score-1/(1+10**((b-a)/400))));gain=Math.max(-a,b-100000,Math.min(b,100000-a,gain));
-        for(const [u,before,delta] of [[m.a,a,gain],[m.b,b,-gain]]){
-            const win=winner===u?1:0,loss=winner&&winner!==u?1:0;
+        const streak=!!this.one('SELECT 1 FROM ranked_streak_matches WHERE match_id=?',m.id);
+        const review=streak?this.streakReviewReason(m,winner,digest):null;
+        if(review)this.run('INSERT INTO ranked_reviews VALUES(?,?,?)',m.id,this.now(),review);
+        let deltas=[0,0];
+        if(streak&&!review)deltas=[this.streakDelta(m.a,a,winner),this.streakDelta(m.b,b,winner)];
+        if(!streak){
+            const score=winner===m.a?1:winner===m.b?0:.5;
+            const gain=Math.max(-a,b-100000,Math.min(b,100000-a,Math.round(32*(score-1/(1+10**((b-a)/400))))));
+            deltas=[gain,-gain];
+        }
+        for(const [u,before,delta] of [[m.a,a,deltas[0]],[m.b,b,deltas[1]]]){
+            const win=!review&&winner===u?1:0,loss=!review&&winner&&winner!==u?1:0;
             this.run("UPDATE ranked_players SET rating=rating+?,wins=wins+?,losses=losses+? WHERE user_id=? AND ruleset='solo'",delta,win,loss,u);
             this.run('INSERT INTO ranked_history VALUES(?,?,?,?,?)',m.id,u,before,before+delta,delta);
-            this.run('INSERT INTO ranked_weekly VALUES(?,?,?,?) ON CONFLICT(season,user_id) DO UPDATE SET wins=wins+excluded.wins,losses=losses+excluded.losses',m.season,u,win,loss);
+            if(!review)this.run('INSERT INTO ranked_weekly VALUES(?,?,?,?) ON CONFLICT(season,user_id) DO UPDATE SET wins=wins+excluded.wins,losses=losses+excluded.losses',m.season,u,win,loss);
         }
         this.run('UPDATE ranked_matches SET completed=?,winner=?,digest=? WHERE id=?',this.now(),winner,digest,m.id);
         mirrorRanked(this,this.one('SELECT * FROM ranked_matches WHERE id=?',m.id));
     }
     ranked(user,op,a){
-        if(a.ruleset&&a.ruleset!=='solo')error('BAD_RULESET');const season=seasonAt(this.now());
+        if(a.ruleset&&a.ruleset!=='solo')error('BAD_RULESET');
+        advanceRankedMonth(this);const season=this.rankedSeason(),monthly=monthlyRanked(this);
         const paused=this.one("SELECT value FROM online_meta WHERE key='ranked_paused'")?.value==='1';
         if(paused&&op==='queue')error('RANKED_NOT_ENABLED');
         if(op==='queue')return this.queue(user,a,true);
-        if(op==='status')return {version:1,enabled:!paused,season,...(this.one("SELECT rating,wins,losses FROM ranked_players WHERE user_id=? AND ruleset='solo'",user)||{rating:1000,wins:0,losses:0})};
+        if(op==='status'){
+            const scoring=this.rankedScoring();
+            const streak=scoring==='streak'?this.one('SELECT wins,points FROM ranked_streaks WHERE user_id=?',user):null;
+            return {version:1,enabled:!paused,season,scoring,weekly_reset:false,monthly_reset:monthly,reset_period:monthly?'monthly':null,ranked_rocks:monthly,next_reset_at:monthly?new Date(rankedMonthEnd(this.now())).toISOString():null,
+                ...rankedCollection(this,user),streak_wins:streak?.wins??0,streak_points:streak?.points??0,
+                ...(this.one("SELECT rating,wins,losses FROM ranked_players WHERE user_id=? AND ruleset='solo'",user)||{rating:scoring==='streak'?0:1000,wins:0,losses:0})};
+        }
         if(op==='top'){
             let top=this.one('SELECT * FROM ranked_top WHERE season=?',season);
             if(!top||top.updated<=this.now()-600000){
-                const rows=this.rows("SELECT p.name,p.rating,w.wins,w.losses FROM ranked_weekly w JOIN ranked_players p ON p.user_id=w.user_id AND p.ruleset='solo' WHERE w.season=? ORDER BY p.rating DESC,p.user_id LIMIT 100",season);
+                const rows=this.rows(`SELECT p.name,p.rating,w.wins,w.losses,
+                    ((SELECT count(*) FROM ranked_rock_finds f WHERE f.user_id=p.user_id AND f.ball>0)+
+                     (SELECT count(*) FROM quick_rock_finds f WHERE f.user_id=p.user_id AND f.ball>0)) dragon_balls
+                    FROM ranked_weekly w JOIN ranked_players p ON p.user_id=w.user_id AND p.ruleset='solo'
+                    WHERE w.season=? ORDER BY p.rating DESC,w.wins DESC,w.losses ASC,p.user_id LIMIT 100`,season);
                 top={updated:this.now(),entries:JSON.stringify(rows)};this.run('INSERT INTO ranked_top VALUES(?,?,?) ON CONFLICT(season) DO UPDATE SET updated=excluded.updated,entries=excluded.entries',season,top.updated,top.entries);
             }return {season,updated_at:new Date(top.updated).toISOString(),entries:JSON.parse(top.entries)};
         }
         if(typeof a.match!=='string'||!UUID.test(a.match))error('BAD_REQUEST');
         const m=this.one('SELECT * FROM ranked_matches WHERE id=?',a.match);if(!m||![m.a,m.b].includes(user))error('NOT_A_PARTICIPANT');
-        const result=state=>({state,...(this.one('SELECT after_rating rating,delta FROM ranked_history WHERE match_id=? AND user_id=?',m.id,user)||{})});
+        if(op==='rock')return claimRankedRock(this,m,user,a.event);
+        const result=state=>({state,...(this.one('SELECT after_rating rating,delta FROM ranked_history WHERE match_id=? AND user_id=?',m.id,user)||{}),
+            under_review:!!this.one('SELECT 1 FROM ranked_reviews WHERE match_id=?',m.id)});
         const selection=characterSelection(a);
         if(selection&&(selection.a.length!==1||selection.b.length!==1))error('BAD_CHARACTERS');
         if(m.completed){saveRankedCharacters(this,m,a);if(selection)mirrorRanked(this,m);return result('already_applied');}
-        const now=this.now();if(m.void||m.admitted<now-5400000)return result('expired');
+        const now=this.now(),epoch=Number(this.one("SELECT value FROM online_meta WHERE key='ranked_epoch_ms'")?.value||0);
+        if(m.void||m.admitted<now-5400000||(monthly&&(m.season!==season||m.admitted<epoch))){
+            saveRankedCharacters(this,m,a);if(selection)mirrorRanked(this,m);return result('expired');
+        }
         if(op==='report'){
             saveRankedCharacters(this,m,a);if(selection)mirrorRanked(this,m);
             if(!Number.isInteger(a.outcome)||a.outcome<0||a.outcome>2||typeof a.digest!=='string'||!/^[a-f0-9]{64}$/.test(a.digest))error('BAD_RESULT');
@@ -199,6 +265,10 @@ export class OnlineCore {
             this.run('UPDATE ranked_players SET name=? WHERE user_id=?',name,user);return {state:'ready',name};
         }
         if(op==='match_report')return reportOnlineMatch(this,user,a);
+        if(op==='quick_rock'){
+            if(typeof a.match!=='string'||!UUID.test(a.match))error('BAD_REQUEST');
+            return claimQuickRock(this,user,a);
+        }
         if(op.startsWith('ranked_'))return this.ranked(user,op.slice(7),a);
         if(op==='create')return this.create(user,a);
         if(op==='join')return this.join(user,a);
@@ -213,7 +283,7 @@ export class OnlineCore {
         if(op==='lease'){
             const m=this.member(user);if(!m)error('NOT_A_MEMBER');
             if(typeof a.joinable==='boolean'&&m.owner!==user)error('NOT_OWNER');
-            this.run('UPDATE online_rooms SET expires=? WHERE id=?',this.now()+1800000,m.room);
+            this.run('UPDATE online_rooms SET expires=? WHERE id=?',this.now()+ROOM_LEASE_MS,m.room);
             if(typeof a.joinable==='boolean')this.run('UPDATE online_rooms SET joinable=? WHERE id=?',a.joinable?1:0,m.room);return this.descriptor(user);
         }
         if(op==='get_signals'){

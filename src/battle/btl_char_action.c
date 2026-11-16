@@ -1182,9 +1182,24 @@ void BtlAct_Update(BtlActChr *chr) {
     BtlActHandler *tbl = gBtlActHandlers;
 
     BtlChar_SetStage(chr, 4);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {
+        extern s32 TagAssist_TakeTechnique(s32),TagRelay_TakeAction(s32),BtlAct_QueueTechnique(void *,s32);
+        s32 slot=TagAssist_TakeTechnique(chr->player);
+        s32 relay=TagRelay_TakeAction(chr->player);
+        if(slot>=0&&BtlAct_QueueTechnique(chr,slot)){
+            BtlAct_Request(chr,BtlAct_GetQueued_(chr));
+        }else if(relay>=0){
+            BtlAct_Request(chr,relay);
+        }else if(tbl[act->current]!=NULL){
+            tbl[act->current](chr,BTLACT_PHASE_DECIDE);
+        }
+    }
+#else
     if (tbl[act->current] != NULL) {
         tbl[act->current](chr, BTLACT_PHASE_DECIDE);
     }
+#endif
     BtlAct_CheckForced(chr);
     if (act->request != -1) {
         if (tbl[act->current] != NULL) {

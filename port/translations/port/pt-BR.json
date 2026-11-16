@@ -2,7 +2,7 @@
   "schema_version": 1,
   "labels_version": 3,
   "translation_version": 2,
-  "labels_count": 1321,
+  "labels_count": 1394,
   "locale": "pt-BR",
   "name": "PORTUGUÊS (BR)",
   "order": 3,
@@ -5191,6 +5191,26 @@
       "original": "Rating: %d",
       "text": "Pontos: %d"
     },
+    "tbo/ranked/streak": {
+      "original": "Streak: %d wins (+%d pts)",
+      "text": "Sequência: %d vitórias (+%d pts)"
+    },
+    "tbo/ranked/streak-rules": {
+      "original": "Your first win earns 13 points, and every win in a row earns 2 more than the last. A loss or forfeit ends your streak and deducts 37% of the points earned in that streak, rounded to the nearest point. Draws leave your streak intact. The Global Top updates every 10 minutes and the weekly board resets Sundays at 23:59 Argentina time. You keep your rating.",
+      "text": "A primeira vitória vale 13 pontos e cada vitória seguida vale 2 a mais que a anterior. Ao perder ou desistir, a sequência termina e você perde 37% dos pontos ganhos nela, arredondados para o inteiro mais próximo. Empates mantêm a sequência. O Top global é atualizado a cada 10 minutos e o ranking semanal reinicia aos domingos às 23:59 da Argentina. Você mantém sua pontuação."
+    },
+    "tbo/lobby/beam-clash": {
+      "original": "Beam Clash",
+      "text": "Choque de poderes"
+    },
+    "tbo/lobby/beam-clash-extended": {
+      "original": "Extended",
+      "text": "Prolongado"
+    },
+    "tbo/lobby/beam-clash-standard": {
+      "original": "Standard",
+      "text": "Padrão"
+    },
     "tbo/ranked/page": {
       "original": "Page %d/%d",
       "text": "Página %d/%d"
@@ -5243,17 +5263,325 @@
       "original": "Ranked is a one-on-one competition that starts you at 1000 points. Winning earns points and losing costs points based on both players' ratings. The Global Top refreshes every 10 minutes. The weekly standings renew on Sundays at 23:59 Argentina time (UTC-3), and you carry your points into the next week.",
       "text": "Nas ranqueadas, você joga um contra um e começa com 1000 pontos. Vitórias somam pontos e derrotas descontam, de acordo com a pontuação dos dois jogadores. O Top global é atualizado a cada 10 minutos. A classificação semanal se renova aos domingos, às 23h59 da Argentina (UTC-3), e você mantém seus pontos para a próxima semana."
     },
-    "tbo/hub/community": {"original": "Join our Discord Server!", "text": "Entre no nosso servidor do Discord!"},
-    "tbo/ranked/most-wanted": {"original": "Most Dangerous Fighters", "text": "Lutadores mais perigosos"},
-    "tbo/ranked/top-interval": {"original": "Updates every 10 minutes.", "text": "Atualiza a cada 10 minutos."},
-    "tbo/ranked/top-loading": {"original": "Loading Global Top...", "text": "Carregando o Top global..."},
-    "tbo/ranked/top-unavailable": {"original": "Global Top unavailable", "text": "Top global indisponível"},
-    "tbo/ranked/loading": {"original": "Loading Ranked status...", "text": "Carregando ranqueadas..."},
-    "tbo/nickname/required": {"original": "Choose a nickname before playing online.", "text": "Escolha um apelido para jogar online."},
-    "tbo/nickname/checking": {"original": "Checking your online nickname...", "text": "Verificando seu apelido..."},
-    "tbo/nickname/saving": {"original": "Reserving your nickname...", "text": "Reservando seu apelido..."},
-    "tbo/nickname/taken": {"original": "That nickname is already taken.", "text": "Esse apelido já está em uso."},
-    "tbo/nickname/invalid": {"original": "Choose a valid nickname.", "text": "Escolha um apelido válido."},
-    "tbo/nickname/unavailable": {"original": "Could not verify your nickname. Try again.", "text": "Não foi possível verificar o apelido. Tente novamente."}
+    "tbo/hub/community": {
+      "original": "Join our Discord Server!",
+      "text": "Entre no nosso servidor do Discord!"
+    },
+    "tbo/ranked/most-wanted": {
+      "original": "Most Dangerous Fighters",
+      "text": "Lutadores mais perigosos"
+    },
+    "tbo/ranked/top-interval": {
+      "original": "Updates every 10 minutes.",
+      "text": "Atualiza a cada 10 minutos."
+    },
+    "tbo/ranked/top-loading": {
+      "original": "Loading Global Top...",
+      "text": "Carregando o Top global..."
+    },
+    "tbo/ranked/top-unavailable": {
+      "original": "Global Top unavailable",
+      "text": "Top global indisponível"
+    },
+    "tbo/ranked/loading": {
+      "original": "Loading Ranked status...",
+      "text": "Carregando ranqueadas..."
+    },
+    "tbo/nickname/required": {
+      "original": "Choose a nickname before playing online.",
+      "text": "Escolha um apelido para jogar online."
+    },
+    "tbo/nickname/checking": {
+      "original": "Checking your online nickname...",
+      "text": "Verificando seu apelido..."
+    },
+    "tbo/nickname/saving": {
+      "original": "Reserving your nickname...",
+      "text": "Reservando seu apelido..."
+    },
+    "tbo/nickname/taken": {
+      "original": "That nickname is already taken.",
+      "text": "Esse apelido já está em uso."
+    },
+    "tbo/nickname/invalid": {
+      "original": "Choose a valid nickname.",
+      "text": "Escolha um apelido válido."
+    },
+    "tbo/nickname/unavailable": {
+      "original": "Could not verify your nickname. Try again.",
+      "text": "Não foi possível verificar o apelido. Tente novamente."
+    },
+    "tbo/training/settings": {
+      "original": "Training Settings",
+      "text": "Ajustes de treino"
+    },
+    "tbo/training/settings/es": {
+      "original": "Ajustes de entrenamiento",
+      "text": "Ajustes de treino"
+    },
+    "tbo/training/resources": {
+      "original": "Resources",
+      "text": "Recursos"
+    },
+    "tbo/training/resources/es": {
+      "original": "Recursos",
+      "text": "Recursos"
+    },
+    "tbo/training/recording": {
+      "original": "Record and Playback",
+      "text": "Gravar e reproduzir"
+    },
+    "tbo/training/recording/es": {
+      "original": "Grabar y reproducir",
+      "text": "Gravar e reproduzir"
+    },
+    "tbo/training/network": {
+      "original": "Input Delay Simulator",
+      "text": "Simulador de atraso"
+    },
+    "tbo/training/network/es": {
+      "original": "Simulador de retraso",
+      "text": "Simulador de atraso"
+    },
+    "tbo/training/health": {
+      "original": "Health",
+      "text": "Vida"
+    },
+    "tbo/training/health/es": {
+      "original": "Vida",
+      "text": "Vida"
+    },
+    "tbo/training/ki": {
+      "original": "Ki",
+      "text": "Ki"
+    },
+    "tbo/training/stocks": {
+      "original": "Blast Stocks",
+      "text": "Reservas"
+    },
+    "tbo/training/stocks/es": {
+      "original": "Reservas",
+      "text": "Reservas"
+    },
+    "tbo/training/freeze": {
+      "original": "Freeze",
+      "text": "Fixar"
+    },
+    "tbo/training/freeze/es": {
+      "original": "Fijar",
+      "text": "Fixar"
+    },
+    "tbo/training/fighter": {
+      "original": "Fighter",
+      "text": "Lutador"
+    },
+    "tbo/training/fighter/es": {
+      "original": "Luchador",
+      "text": "Lutador"
+    },
+    "tbo/training/player": {
+      "original": "Player",
+      "text": "Jogador"
+    },
+    "tbo/training/player/es": {
+      "original": "Jugador",
+      "text": "Jogador"
+    },
+    "tbo/training/opponent": {
+      "original": "Opponent",
+      "text": "Adversário"
+    },
+    "tbo/training/opponent/es": {
+      "original": "Rival",
+      "text": "Adversário"
+    },
+    "tbo/training/normal": {
+      "original": "Normal",
+      "text": "Normal"
+    },
+    "tbo/training/on": {
+      "original": "On",
+      "text": "Sim"
+    },
+    "tbo/training/on/es": {
+      "original": "Sí",
+      "text": "Sim"
+    },
+    "tbo/training/off": {
+      "original": "Off",
+      "text": "Não"
+    },
+    "tbo/training/off/es": {
+      "original": "No",
+      "text": "Não"
+    },
+    "tbo/training/back": {
+      "original": "Back",
+      "text": "Voltar"
+    },
+    "tbo/training/back/es": {
+      "original": "Volver",
+      "text": "Voltar"
+    },
+    "tbo/training/behavior": {
+      "original": "Behavior",
+      "text": "Ação"
+    },
+    "tbo/training/behavior/es": {
+      "original": "Acción",
+      "text": "Ação"
+    },
+    "tbo/training/control": {
+      "original": "Control",
+      "text": "Controlar"
+    },
+    "tbo/training/control/es": {
+      "original": "Controlar",
+      "text": "Controlar"
+    },
+    "tbo/training/idle": {
+      "original": "Stand still",
+      "text": "Parado"
+    },
+    "tbo/training/idle/es": {
+      "original": "Inmóvil",
+      "text": "Parado"
+    },
+    "tbo/training/guard": {
+      "original": "Guard",
+      "text": "Defender"
+    },
+    "tbo/training/guard/es": {
+      "original": "Defender",
+      "text": "Defender"
+    },
+    "tbo/training/melee": {
+      "original": "Melee only",
+      "text": "Só corpo a corpo"
+    },
+    "tbo/training/melee/es": {
+      "original": "Sólo cuerpo a cuerpo",
+      "text": "Só corpo a corpo"
+    },
+    "tbo/training/super1": {
+      "original": "Super attack 1",
+      "text": "Superataque 1"
+    },
+    "tbo/training/super1/es": {
+      "original": "Superataque 1",
+      "text": "Superataque 1"
+    },
+    "tbo/training/super2": {
+      "original": "Super attack 2",
+      "text": "Superataque 2"
+    },
+    "tbo/training/super2/es": {
+      "original": "Superataque 2",
+      "text": "Superataque 2"
+    },
+    "tbo/training/skill1": {
+      "original": "Blast 1",
+      "text": "Habilidade 1"
+    },
+    "tbo/training/skill1/es": {
+      "original": "Habilidad 1",
+      "text": "Habilidade 1"
+    },
+    "tbo/training/counter": {
+      "original": "Z Counter",
+      "text": "Contra Z"
+    },
+    "tbo/training/counter/es": {
+      "original": "Contra Z",
+      "text": "Contra Z"
+    },
+    "tbo/training/post-guard": {
+      "original": "Guard after hit",
+      "text": "Defender após golpe"
+    },
+    "tbo/training/post-guard/es": {
+      "original": "Defender tras recibir golpe",
+      "text": "Defender após golpe"
+    },
+    "tbo/training/post-skill": {
+      "original": "Blast 1 after hit",
+      "text": "Habilidade 1 após golpe"
+    },
+    "tbo/training/post-skill/es": {
+      "original": "Habilidad 1 tras recibir golpe",
+      "text": "Habilidade 1 após golpe"
+    },
+    "tbo/training/slot": {
+      "original": "Slot",
+      "text": "Espaço"
+    },
+    "tbo/training/slot/es": {
+      "original": "Ranura",
+      "text": "Espaço"
+    },
+    "tbo/training/record": {
+      "original": "Record",
+      "text": "Gravar"
+    },
+    "tbo/training/record/es": {
+      "original": "Grabar",
+      "text": "Gravar"
+    },
+    "tbo/training/play": {
+      "original": "Play loop",
+      "text": "Repetir gravação"
+    },
+    "tbo/training/play/es": {
+      "original": "Repetir grabación",
+      "text": "Repetir gravação"
+    },
+    "tbo/training/stop": {
+      "original": "Stop",
+      "text": "Parar"
+    },
+    "tbo/training/stop/es": {
+      "original": "Detener",
+      "text": "Parar"
+    },
+    "tbo/training/clear": {
+      "original": "Clear slot",
+      "text": "Limpar espaço"
+    },
+    "tbo/training/clear/es": {
+      "original": "Borrar ranura",
+      "text": "Limpar espaço"
+    },
+    "tbo/training/delay": {
+      "original": "Input Delay",
+      "text": "Atraso dos comandos"
+    },
+    "tbo/training/delay/es": {
+      "original": "Retraso de controles",
+      "text": "Atraso dos comandos"
+    },
+    "tbo/training/jitter": {
+      "original": "Jitter",
+      "text": "Variação"
+    },
+    "tbo/training/jitter/es": {
+      "original": "Variación",
+      "text": "Variação"
+    },
+    "tbo/lobby/extended-clash-update": {
+      "original": "Extended clashes need every player and spectator to update.",
+      "text": "Todos os jogadores e espectadores precisam atualizar para prolongar os choques."
+    },
+    "tbo/lobby/extended-clash-update/es": {
+      "original": "Todos los jugadores y espectadores deben actualizar para prolongar los choques.",
+      "text": "Todos os jogadores e espectadores precisam atualizar para prolongar os choques."
+    },
+    "tbo/ranked/streak/review": {
+      "original": "This result is held for review. No points changed.",
+      "text": "O resultado está em análise. Nenhum ponto foi alterado."
+    },
+    "tbo/ranked/streak/review/es": {
+      "original": "El resultado está en revisión. No se modificaron los puntos.",
+      "text": "O resultado está em análise. Nenhum ponto foi alterado."
+    }
   }
 }

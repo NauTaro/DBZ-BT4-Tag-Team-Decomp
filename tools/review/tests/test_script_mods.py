@@ -12,6 +12,7 @@ class ScriptModsTests(unittest.TestCase):
             self.assertIsNotNone(match);functions.append(match[0])
         code='#include <assert.h>\n#include <string.h>\n#include "'+(ROOT/'port/src/gs/mods.h').as_posix()+'"\n'+'''
 static int tag,own=7,target=9;static ModsCam sCam;static int sCamOut;
+int Mods_SplitScreen(void){return 0;}int Port_PresentationSplitActor(int pane){return pane;}
 int TagBattle_Active(void){return tag;}int TagBattle_Count(void){return 10;}
 int TagBattle_ViewActor(void){return own;}int TagBattle_Target(int actor){assert(actor==own || own<0 || own>=10);return target;}
 '''+ '\n'.join(functions)+'''
@@ -31,7 +32,7 @@ assert(sCamOut && sCam.zoom==.75f && sCam.collide==1 && sCam.pos[0]==120);in.col
             spec=importlib.util.spec_from_file_location('mods_package',ROOT/'port/tools/package.py');package=importlib.util.module_from_spec(spec);spec.loader.exec_module(package)
             with tempfile.TemporaryDirectory() as tmp:
                 out=Path(tmp);package.take_example_mods(out)
-                for name in ('modern_camera','modern_hud','modern_look','skill_list','example_camera','example_hud'):
+                for name in ('modern_camera','modern_hud','modern_look','skill_list','example_camera','example_hud','split_screen'):
                     self.assertEqual((out/'mods'/name/'mod.lua').read_bytes(),(ROOT/'port/examples/mods'/name/'mod.lua').read_bytes())
                     self.assertEqual((out/'tbo/bundled-mods'/name/'mod.lua').read_bytes(),(out/'mods'/name/'mod.lua').read_bytes())
         finally:sys.path.pop(0)

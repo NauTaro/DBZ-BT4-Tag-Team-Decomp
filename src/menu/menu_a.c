@@ -41,7 +41,10 @@ MainMenu *gMainMenu = NULL;
 #include "port_tbo_label.h"
 #include "port_bt4_label.h"
 #include "port_bt4_label_eng.h"
+#include "menu/port_screen.h"
+#include "menu/tbo_art.h"
 #include "../../port/src/gs/game_profile.h"
+#include "../../port/src/gs/online_language.h"
 
 #include "menu/port_screen.h"
 #include "menu/tbo_art.h"
@@ -74,7 +77,64 @@ static void PortMainMenu_OnlineLabel(void *arg,OnlineLabelProp *p){
 }
 
 #define MAINMENU_TBO 11
-#define MM_ICON(item) ((item) == MAINMENU_TBO ? 4 : (item)) /* whose icon an item shows */
+#define MAINMENU_TAG 4
+#define MM_ICON(item) ((item) == MAINMENU_TBO ? 4 : (item) == MAINMENU_TAG ? 3 : (item))
+
+extern void Flash_ClipSetCustomDraw(MFlash *,MFlashRef *,void *,void *);
+typedef struct TagSpriteProp {
+    u32 flags;f32 x,y,alpha,scaleX,scaleY,color;MFlashUv uv;
+    f32 m[9],mul[4];s16 add[4];
+} TagSpriteProp;
+static void PortMainMenu_TagSprite(void *arg,TagSpriteProp *p) {
+    s32 icon=(s32)(u32)arg,alpha=(s32)(p->mul[3]*128)+p->add[3];
+    f32 sx=p->m[0],sy=p->m[4],x=p->m[2],y=p->m[5];
+    if(p->flags&16){sx*=p->scaleX;sy*=p->scaleY;}
+    if(p->flags&2){x+=p->x;y+=p->y;}
+    if(p->flags&8)alpha=(s32)(alpha*p->alpha);
+    Ps_PageSet();Ps_SetShift(0);
+    if(icon==1)return; /* the emblem shares the label's baseline and fade */
+    Ps_Sprite(TBO_MAIN_TAG_EMBLEM,Ps_Left()+x-35*sx,y-3*sy,Ps_Left()+x-3.8f*sx,y+31*sy,0,0,1,1,PortMainMenu_LabelTint((const OnlineLabelProp *)p),alpha);
+    /* Keep the icon's rim outside the text crop; use the selected artwork
+       on the movie's highlighted pass rather than always drawing white. */
+    Ps_Sprite(icon==2?TBO_MAIN_TAG_ON:TBO_MAIN_TAG_OFF,Ps_Left()+x,y,Ps_Left()+x+512*sx,y+32*sy,0,0,1,1,PortMainMenu_LabelTint((const OnlineLabelProp *)p),alpha);
+}
+
+/* Native Duel lettering, retaining the movie's own transform and fade. */
+void PortTagMenu_DrawLabel(void *arg,TagSpriteProp *p) {
+    s32 row=(s32)(u32)arg&3,alpha=(s32)(p->mul[3]*128)+p->add[3];
+    u32 tint=((u32)arg&4)?Ps_Rgba(0x80,0x72,0x41,0):PS_PLAIN;
+    s32 art=Port_GameProfilePortuguese()?TBO_TAG_BUTTONS_PT:Port_GameProfileEnglish()?TBO_TAG_BUTTONS_EN:TBO_TAG_BUTTONS_ES;
+    f32 sx=p->m[0],sy=p->m[4],x=p->m[2],y=p->m[5];
+    if(p->flags&16){sx*=p->scaleX;sy*=p->scaleY;}
+    if(p->flags&2){x+=p->x;y+=p->y;}
+    if(p->flags&8)alpha=(s32)(alpha*p->alpha);
+    Ps_PageSet();Ps_SetShift(0);
+    {f32 fit=art==TBO_TAG_BUTTONS_ES?.85f:art==TBO_TAG_BUTTONS_PT?.92f:1.0f;
+     y+=(26-16*fit)*sy;sx*=fit;sy*=fit;}
+    Ps_Sprite(art,Ps_Left()+x,y,Ps_Left()+x+512*sx,y+32*sy,0,row*.25f,1,(row+1)*.25f,tint,alpha);
+}
+
+static void PortMainMenu_TagDescription(void) {
+    extern void MsgWin_PortDrawString(u16 *text);
+    extern int Port_TrLine(const char *,char *,int);
+    static u16 line[256];char translated[512];
+    const unsigned char *p;
+    const char *text="Build two teams for simultaneous battles with players and CPU fighters.";
+    s32 n=1;
+    if(Port_TrLine(text,translated,sizeof(translated)))text=translated;
+    else text=PortOnline_Text(text);
+    line[0]=0xFEFF;p=(const unsigned char *)text;
+    while(*p&&n<254) {
+        unsigned c=*p++;
+        if((c&0xE0)==0xC0&&*p){c=((c&31)<<6)|(*p++&63);}
+        else if((c&0xF0)==0xE0&&p[0]&&p[1]){c=((c&15)<<12)|((p[0]&63)<<6)|(p[1]&63);p+=2;}
+        line[n++]=(u16)c;
+    }
+    line[n]=0;
+    {s32 at=1,last=1,start=1;for(;at<n;++at){if(line[at]==' ')last=at;
+        if(at-start>=31&&last>start){line[last]='\n';start=last+1;}}}
+    MsgWin_PortDrawString(line);
+}
 
 /* A label sheet's pixels are stored the way the GS keeps 8-bit textures (in blocks): where pixel (x, y) is. */
 static s32 PortMainMenu_PixelAt(s32 x, s32 y) {
@@ -135,10 +195,11 @@ static s32 PortMainMenu_WriteDisc(u8 *tex, s32 row, s32 lit) {
     }
     return 1;
 }
-#define MAINMENU_VOICED(item) ((item) < MAINMENU_TBO)
+#define MAINMENU_VOICED(item) ((item) < MAINMENU_TBO && (item) != MAINMENU_TAG)
 #else
 #define MM_ICON(item) (item)
 #define MAINMENU_VOICED(item) 1
+#define Flash_ClipSetCustomDraw(a,b,c,d) ((void)0)
 #endif
 
 
@@ -297,9 +358,6 @@ void MainMenu_Init(s32 section) {
            the guides' voiced lines on the disc, and no mode behind it (the Wii version's online mode). The port
            lists it: it is the way into online play. BT3_MENU_ITEM4=0 hides it again (the pad recordings made
            before it was listed count on the old menu). */
-        if (i == 4) {
-            continue;
-        }
         if (i == MAINMENU_TBO) { /* (listed after Dragon Net Battle, below: not again at the end) */
             continue;
         }
@@ -313,7 +371,7 @@ void MainMenu_Init(s32 section) {
         }
         gMainMenu->items[gMainMenu->itemCount++] = i;
 #ifdef PORT
-        if (i == 3) {
+        if (i == MAINMENU_TAG) {
             gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_TBO;
         }
 #endif
@@ -325,8 +383,10 @@ void MainMenu_Init(s32 section) {
         PortMainMenu_WriteRuns(gMainMenu->tex[12] + 0x40, 3, sPortTboOn, sizeof(sPortTboOn) / sizeof(sPortTboOn[0]));
     }
 #endif
-    if(gProgress->mainMenuItem==4)gProgress->mainMenuItem=MAINMENU_TBO;
     gMainMenu->top = gMainMenu->itemCount - 1;
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAINMENU_TAG_TEST"))gProgress->mainMenuItem=MAINMENU_TAG;
+#endif
     for (i = 0; i < gMainMenu->itemCount; i++) {
         if (gMainMenu->items[i] == gProgress->mainMenuItem) {
             gMainMenu->top = i - 1;
@@ -432,24 +492,26 @@ void MainMenu_Draw(void) {
             uv.y1 = uv.y0 + 0x20;
             sprintf(name, "mc_menu_plate_%d", i + 1);
             Flash_FindLabel(flash, name, "mc_menu_text_off", &ref);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:item==MAINMENU_TAG?(void*)PortMainMenu_TagSprite:NULL,NULL);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, item / 8);
-            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,NULL);
             Flash_FindLabel(flash, name, "mc_menu_text_on", &ref);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:item==MAINMENU_TAG?(void*)PortMainMenu_TagSprite:NULL,(void*)2);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, item / 8);
-            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,(void*)1);
             uv.x0 = (MM_ICON(item) % 4) * 0x40;
             uv.y0 = (MM_ICON(item) / 4) * 0x40;
             uv.x1 = uv.x0 + 0x40;
             uv.y1 = uv.y0 + 0x40;
             Flash_FindLabel(flash, name, "mc_icon_off", &ref);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TAG?(void*)PortMainMenu_TagSprite:NULL,(void*)1);
             Flash_ClipSetUv(flash, &ref, &uv);
             uv.x0 = 0;
             uv.y0 = (MM_ICON(item) % 10) * 0x30;
             uv.x1 = 0x30;
             uv.y1 = uv.y0 + 0x30;
             Flash_FindLabel(flash, name, "mc_icon_play", &ref);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TAG?(void*)PortMainMenu_TagSprite:NULL,(void*)1);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, MM_ICON(item) / 10);
             if (item == MAINMENU_CUR(gMainMenu)) {
@@ -466,24 +528,26 @@ void MainMenu_Draw(void) {
         uv.y0 = (item % 8) * 0x20;
         uv.y1 = uv.y0 + 0x20;
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_off", &ref);
+        Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:item==MAINMENU_TAG?(void*)PortMainMenu_TagSprite:NULL,NULL);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, item / 8);
-            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,NULL);
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_on", &ref);
+        Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:item==MAINMENU_TAG?(void*)PortMainMenu_TagSprite:NULL,(void*)2);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, item / 8);
-            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,(void*)1);
         uv.x0 = (MM_ICON(item) % 4) * 0x40;
         uv.y0 = (MM_ICON(item) / 4) * 0x40;
         uv.x1 = uv.x0 + 0x40;
         uv.y1 = uv.y0 + 0x40;
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_icon_off", &ref);
+        Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TAG?(void*)PortMainMenu_TagSprite:NULL,(void*)1);
         Flash_ClipSetUv(flash, &ref, &uv);
         uv.x0 = 0;
         uv.y0 = (MM_ICON(item) % 10) * 0x30;
         uv.x1 = 0x30;
         uv.y1 = uv.y0 + 0x30;
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_icon_play", &ref);
+        Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TAG?(void*)PortMainMenu_TagSprite:NULL,(void*)1);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, MM_ICON(item) / 10);
     }
@@ -528,7 +592,8 @@ void MainMenu_Draw(void) {
     }
     IconWin_Draw();
 #ifdef PORT
-    MsgWin_Draw(0, 0, MAINMENU_CUR(gMainMenu)==MAINMENU_TBO ? 0x20+gMainMenu->guide : gMainMenu->voiceLine);
+    if(MAINMENU_CUR(gMainMenu)==MAINMENU_TAG)PortMainMenu_TagDescription();
+    else MsgWin_Draw(0, 0, MAINMENU_CUR(gMainMenu)==MAINMENU_TBO ? 0x20+gMainMenu->guide : gMainMenu->voiceLine);
 #else
     MsgWin_Draw(0, 0, gMainMenu->voiceLine);
 #endif
@@ -668,7 +733,9 @@ void MainMenu_Input(s32 *result) {
             break;
         case 4:
 #ifdef PORT
-            Port_NetMenuOpen(); /* the port's own online lobby */
+            gPortScreen=PORT_SCREEN_TAG;
+            MAINMENU_COUNT();
+            MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
 #endif
             break;
         case 5:
@@ -730,6 +797,11 @@ s32 MainMenu_Run(s32 section) {
         Gfx_BeginFrame();
         Pad_Update();
 #ifdef PORT
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAINMENU_TAG_TEST")){
+            static s32 tagReviewTick;
+            if(++tagReviewTick==400){extern int gPortTagUiCaptureRequest;gPortTagUiCaptureRequest=1;}
+            if(tagReviewTick==430&&getenv("BT4_TAG_MENU_CAPTURE"))gPad[0].gamePressed=PADG_CROSS;
+        }
         if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAINMENU_REVIEW")){
             static s32 reviewTick,reviewHeld,reviewCaptured;
             if(ColorFade_IsInDone()&&(gMainMenu->flash[0].flags&MFLASH_PAD)&&!(gMainMenu->flags&MAINMENU_LEAVING)){

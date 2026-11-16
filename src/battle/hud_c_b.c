@@ -94,6 +94,18 @@ typedef struct HudCObj {
 
 /* 0x2FEB58: this object's .sdata word (the notice / prompt / timer pointers of hud_e*.c follow it). */
 HudCombo *gHudCombo = NULL;
+#ifdef BT4_TAG_TEAM_EXPANDED
+/* Actual visible notification areas, for the Tag target label's placement. */
+s32 HudCombo_TagOccupied(void){
+    s32 bits=0;
+    if(!gHudCombo)return 0;
+    if(gHudCombo->hitState[0]<HUD_COMBO_ST_OFF||gHudCombo->dmgState[0]<HUD_COMBO_ST_OFF||
+       (gHudCombo->msgState[0]>=0&&gHudCombo->msgState[0]<4))bits|=1;
+    if(gHudCombo->textAlpha[0]>0)bits|=2;
+    if(gHudCombo->textAlpha[1]>0)bits|=4;
+    return bits;
+}
+#endif
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern void Vu0Cur_StoreMtx(f32 (*m)[4]);
@@ -749,7 +761,16 @@ void HudCombo_DrawText(void) {
             Port_GsMarker(HUD_SCR(side) ? PORT_2D_RIGHT : PORT_2D_LEFT);
 #endif
             BtlMenu_SetScript2(BtlCtrl_GetObj(side)->skillScript);
-            BtlText_DrawEntryName(pos[0], pos[1], gHudCombo->text[side], HUD_SCR(side), alpha); /* (the 4th: left or right aligned) */
+            {
+                s32 x=pos[0],y=pos[1],align=HUD_SCR(side);
+#ifdef BT4_TAG_TEAM_EXPANDED
+                extern s32 TagBattle_Active(void),Battle_IsSplitScreen(void),Port_ModernHudActive(void);
+                if(TagBattle_Active()&&!Battle_IsSplitScreen()&&Port_ModernHudActive()){
+                    x=120;y=111+side*19;align=0;Port_GsMarker(PORT_2D_LEFT);
+                }
+#endif
+                BtlText_DrawEntryName(x,y,gHudCombo->text[side],align,alpha);
+            }
         }
     }
 }

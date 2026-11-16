@@ -59,6 +59,10 @@ test('temporary ranked pause blocks new searches while an admitted battle can st
 test('the minimum client gate compares numeric revisions',()=>{
     assert.ok(clientAtLeast('0.1.39.5-R5.6','0.1.39.5-R5.6'));assert.ok(clientAtLeast('0.1.39.5-R5.10','0.1.39.5-R5.6'));
     assert.ok(!clientAtLeast('0.1.39.5-R5.5','0.1.39.5-R5.6'));assert.ok(!clientAtLeast('garbage','0.1.39.5-R5.6'));
+    assert.ok(clientAtLeast('0.1.39.6','0.1.39.5-R5.8'));
+    assert.ok(clientAtLeast('0.1.39.6','0.1.39.6'));
+    assert.ok(!clientAtLeast('0.1.39.5-R99','0.1.39.6'));
+    assert.ok(!clientAtLeast('0.1.39.6-dev','0.1.39.6'));
 });
 function rankedPair(f){const a=f.user('First'),b=f.user('Second');const args={...profile,ruleset:'solo'};
     f.invoke(a,'ranked_queue',args);const r=f.invoke(b,'ranked_queue',args);
@@ -85,9 +89,10 @@ test('normal results require both matching authenticated reports',()=>{
     assert.equal(f.invoke(b,'ranked_report',{match:id,outcome:1,digest}).delta,16);
     assert.equal(f.invoke(a,'ranked_report',{match:id,outcome:1,digest}).delta,-16);
 });
-test('pruning retires only transient state after 30 minutes and retains ranking/history',()=>{
+test('pruning retires only transient state after an hour and retains ranking/history',()=>{
     const f=fixture(),{a,b,id}=rankedPair(f);f.invoke(a,'ranked_forfeit',{match:id,reason:'local_quit'});
-    f.tick(1800001);f.c.prune();assert.equal(f.c.one('SELECT count(*) n FROM online_rooms').n,0);
+    f.tick(3599999);f.c.prune();assert.equal(f.c.one('SELECT count(*) n FROM online_rooms').n,1);
+    f.tick(1);f.c.prune();assert.equal(f.c.one('SELECT count(*) n FROM online_rooms').n,0);
     assert.equal(f.c.one('SELECT count(*) n FROM online_names').n,2);
     assert.equal(f.c.one('SELECT count(*) n FROM ranked_history').n,2);
 });
@@ -96,4 +101,97 @@ test('weekly rollover occurs Sunday 23:59 Argentina, without resetting ratings',
     assert.equal(seasonAt(before),'2026-11-01');assert.equal(seasonAt(after),'2026-11-08');
     const f=fixture(),{a,id}=rankedPair(f);f.invoke(a,'ranked_forfeit',{match:id,reason:'local_quit'});
     const rating=f.invoke(a,'ranked_status').rating;f.tick(7*86400000);assert.equal(f.invoke(a,'ranked_status').rating,rating);
+});
+test('private lobbies, duels and Tag hold a one hour lease and tournament discovery seats 22',()=>{
+    const f=fixture();
+    for(const mode of ['duel','tag','lobby']){
+        const host=f.user(mode),capacity=mode==='lobby'?22:mode==='tag'?10:2;
+        const room=f.invoke(host,'create',{...profile,mode,capacity});
+        if(mode==='lobby'){
+            for(let i=1;i<22;i++) assert.equal(f.invoke(f.user('Guest '+i),'join',{...profile,code:room.code}).members.length,i+1);
+            assert.throws(()=>f.invoke(f.user('Overflow'),'join',{...profile,code:room.code}),/ROOM_FULL/);
+        }
+        f.tick(3599999);
+        assert.equal(f.invoke(host,'get').generation,room.generation);
+        f.invoke(host,'lease',{generation:room.generation});
+        f.tick(3599999);f.c.prune();
+        assert.equal(f.invoke(host,'get').generation,room.generation);
+        f.tick(1);f.c.prune();
+        assert.equal(f.invoke(host,'get').state,'none');
+    }
+});
+
+function finishRanked(f, first, second, winner, forfeit=false){
+    const args={...profile,ruleset:'solo'};
+    f.invoke(first,'ranked_queue',args);
+    const {generation:match}=f.invoke(second,'ranked_queue',args);
+    const {a,b}=f.c.one('SELECT a,b FROM ranked_matches WHERE id=?',match);
+    f.invoke(a,'ranked_heartbeat',{match});
+    f.invoke(b,'ranked_heartbeat',{match});
+    const digest='c'.repeat(64),outcome=winner===a?0:winner===b?1:2;
+    if(forfeit)f.invoke(winner===a?b:a,'ranked_forfeit',{match,reason:'local_quit'});
+    else{
+        f.invoke(a,'ranked_report',{match,outcome,digest});
+        f.invoke(b,'ranked_report',{match,outcome,digest});
+    }
+    const result=f.invoke(first,'ranked_heartbeat',{match});
+    f.invoke(a,'leave',{generation:match});
+    f.tick(60000);
+    return {result,match};
+}
+
+test('streaks preserve existing ratings and charge only the rounded loss on the current streak',()=>{
+    const f=fixture(),a=f.user('Rising');
+    f.c.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo','Rising',1000)",a);
+    f.c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");
+    for(let i=0;i<20;i++){
+        const opponent=f.user('Opponent'+i);
+        assert.equal(finishRanked(f,a,opponent,a).result.delta,13+2*i);
+    }
+    let status=f.invoke(a,'ranked_status');
+    assert.equal(status.rating,1640);
+    assert.equal(status.streak_wins,20);
+    assert.equal(status.streak_points,640);
+    const victor=f.user('Rival');
+    const result=finishRanked(f,a,victor,victor).result;
+    assert.equal(result.delta,-237);
+    assert.equal(result.rating,1403);
+    status=f.invoke(a,'ranked_status');
+    assert.equal(status.streak_wins,0);
+    assert.equal(status.streak_points,0);
+    assert.equal(finishRanked(f,a,f.user('Fresh'),a).result.delta,13);
+});
+
+test('new streak players start at zero without resetting existing accounts',()=>{
+    const f=fixture(),a=f.user('NewA'),b=f.user('NewB');
+    f.c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");
+    assert.equal(f.invoke(a,'ranked_status').rating,0);
+    const result=finishRanked(f,a,b,a).result;
+    assert.equal(result.rating,13);
+    assert.equal(f.invoke(b,'ranked_status').rating,0);
+});
+
+test('repeated forfeits are held without changing either rating or streak',()=>{
+    const f=fixture(),a=f.user('Stayer'),b=f.user('Leaver');
+    f.c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");
+    assert.equal(finishRanked(f,a,b,a,true).result.delta,13);
+    assert.equal(finishRanked(f,b,a,a,true).result.delta,0);
+    const before=f.invoke(a,'ranked_status');
+    const {match,result}=finishRanked(f,a,b,a,true);
+    assert.equal(result.under_review,true);
+    assert.equal(result.delta,0);
+    assert.equal(f.c.one('SELECT reason FROM ranked_reviews WHERE match_id=?',match).reason,'repeated_forfeits');
+    assert.deepEqual(f.invoke(a,'ranked_status'),before);
+    assert.equal(f.invoke(b,'ranked_heartbeat',{match}).delta,0);
+    assert.equal(f.c.one('SELECT count(*) n FROM ranked_history WHERE match_id=?',match).n,2);
+});
+
+test('streak draws preserve the streak and older admitted games settle under Elo',()=>{
+    const f=fixture(),{a,b,id}=rankedPair(f);
+    f.c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");
+    assert.equal(f.invoke(a,'ranked_forfeit',{match:id,reason:'local_quit'}).delta,-16);
+    f.invoke(a,'leave',{generation:id});
+    assert.equal(finishRanked(f,a,b,a).result.delta,13);
+    assert.equal(finishRanked(f,a,b,null).result.delta,0);
+    assert.equal(f.invoke(a,'ranked_status').streak_wins,1);
 });

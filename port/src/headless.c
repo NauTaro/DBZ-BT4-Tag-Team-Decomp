@@ -260,6 +260,20 @@ int __wrap_Progress_Main(int arg) {
             extern unsigned char GAME_PTR Battle_GetSetup(void);
             *(int GAME_PTR)(Battle_GetSetup()+8)=0;
         }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_HUD_TEAM_TEST")) {
+            extern void BattleSetup_SetRule(int,int,int,int,int,int,int);
+            extern void BattleSetup_SetSide(int,int,int,int,int,int,int,void GAME_PTR);
+            extern void BattleSetup_SetMember(int,int,int,int,int,int,float,void GAME_PTR);
+            extern void BattleSetup_Finish(void);
+            int side,member;
+            BattleSetup_SetRule(0,0,54,0,7,0,0);
+            for(side=0;side<2;++side) {
+                BattleSetup_SetSide(side,side?2:0,side? -1:0,5,0,0,0,NULL);
+                for(member=0;member<5;++member)
+                    BattleSetup_SetMember(side,member,(side*5+member)*2,0,0,1,100.0f,NULL);
+            }
+            BattleSetup_Finish();
+        }
         /* BT3_CHARA=<id> (and BT3_COSTUME=<n>, BT3_VARIANT=1 for the damaged model): side 0's fighter of the demo
            battle, for looking at one character's model without going through the menus */
         extern struct { int chara, costume, variant; } GAME_PTR BattleSide_GetMember(int side, int index);

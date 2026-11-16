@@ -1439,7 +1439,14 @@ s32 BtlCtrl_AddHp(s32 player, s32 member, f32 percent) {
 
     if (chr != NULL) {
         g = BtlMember_GetGauge(chr, member);
-        amount = g->hpMax * percent * 0.01f;
+        s32 maximum=g->hpMax;
+#ifdef PORT
+        if(percent>0){
+            extern s32 BtlMember_HealingMaximum(BtlCapiBChr *,s32);
+            maximum=BtlMember_HealingMaximum(chr,member);
+        }
+#endif
+        amount = maximum * percent * 0.01f;
         if (member == BtlMember_GetActiveIndex(chr)) {
             if (amount >= 0) {
                 BtlMember_AddHealth(chr, amount);

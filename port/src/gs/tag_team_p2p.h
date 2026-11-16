@@ -9,6 +9,7 @@ void TagPeer_Close(void);
 int TagPeer_Send(const unsigned char packet[512]);
 int TagPeer_Read(unsigned char packet[512],uint64_t *at);
 int TagPeer_Status(void);
+const char *TagPeer_Error(void);
 int TagPeer_Ping(void);
 int TagPeer_Descriptor(char *json,unsigned capacity);
 #ifdef __cplusplus

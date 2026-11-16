@@ -1,12 +1,13 @@
 #ifndef BT4_MATCH_SUPABASE_H
 #define BT4_MATCH_SUPABASE_H
 #include <stdint.h>
+#include "net_match.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 typedef struct Bt4DiscoveryStatus {
     int state,role,lobby,peerCount,watchCount,watchGen;
-    char code[8],error[256],peerName[20],peerAddr[4][64],watchAddr[32][64];
+    char code[8],error[256],peerName[20],peerAddr[MATCH_ADDRS][64],watchAddr[MATCH_WATCH_ADDRS][64];
 } Bt4DiscoveryStatus;
 typedef struct Bt4RoomTurn {
     char server[272], username[129], password[129];
@@ -19,12 +20,15 @@ void Bt4Discovery_End(unsigned generation);
 int Bt4Discovery_Counts(int protocol,uint64_t content,int counts[5]);
 int Port_OnlinePresence(int active); /* -1 until an authenticated aggregate is received */
 int Bt4Discovery_TagCounts(uint64_t content,int counts[3]);
-typedef struct Bt4RankedEntry {char name[64];int rating,wins,losses;} Bt4RankedEntry;
+typedef struct Bt4RankedEntry {char name[64];int rating,wins,losses,dragonBalls;} Bt4RankedEntry;
 typedef struct Bt4RankedView {
     int state,rating,wins,losses,count,page,pages; /* 0 loading, 1 prepared, -1 unavailable */
     int topState;
     char season[40],updated[40];
     Bt4RankedEntry top[5];
+    int streakScoring,streakWins,streakPoints;
+    int monthlyReset,dragonBalls,collectionPosition;
+    char nextReset[40];
 } Bt4RankedView;
 void Port_RankedRefresh(int refreshStatus);
 void Port_RankedView(Bt4RankedView *out);
@@ -32,13 +36,15 @@ int Port_RankedTopTen(Bt4RankedEntry out[10]);
 void Port_RankedPage(int direction);
 void Port_RankedSearch(int selected);
 int Port_RankedActive(void);
+unsigned Port_RankedRockSeed(void);
+void Port_RankedObserveRock(int state,unsigned event,unsigned tick,unsigned confirmed);
 void Port_OnlineDuelObserve(int state,int bits,unsigned tick,unsigned confirmed,int resim,unsigned seed,const char *nameA,const char *nameB);
 struct TtRoom;
 void Port_OnlineTagObserve(const struct TtRoom *room,const char *descriptor,int state,int bits);
 void Port_RankedObserve(int battleState,int outcomeBits,unsigned tick,unsigned confirmed,int resimulating,int localConcession);
-int Port_RankedResult(int *rating,int *delta);
+int Port_RankedResult(int *rating,int *delta); /* 2 applied, 3 held for review */
 void Port_RankedDisconnected(int peerGone);
-int Port_RankedTakeSettlement(int *rating,int *delta);
+int Port_RankedTakeSettlement(int *rating,int *delta); /* 0 none, 1 applied, 2 held */
 enum {
     BT4_NICKNAME_LOADING, BT4_NICKNAME_READY, BT4_NICKNAME_REQUIRED, BT4_NICKNAME_DISABLED,
     BT4_NICKNAME_SAVING, BT4_NICKNAME_TAKEN, BT4_NICKNAME_INVALID, BT4_NICKNAME_UNAVAILABLE,

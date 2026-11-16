@@ -6,6 +6,8 @@
 #include "../../port/src/gs/online_language.h"
 
 #ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
 /*
  * PC only: the progress mode of the port's own screens (include/menu/port_screen.h, docs/port/menus.md). The game
  * has no mode to spare for a new screen, so the screens run in one that Progress_Main (menu_a_b.c) hands to
@@ -14,9 +16,18 @@
  */
 
 extern s32 PortTbo_Run(void); /* menu/port_tbo.c: 1 = left for "Train While Waiting" (its fight is set up) */
+extern void PortTbo_TagEntry(s32 entry),PortTbo_TagOfflineMode(s32 mode);
+extern void Port_TagClose(void);
+extern s32 Port_TagPhase(void),Port_TagOfflineMode(void),TagBattle_TakeReturn(void);
+static s32 sTagMenuOrigin;
+enum { TAG_FROM_TBO=-1 };
+
 extern s32 TeamSel_TagRun(s32 section);
 
 s32 gPortScreen;
+s32 PortTag_DedicatedMenu(void){
+    return gPortScreen==PORT_SCREEN_TAG_OFFLINE||gPortScreen==PORT_SCREEN_TAG_ONLINE;
+}
 
 /* ---------------------------------------------------------------------------------------------- how a screen draws
    The kit every screen of the port's own draws with (it began as Tenkaichi Budokai Online's, menu/port_tbo.c): the
@@ -423,8 +434,6 @@ void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width
                       u32 top, u32 bottom, u32 line, u32 outer, f32 outerWidth) {
     extern int Port_MenusWide(void),gPortMenuMode;
     extern int Port_UpdateMenuScreen(void);
-    /* Every online submenu uses this path, not just the hub's six buttons.
-       Preserve the centre of each row while enlarging small labels. */
     if(gPortMenuMode&&Port_UpdateMenuScreen()==52&&scaleY<.85f){
         y-=PS_CELL_UNITS*scaleY*.10f;scaleX*=1.20f;scaleY*=1.20f;
     }
@@ -652,6 +661,39 @@ void Ps_Disc(f32 cx, f32 cy, f32 r, u32 mid, u32 edge) {
 
 
 
+/* Both entry points use the same Tag Team menu and return to their caller. */
+static s32 PortTag_Run(s32 section,s32 origin,s32 reselect){
+    s32 result;
+    sTagMenuOrigin=origin;
+    if(reselect&&Port_TagPhase()==2&&TeamSel_TagRun(2))goto fight;
+    do{
+        if(Port_TagOfflineMode())Port_TagClose();
+        PortTbo_TagEntry(section);
+        Bgm_Play(0x816+2);
+        result=PortTbo_Run();
+        if(result==2){
+            if(TeamSel_TagRun(2))goto fight;
+            s32 mode=Port_TagOfflineMode();
+            section=mode==3?3:mode?1:2;
+        }
+    }while(result==2);
+    PortTbo_TagEntry(0);
+    Adx_StopAll();
+    return 0;
+fight:
+    PortTbo_TagEntry(0);
+    Adx_StopAll();
+    gProgress->mode=MPROG_MODE_PORT_SCREEN;
+    gPortScreen=Port_TagOfflineMode()?PORT_SCREEN_TAG_OFFLINE:PORT_SCREEN_TAG_ONLINE;
+    return 3;
+}
+
+s32 PortTagOffline_Run(s32 mode,s32 origin,s32 reselect){
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_OFFLINE_TEST")&&atoi(getenv("BT4_TAG_OFFLINE_TEST"))==4)mode=4;
+    PortTbo_TagOfflineMode(mode);
+    return PortTag_Run(mode==3?3:1,origin,reselect);
+}
+
 s32 PortScreen_Main(void) {
     s32 screen = gPortScreen;
     s32 result = 0;
@@ -661,7 +703,25 @@ s32 PortScreen_Main(void) {
         gMenuArc5 = File_LoadSync(gProgress->baseFile, NULL, 0);
     }
     switch (screen) {
+    case PORT_SCREEN_TAG_ONLINE:
+    case PORT_SCREEN_TAG_OFFLINE:{
+        s32 back=TagBattle_TakeReturn();
+        s32 section=screen==PORT_SCREEN_TAG_ONLINE?2:Port_TagOfflineMode()==3?3:1;
+        if(back==2&&screen==PORT_SCREEN_TAG_ONLINE)Port_TagClose();
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_OFFLINE_TEST"))
+            fprintf(stderr,"tag offline: back=%d origin=%d\n",back,sTagMenuOrigin);
+        if(PortTag_Run(section,sTagMenuOrigin,back==1))return 3;
+        if(sTagMenuOrigin==TAG_FROM_TBO){
+            gProgress->mode=MPROG_MODE_PORT_SCREEN;
+            gPortScreen=PORT_SCREEN_TBO;
+        }else gProgress->mode=sTagMenuOrigin==MPROG_MODE_PORT_SCREEN?4:sTagMenuOrigin;
+        return 0;}
+    case PORT_SCREEN_TAG:
+        if(PortTag_Run(1,MPROG_MODE_PORT_SCREEN,0))return 3;
+        gProgress->mode=4;
+        break;
     case PORT_SCREEN_TBO:
+        PortTbo_TagEntry(0);
         {extern s32 Port_TagNetwork(void),Port_TagPhase(void),Port_TagResultChoice(void),TagBattle_ConfigureLocal(void);
         if(Port_TagNetwork()&&Port_TagPhase()==3&&Port_TagResultChoice()==0&&TagBattle_ConfigureLocal()){
             gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;return 3;
@@ -678,8 +738,14 @@ s32 PortScreen_Main(void) {
         Bgm_Play(0x816 + 2);
         do {
             result = PortTbo_Run();
+            if(result==PORT_TBO_OPEN_TAG){
+                Adx_StopAll();
+                if(PortTag_Run(2,TAG_FROM_TBO,0))return 3;
+                Bgm_Play(0x816+2);
+                continue;
+            }
             if (result == 2 && TeamSel_TagRun(2)) { result=3; break; }
-        } while (result == 2);
+        } while (result == 2 || result == PORT_TBO_OPEN_TAG);
         Adx_StopAll();
         if(result==3){gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;}
         else gProgress->mode = result ? 45 : 4; /* training, or back to the main menu */

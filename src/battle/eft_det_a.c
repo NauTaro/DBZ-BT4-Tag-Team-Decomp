@@ -951,7 +951,14 @@ s32 EftDet_HitFighterMulti(EftDetRec *rec, s32 target, s32 idx) {
  * (found by EftDet_StagePass, which ran before) is dropped. Then the fighter answers, first yes wins: dodge
  * (nothing reported), deflect (0x40), reflect (0x80), absorb (0x20), then guard (2) or hit (1).
  * (The mix of `rec->` and `list->rec[i].` is what reproduces the original's two induction pointers.) */
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "tag_team_projectile_hits.inc"
+#endif
 void EftDet_FighterPass(void) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagBattle_DevCombatActive(void);
+    if(TagBattle_DevCombatActive()){EftDet_TagFighterPass();return;}
+#endif
     s32 (*test[7])(EftDetObj *, EftDetShape *) = {
         EftDet_SpheresVsFighter, EftDet_CapsuleVsFighter, EftDet_NoneVsFighter, EftDet_NoneVsFighter,
         EftDet_NoneVsFighter,    EftDet_NoneVsFighter,    EftDet_NoneVsFighter,
@@ -1259,7 +1266,12 @@ s32 EftDet_StageCb(EftDetNode *node, EftDetStageCtx *ctx) {
  * When the walk touched an unbroken stage object, the one with the lowest index takes damage (1 from a ki blast,
  * 999999 from a technique); if that breaks it, it is destroyed and the record goes on as if nothing was hit
  * (returns 0 although hitPos / contact / tri were written). */
+#ifdef PORT
+extern s32 BtlStage_DestroyObjByAttack(s32 owner, s32 idx, EftDetVec *hitPos);
+static s32 EftDet_TestStageAttack(EftDetShape *shape, s32 isBlast, s32 objectsOnly, s32 owner) {
+#else
 s32 EftDet_TestStage(EftDetShape *shape, s32 isBlast, s32 objectsOnly) {
+#endif
     EftDetStageCtx ctx;
     EftDetResult result;
     EftDetBox box;
@@ -1315,7 +1327,11 @@ s32 EftDet_TestStage(EftDetShape *shape, s32 isBlast, s32 objectsOnly) {
         idx = StgCol_FirstBit(result.objMask);
         if (idx >= 0) {
             if (BtlStage_DamageObj(idx, isBlast == 1 ? 1 : 999999)) {
+#ifdef PORT
+                BtlStage_DestroyObjByAttack(owner, idx, &ctx.unk50);
+#else
                 BtlStage_DestroyObj(-1, idx, &ctx.unk50);
+#endif
                 return 0;
             }
         }
@@ -1333,6 +1349,12 @@ s32 EftDet_TestStage(EftDetShape *shape, s32 isBlast, s32 objectsOnly) {
     }
     return 1;
 }
+
+#ifdef PORT
+s32 EftDet_TestStage(EftDetShape *shape, s32 isBlast, s32 objectsOnly) {
+    return EftDet_TestStageAttack(shape, isBlast, objectsOnly, -1);
+}
+#endif
 
 /* Record against stage. A rush-type technique (class 0 kind 4, or another class and kind 9) only meets unbroken
  * stage objects. A record that is stopped by the hit reports task flag 4 with the contact point, hands the
@@ -1359,7 +1381,11 @@ void EftDet_StagePass(void) {
                     objectsOnly = def->kind == 9;
                 }
             }
+#ifdef PORT
+            if (EftDet_TestStageAttack(&rec->shape, rec->type == 0, objectsOnly, rec->objId)) {
+#else
             if (EftDet_TestStage(&rec->shape, rec->type == 0, objectsOnly)) {
+#endif
                 if (EftHit_IsStoppedByHit(rec)) {
                     EftHit_SetTaskFlag(i, 4, list->rec[i].shape.contact);
                     EftHit_NotifyBlastTask(i, &rec->shape.tri);

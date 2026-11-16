@@ -36,7 +36,17 @@ s32 Duel_Main(void) {
                 bgm = 1;
                 Bgm_Play(DUEL_BGM);
             }
-            if (DuelMenu_Run(1)) {
+            {
+                s32 selection=DuelMenu_Run(1);
+#ifdef PORT
+                if(selection>=2){
+                    extern s32 PortTagOffline_Run(s32,s32,s32);
+                    Adx_StopAll();bgm=0;
+                    if(PortTagOffline_Run(selection-1,38,0))done=1;
+                    break;
+                }
+#endif
+                if (selection) {
                 Adx_StopAll();
                 gProgress->mode = DUEL_PROG->battleType ? 40 : 39;
             } else {
@@ -45,6 +55,7 @@ s32 Duel_Main(void) {
                 gProgress->mode = 4;
                 result = 0;
                 done = 1;
+                }
             }
             break;
         case 39:

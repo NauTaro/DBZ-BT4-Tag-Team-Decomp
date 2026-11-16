@@ -42,6 +42,9 @@ void PortMods_CamSet(const ModsCam *cam);     /* ... and its new pose */
 void Mods_Tick(void);                         /* on_frame and on_hud, once per shown blank */
 int Mods_WantCamera(void);                    /* some enabled mod has on_camera */
 void Mods_Camera(void);                       /* on_camera for the camera PortMods_CamGet gives */
+int Mods_SplitScreen(void);                   /* 0 off, 1 target, 2 ally; local presentation only */
+int Port_PresentationSplitActor(int pane);
+int Port_PresentationSplitDrawing(int change); /* -1 query; 0/1 scoped drawing state */
 
 /* The picture drawn by the mods' on_hud, for the render thread (gs/mods_ui.cpp). Coordinates are in HUD units:
    the game's picture is MODS_HUD_H high and as wide as its shape makes it (ModsHud.w). */
@@ -69,6 +72,8 @@ enum {
     MODS_CMD_GLOW,     /* a soft round shade: f0 x, f1 y, f2 radius, color at the middle, color2 half way, fading out */
     MODS_CMD_CLIP,     /* f0..3: what follows is cut to this rectangle (inside the picture) */
     MODS_CMD_UNCLIP,
+    MODS_CMD_ACTOR_ANCHOR, /* i0 pane, i1 actor, f0/f1 original anchor in HUD units */
+    MODS_CMD_UNANCHOR,
 };
 #define MODS_F_CLOSED 1
 #define MODS_F_FLIP 2
@@ -105,7 +110,8 @@ typedef struct ModsHud {
 int Mods_HudRead(ModsHud *out);               /* any thread: a consistent copy; 0 = nothing to draw */
 int Mods_HudActive(void);                     /* any thread: the scripts drew something at the last blank */
 int Mods_HudHidden(void);                     /* any thread: the game's HUD pieces they stand in for (bits: 1 gauges,
-                                                 2 timer, 4 combo) */
+                                                 2 timer, 4 combo, 8 prompts, 16 team reserves) */
+int Port_TagRenderAllyAnchor(int pane,int actor,float *x,float *y); /* render thread: this picture's normalised anchor */
 /* The look of the fight's picture the scripts asked for at the last blank (bt3.look), 0..100 each, 0 = as the game
    draws it; read by the renderer (gs_draw.c) on the game's thread. Several mods asking: the strongest of each.
    shading:      the fighters' two-tone shading ramp redrawn: cool coloured shadows, a soft short edge

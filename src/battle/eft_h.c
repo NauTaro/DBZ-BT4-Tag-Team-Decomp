@@ -293,7 +293,11 @@ INCLUDE_ASM("asm/nonmatchings/battle/eft_h", EftShot_BuildParam);
 
 /* The slot record of one technique of one character. */
 EftHSlot *EftShot_GetSlot(s32 chr, s32 slot) {
-    EftHChar *c = &gEftShot->chars[chr];
+    EftHChar *c;
+    extern s32 BtlScene_GetCharCount(void);
+    if(gEftShot == NULL || gEftShot->chars == NULL || chr < 0 ||
+       chr >= BtlScene_GetCharCount() || slot < 0 || slot >= 6)return NULL;
+    c = &gEftShot->chars[chr];
 
     return &c->slot[slot];
 }
@@ -313,14 +317,16 @@ void EftShot_CreateSlotTask(s32 chr, s32 slot) {
 /* Starts the effect of a technique: stores the request in the slot, overrides the life and shot parameters
    with the request's and adds an instance task under the slot's group task. */
 void EftShot_Start(EftHStartArg *arg) {
-    EftHSlot *s = EftShot_GetSlot(arg->chr, arg->slot);
+    EftHSlot *s;
     EftHTaskClass *cls;
     EftHTask *group;
 
+    if(arg == NULL)return;
+    s = EftShot_GetSlot(arg->chr, arg->slot);
     if (s == NULL) {
         return;
     }
-    if (s->pack == NULL) {
+    if (s->pack == NULL || s->param == NULL) {
         if(getenv("BT4_VFX_TRACE"))printf("tag shot: missing pack actor=%d slot=%d\n",arg->chr,arg->slot);
         return;
     }
@@ -329,6 +335,11 @@ void EftShot_Start(EftHStartArg *arg) {
         return;
     }
     group = s->task;
+    /* Slot groups are rebuilt when a fighter or stage is reloaded. A request
+     * arriving during that transition must not create a partial timeline. */
+    if (group == NULL || group->children == NULL || (group->kill & 1) ||
+        group->list != gEftShot->chars[arg->chr].list ||
+        group->unk28[0] != gEftShotClass[TYPE_ROW(s->param->type)].group)return;
     s->arg = *arg;
     s->unk40 = 0;
     s->param->life = arg->time * 30.0f;

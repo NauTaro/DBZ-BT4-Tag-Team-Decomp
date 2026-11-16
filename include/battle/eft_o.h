@@ -408,11 +408,16 @@ typedef struct EftBodyFxArg {
 } EftBodyFxArg; /* size 0xC */
 
 #define EFT_BODYFX_SETS 1 /* the manager's callbacks loop over this many packs */
+#ifdef PORT
+#define EFT_BODYFX_FIGHTERS 10
+#else
+#define EFT_BODYFX_FIGHTERS 2
+#endif
 
 /* gEftBodyFx, 0x328 bytes: the effect packs and the task of each fighter. */
 typedef struct EftBodyFxMgr {
     /* 0x000 */ EftOSet set[EFT_BODYFX_SETS];
-    /* 0x320 */ EftOTask *task[2];
+    /* 0x320 */ EftOTask *task[EFT_BODYFX_FIGHTERS];
 } EftBodyFxMgr;
 
 /* Work of the task (class 0x2C3B08). */

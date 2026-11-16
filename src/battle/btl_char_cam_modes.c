@@ -392,6 +392,21 @@ void ChrCam_UpdateFreeYaw(ChrCamChr *chr) {
     ChrCam *cam = &chr->cam;
     f32 d;
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagBattle_Focus(s32);
+    extern void BtlCharApi_GetBasePos(s32,Vec4 *);
+    s32 focus=TagBattle_Focus(chr->side);
+    if(focus>=0){
+        Vec4 ally;
+        Vec4 *self=&BtlChar_GetPos(chr)->pos;
+        BtlCharApi_GetBasePos(BattleSide_GetObjId(focus),&ally);
+        if(ally.x!=self->x||ally.z!=self->z){
+            d=BtlUtil_WrapAngle(atan2f(ally.x-self->x,ally.z-self->z)-cam->yaw);
+            cam->yaw=BtlUtil_WrapAngle(cam->yaw+d*.22f);
+        }
+        return;
+    }
+#endif
     if (BtlChar_TestFlag(chr, 0xC9)) {
         cam->yaw = BtlUtil_WrapAngle(cam->yaw + BtlInput_GetStickX(chr) * 0.0333333333f);
         if (BtlInput_TestAction(chr, 0x61, 1)) {
@@ -447,6 +462,12 @@ void ChrCam_TurnToOpponent(ChrCamChr *chr, Vec4 *rot) {
 void ChrCam_UpdateInput(ChrCamChr *chr) {
     Vec4 *dst = &chr->cam.unk40;
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagBattle_DevCombatActive(void),TagBattle_CameraMode(s32);
+    if (TagBattle_DevCombatActive()) {
+        chr->cam.distMode=TagBattle_CameraMode(chr->side);
+    } else
+#endif
     if (BtlInput_IsPressed(chr, 0x800000)) {
         chr->cam.distMode++;
         chr->cam.distMode %= CHRCAM_DIST_COUNT;

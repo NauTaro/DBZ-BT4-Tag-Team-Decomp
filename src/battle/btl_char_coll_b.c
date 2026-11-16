@@ -66,6 +66,12 @@ static void Bt4_UpdateDamageTextures(BtlCollChr *chr) {
 }
 extern BtlCollGauge *BtlMember_GetActiveGauge(BtlCollChr *chr);  /* active member's gauge block */
 extern s32 BtlMember_Damage(BtlCollChr *chr, s32 damage, s32 flags); /* applies damage */
+#ifdef BT4_TAG_TEAM_EXPANDED
+extern s32 TagBattle_Boss(s32),TagBattle_CombatDamage(s32,s32,s32);
+#define TAG_DAMAGE(source,def,amount) TagBattle_CombatDamage(source,(def)->side,amount)
+#else
+#define TAG_DAMAGE(source,def,amount) (amount)
+#endif
 extern s32 BtlMember_AddKi(BtlCollChr *chr, s32 n);     /* gauge +0xC += n, returns the overflow */
 extern void BtlMember_AddBlast(BtlCollChr *chr, s32 n);    /* gauge +0x14 += n, clamped */
 extern void BtlMember_AddMaxPower(BtlCollChr *chr, s32 n);    /* gauge +0x1C += n, clamped to 30000 */
@@ -121,6 +127,7 @@ extern s32 BtlSuper_GetReactS800(BtlCollChr *chr, s32 slot);
 extern s32 BtlSuper_GetReactAltS800(BtlCollChr *chr, s32 slot);
 extern s32 BtlSuper_GetUnk14D(BtlCollChr *chr, s32 slot);
 extern s32 BtlSuper_GetGuardKind(BtlCollChr *chr, s32 slot);
+extern s32 BtlSuper_IsThrow(BtlCollChr *chr, s32 slot);
 extern s32 BtlSuper_GetHitSound(BtlCollChr *chr, s32 slot, s32 alt); /* hit sound kind */
 extern s32 BtlSuper_GetStepCount(BtlCollChr *chr, s32 slot);
 extern f32 BtlSuper_GetPush(BtlCollChr *chr, s32 slot);
@@ -424,7 +431,7 @@ s32 BtlColl_GuardBlast(BtlCollChr *chr, BtlCollHit *hit) {
         return 0;
     }
     BtlChar_SetFlag(chr, 0x66);
-    BtlMember_Damage(chr, dmg, 0xC);
+    BtlMember_Damage(chr,TAG_DAMAGE(hit->ownerId,chr,dmg),0xC);
     switch (BtlKiBlast_GetTypeOfHit(hit)) {
     case 2:
         BtlCharSnd_RequestAt(&hit->pos, 0, 0x42, 200.0f, 1500.0f);
@@ -476,7 +483,7 @@ s32 BtlColl_GuardStrike(BtlCollChr *chr, BtlCollHit *hit) {
         return 0;
     }
     BtlChar_SetFlag(chr, 0x66);
-    BtlMember_Damage(chr, dmg, 0xC);
+    BtlMember_Damage(chr,TAG_DAMAGE(hit->ownerId,chr,dmg),0xC);
     time = 0.2f;
     BtlColl_PlayHitSound(NULL, hit, BtlSkill_GetHitSound(atk, slot));
     BtlMove_SetImpulseDir(chr, &dir, BtlSkill_GetGuardPush(atk, slot));
@@ -552,7 +559,7 @@ s32 BtlColl_GuardRush(BtlCollChr *chr, BtlCollHit *hit) {
         BtlChar_SetFlag(chr, 0x67);
         break;
     }
-    BtlMember_Damage(chr, BtlSuper_GetDamage(atk, slot, 1, 0), 0xC);
+    BtlMember_Damage(chr,TAG_DAMAGE(atk->side,chr,BtlSuper_GetDamage(atk,slot,1,0)),0xC);
     BtlColl_PlayHitSound(NULL, hit, BtlSuper_GetHitSound(atk, slot, alt));
     if (alt) {
         BtlMove_SetImpulseDir(chr, &dir, BtlSuper_GetGuardPush(atk, slot));
@@ -662,6 +669,9 @@ s32 BtlColl_HitByBlast(BtlCollChr *chr, BtlCollHit *hit) {
             react = BtlKiBlast_GetReactOfHit(hit);
         }
     }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(TagBattle_Boss(chr->side))react=BTL_REACT_NOFLINCH;
+#endif
     if (react == BTL_REACT_NOFLINCH) {
         BtlCollReact *g = &chr->react;
 
@@ -690,7 +700,7 @@ s32 BtlColl_HitByBlast(BtlCollChr *chr, BtlCollHit *hit) {
         dmg /= hit->atk->hits;
     }
     time = 0.1f;
-    BtlMember_Damage(chr, dmg, 0);
+    BtlMember_Damage(chr,TAG_DAMAGE(hit->ownerId,chr,dmg),0);
     Bt4_UpdateDamageTextures(chr);
     ChrCam_AddShake(chr, 3.0f, time);
     BtlChar_Vibrate(chr, 1.0f, time);
@@ -748,6 +758,9 @@ s32 BtlColl_HitByStrike(BtlCollChr *chr, BtlCollHit *hit) {
     if (chr->noFlinch > 0) {
         react = BTL_REACT_NOFLINCH;
     }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(TagBattle_Boss(chr->side))react=BTL_REACT_NOFLINCH;
+#endif
     r->dirYaw = yaw;
     r->back = front;
     r->id = react;
@@ -788,7 +801,7 @@ s32 BtlColl_HitByStrike(BtlCollChr *chr, BtlCollHit *hit) {
         fl = 0x400000;
         break;
     }
-    BtlMember_Damage(chr, dmg, fl);
+    BtlMember_Damage(chr,TAG_DAMAGE(hit->ownerId,chr,dmg),fl);
     ChrCam_AddShake(chr, 3.0f, 0.2f);
     BtlChar_Vibrate(chr, 1.0f, 0.2f);
     switch (slot) {
@@ -843,7 +856,7 @@ void BtlColl_ApplyRushHit(BtlCollChr *chr, BtlCollChr *atk, BtlCollHit *hit, s32
         fl = 0x2000100;
         break;
     }
-    BtlMember_Damage(chr, dmg, fl);
+    BtlMember_Damage(chr,TAG_DAMAGE(hit->ownerId,chr,dmg),fl);
     Bt4_UpdateDamageTextures(chr);
     BtlCharApi_ShakeCamsNear(&hit->pos, 100.0f, 1500.0f, 5.0f, 0.3f);
     BtlCharApi_RumbleNear(&hit->pos, 100.0f, 1000.0f, 1.0f, 0.3f);
@@ -908,7 +921,7 @@ void BtlColl_ApplyRushNoFlinch(BtlCollChr *chr, BtlCollChr *atk, BtlCollHit *hit
         fl = 0x2000100;
         break;
     }
-    BtlMember_Damage(chr, dmg, fl);
+    BtlMember_Damage(chr,TAG_DAMAGE(hit->ownerId,chr,dmg),fl);
     n = BtlSuper_GetRecoilDamage(atk, slot);
     if (n > 0) {
         if (BtlMember_Damage(atk, n, 0x42B)) {
@@ -1065,6 +1078,12 @@ s32 BtlColl_HitByRush(BtlCollChr *chr, BtlCollHit *hit) {
     if (react == 1) {
         return 0;
     }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(TagBattle_Boss(chr->side)){
+        if(react==0x1D||react==0x1E||BtlSuper_IsThrow(atk,slot))return 0;
+        react=BTL_REACT_NOFLINCH;
+    }
+#endif
     if (react == BTL_REACT_NOFLINCH) {
         BtlColl_ApplyRushNoFlinch(chr, atk, hit, yaw, front);
     } else if (react == 0x1D || react == 0x1E) {

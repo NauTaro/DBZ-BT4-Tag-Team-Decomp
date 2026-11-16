@@ -1,5 +1,9 @@
 #include "common.h"
 #include "battle/btl_char_member.h"
+#ifdef PORT
+#include "battle/tag_health_rule.h"
+#include <stdio.h>
+#endif
 
 /*
  * Team members, parameters and gauges of a fighter: 0x1CDCA8..0x1CF578.
@@ -122,37 +126,62 @@ void BtlColl_NextPoolMember(BtlMemberChr *chr) {
     }
 }
 
+static s32 BtlMember_BaseMaximum(BtlMemberChr *chr,s32 member) {
+    BtlMember *m=BtlMember_Get(chr,member);
+    s32 maximum=gBtlChars->paramTbl[m->chara].healthMax;
+    if(BtlMember_HasAbilityOf(chr,member,100))maximum+=30000;
+    else if(BtlMember_HasAbilityOf(chr,member,99))maximum+=20000;
+    else if(BtlMember_HasAbilityOf(chr,member,98))maximum+=10000;
+    if(BtlMember_HasAbilityOf(chr,member,103))maximum-=30000;
+    else if(BtlMember_HasAbilityOf(chr,member,102))maximum-=20000;
+    else if(BtlMember_HasAbilityOf(chr,member,101))maximum-=10000;
+    return BtlUtil_Max(maximum,10000);
+}
+
+/* Healing keeps its native amount when private Tag rules increase health. */
+s32 BtlMember_HealingMaximum(BtlMemberChr *chr,s32 member) {
+    const s32 maximum=BtlMember_GetGauge(chr,member)->healthMax;
+#ifdef PORT
+    if(TagBattle_HealthRule(chr->side))return BtlUtil_Min(maximum,BtlMember_BaseMaximum(chr,member));
+#endif
+    return maximum;
+}
+
 /* Loads a member's gauge maxima from the character table and its abilities; with init also the starting values. */
 void BtlMember_LoadParams(BtlMemberChr *chr, s32 member, s32 init, f32 healthPct, s32 variant) {
     BtlMember *m = BtlMember_Get(chr, member);
     BtlMemberGauge *g = &m->gauge;
+#ifdef PORT
+    const TagHealthRule *rule = TagBattle_HealthRule(chr->side);
+#endif
 
     if (init) {
         g->unk30 = 0;
         g->fused = 0;
     }
-    if (g->fused == 0) {
-        g->healthMax = gBtlChars->paramTbl[m->chara].healthMax;
-        if (BtlMember_HasAbilityOf(chr, member, 100)) {
-            g->healthMax += 30000;
-        } else if (BtlMember_HasAbilityOf(chr, member, 99)) {
-            g->healthMax += 20000;
-        } else if (BtlMember_HasAbilityOf(chr, member, 98)) {
-            g->healthMax += 10000;
+    if (g->fused == 0
+#ifdef PORT
+        && (init || !rule)
+#endif
+    ) {
+        g->healthMax = BtlMember_BaseMaximum(chr,member);
+#ifdef PORT
+        if (rule) {
+            if (rule->maximum > 0) g->healthMax = rule->maximum;
+            else g->healthMax = BtlUtil_Min(g->healthMax * BtlUtil_Max(rule->multiplier, 1), TAG_HEALTH_LIMIT);
         }
-        if (BtlMember_HasAbilityOf(chr, member, 103)) {
-            g->healthMax -= 30000;
-        } else if (BtlMember_HasAbilityOf(chr, member, 102)) {
-            g->healthMax -= 20000;
-        } else if (BtlMember_HasAbilityOf(chr, member, 101)) {
-            g->healthMax -= 10000;
-        }
-        g->healthMax = BtlUtil_Max(g->healthMax, 10000);
+#endif
     }
     g->kiMax = 100000;
     g->blastMax = gBtlChars->paramTbl[m->chara].blastStocks * 100000;
     if (init) {
         g->health = g->healthMax * healthPct / 100.0f;
+#ifdef PORT
+        if (rule) {
+            if (rule->percent > 0 && rule->percent != 100) g->health = g->healthMax * rule->percent / 100;
+            if (rule->starting > 0) g->health = BtlUtil_Min(rule->starting, g->healthMax);
+        }
+#endif
         g->health = BtlUtil_Max(g->health, 1);
         g->healthMax = BtlUtil_Max(g->healthMax, g->health);
         g->ki = gBtlChars->paramTbl[m->chara].kiStart;
@@ -353,6 +382,10 @@ void BtlMember_PrevSwitchTarget(BtlMemberChr *chr) {
 s32 BtlMember_Damage(BtlMemberChr *chr, s32 amount, s32 flags) {
     extern s32 DevRules_ProtectHealth(void);
     if(amount>0&&DevRules_ProtectHealth())return 0;
+#ifdef PORT
+    const TagHealthRule *rule = TagBattle_HealthRule(chr->side);
+    if (amount > 0 && rule && rule->frozen) return 0;
+#endif
     BtlMemberCombo *combo = &chr->combo;
     BtlMemberGauge *g = BtlMember_GetActiveGauge(chr);
     s32 before = g->health;
@@ -517,6 +550,10 @@ s32 BtlMember_Damage(BtlMemberChr *chr, s32 amount, s32 flags) {
 /* Gives health to the active member, up to its maximum. */
 void BtlMember_AddHealth(BtlMemberChr *chr, s32 amount) {
     BtlMemberGauge *g = BtlMember_GetActiveGauge(chr);
+#ifdef PORT
+    const TagHealthRule *rule = TagBattle_HealthRule(chr->side);
+    if (rule && rule->frozen) return;
+#endif
 
     if (amount > 0) {
         g->health += amount;
@@ -525,6 +562,42 @@ void BtlMember_AddHealth(BtlMemberChr *chr, s32 amount) {
         }
     }
 }
+
+#ifdef PORT
+void TagHealth_TestAudit(void) {
+    extern s32 TagBattle_Count(void);
+    for (s32 actor = 0; actor < TagBattle_Count(); ++actor) {
+        BtlMemberChr *chr = BtlChar_Get(actor);
+        BtlMemberGauge *g = BtlMember_GetActiveGauge(chr);
+        const s32 maximum = g->healthMax, initial = g->health;
+        BtlMember_LoadParams(chr, chr->active, 0, 0.0f, 0);
+        const s32 retained = maximum == g->healthMax && initial == g->health;
+        const s32 healingBase=BtlMember_HealingMaximum(chr,chr->active);
+        if(TagBattle_HealthRule(actor)&&healingBase>BtlMember_BaseMaximum(chr,chr->active))exit(3);
+        BtlMember_AddHealth(chr, 100);
+        const s32 healed = g->health - initial;
+        const s32 lost = BtlMember_Damage(chr, 100, BTL_DMG_ANY_STATE | BTL_DMG_NO_KILL);
+        fprintf(stderr, "tag health: actor=%d hp=%d max=%d retained=%d healed=%d damage=%d healing-base=%d\n",
+                actor, initial, maximum, retained, healed, lost, healingBase);
+    }
+    BtlMemberGauge *local = BtlMember_GetActiveGauge(BtlChar_Get(0));
+    const s32 health = local->health;
+    extern s32 TagBattle_ViewActor(void), TagBattle_Spectating(void);
+    extern void TagBattle_UpdateSpectator(s32 direction);
+    local->health = 0;
+    TagBattle_UpdateSpectator(0);
+    const s32 downed = TagBattle_ViewActor(), spectating = TagBattle_Spectating();
+    TagBattle_UpdateSpectator(1);
+    const s32 teammate = TagBattle_ViewActor();
+    TagBattle_UpdateSpectator(-1);
+    const s32 returned = TagBattle_ViewActor();
+    local->health = health;
+    TagBattle_UpdateSpectator(0);
+    fprintf(stderr, "tag health: spectator=%d downed=%d teammate=%d back=%d live=%d\n",
+            spectating, downed, teammate, returned, !TagBattle_Spectating());
+    fflush(stderr);
+}
+#endif
 
 /* Whether the active member has at least this much health. */
 s32 BtlMember_HasHealth(BtlMemberChr *chr, s32 amount) {
@@ -756,6 +829,17 @@ s32 BtlMember_HasAnyListedAbility(BtlMemberChr *chr) {
 
 void BtlMember_ClearQueuedDamage(BtlMemberChr *chr){memset(&chr->queue,0,sizeof(chr->queue));}
 
+/* Cinematic hits and drains bypass the immediate collision dispatcher. Scale
+ * each delivered amount once, retaining the unscaled native queue accounting. */
+static s32 BtlMember_TagQueuedDamage(BtlMemberChr *source,BtlMemberChr *victim,s32 damage){
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagBattle_CombatDamage(s32,s32,s32);
+    return TagBattle_CombatDamage(source->side,victim->side,damage);
+#else
+    return damage;
+#endif
+}
+
 /* Per frame: deals the damage each fighter has queued against its opponent, and runs its health / ki drain. */
 void BtlMembers_UpdateQueuedDamage(void) {
     s32 i;
@@ -775,12 +859,12 @@ void BtlMembers_UpdateQueuedDamage(void) {
          other=BtlChar_Get(locked>=0?locked:BtlOpp_GetPlayer(chr));}
         if (BtlAnim_TestAttr(chr, 0x200000000)) {
             if (chr->queue.hits >= 2) {
-                BtlMember_Damage(other, chr->queue.perHit, chr->queue.flags);
+                BtlMember_Damage(other,BtlMember_TagQueuedDamage(chr,other,chr->queue.perHit),chr->queue.flags);
                 chr->queue.total -= chr->queue.perHit;
                 BtlChar_Vibrate(chr, 1.0f, 0.1f);
                 BtlChar_Vibrate(other, 1.0f, 0.1f);
             } else {
-                BtlMember_Damage(other, chr->queue.total, chr->queue.flags);
+                BtlMember_Damage(other,BtlMember_TagQueuedDamage(chr,other,chr->queue.total),chr->queue.flags);
                 chr->queue.total = 0;
                 BtlChar_Vibrate(chr, 1.0f, 0.3f);
                 BtlChar_Vibrate(other, 1.0f, 0.3f);
@@ -820,7 +904,7 @@ void BtlMembers_UpdateQueuedDamage(void) {
                 } else {
                     flags |= BTL_DMG_NO_DEFENSE | BTL_DMG_EXACT | BTL_DMG_NO_HIT;
                 }
-                lost = BtlMember_Damage(other, amount, flags);
+                lost = BtlMember_Damage(other,BtlMember_TagQueuedDamage(chr,other,amount),flags);
                 if (!BtlChar_TestFlag(chr, 0x13C)) {
                     BtlMember_AddHealth(chr, lost);
                 }
@@ -846,7 +930,7 @@ void BtlMembers_UpdateQueuedDamage(void) {
         }
         if (BtlChar_TestFlag(chr, 0x8C)) {
             if (chr->queue.total > 0) {
-                BtlMember_Damage(other, chr->queue.total, chr->queue.flags);
+                BtlMember_Damage(other,BtlMember_TagQueuedDamage(chr,other,chr->queue.total),chr->queue.flags);
             }
             {extern void TagBattle_ClearDamageTarget(s32);TagBattle_ClearDamageTarget(i);}
             chr->queue.unk0 = 0;

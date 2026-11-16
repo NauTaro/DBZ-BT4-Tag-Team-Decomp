@@ -49,6 +49,26 @@ static void TagSelectTest_Position(s32 seat){
 static void TagSelectTest_Input(s32 seat,s32 ownTurn){
     s32 state=gTeamSel->side[Port_TagTeam(seat)]->state;
     if(!sTagSelectTest)return;
+    if(!strcmp(sTagSelectTest,"undo-last")){
+        static s32 previous[10],undo=-1,ticks;
+        s32 i,count=0;extern void exit(s32);
+        for(i=0;i<Port_TagCapacity();++i)count+=Port_TagConfirmed(i);
+        if(undo<0&&count>=2&&ownTurn&&state==TEAMSEL_ST_GRID&&sTagChoiceHistoryCount){
+            for(i=0;i<Port_TagCapacity();++i)previous[i]=Port_TagConfirmed(i)?Port_TagPlayerChara(i):-1;
+            undo=sTagChoiceHistory[sTagChoiceHistoryCount-1];gPad[0].gamePressed=PADG_TRIANGLE;
+            fprintf(stderr,"tag undo fixture: pressed triangle seat=%d undo=%d confirmed=%d\n",seat,undo,count);
+        }else if(undo>=0){
+            s32 passed=Port_TagPhase()==2;
+            if(!Port_TagConfirmed(undo)){
+                for(i=0;i<Port_TagCapacity();++i)if(i!=undo)
+                    passed&=Port_TagConfirmed(i)==(previous[i]>=0)&&(!Port_TagConfirmed(i)||Port_TagPlayerChara(i)==previous[i]);
+                fprintf(stderr,"tag undo fixture: %s phase=%d undo=%d others-retained=1\n",passed?"PASS":"FAIL",Port_TagPhase(),undo);
+                exit(passed?0:3);
+            }
+            if(!passed||++ticks>300){fprintf(stderr,"tag undo fixture: FAIL phase=%d\n",Port_TagPhase());exit(3);}
+        }
+        return;
+    }
     if(gTeamSel->flags&TEAMSEL_STAGE){
         if(strcmp(sTagSelectTest,"map-back") && strcmp(sTagSelectTest,"music-preview"))return;
         ++sTagTestMapTick;

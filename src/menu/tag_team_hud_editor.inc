@@ -97,7 +97,7 @@ static void TagHudEditor_Open(void){
     sHudEditorOn=1;sHudEditorBlock=0;sHudEditorFrames=0;sHudMoveFrames=0;
     Ps_PageSet();Ps_SetShift(0);
     TagHud_ReadRects(sHudEditorRects,Ps_Left());
-    if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"tag hud editor: opened page=%d cursor=%d\n",gOption->page,gOption->cursor);
+    if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"tag hud editor: opened\n");
 }
 static void TagHudEditor_Input(void){
     TagHudRect defaults[4],*b=&sHudEditorRects[sHudEditorBlock];

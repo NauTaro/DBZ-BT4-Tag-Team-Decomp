@@ -85,6 +85,12 @@ extern s32 BtlColl_StartThrow(HitChr *a, HitChr *b, s32 tech, u32 flags);
 extern HitMember *BtlMember_GetActive(HitChr *chr);
 extern HitGauge *BtlMember_GetActiveGauge(HitChr *chr);
 extern void BtlMember_Damage(HitChr *chr, s32 amount, s32 flags);
+#ifdef BT4_TAG_TEAM_EXPANDED
+extern s32 TagBattle_Boss(s32),TagBattle_CombatDamage(s32,s32,s32);
+#define TAG_DAMAGE(atk,def,amount) TagBattle_CombatDamage((atk)->player,(def)->player,amount)
+#else
+#define TAG_DAMAGE(atk,def,amount) (amount)
+#endif
 extern void BtlMember_AddKi(HitChr *chr, s32 amount);
 extern s32 BtlMember_HasKi(HitChr *chr, s32 amount);
 extern s32 BtlMember_SpendKi(HitChr *chr, s32 amount, s32 force);
@@ -688,6 +694,10 @@ s32 BtlHit_CheckGuard(HitChr *atk, HitChr *def, s32 *full) {
     }
     guard = BtlColl_GetGuardKind(def);
     if (BtlChar_GetObj(atk)->hitNo == 0 && (BtlAnim_GetFlags(BtlAnim_GetId(def)) & 0x31) && def->unk1070 > 0) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+        extern void TagBattle_CounterTarget(s32,s32);
+        TagBattle_CounterTarget(def->player,atk->player);
+#endif
         BtlHit_ApplyGuard(atk, def, 8);
         *full = 0;
         return 1;
@@ -1089,7 +1099,7 @@ void BtlHit_TestHit(HitChr *chr) {
                 }
             } else if (BtlHit_CheckGuard(chr, opp, &full)) {
                 if (full) {
-                    BtlMember_Damage(opp, BtlAtk_GetGuardDamage(chr), 0xC);
+                    BtlMember_Damage(opp,TAG_DAMAGE(chr,opp,BtlAtk_GetGuardDamage(chr)),0xC);
                 }
             } else if (!BtlHit_CheckThrowBreak(chr, opp)) {
                 st->target = oppIdx;
@@ -1159,11 +1169,17 @@ void BtlHit_ApplyHit(HitChr *atk) {
     f32 time;
     f32 a;
     f32 b;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    s32 relayPreviousAction;
+#endif
 
     if (atk->status.target < 0) {
         return;
     }
     def = BtlChar_Get(atk->status.target);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    relayPreviousAction = BtlAct_GetCurrent(def);
+#endif
     dobj = BtlChar_GetObj(def);
     kind = BtlAtk_GetId(atk);
     af = BtlAtk_GetFlags(atk);
@@ -1244,6 +1260,14 @@ void BtlHit_ApplyHit(HitChr *atk) {
             react = 0x25;
         }
     }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {extern s32 TagRelay_Reaction(s32,s32,s32,s32);extern f32 TagRelay_LaunchYaw(s32,s32,f32);
+    react=TagRelay_Reaction(atk->player,def->player,react,relayPreviousAction);
+    if(react==17)yaw=TagRelay_LaunchYaw(atk->player,def->player,yaw);}
+#endif
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(TagBattle_Boss(def->player))react=2;
+#endif
     switch (react) {
     case 0x14:
     case 0x15:
@@ -1383,7 +1407,7 @@ void BtlHit_ApplyHit(HitChr *atk) {
     case 0x14:
     case 0x16:
     case 0x25:
-        def->react.damage = BtlAtk_GetDamage(atk);
+        def->react.damage = TAG_DAMAGE(atk,def,BtlAtk_GetDamage(atk));
         break;
     default: {
         s32 type = 0;
@@ -1415,7 +1439,7 @@ void BtlHit_ApplyHit(HitChr *atk) {
             type = 0x200000 + atk->unkE0C;
             break;
         }
-        BtlMember_Damage(def, dmg, type);
+        BtlMember_Damage(def,TAG_DAMAGE(atk,def,dmg),type);
         break;
     }
     }
@@ -1428,6 +1452,14 @@ void BtlHit_ApplyHit(HitChr *atk) {
     }
     BtlChar_RaiseFirstClash(atk);
     BtlChar_AddStageTimer(BtlAtk_GetShakeTime(atk) * 2.0f);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(BtlAtk_GetDamage(atk)>0){
+        extern void TagRelay_Hit(s32,s32,s32,s32);
+        extern void TagDamage_TestHit(s32,s32);
+        TagRelay_Hit(atk->player,def->player,react,relayPreviousAction);
+        TagDamage_TestHit(atk->player,def->player);
+    }
+#endif
 }
 
 /*

@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "gs/fight_panels.h"
 #include "plat_songs.h"
 #include "plat_stages.h"
 
@@ -1312,7 +1313,8 @@ static void sim_top(void) {
 
 /* Every name a select's text gave, kept for the screens that show the characters only as pictures (the replay
    list). Only in memory: it comes from the disc each run. */
-static char sNameCache[MCHR_RANDOM][64];
+#define FIGHTER_NAME_CACHE 512 /* BT4 includes character ids beyond BT3's random cell. */
+static char sNameCache[FIGHTER_NAME_CACHE][64];
 
 /* The name of character `chara` from a select's own text (line chara of its name and form files: sections 43 and 44
    of the versus select, as CharSel_Draw shows them), and its form after it when that says something else. */
@@ -1332,7 +1334,7 @@ static void chara_name(char *out, int cap, uint32_t GAME_PTR nameText, uint32_t 
         len = strlen(out);
         snprintf(out + len, cap - len, ", %s", form);
     }
-    if (chara >= 0 && chara < MCHR_RANDOM) {
+    if (chara >= 0 && chara < FIGHTER_NAME_CACHE) {
         snprintf(sNameCache[chara], sizeof(sNameCache[chara]), "%s", out);
     }
 }
@@ -1340,7 +1342,7 @@ static void chara_name(char *out, int cap, uint32_t GAME_PTR nameText, uint32_t 
 /* Reads every character's name once from a select's text into sNameCache. */
 static void name_cache_fill(uint32_t GAME_PTR nameText, uint32_t GAME_PTR formText) {
     char name[A11Y_TEXT];
-    int chara, lines = MCHR_RANDOM;
+    int chara, lines = FIGHTER_NAME_CACHE;
 
     if (nameText == NULL) {
         return;
@@ -1354,13 +1356,26 @@ static void name_cache_fill(uint32_t GAME_PTR nameText, uint32_t GAME_PTR formTe
     }
 }
 
+void Port_CacheFighterNames(void GAME_PTR names,void GAME_PTR forms) {
+    memset(sNameCache,0,sizeof(sNameCache));
+    name_cache_fill((uint32_t GAME_PTR)names,(uint32_t GAME_PTR)forms);
+}
+
 /* A name from sNameCache, or the character's number when no select has given it yet. */
 static void cached_name(char *out, int cap, int chara) {
-    if (chara >= 0 && chara < MCHR_RANDOM && sNameCache[chara][0] != '\0') {
+    if (chara >= 0 && chara < FIGHTER_NAME_CACHE && sNameCache[chara][0] != '\0') {
         snprintf(out, cap, "%s", sNameCache[chara]);
     } else {
         snprintf(out, cap, tr("Character %d"), chara);
     }
+}
+
+/* Read-only presentation consumer; never invent a name for an uncached id. */
+int Port_CachedFighterName(int chara,char *out,int cap) {
+    if(cap<=0)return 0;
+    out[0]=0;
+    if(chara<0||chara>=FIGHTER_NAME_CACHE||!sNameCache[chara][0])return 0;
+    snprintf(out,cap,"%s",sNameCache[chara]);return 1;
 }
 
 static void char_name(char *out, int cap, A11yCharSel GAME_PTR cs, int chara) {
@@ -3025,7 +3040,6 @@ static void btl_menu(void) {
    BtlChar_AllocAll / BtlChar_FreeAll; src/battle/btl_seq.c: BtlSeq_Init / BtlSeq_Term). Only compared with NULL
    here. */
 extern void GAME_PTR gBtlChars;
-extern void GAME_PTR gBtlSeq;
 
 static int sInBattle;   /* the game is in Battle_Main, as far as it can be told (battle_watch) */
 static int sRosterSeen; /* this battle has had its roster */
@@ -3060,12 +3074,9 @@ typedef struct {
 extern A11yHud GAME_PTR gHud; /* allocated by each battle and never set back to NULL: see fighting() */
 #define HUD_SHOW_GAUGES 0x01
 
-/* 1: a fight is on, with its gauges on screen. gHud keeps the address of the last battle's HUD after it is freed,
-   so it is read only while this battle's is there: it is made before the sequence (BtlGame_Init: Hud_Init, then
-   BtlSeq_Init) and freed after the roster (Battle_Term: BtlChar_FreeAll, then BtlGame_Term), so with both of those
-   not NULL it is this battle's. */
+/* gHud keeps the address of the last battle's HUD after it is freed. Read it only while the battle owns the overlay. */
 static int fighting(void) {
-    A11yHud GAME_PTR h = gBtlChars != NULL && gBtlSeq != NULL ? gHud : NULL;
+    A11yHud GAME_PTR h = PortPanels_BattleActive() ? gHud : NULL;
 
     return h != NULL && (h->flags & HUD_SHOW_GAUGES);
 }

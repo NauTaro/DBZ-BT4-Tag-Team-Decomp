@@ -28,6 +28,7 @@
 #include "music_cache.h"
 #include "adx_loop.h"
 #include "spatial_audio.h"
+#include "game_profile.h"
 
 enum { ADXT_STAT_STOP = 0, ADXT_STAT_PLAYING = 3, ADXT_STAT_PLAYEND = 5 };
 #define MAX_PLAYERS 40
@@ -755,7 +756,8 @@ void ADXT_StartAfs(void *adxt, int patid, int fid) {
         int found = Port_FilePath(patid, fid, NULL, path, sizeof(path));
         if (found) {
             extern void PortA11y_StreamStart(const char *path); /* a11y_game.c: a voice with its line shown as text */
-            start(adxt, path);
+            char soundtrack[1800];
+            start(adxt, adxt==sPlayers&&Port_GameProfileAnimeMusicPath(patid,fid,soundtrack,sizeof(soundtrack)) ? soundtrack : path);
             PortA11y_StreamStart(path);
         }
         if (found || (by_ticks() && Port_NetActive() && disc_blanks(path) != 0)) { /* (a match: counted even when this copy lacks the file) */

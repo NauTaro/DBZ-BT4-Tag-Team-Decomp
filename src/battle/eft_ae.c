@@ -1226,6 +1226,12 @@ void BtlTaskList_Reset(BtlTaskList *list, s32 mask) {
     BtlTask *next;
 
     while (task != NULL) {
+        next = task->next;
+        /* An effect's reset/term can reset a different actor's scene tree. */
+        if (task != list->head && (task->prev == NULL || task->prev->next != task)) {
+            task = next;
+            continue;
+        }
         if (mask == 0) {
             if (task->cls->reset != NULL) {
                 task->cls->reset(task);
@@ -1243,7 +1249,10 @@ void BtlTaskList_Reset(BtlTaskList *list, s32 mask) {
                 task->cls->reset(task);
             }
         }
-        next = task->next;
+        if (task != list->head && (task->prev == NULL || task->prev->next != task)) {
+            task = next;
+            continue;
+        }
         if (BTL_TASK_BITS(task)->dead) {
             BtlTask_Kill(task);
         } else if (task->child != NULL) {
@@ -1277,6 +1286,7 @@ void BtlTaskList_CreateRoot(u32 count, u32 workSize) {
 
 /* Gives a task a child list of `count` tasks with `workSize` bytes of work each. */
 BtlTaskList *BtlTask_CreateChildList(BtlTask *task, u32 count, u32 workSize) {
+    if (task == NULL)return NULL;
     return task->child = BtlTaskList_Create(task, count, workSize);
 }
 
@@ -1365,7 +1375,10 @@ void BtlTaskList_Destroy(BtlTaskList *list) {
 
 /* Adds a task to an empty list. Does not check that a free task exists. */
 BtlTask *BtlTaskList_AddFirst(BtlTaskList *list, BtlTaskCls *cls, void *arg) {
-    BtlTask *task = list->free;
+    BtlTask *task;
+
+    if (list == NULL || cls == NULL || list->free == NULL)return NULL;
+    task = list->free;
 
     list->tail = task;
     list->head = task;
@@ -1381,6 +1394,7 @@ BtlTask *BtlTaskList_AddFirst(BtlTaskList *list, BtlTaskCls *cls, void *arg) {
 BtlTask *BtlTaskList_AddHead(BtlTaskList *list, BtlTaskCls *cls, void *arg) {
     BtlTask *task;
 
+    if (list == NULL || cls == NULL)return NULL;
     if (list->head == NULL) {
         task = BtlTaskList_AddFirst(list, cls, arg);
     } else {
@@ -1393,6 +1407,7 @@ BtlTask *BtlTaskList_AddHead(BtlTaskList *list, BtlTaskCls *cls, void *arg) {
 BtlTask *BtlTaskList_AddTail(BtlTaskList *list, BtlTaskCls *cls, void *arg) {
     BtlTask *task;
 
+    if (list == NULL || cls == NULL)return NULL;
     if (list->tail == NULL) {
         task = BtlTaskList_AddFirst(list, cls, arg);
     } else {
@@ -1465,6 +1480,10 @@ BtlTask *BtlTask_AddBefore(BtlTask *task, BtlTaskCls *cls, void *arg) {
 
 /* Clears a task's state, binds its class and runs the class's init callback with the creation argument. */
 void BtlTask_Init(BtlTask *task, BtlTaskCls *cls, void *arg) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {extern s32 TagBattle_Active(void);extern void EftDet_TagImpactForget(void *);
+     if(TagBattle_Active())EftDet_TagImpactForget(task);}
+#endif
     task->bits = ~3;
     task->pos.w = 1.0f;
     task->chr = 0;
@@ -1506,14 +1525,8 @@ void BtlTask_KillCur(void) {
 void BtlTask_Kill(BtlTask *task) {
     BtlTaskList *list = task->list;
 
-    if (task->cls->term != NULL) {
-        task->cls->term(task);
-    }
-    if (task->child != NULL) {
-        BtlTaskList_KillAll(task->child);
-        BtlTaskList_Destroy(task->child);
-        task->child = NULL;
-    }
+    /* Detach before callbacks so a nested reset cannot kill this node twice. */
+    if (task != list->head && (task->prev == NULL || task->prev->next != task)) return;
     if (task == list->head) {
         list->head = task->next;
     } else {
@@ -1523,6 +1536,14 @@ void BtlTask_Kill(BtlTask *task) {
         list->tail = task->prev;
     } else {
         task->next->prev = task->prev;
+    }
+    if (task->cls->term != NULL) {
+        task->cls->term(task);
+    }
+    if (task->child != NULL) {
+        BtlTaskList_KillAll(task->child);
+        BtlTaskList_Destroy(task->child);
+        task->child = NULL;
     }
     task->nextFree = list->free;
     list->free = task;

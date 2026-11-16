@@ -11,19 +11,26 @@
 static unsigned sDevRequestedFlags;static uint32_t sDevRequestedSequence;
 static SDL_SpinLock sDevRuleLock;
 unsigned Port_DevRulesRequested(void){
+#ifndef BT4_DEVELOPMENT_BUILD
+ return 0;
+#else
  unsigned flags;SDL_LockSpinlock(&sDevRuleLock);flags=sDevRequestedFlags;SDL_UnlockSpinlock(&sDevRuleLock);return flags;
+#endif
 }
 void Port_DevRulesRequest(unsigned flags,int step){
+#ifdef BT4_DEVELOPMENT_BUILD
  SDL_LockSpinlock(&sDevRuleLock);
  sDevRequestedFlags=flags&15;if(++sDevRequestedSequence==0)++sDevRequestedSequence;
  if(step)sDevRequestedFlags|=BT4_DEV_PAUSE|BT4_DEV_STEP;
  SDL_UnlockSpinlock(&sDevRuleLock);
+#endif
 }
 void Port_DevRulesEncode(unsigned char out[8]){
-
+#ifdef BT4_DEVELOPMENT_BUILD
  unsigned flags;uint32_t seq;
  SDL_LockSpinlock(&sDevRuleLock);flags=sDevRequestedFlags;seq=sDevRequestedSequence;SDL_UnlockSpinlock(&sDevRuleLock);
  if(seq)Bt4Dev_Pack(out,flags,seq);
+#endif
 }
 extern FILE *Port_FileOpenHost(const char *,char *,size_t);
 static int sChecked,sCompatible;

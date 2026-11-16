@@ -1,4 +1,4 @@
-/* Participant-hosted Tag room, from lobby through rematch. Supabase carries
+/* Participant-hosted Tag room, from lobby through rematch. The online service carries
  * admission and ICE only; reliable RTC control and UDP-backed inputs stay P2P.
  */
 #include <SDL3/SDL.h>
@@ -25,6 +25,8 @@ extern "C" {
 unsigned char *Kernel_Input(void),*Kernel_Output(void);
 void Kernel_Reset(void),Kernel_Pacing(int),Kernel_Seed(unsigned),Kernel_Snapshot(unsigned,int,const char*),Kernel_Leave(unsigned);
 int Kernel_Command(unsigned),Kernel_TakeFrame(void),Kernel_Phase(void),Kernel_Seat(unsigned),Kernel_RoundEnded(void);
+unsigned Kernel_BattleRules(void),Kernel_OptionsHash(void),Kernel_OptionsVersion(void);
+void Kernel_OptionsSnapshot(void);
 unsigned Kernel_DeadlineFrame(void),Kernel_Epoch(void),Kernel_PendingFrame(void);
 }
 using Pj=nlohmann::json;
@@ -37,6 +39,7 @@ struct Event {int kind=0,pc=-1,dc=-1;unsigned peer=0;bool reliable=false;std::st
 struct Service {
     std::mutex lock;SDL_Thread *thread=nullptr;SDL_Semaphore *wake=nullptr;
     std::atomic<bool> quit{false};std::atomic<int> status{0},ping{-1};
+    std::atomic<const char *> error{nullptr};
     std::deque<Event> events;std::deque<Packet> requests;std::deque<Wire> incoming;
     std::string descriptor;
     void notify(){if(wake)SDL_SignalSemaphore(wake);}
@@ -45,6 +48,16 @@ struct Service {
 static std::atomic<unsigned> rpcSerial{1000};
 static unsigned number(const Pj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_number_unsigned()?p->get<unsigned>():0;}
 static std::string text(const Pj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
+static const char *admissionError(const std::string &code){
+    if(code=="BAD_CODE")return "Use the six characters shown in the Tag Team lobby. Room codes do not contain I, O, 0 or 1.";
+    if(code=="ROOM_NOT_FOUND"||code=="ROOM_ROUTE_EXPIRED")return "Room not found. Ask the host for a new online room code.";
+    if(code=="INCOMPATIBLE_DATA"||code=="UPDATE_REQUIRED")return "Both players need the latest Tag Team test patch to join this room.";
+    if(code=="ROOM_FULL")return "This Tag Team room is full.";
+    if(code=="ROOM_BUSY")return "This Tag Team room has already started. Ask the host to return to the lobby.";
+    if(code=="NICKNAME_REQUIRED")return "Set your online nickname in Profile before joining a Tag Team room.";
+    if(code=="RATE_LIMITED")return "Too many requests. Wait a moment, then try again.";
+    return "Could not reach the Tag Team matchmaking service. Try again shortly.";
+}
 static std::string iceCredential(const std::string &value){
     static const char hex[]="0123456789ABCDEF";
     std::string out;
@@ -55,6 +68,7 @@ static std::string iceCredential(const std::string &value){
     return out;
 }
 struct Peer {std::atomic<unsigned> id{0};std::atomic<int> pc{-1},control{-1},input{-1};bool remote=false,admitted=false,routeLogged=false;std::string name;std::vector<Pj> candidates;Uint64 heard=0,openedAt=0;
+    bool battleRulesCapable=false;unsigned optionsVersion=0;
     unsigned probe=0;Uint64 probeAt=0,pingAt=0;int measuredPing=-1;
 };
 struct PendingSignal {Pj body;Uint64 at;};
@@ -62,7 +76,7 @@ struct OutgoingSignal {Pj body;Uint64 next,expires;};
 static std::array<Peer,10> stablePeers;
 struct Session {
     std::array<Peer,10> &peers=stablePeers;unsigned self=0,epoch=0,lo=0,hi=0,initSerial=0,reconcile=0;
-    std::string room,generation,code,content;Packet opening={};Pj queueProfile;bool creating=false,initializing=false,clock=false,queued=false,waiting=false;int phase=TT_CLOSED;
+    std::string room,generation,code,content;uint64_t gameContent=0;Packet opening={};Pj queueProfile;bool creating=false,initializing=false,clock=false,queued=false,waiting=false;int phase=TT_CLOSED;
     Uint64 nextTick=0,nextPing=0,nextLease=0,began=SDL_GetTicks(),lastReplay=0;int publishedPhase=-1;
     unsigned expected=0,probeSerial=0;
     std::array<unsigned,8> pingSamples={};unsigned pingCount=0,pingCursor=0;
@@ -95,7 +109,7 @@ struct Session {
     static void RTC_API message(int dc,const char *bytes,int size,void *ptr){auto &p=*static_cast<Peer*>(ptr);if((dc!=p.control&&dc!=p.input)||size!=528)return;Event e;e.kind=6;e.peer=p.id;e.pc=p.pc;e.dc=dc;e.reliable=dc==p.control;e.at=SDL_GetTicks();e.bytes.assign(bytes,bytes+size);service.event(std::move(e));}
     void close(Peer &p){int pc=p.pc.exchange(-1),control=p.control.exchange(-1),input=p.input.exchange(-1);p.id=0;
         if(control>=0)rtc.rtcDeleteDataChannel(control);if(input>=0)rtc.rtcDeleteDataChannel(input);
-        if(pc>=0){rtc.rtcClosePeerConnection(pc);rtc.rtcDeletePeerConnection(pc);}p.remote=p.admitted=p.routeLogged=false;p.probe=0;p.probeAt=p.pingAt=0;p.measuredPing=-1;p.candidates.clear();p.name.clear();}
+        if(pc>=0){rtc.rtcClosePeerConnection(pc);rtc.rtcDeletePeerConnection(pc);}p.remote=p.admitted=p.routeLogged=false;p.battleRulesCapable=false;p.optionsVersion=0;p.probe=0;p.probeAt=p.pingAt=0;p.measuredPing=-1;p.candidates.clear();p.name.clear();}
     bool send(Peer &p,const Packet &packet,bool reliable){int dc=reliable?p.control:p.input;if(dc<0||!rtc.rtcIsOpen(dc)||rtc.rtcGetBufferedAmount(dc)>=65536)return false;
         std::array<unsigned char,528> wire={};Ttw_Write(wire.data(),magic);Ttw_Write(wire.data()+4,lo);Ttw_Write(wire.data()+8,hi);Ttw_Write(wire.data()+12,self);memcpy(wire.data()+16,packet.data(),512);
         return rtc.rtcSendMessage(dc,(const char*)wire.data(),528)>=0;}
@@ -141,13 +155,34 @@ struct Session {
             }else ++it;
         }
     }
-    void snapshot(unsigned target,int result=TT_OK,unsigned ack=0){Kernel_Snapshot(target,result,code.c_str());Packet packet;memcpy(packet.data(),Kernel_Output(),512);Ttw_Write(packet.data()+508,ack);
+    void snapshot(unsigned target,int result=TT_OK,unsigned ack=0){
+        if(Kernel_OptionsHash()){Kernel_OptionsSnapshot();Packet settings;memcpy(settings.data(),Kernel_Output(),512);
+            if(target==self)emit(settings);else if(auto *p=find(target))send(*p,settings,true);}
+        Kernel_Snapshot(target,result,code.c_str());Packet packet;memcpy(packet.data(),Kernel_Output(),512);Ttw_Write(packet.data()+508,ack);
         if(target==self)emit(packet);else if(auto *p=find(target))send(*p,packet,true);}
     void notify(){snapshot(self);for(auto &p:peers)if(p.id&&p.admitted)snapshot(p.id);}
+    void admit(Peer &p){
+        if(self!=1||p.admitted||p.control<0||p.input<0||
+           !rtc.rtcIsOpen(p.control)||!rtc.rtcIsOpen(p.input))return;
+        if(Kernel_BattleRules()&&!p.battleRulesCapable)return;
+        const unsigned options=Kernel_OptionsVersion();
+        if(options&&!p.optionsVersion)return;
+        Packet join={};Ttw_Request(join.data(),TTW_JOIN,Kernel_Epoch());
+        const uint64_t hash=gameContent;
+        Ttw_Write(join.data()+24,(unsigned)hash);Ttw_Write(join.data()+28,(unsigned)(hash>>32));
+        Ttw_Write(join.data()+TTW_JOIN_BATTLE_RULES,p.optionsVersion>=TT_OPTION_COMBAT_VERSION?3:
+            p.optionsVersion==TT_OPTIONS_VERSION?2:p.battleRulesCapable);
+        snprintf((char*)join.data()+32,20,"%s",p.name.c_str());
+        memcpy(Kernel_Input(),join.data(),512);
+        const int result=Kernel_Command(p.id);
+        if(result==TT_OK){p.admitted=true;notify();}else snapshot(p.id,result);
+    }
     void clearRound(unsigned next){epoch=next;clock=false;expected=0;recent.clear();history.clear();reordered.clear();lastReplay=0;}
     bool validSignal(const Pj &body){
         auto b=body.find("body");unsigned from=number(body,"from"),to=number(body,"to");
-        if(text(body,"channel")!="tag"||!from||from>10||!to||to>10||from==to||
+        /* Signaling identities increase after reconnects. Ten limits concurrent
+         * fighters, not their assigned identity numbers. */
+        if(text(body,"channel")!="tag"||!from||from>=TT_CPU_MEMBER||!to||to>=TT_CPU_MEMBER||from==to||
            text(body,"generation").size()!=36||b==body.end()||!b->is_object())return false;
         auto kind=text(body,"kind");
         if(kind=="offer"||kind=="answer"){auto sdp=text(*b,"sdp");return !sdp.empty()&&sdp.size()<=14000;}
@@ -182,7 +217,7 @@ struct Session {
     void openPeers(const Pj &members){
         for(const auto &m:members){
             unsigned id=number(m,"peer");
-            if(!id||id==self||(self!=1&&id!=1)||find(id))continue;
+            if(!id||id>=TT_CPU_MEMBER||id==self||(self!=1&&id!=1)||find(id))continue;
             auto slot=std::find_if(peers.begin(),peers.end(),[](const Peer &p){return !p.id;});
             if(slot==peers.end()){service.status=-1;return;}
             slot->id=id;slot->name=text(m,"name");open(*slot);
@@ -229,6 +264,13 @@ struct Session {
         if(cmd==TTW_INPUT){if(atEpoch!=Kernel_Epoch()||Kernel_Phase()!=TT_FIGHT)return;memcpy(Kernel_Input(),packet.data(),512);Kernel_Command(sender);
             if(sender==self&&!clock){clock=true;nextTick=SDL_GetTicksNS();}return;}
         if(cmd==TTW_OPEN||cmd==TTW_JOIN||cmd==TTW_STATE||cmd==TTW_FRAME)return;
+        if(cmd==TTW_BATTLE_RULES||cmd==TTW_OPTIONS){
+            if(queued){snapshot(sender,TT_BAD_PHASE);return;}
+            const unsigned options=cmd==TTW_OPTIONS?Ttw_Read(packet.data()+24):0;
+            for(auto &p:peers)if(p.id&&p.admitted&&(!p.battleRulesCapable||(options&&p.optionsVersion<options))){
+                snapshot(sender,TT_MISMATCH);return;
+            }
+        }
         if(cmd==TTW_CHAT){if(Kernel_Seat(sender)<0)return;Packet chat=packet;Ttw_Write(chat.data()+12,sender);chat[175]=0;emit(chat);for(auto &p:peers)if(p.id&&p.admitted)send(p,chat,true);return;}
         memcpy(Kernel_Input(),packet.data(),512);int result=Kernel_Command(sender);
         if(Kernel_Epoch()!=epoch)clearRound(Kernel_Epoch());
@@ -273,7 +315,16 @@ struct Session {
                     else pending->second.next=SDL_GetTicks()+2000;
                     continue;
                 }
-                if(number(j,"serial")==initSerial||number(j,"serial")==reconcile){if(body->contains("error")){if(!self){fprintf(stderr,"tag P2P admission failed: %s\n",text(*body,"error").c_str());service.status=-1;}}else if(text(*body,"state")=="waiting"){waiting=true;nextLease=SDL_GetTicks()+60000;}else metadata(*body);}
+                if(number(j,"serial")==initSerial||number(j,"serial")==reconcile){
+                    const std::string failure=text(*body,"error");
+                    if(!failure.empty()&&!self){
+                        fprintf(stderr,"tag P2P admission failed: %s\n",failure.c_str());
+                        service.error=admissionError(failure);
+                        service.status=-1;
+                    }else if(text(*body,"state")=="waiting"){
+                        waiting=true;nextLease=SDL_GetTicks()+60000;
+                    }else if(failure.empty())metadata(*body);
+                }
             }else if(event=="bt4.ready"&&!room.empty()){reconcile=++rpcSerial;rpc("get",Pj::object(),reconcile);
             }else if(event=="bt4.room"&&(!room.empty()||queued))metadata(*body);
             else if(event=="bt4.signal")receiveSignal(*body);
@@ -285,12 +336,29 @@ struct Session {
         else if(e.kind==2)signal(p->id,"candidate",{{"candidate",e.a},{"mid",e.b}});
         else if(e.kind==3)bind(*p,e.dc);
         else if(e.kind==4){if(routeLog)fprintf(stderr,"tag P2P transport closed after_ms=%llu channels_ready=%d\n",(unsigned long long)(SDL_GetTicks()-p->openedAt),(int)p->routeLogged);if(self==1){unsigned id=p->id;close(*p);Kernel_Leave(id);notify();}else service.status=-1;}
-        else if(e.kind==5){logRoute(*p);if(self==1&&!p->admitted&&p->control>=0&&p->input>=0&&rtc.rtcIsOpen(p->control)&&rtc.rtcIsOpen(p->input)){
-            Packet join={};Ttw_Request(join.data(),TTW_JOIN,Kernel_Epoch());uint64_t hash=strtoull(content.c_str(),nullptr,16);Ttw_Write(join.data()+24,(unsigned)hash);Ttw_Write(join.data()+28,(unsigned)(hash>>32));snprintf((char*)join.data()+32,20,"%s",p->name.c_str());
-            memcpy(Kernel_Input(),join.data(),512);int result=Kernel_Command(p->id);if(result==TT_OK){p->admitted=true;notify();}else snapshot(p->id,result);
-        }}else if(e.kind==6){
+        else if(e.kind==5){logRoute(*p);admit(*p);
+#ifdef BT4_TAG_TEAM_EXPANDED
+            if(self==1&&p->control>=0&&rtc.rtcIsOpen(p->control)){
+                Packet capability={};Ttw_Request(capability.data(),TTW_BATTLE_RULES_CAPABILITY,epoch);
+                Ttw_Write(capability.data()+16,TT_OPTION_COMBAT_VERSION);
+                send(*p,capability,true);
+            }
+#endif
+        }else if(e.kind==6){
             if(e.bytes.size()!=528||Ttw_Read(e.bytes.data())!=magic||Ttw_Read(e.bytes.data()+4)!=lo||Ttw_Read(e.bytes.data()+8)!=hi||Ttw_Read(e.bytes.data()+12)!=p->id)return;
             Packet packet;memcpy(packet.data(),e.bytes.data()+16,512);if(Ttw_Read(packet.data())!=TT_PROTOCOL)return;p->heard=e.at;unsigned cmd=Ttw_Read(packet.data()+4),packetEpoch=Ttw_Read(packet.data()+8);
+            if(cmd==TTW_BATTLE_RULES_CAPABILITY){
+                if(self==1&&e.reliable&&Ttw_Read(packet.data()+12)==1){p->battleRulesCapable=true;p->optionsVersion=Ttw_Read(packet.data()+16);admit(*p);}
+#ifdef BT4_TAG_TEAM_EXPANDED
+                if(self!=1&&e.reliable&&Ttw_Read(packet.data()+12)==0){
+                    const unsigned offered=Ttw_Read(packet.data()+16);
+                    Ttw_Write(packet.data()+12,1);
+                    Ttw_Write(packet.data()+16,offered>=TT_OPTION_COMBAT_VERSION?TT_OPTION_COMBAT_VERSION:TT_OPTIONS_VERSION);
+                    send(*p,packet,true);
+                }
+#endif
+                return;
+            }
             if(cmd==pingCommand){Ttw_Write(packet.data()+4,pongCommand);send(*p,packet,false);return;}
             if(cmd==pongCommand){
                 if(p->probeAt&&Ttw_Read(packet.data()+12)==p->probe&&e.at>=p->probeAt&&e.at-p->probeAt<3000){
@@ -303,6 +371,7 @@ struct Session {
             }
             if(cmd==replayCommand&&e.reliable&&self==1&&packetEpoch==epoch){unsigned wanted=Ttw_Read(packet.data()+12),sent=0;for(auto &f:history)if(Ttw_Read(f.bytes.data()+12)>=wanted&&sent++<16)send(*p,f.bytes,true);return;}
             if(self==1){if(!p->admitted)return;if(cmd==TTW_INPUT||e.reliable)command(p->id,packet);return;}
+            if(cmd==TTW_OPTIONS_STATE&&e.reliable&&p->id==1){emit(packet,e.at);return;}
             if(cmd==TTW_STATE&&e.reliable){TtRoom r;unsigned target;int result;char roomCode[7];if(!Ttw_Decode(packet.data(),&r,&target,&result,roomCode)||target!=self||r.host!=1)return;
                 if(epoch&&((int32_t)(r.epoch-epoch)<0))return;if(r.epoch!=epoch)clearRound(r.epoch);phase=r.phase;p->admitted=true;service.status=1;emit(packet,e.at);flushFrames();return;}
             if(cmd==TTW_FRAME&&packetEpoch==epoch){unsigned frame=Ttw_Read(packet.data()+12);if(frame<expected)return;if(frame-expected>=512){service.status=-1;return;}reordered.emplace(frame,Wire{packet,e.at});flushFrames();}
@@ -311,7 +380,12 @@ struct Session {
     }
     void initialize(const Packet &packet){opening=packet;creating=Ttw_Read(packet.data()+4)==TTW_OPEN;initializing=true;initSerial=++rpcSerial;
         queued=creating&&Ttw_Read(packet.data()+64)==1;
-        char hash[17];snprintf(hash,sizeof(hash),"%08x%08x",Ttw_Read(packet.data()+28),Ttw_Read(packet.data()+24));content=hash;
+        gameContent=(uint64_t)Ttw_Read(packet.data()+24)|((uint64_t)Ttw_Read(packet.data()+28)<<32);
+        unsigned family=Ttw_Read(packet.data()+28);
+#ifdef BT4_TAG_TEAM_EXPANDED
+        family^=0x54434f33u; /* Expanded effects and reversible draft require matching clients. */
+#endif
+        char hash[17];snprintf(hash,sizeof(hash),"%08x%08x",family,Ttw_Read(packet.data()+24));content=hash;
         char name[20];memcpy(name,packet.data()+32,19);name[19]=0;
         rpc("leave",Pj::object());
         if(creating){
@@ -338,6 +412,12 @@ struct Session {
                 int hostPing=-1;
                 for(auto &p:peers){
                     if(!p.id)continue;
+                    if(self==1&&!p.admitted&&(Kernel_BattleRules()||Kernel_OptionsHash())&&
+                       p.control>=0&&rtc.rtcIsOpen(p.control)&&now-p.openedAt>=15000){
+                        Packet rejected={};Kernel_Snapshot(p.id,TT_MISMATCH,code.c_str());
+                        memcpy(rejected.data(),Kernel_Output(),512);send(p,rejected,true);
+                        continue;
+                    }
                     if(!p.probeAt||now-p.probeAt>=3000){
                         Packet packet={};Ttw_Request(packet.data(),pingCommand,epoch);
                         p.probe=++probeSerial;Ttw_Write(packet.data()+12,p.probe);
@@ -359,14 +439,14 @@ struct Session {
         }
         for(auto &p:peers)if(p.id)close(p);
         if(queued&&!self)rpc("cancel",Pj::object());
-        Pj leave=Pj::object();if(!generation.empty())leave["generation"]=generation;rpc("leave",leave);
+        if(!generation.empty())rpc("leave",{{"generation",generation}});
     }
 };
 static int thread(void*){Session s;s.run();return 0;}
 }
 
 extern "C" int TagPeer_Open(void){
-    TagPeer_Close();if(!rtc.load()||!Bt4Signal_Open())return 0;Bt4Signal_Listen(1,1);service.quit=false;service.status=0;service.ping=-1;
+    TagPeer_Close();if(!rtc.load()||!Bt4Signal_Open())return 0;Bt4Signal_Listen(1,1);service.quit=false;service.error=nullptr;service.status=0;service.ping=-1;
     service.wake=SDL_CreateSemaphore(0);if(!service.wake)return 0;service.thread=SDL_CreateThread(thread,"BT4 P2P room",nullptr);return service.thread!=nullptr;
 }
 extern "C" void TagPeer_Close(void){service.quit=true;service.notify();if(service.thread)SDL_WaitThread(service.thread,nullptr);service.thread=nullptr;if(service.wake)SDL_DestroySemaphore(service.wake);service.wake=nullptr;
@@ -375,5 +455,6 @@ extern "C" int TagPeer_Send(const unsigned char *packet){if(!packet||!service.th
     Packet p;memcpy(p.data(),packet,512);service.requests.push_back(p);service.notify();return 1;}
 extern "C" int TagPeer_Read(unsigned char *packet,uint64_t *at){std::lock_guard<std::mutex> g(service.lock);if(service.incoming.empty())return service.status<0?-1:0;auto f=service.incoming.front();service.incoming.pop_front();memcpy(packet,f.bytes.data(),512);if(at)*at=f.at;return 1;}
 extern "C" int TagPeer_Status(void){return service.status;}
+extern "C" const char *TagPeer_Error(void){return service.error.load();}
 extern "C" int TagPeer_Ping(void){return service.ping;}
 extern "C" int TagPeer_Descriptor(char *json,unsigned capacity){std::lock_guard<std::mutex> g(service.lock);if(!json||service.descriptor.empty()||service.descriptor.size()+1>capacity)return 0;memcpy(json,service.descriptor.c_str(),service.descriptor.size()+1);return 1;}

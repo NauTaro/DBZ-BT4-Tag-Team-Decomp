@@ -155,6 +155,8 @@ static void notify(int room,int only,int result){
 
     for(i=0;i<TT_CONNECTIONS;++i)if(peers[i].io.sock!=TT_INVALID&&(only==i||(only<0&&peers[i].room==room))){
 
+        if(room>=0&&rooms[room].state.options_hash){Ttw_OptionsSnapshot(packet,&rooms[room].state);
+            if(!channel_queue(&peers[i].io,packet))peers[i].io.failed=1;}
         Ttw_Snapshot(packet,room>=0?&rooms[room].state:&empty,peers[i].id,result,room>=0?rooms[room].code:NULL);
         Ttw_Write(packet+508,peers[i].ack);
 
@@ -201,9 +203,13 @@ static void command(int i){
         int size=(int)Ttw_Read(b+12),time_limit=(int)Ttw_Read(b+16),delay=(int)Ttw_Read(b+20);
 
         int fill=(int)Ttw_Read(b+52),difficulty=(int)Ttw_Read(b+56);
+        uint32_t rules=Ttw_Read(b+TTW_OPEN_BATTLE_RULES);
 
         if(size<2||size>5||time_limit<0||time_limit>4||delay<0||delay>12||fill<0||fill>1||difficulty<0||difficulty>4){notify(-1,i,TT_BAD_CHOICE);return;}
+        if(rules>TT_RULE_MASK||(rules&&Ttw_Read(b+64))){notify(-1,i,TT_BAD_CHOICE);return;}
 
+        TtOptions options;int extended=Ttw_Read(b+TTW_OPEN_OPTIONS)!=0;
+        if(extended&&!Ttw_GetOptions(b+TTW_OPEN_OPTIONS,&options)){notify(-1,i,TT_BAD_CHOICE);return;}
         for(j=0;j<TT_ROOMS;++j)if(!rooms[j].state.phase){
 
             char name[20],code[7];memcpy(name,b+32,19);name[19]=0;make_code(code);
@@ -211,6 +217,9 @@ static void command(int i){
             Tt_Open(&rooms[j].state,p->id,name,size,read64(b+24));
 
             rooms[j].state.time=time_limit;rooms[j].state.delay=delay;
+            rooms[j].state.battle_rules=rules;
+            Tt_SetMode(&rooms[j].state,p->id,rooms[j].state.epoch,Ttw_Read(b+60));
+            if(extended){rooms[j].state.options=options;rooms[j].state.options_hash=Tt_OptionsHash(&rooms[j].state);}
 
             if(fill)Tt_FillCPU(&rooms[j].state,p->id,rooms[j].state.epoch,difficulty);
 
@@ -228,7 +237,8 @@ static void command(int i){
 
         for(j=0;j<TT_ROOMS;++j)if(rooms[j].state.phase&&!memcmp(rooms[j].code,b+12,6)){
 
-            rc=Tt_Join(&rooms[j].state,p->id,name,read64(b+24));
+            rc=(rooms[j].state.battle_rules&&Ttw_Read(b+TTW_JOIN_BATTLE_RULES)<1)||(rooms[j].state.options_hash&&Ttw_Read(b+TTW_JOIN_BATTLE_RULES)<(rooms[j].state.options.version==TT_OPTION_COMBAT_VERSION?3u:2u))
+                ?TT_MISMATCH:Tt_Join(&rooms[j].state,p->id,name,read64(b+24));
 
             if(!rc){p->room=j;notify(j,-1,TT_OK);printf("room joined %s seats=%d\n",rooms[j].code,Tt_Count(&rooms[j].state));fflush(stdout);}
 
@@ -246,15 +256,17 @@ static void command(int i){
 
     case TTW_CANCEL_SELECT:rc=Tt_CancelSelect(r,p->id,epoch);break;
 
-    case TTW_CHOOSE:rc=Ttw_Read(b+20)==0xffffffffu?Tt_Choose(r,p->id,epoch,(int)Ttw_Read(b+12),(int)Ttw_Read(b+16)):
-
-        Tt_ChooseSeat(r,p->id,epoch,(int)Ttw_Read(b+20),(int)Ttw_Read(b+12),(int)Ttw_Read(b+16));break;
+    case TTW_CHOOSE:{uint16_t items[8];int seat=Ttw_Read(b+20)==0xffffffffu?Tt_Seat(r,p->id):(int)Ttw_Read(b+20);
+        if(!r->options.version){rc=Tt_ChooseSeat(r,p->id,epoch,seat,(int)Ttw_Read(b+12),(int)Ttw_Read(b+16));break;}
+        for(int k=0;k<8;++k)items[k]=b[24+k*2]|(unsigned)b[25+k*2]<<8;
+        rc=Tt_ChooseItems(r,p->id,epoch,seat,(int)Ttw_Read(b+12),(int)Ttw_Read(b+16),items);break;}
+    case TTW_OPTIONS:{TtOptions options;rc=Ttw_GetOptions(b+24,&options)?Tt_SetOptions(r,p->id,epoch,&options):TT_BAD_CHOICE;break;}
 
     case TTW_LOAD:
 
         rc=Tt_BeginLoad(r,p->id,epoch,read64(b+24));
 
-        if(!rc)Tt_InputsReset(&rooms[p->room].inputs,r->epoch,r->team_size*2);
+        if(!rc)Tt_InputsReset(&rooms[p->room].inputs,r->epoch,Tt_Count(r));
 
         break;
 
@@ -265,6 +277,10 @@ static void command(int i){
     case TTW_ACK:rc=Tt_ArmAck(r,p->id,epoch);break;
 
     case TTW_START:rc=Tt_Start(r,p->id,epoch);break;
+    case TTW_BATTLE_RULES:rc=Tt_SetBattleRules(r,p->id,epoch,Ttw_Read(b+12));break;
+    case TTW_TEAMS:rc=Tt_SetTeams(r,p->id,epoch,Ttw_Read(b+12),Ttw_Read(b+16));break;
+    case TTW_ARENA:rc=Tt_SetArena(r,p->id,epoch,Ttw_Read(b+12),Ttw_Read(b+16),Ttw_Read(b+20));break;
+    case TTW_SLOT:rc=Tt_SetSlot(r,p->id,epoch,Ttw_Read(b+12),Ttw_Read(b+16),Ttw_Read(b+20));break;
 
     case TTW_INPUT:
 
@@ -406,6 +422,9 @@ static int tag_random(void *out,unsigned size){
 
 static int cpu_fill,cpu_difficulty=2,local_room,ws_mode,ws_started,peer_mode;
 static int configured_ffa,configured_quick;
+static unsigned char shared_options_packet[TT_WIRE_BYTES];
+static int shared_options_pending;
+static unsigned tag_pending_coop;
 void Port_TagModeOptions(int free_for_all,int quick){configured_ffa=free_for_all==1;configured_quick=quick==1;}
 int Port_TagFreeForAll(void){return state.free_for_all;}
 int Port_TagQueueWaiting(int queue){
@@ -450,33 +469,6 @@ void Port_TagInitialTeams(int left,int right){configured_left=left;configured_ri
 
 /* The room's load digest is a match-setup checksum, not a language or UI checksum.
  * Include the complete roster so a 2v2..5v5 session checks every selected fighter. */
-static uint64_t tag_load_digest_word(uint64_t hash,uint32_t value){
-    int i;for(i=0;i<4;++i){hash=(hash^(uint8_t)(value>>(i*8)))*0x100000001b3ULL;}return hash;
-}
-static uint64_t tag_load_digest(const TtRoom *r){
-    uint64_t hash=0xcbf29ce484222325ULL;int i,count=Tt_Capacity(r);
-    hash=tag_load_digest_word(hash,TT_PROTOCOL);
-    hash=tag_load_digest_word(hash,(uint32_t)r->free_for_all);
-    hash=tag_load_digest_word(hash,(uint32_t)r->content);
-    hash=tag_load_digest_word(hash,(uint32_t)(r->content>>32));
-    hash=tag_load_digest_word(hash,(uint32_t)r->team_size);
-    hash=tag_load_digest_word(hash,(uint32_t)r->time);
-    hash=tag_load_digest_word(hash,(uint32_t)r->delay);
-    hash=tag_load_digest_word(hash,(uint32_t)count);
-    if(count<0)count=0;if(count>TT_MAX_PLAYERS)count=TT_MAX_PLAYERS;
-    for(i=0;i<count;++i){
-        const TtPlayer *p=&r->players[i];
-        hash=tag_load_digest_word(hash,(uint32_t)i);
-        hash=tag_load_digest_word(hash,(uint32_t)p->team);
-        hash=tag_load_digest_word(hash,(uint32_t)p->chara);
-        hash=tag_load_digest_word(hash,(uint32_t)p->costume);
-        hash=tag_load_digest_word(hash,(uint32_t)p->cpu);
-        hash=tag_load_digest_word(hash,(uint32_t)p->difficulty);
-        hash=tag_load_digest_word(hash,(uint32_t)p->confirmed);
-    }
-    return hash;
-}
-
 const char *Port_TagEndpoint(void){const char *s=getenv("BT4_TAG_SERVER");return s&&s[0]?s:Bt4Signal_Project();}
 
 /* Keep clipboard strings and the 64-bit release fingerprint in the native
@@ -492,7 +484,7 @@ int Port_TagJoinCode(const char *code){
     if(!code){snprintf(error,sizeof(error),"Enter a six-character room code.");return 0;}
     for(i=0;i<6;++i){unsigned char c=(unsigned char)code[i];
         if(c>='a'&&c<='z')c-=32;
-        if(!((c>='A'&&c<='Z')||(c>='0'&&c<='9'))){snprintf(error,sizeof(error),"Enter a six-character room code.");return 0;}
+        if(!((c>='A'&&c<='Z'&&c!='I'&&c!='O')||(c>='2'&&c<='9'))){snprintf(error,sizeof(error),"Use the six characters shown in the Tag Team lobby. Room codes do not contain I, O, 0 or 1.");return 0;}
         canonical[i]=(char)c;
     }
     if(code[6]){snprintf(error,sizeof(error),"Enter a six-character room code.");return 0;}canonical[6]=0;
@@ -504,13 +496,24 @@ int Port_TagJoinCode(const char *code){
 }
 
 static SDL_AtomicInt sTagRenderActive;
+void Port_TagJointRecordMark(int tick){
+    extern unsigned gPortVBlanks;
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_PIPE"))
+        fprintf(stderr,"tag joint demo clock: tick=%d ms=%llu blank=%u\n",tick,
+            (unsigned long long)SDL_GetTicks(),gPortVBlanks);
+}
 void Port_TagBattleRenderSet(int active){SDL_SetAtomicInt(&sTagRenderActive,active!=0);}
 int Port_TagBattleRenderActive(void){return SDL_GetAtomicInt(&sTagRenderActive);}
 
 /* Cached verification of the compatible base data, independent of release labels. */
 int Port_TagDataFingerprint(unsigned long long *out){
     extern int Port_BuildIdentity(unsigned long long *);
-    return Port_BuildIdentity(out);
+    const int status=Port_BuildIdentity(out);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    /* Directional targeting uses the camera during the shared simulation. */
+    if(status==1&&out)*out^=0x54414743414D3033ull;
+#endif
+    return status;
 }
 
 int Port_TagChatCount(void){return chat_count;}
@@ -546,7 +549,7 @@ int Port_TagConnect(const char *server){
 
     char ip[64];const char *colon;int port;struct sockaddr_in a;
 
-    Port_TagClose();sock_init();
+    Port_TagClose();
 
     /* CPU practice uses the same validated room model entirely in-process. */
 
@@ -556,6 +559,7 @@ int Port_TagConnect(const char *server){
 
     }
 
+    sock_init();
     if(!strcmp(server,Bt4Signal_Project())){
         if(!TagPeer_Open()){snprintf(error,sizeof(error),"Cannot initialize the direct connection.");return 0;}
         peer_mode=ws_mode=ws_started=1;tag_paced=1;tag_caps_sent=1;
@@ -587,7 +591,8 @@ int Port_TagConnect(const char *server){
 
 }
 
-void Port_TagClose(void){tag_stats_epoch=tag_stats_seed=0;tag_stats_finished=0;tag_stats_descriptor[0]=0;if(peer_mode)TagPeer_Close();peer_mode=0;Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_feedback_seen=0;tag_delay_adjusted=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
+static int offline_mode;
+void Port_TagClose(void){tag_stats_epoch=tag_stats_seed=0;tag_stats_finished=0;tag_stats_descriptor[0]=0;memset(shared_options_packet,0,sizeof(shared_options_packet));shared_options_pending=0;offline_mode=0;if(peer_mode)TagPeer_Close();peer_mode=0;Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_feedback_seen=0;tag_delay_adjusted=0;tag_pending_coop=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
 
 int Port_TagReselect(void){
 
@@ -601,6 +606,44 @@ int Port_TagReselect(void){
 
     return Tt_BeginSelect(&state,member,state.epoch)==TT_OK;
 
+}
+
+/* Private settings for the in-process draft. Never serialized into an online room. */
+static int offline_custom, offline_beans;
+int Port_TagOfflineMode(void){return local_room?offline_mode:0;}
+int Port_TagOfflineCustom(void){return Port_TagNetwork()?Port_TagOption("tag_off_custom",0):!Port_TagOfflineMode()||offline_custom;}
+int Port_TagOfflineBeans(void){return Port_TagNetwork()?Port_TagOption("tag_off_senzu",0):Port_TagOfflineMode()?offline_beans:0;}
+
+int Port_TagStartOffline(int mode,int left,int right,int time_limit,int difficulty,
+                         int custom,int beans){
+    int seat;
+    if(mode<1||mode>4||(mode==4&&left<2)||left<1||left>5||right<1||right>5||
+       time_limit<0||time_limit>4||difficulty<0||difficulty>4||beans<0||beans>5)
+        return 0;
+    if(!Port_TagConnect(NULL))return 0;
+    offline_mode=0;
+    offline_custom=custom!=0;
+    offline_beans=beans;
+    Tt_Open(&state,member,"Player 1",2,0);
+    state.time=time_limit;
+    state.delay=0;
+    if(Tt_SetTeams(&state,member,state.epoch,left,right)!=TT_OK)goto failed;
+    for(seat=1;seat<left+right;++seat)
+        if(Tt_SetSlot(&state,member,state.epoch,seat,1,difficulty)!=TT_OK)goto failed;
+    state.players[0].difficulty=difficulty;
+    if(Tt_BeginSelect(&state,member,state.epoch)!=TT_OK)goto failed;
+    if(mode==4){
+        /* P1/P2 retain native viewport/controller indices 0/1. Only the local
+         * draft's team assignment changes; no online room layout is changed. */
+        for(seat=0;seat<left+right;++seat)
+            state.players[seat].team=seat<2||seat>=right+2?0:1;
+    }
+    offline_mode=mode==4?2:mode;
+    memcpy(room_code,"LOCAL0",7);
+    return 1;
+failed:
+    Port_TagClose();
+    return 0;
 }
 
 static unsigned request_serial;
@@ -632,13 +675,13 @@ static int ws_start(const char *code){
 
 }
 
-void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content){
+void Port_TagOpenWithRules(int size,int limit,int delay,const char *name,uint64_t content,unsigned rules){
     delay=0; /* Tag Team no longer adds a user-configured simulation delay. */
-    if(configured_ffa)size=3;
+    if(configured_ffa&&configured_quick)size=3;
 
     if(local_room){
 
-        Tt_Open(&state,member,name,size,content);state.time=limit;state.delay=delay;
+        Tt_Open(&state,member,name,size,content);state.time=limit;state.delay=delay;state.battle_rules=rules;
         Tt_SetMode(&state,member,state.epoch,configured_ffa);
 
         if(cpu_fill)Tt_FillCPU(&state,member,state.epoch,cpu_difficulty);
@@ -664,8 +707,35 @@ void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content
     write64(b+24,content);if(name)snprintf((char*)b+32,20,"%s",name);
 
     Ttw_Write(b+52,cpu_fill);Ttw_Write(b+56,cpu_difficulty);
-    Ttw_Write(b+60,configured_ffa);Ttw_Write(b+64,configured_quick);request(b);
+    Ttw_Write(b+60,configured_ffa);Ttw_Write(b+64,configured_quick);
+    Ttw_Write(b+TTW_OPEN_BATTLE_RULES,rules);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {TtOptions options;extern int Port_Setting(const char*,int);Tt_OptionsDefault(&options);
+        static const char *const keys[]={"tag_off_custom","tag_off_senzu","tag_off_joint","tag_off_fusion","tag_fusion_seconds",
+        "tag_revive_team1","tag_revive_team2","tag_revive_seconds","tag_revive_charge","tag_revive_health","tag_revive_radius","tag_revive_cpu","tag_revive_opacity"};
+        for(int i=0;i<TT_OPTION_SCALARS;++i)options.value[i]=Port_Setting(keys[i],options.value[i]);
+        static const char *const fields[]={"scale","max","start","percent","freeze"};
+        int teamIndex[2]={0};for(int i=0;i<10;++i){int team=i<configured_left+configured_right?(i==0?0:i==1?1:i<configured_left+1?0:1):i&1;
+            int slot=teamIndex[team]++;if(slot>=5)slot=4;
+            if(!configured_quick){
+                char key[24];
+                options.version=TT_OPTION_COMBAT_VERSION;
+                snprintf(key,sizeof(key),"tag_combat%d%d",team+1,slot+1);
+                options.value[TT_OPTION_LEGACY_WORDS+i]=Port_Setting(key,TT_COMBAT_DEFAULT);
+            }
+            for(int f=0;f<5;++f){char key[24];snprintf(key,sizeof(key),"tag_hp%d%d_%s",team+1,slot+1,fields[f]);
+                options.value[TT_OPTION_SCALARS+i*5+f]=Port_Setting(key,options.value[TT_OPTION_SCALARS+i*5+f]);}}
+        if(configured_quick){Tt_OptionsDefault(&options);options.value[TT_OPT_PRESETS]=0;}
+        if(!Tt_OptionsValid(&options)){fail("Invalid shared TAG TEAM settings.");return;}
+        Ttw_PutOptions(b+TTW_OPEN_OPTIONS,&options);
+    }
+#endif
+    request(b);
 
+}
+
+void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content){
+    Port_TagOpenWithRules(size,limit,delay,name,content,0);
 }
 
 void Port_TagJoin(const char *code,const char *name,uint64_t content){
@@ -675,7 +745,11 @@ void Port_TagJoin(const char *code,const char *name,uint64_t content){
 
     if(!ws_start(code))return;
 
-    memcpy(b+12,code,6);write64(b+24,content);if(name)snprintf((char*)b+32,20,"%s",name);request(b);
+    memcpy(b+12,code,6);write64(b+24,content);if(name)snprintf((char*)b+32,20,"%s",name);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    Ttw_Write(b+TTW_JOIN_BATTLE_RULES,3);
+#endif
+    request(b);
 
 }
 
@@ -709,9 +783,9 @@ void Port_TagCommand(int command,int a,int b){
     Ttw_Write(packet+12,a);Ttw_Write(packet+16,b);
     /* Each client recomputes this from the shared, complete roster. The host
      * establishes it at LOAD; every LOADED acknowledgement must match it. */
-    write64(packet+24,(command==TTW_LOAD||command==TTW_LOADED)?tag_load_digest(&state):state.load_digest);
+    write64(packet+24,(command==TTW_LOAD||command==TTW_LOADED)?Tt_LoadDigest(&state):state.load_digest);
 
-    if(command==TTW_CHOOSE)Ttw_Write(packet+20,(uint32_t)Port_TagDraftSeat());
+    if(command==TTW_CHOOSE){Ttw_Write(packet+20,(uint32_t)Port_TagDraftSeat());memset(packet+24,0,16);}
 
     request(packet);
 
@@ -740,7 +814,7 @@ void Port_TagPoll(void){
     tag_character_report();
 
     int n=0,work=0,direct=0;Uint64 arrived=0;if(ws_mode?!ws_started:client.sock==TT_INVALID)return;
-    if(peer_mode&&TagPeer_Status()<0){fail("Could not establish or maintain a direct connection to the room.");return;}
+    if(peer_mode&&TagPeer_Status()<0){const char *why=TagPeer_Error();fail(why?why:"Could not establish or maintain a direct connection to the room.");return;}
     if(tag_direct_route&&TagDirect_Active()<0){fail("This client fell too far behind the TAG TEAM coordinator.");return;}
 
     if(connecting){fd_set wr,er;struct timeval tv={0,0};int e=0;int len=sizeof(e);
@@ -832,7 +906,13 @@ void Port_TagPoll(void){
 
         }
 
+        if(Ttw_Read(client.in)==TT_PROTOCOL&&Ttw_Read(client.in+4)==TTW_OPTIONS_STATE){memcpy(shared_options_packet,client.in,TT_WIRE_BYTES);continue;}
         if(!Ttw_Decode(client.in,&state,&member,&result,room_code)){fail("Incompatible TAG TEAM server.");return;}
+#ifdef BT4_TAG_TEAM_EXPANDED
+        if(state.phase!=TT_CLOSED&&!state.options_hash){fail("This TAG TEAM room needs the same updated test build on every client.");return;}
+#endif
+        if(state.options_hash&&!Ttw_ApplyOptions(shared_options_packet,&state)){fail("Shared TAG TEAM settings are missing or incompatible.");return;}
+        shared_options_pending=0;
         if(peer_mode&&!result){
             char descriptor[8192];PortVoiceRoomMember people[TT_MAX_PLAYERS];int i,count=0;
             if(TagPeer_Descriptor(descriptor,sizeof(descriptor))){
@@ -872,7 +952,7 @@ void Port_TagPoll(void){
 
         else error[0]=0;
 
-        if(!result&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")&&state.phase==TT_LOBBY&&(member==state.host||getenv("BT4_TAG_QUICK_TEST"))){fprintf(stderr,"tag online code=%s humans=%d\n",room_code,Tt_Humans(&state));fflush(stderr);}
+        if(!result&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")&&state.phase==TT_LOBBY){fprintf(stderr,"tag online code=%s humans=%d\n",room_code,Tt_Humans(&state));fflush(stderr);}
 
         if(!result && state.phase==TT_LOBBY && member==state.host && configure_pending==1){
 
@@ -1044,11 +1124,109 @@ void Port_TagArena(int stage,int bgm,int attacks){unsigned char p[512];Ttw_Reque
 
 
 
-int Port_TagCanStart(void){return !configure_pending && state.phase==TT_LOBBY && (!configured_quick||Tt_Humans(&state)==Tt_Capacity(&state)) && Tt_TeamCount(&state,0,1)>0 && Tt_TeamCount(&state,1,1)>0;}
+int Port_TagCanStart(void){return !shared_options_pending && !configure_pending && state.phase==TT_LOBBY && (!configured_quick||Tt_Humans(&state)==Tt_Capacity(&state)) && Tt_TeamCount(&state,0,1)>0 && Tt_TeamCount(&state,1,1)>0;}
 
 
+
+
+static int shared_options_save(const TtOptions *options);
+int Port_TagRulesV2(void){return state.options.version==TT_OPTION_COMBAT_VERSION;}
+int Port_TagSharedReady(void){return state.options.version&&!shared_options_pending;}
+unsigned Port_TagSharedCombat(int team,int slot,unsigned value,int save){
+    int i,n=0;
+    if(!Port_TagRulesV2()||team<0||team>1||slot<0||slot>=5)return TT_COMBAT_DEFAULT;
+    for(i=0;i<state.slot_count;++i)if(state.players[i].team==team&&n++==slot){
+        int index=TT_OPTION_LEGACY_WORDS+state.players[i].lobby_slot;
+        if(save){
+            TtOptions next=state.options;
+            next.value[index]=value;
+            return shared_options_save(&next)?value:(unsigned)state.options.value[index];
+        }
+        return (unsigned)state.options.value[index];
+    }
+    return TT_COMBAT_DEFAULT;
+}
+unsigned Port_TagActorCombat(int actor){
+    if(!Port_TagRulesV2()||actor<0||actor>=Tt_Count(&state))return TT_COMBAT_DEFAULT;
+    return (unsigned)state.options.value[TT_OPTION_LEGACY_WORDS+state.players[actor].lobby_slot];
+}
+/* Team changes use one authoritative transaction, including the last slot. */
+int Port_TagSharedCombatTeam(int team,unsigned value){
+    TtOptions next=state.options;
+    if(!Port_TagRulesV2()||team<0||team>1)return 0;
+    for(int i=0;i<state.slot_count;++i)if(state.players[i].team==team)
+        next.value[TT_OPTION_LEGACY_WORDS+state.players[i].lobby_slot]=(int32_t)value;
+    return shared_options_save(&next);
+}
+int Port_TagWithdrawSeat(int seat){
+    unsigned char packet[TT_WIRE_BYTES];
+    int rc;
+    if(state.phase!=TT_SELECT||seat<0||seat>=Tt_Count(&state)||!state.players[seat].confirmed)return 0;
+    if(state.players[seat].cpu ? !Port_TagHost() : seat!=Port_TagSeat())return 0;
+    if(local_room){
+        rc=Tt_ChooseSeat(&state,member,state.epoch,seat,-1,0);
+        if(rc)return 0;error[0]=0;return 1;
+    }
+    if(!Port_TagRulesV2())return 0;
+    Ttw_Request(packet,TTW_CHOOSE,state.epoch);
+    Ttw_Write(packet+12,UINT32_MAX);
+    Ttw_Write(packet+20,(uint32_t)seat);
+    request(packet);
+    return 1;
+}
+int Port_TagWithdrawChoice(void){return Port_TagWithdrawSeat(Port_TagSeat());}
+int Port_TagOption(const char *key,int fallback){
+    extern int Port_Setting(const char *,int);int index=Tt_OptionIndex(key);
+    if(Port_TagNetwork())return state.options.version&&index>=0?state.options.value[index]:0;
+    return Port_Setting(key,fallback);
+}
+int Port_TagSharedOption(const char *key,int fallback){
+    extern int Port_Setting(const char *,int);
+    return Port_TagNetwork()&&state.phase?Port_TagOption(key,fallback):Port_Setting(key,fallback);
+}
+static int shared_options_save(const TtOptions *options){
+    unsigned char p[512];
+    if(configured_quick||state.phase!=TT_LOBBY||member!=state.host||!Port_TagSharedReady()||!Tt_OptionsValid(options))return 0;
+    Ttw_Request(p,TTW_OPTIONS,state.epoch);Ttw_PutOptions(p+24,options);shared_options_pending=1;request(p);return 1;
+}
+int Port_TagSharedSave(const char *key,int value){
+    extern void Port_SettingSave(const char*,int);int index=Tt_OptionIndex(key);
+    if(Port_TagNetwork()&&state.phase){TtOptions next=state.options;if(index<0)return 0;next.value[index]=value;return shared_options_save(&next);}
+    Port_SettingSave(key,value);return 1;
+}
+int Port_TagSharedHealth(int team,int slot,int32_t values[5],int save){
+    int i,n=0,found=-1;if(team<0||team>1||slot<0||slot>=5||!state.options.version)return 0;
+    for(i=0;i<state.slot_count;++i)if(state.players[i].team==team&&n++==slot){found=state.players[i].lobby_slot;break;}
+    if(found<0)return 0;
+    if(save){TtOptions next=state.options;memcpy(next.value+TT_OPTION_SCALARS+found*5,values,20);return shared_options_save(&next);}
+    memcpy(values,state.options.value+TT_OPTION_SCALARS+found*5,20);return 1;
+}
+int Port_TagSharedHealthAll(int32_t values[2][5][5]){
+    TtOptions next=state.options;int index[2]={0};
+    for(int i=0;i<state.slot_count;++i){int team=state.players[i].team,slot=index[team]++;
+        if(slot>=5)return 0;memcpy(next.value+TT_OPTION_SCALARS+state.players[i].lobby_slot*5,values[team][slot],20);}
+    return shared_options_save(&next);
+}
+int Port_TagActorHealth(int actor,int32_t values[5]){
+    if(actor<0||actor>=Tt_Count(&state)||!state.options.version)return 0;
+    memcpy(values,state.options.value+TT_OPTION_SCALARS+state.players[actor].lobby_slot*5,20);return 1;
+}
+const uint16_t *Port_TagPlayerItems(int actor){return actor>=0&&actor<Tt_Count(&state)&&state.options.version?state.players[actor].items:NULL;}
+void Port_TagChoiceItems(int chara,int costume,const uint16_t items[8]){
+    if(local_room){Port_TagCommand(TTW_CHOOSE,chara,costume);return;}
+    unsigned char p[512];Ttw_Request(p,TTW_CHOOSE,state.epoch);Ttw_Write(p+12,chara);Ttw_Write(p+16,costume);Ttw_Write(p+20,Port_TagDraftSeat());
+    for(int i=0;i<8;++i){unsigned v=Port_TagOfflineCustom()&&items?items[i]:0;if(v>350)return;p[24+i*2]=(unsigned char)v;p[25+i*2]=(unsigned char)(v>>8);}
+    request(p);
+}
 
 int Port_TagTime(void){return state.time;}
+unsigned Port_TagBattleRules(void){return state.battle_rules;}
+int Port_TagSetBattleRules(unsigned rules){
+    if(configured_quick||rules>TT_RULE_MASK||state.phase!=TT_LOBBY||member!=state.host)return 0;
+    if(local_room)return Tt_SetBattleRules(&state,member,state.epoch,rules)==TT_OK;
+    Port_TagCommand(TTW_BATTLE_RULES,(int)rules,0);
+    return !error[0];
+}
 
 int Port_TagSeat(void){return Tt_Seat(&state,member);}
 
@@ -1064,6 +1242,14 @@ int Port_TagDraftSeat(void){
 
     if(seat<0)return -1;
 
+    if(state.phase!=TT_SELECT)return -1;
+    if(Port_TagRulesV2()){
+        int i;
+        if(!state.players[seat].confirmed)return seat;
+        if(member==state.host)for(i=0;i<Tt_Count(&state);++i)
+            if(state.players[i].cpu&&!state.players[i].confirmed)return i;
+        return -1;
+    }
     if(Tt_Turn(&state,Port_TagTeam(seat))==seat)return seat;
 
     if(member==state.host)for(team=0;team<2;++team){int turn=Tt_Turn(&state,team);if(turn>=0&&state.players[turn].cpu)return turn;}
@@ -1111,13 +1297,13 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
         uint32_t next;
         if(tag_input_epoch!=state.epoch){
             tag_input_sent=0;tag_input_epoch=state.epoch;
-            tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_delay_adjusted=0;
+            tag_pending_coop=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_delay_adjusted=0;
             tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_feedback_seen=0;
         }
         if(tag_input_sent&&frame<=tag_input_latest){
             /* A shrinking lead cannot replace an immutable submitted frame.
              * Retain short taps for the next writable frame instead. */
-            tag_pending_buttons|=Ttw_Read(pad);tag_pending_l3|=pad[6];tag_pending_skip|=pad[8];return 1;
+            tag_pending_buttons|=Ttw_Read(pad);tag_pending_l3|=pad[6]&15;tag_pending_skip|=pad[8];tag_pending_coop|=pad[17]&13;return 1;
         }
         next=tag_input_sent?tag_input_latest+1:frame;
         if(!tag_input_sent)tag_input_first=frame;
@@ -1125,15 +1311,15 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
          * neutral input. Preserve held controls but never repeat one-shot commands. */
         for(;next<=frame;++next){
             Ttw_Request(packet,TTW_INPUT,state.epoch);Ttw_Write(packet+12,next);
-            if(next<frame){memcpy(packet+16,tag_input_pad,TT_PAD_BYTES);packet[22]=packet[24]=0;}
+            if(next<frame){memcpy(packet+16,tag_input_pad,TT_PAD_BYTES);packet[22]&=0x30;packet[24]=0;}
             else{
                 memcpy(packet+16,pad,TT_PAD_BYTES);Ttw_Write(packet+16,Ttw_Read(pad)|tag_pending_buttons);
-                packet[22]|=tag_pending_l3;packet[24]|=tag_pending_skip;
+                packet[22]|=tag_pending_l3;packet[24]|=tag_pending_skip;packet[33]|=tag_pending_coop;
             }
             request(packet);if(state.phase!=TT_FIGHT)return 0;
         }
         memcpy(tag_input_pad,pad,TT_PAD_BYTES);
-        tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;
+        tag_pending_coop=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;
         tag_input_latest=frame;tag_input_sent=1;return 1;
     }
     Ttw_Request(packet,TTW_INPUT,state.epoch);Ttw_Write(packet+12,frame);memcpy(packet+16,pad,TT_PAD_BYTES);
@@ -1166,6 +1352,7 @@ int Port_TagCancelSelect(void){
 
     if(state.phase!=TT_SELECT || Port_TagSeat()<0)return 0;
 
+    if(!Port_TagHost())return 1;
     Port_TagCommand(TTW_CANCEL_SELECT,0,0);
 
     return !error[0];

@@ -32,7 +32,7 @@ int main(void){
 '''
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp);(d/'probe.c').write_text(code,encoding='utf8');exe=d/('probe.exe' if os.name=='nt' else 'probe')
-            subprocess.run([cc,'-std=gnu99','-O2','-I'+str(ROOT/'port/include'),'-I'+str(sdk/'include'),str(d/'probe.c'),'-L'+str(sdk/'lib'),'-lSDL3','-o',str(exe)],check=True)
+            subprocess.run([cc,'-std=gnu99','-DBT4_DEVELOPMENT_BUILD','-O2','-I'+str(ROOT/'port/include'),'-I'+str(sdk/'include'),str(d/'probe.c'),'-L'+str(sdk/'lib'),'-lSDL3','-o',str(exe)],check=True)
             env=dict(os.environ,PATH=str(sdk/'bin')+os.pathsep+os.environ['PATH'])
             subprocess.run([str(exe)],env=env,check=True,timeout=30)
 
@@ -47,7 +47,7 @@ int main(void){
 typedef int s32;typedef unsigned char u8;
 enum {BATTLE_FLAG_PAUSE=0x100};static struct {unsigned flags;} work;
 #define Battle_GetWork() (&work)
-static int online,tag=1,actors=10,state=3;
+static int online,tag=0,actors=2,state=3;
 static unsigned char delivered[10][18];static int gauges[10][7];
 static int Port_NetActive(void){return online&&!tag;}
 static int TagBattle_Network(void){return online&&tag;}
@@ -64,8 +64,14 @@ int main(void){
  unsigned char p[8];unsigned flags;uint32_t seq;
  for(int i=0;i<10;i++){gauges[i][0]=20+i;gauges[i][1]=100+i;gauges[i][3]=0;gauges[i][4]=60000;gauges[i][5]=0;gauges[i][6]=500000;}
  command(1,7,1);assert(!DevRules_NetworkTick());assert(!DevRules_ProtectHealth());assert(gauges[0][0]==20);
+#ifndef BT4_DEVELOPMENT_BUILD
+ online=1;assert(!DevRules_NetworkTick());assert(!DevRules_ProtectHealth());
+ assert(gauges[0][0]==20&&gauges[0][3]==0);
+ tag=1;actors=10;assert(!DevRules_NetworkTick());assert(!DevRules_Flags());
+ puts("Public build ignores developer commands in duel and Tag Team PASS");return 0;
+#endif
  online=1;assert(!DevRules_NetworkTick());assert(DevRules_ProtectHealth());
- for(int i=0;i<10;i++)assert(gauges[i][0]==gauges[i][1]&&gauges[i][3]==60000&&gauges[i][5]==500000);
+ for(int i=0;i<2;i++)assert(gauges[i][0]==gauges[i][1]&&gauges[i][3]==60000&&gauges[i][5]==500000);
  gauges[0][3]=90000;assert(!DevRules_NetworkTick());assert(gauges[0][3]==90000); // preserve Maximum Power
  command(1,15,2);assert(DevRules_NetworkTick());assert(DevRules_NetworkTick());
  command(1,31,3);assert(!DevRules_NetworkTick());assert(DevRules_NetworkTick()); // exactly one step
@@ -80,11 +86,13 @@ int main(void){
  Bt4Dev_Pack(p,7,99);assert(Bt4Dev_Unpack(p,&flags,&seq)&&flags==7&&seq==99);
  for(int i=0;i<8;i++){p[i]^=0x40;assert(!Bt4Dev_Unpack(p,&flags,&seq));p[i]^=0x40;}
  Bt4Dev_Pack(p,7,0);assert(!Bt4Dev_Unpack(p,&flags,&seq));
- puts("Shared Dev rules: ten equal actors, 1v1, pause/resume, single-step, rollback, stale packets and corruption PASS");
+ tag=1;actors=10;assert(!DevRules_NetworkTick());assert(!DevRules_Flags());
+ puts("Shared Dev duel rules: pause/resume, single-step, rollback, stale packets, corruption; Tag Team excludes Dev rules PASS");
 }
 '''
         with tempfile.TemporaryDirectory() as tmp:
             d=Path(tmp);(d/'probe.c').write_text(code,encoding='utf8');exe=d/('probe.exe' if os.name=='nt' else 'probe')
-            subprocess.run([cc,'-std=gnu99','-I'+str(ROOT/'port/include'),str(d/'probe.c'),'-o',str(exe)],check=True)
-            subprocess.run([str(exe)],check=True)
+            for flags in ([], ['-DBT4_DEVELOPMENT_BUILD']):
+                subprocess.run([cc,'-std=gnu99',*flags,'-I'+str(ROOT/'port/include'),str(d/'probe.c'),'-o',str(exe)],check=True)
+                subprocess.run([str(exe)],check=True)
 if __name__=='__main__':unittest.main()

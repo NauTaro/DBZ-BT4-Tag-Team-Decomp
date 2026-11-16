@@ -2,14 +2,18 @@
 #define BT4_VERSION_H
 /* Upstream engine versions and BT4 revisions are independent release axes. */
 #define BT4_UPSTREAM_VERSION "0.1.39.5"
-#define BT4_REVISION 5
-#define BT4_REVISION_PATCH 8
-#define BT4_DISPLAY_VERSION "0.1.39.5 R5 1.7"
-#ifdef BT4_DEVELOPMENT_BUILD
+#define BT4_PROJECT_VERSION "0.1.39.6"
+#define BT4_REVISION 0
+#define BT4_REVISION_PATCH 0
+#define BT4_DISPLAY_VERSION "0.1.39.6"
+#if defined(BT4_TAG_TEAM_PREVIEW)
 #undef BT4_DISPLAY_VERSION
-#define BT4_DISPLAY_VERSION "0.1.39.5 Dev"
+#define BT4_DISPLAY_VERSION "0.1.39.6 Test"
+#elif defined(BT4_DEVELOPMENT_BUILD)
+#undef BT4_DISPLAY_VERSION
+#define BT4_DISPLAY_VERSION "0.1.39.6 Dev"
 #endif
-#define BT4_RELEASE_TITLE "0.1.39.5 R5 1.7"
-#define BT4_CANONICAL_VERSION "0.1.39.5-R5.8"
+#define BT4_RELEASE_TITLE "0.1.39.6"
+#define BT4_CANONICAL_VERSION "0.1.39.6"
 #define BT4_LEGACY_BRIDGE_VERSION "0.1.39.5"
 #endif

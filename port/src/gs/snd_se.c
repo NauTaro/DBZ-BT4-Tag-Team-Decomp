@@ -100,6 +100,37 @@ void Port_SeBind(int handle,int actor){
 static Voice sVoices[VOICES];
 static SDL_AudioStream *sStream;
 static int sMono, sTried;
+static SDL_AtomicInt sTagCueRequest;
+static int stream_ready(void);
+
+/* Two short radar pulses, synthesized into the normal sound-effects mix. */
+void Port_SeTagCue(int direction){
+    if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"tag radar cue: direction=%d\n",direction);
+    if(stream_ready())SDL_SetAtomicInt(&sTagCueRequest,direction<0?1:direction>0?3:2);
+}
+
+static void mix_tag_cue(float *acc,int frames){
+    static int cursor=4320,pan;
+    int request=SDL_SetAtomicInt(&sTagCueRequest,0),i;
+    float gain;
+    if(request){
+        cursor=0;pan=request-2;
+        if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"tag radar cue: mixed at %d Hz, pan=%d\n",OUT_RATE,pan);
+    }
+    if(cursor>=4320)return;
+    gain=22000.0f*SE_GAIN(1);
+    for(i=0;i<frames&&cursor<4320;++i,++cursor){
+        int part=cursor>=2112, sample=cursor-(part?2112:0);
+        float t,env,s,frequency;
+        if(sample>=1488)continue;
+        t=(float)sample/1488.0f;
+        env=t<0.10f?t*10.0f:(1.0f-t)*(1.0f-t);
+        frequency=part?1620.0f:1040.0f;
+        s=sinf(6.2831853f*sample*(frequency+220.0f*t)/OUT_RATE)*env*gain*(part?.70f:1.0f);
+        acc[i*2]+=s*(1.0f-pan*.22f);
+        acc[i*2+1]+=s*(1.0f+pan*.22f);
+    }
+}
 
 extern SDL_AudioDeviceID Port_AudioDevice(void); /* snd_adx.c */
 
@@ -198,6 +229,7 @@ static void SDLCALL mix(void *user, SDL_AudioStream *stream, int additional, int
     while (frames > 0) {
         n = frames > 512 ? 512 : frames;
         memset(acc, 0, sizeof(float) * (size_t)n * 2);
+        mix_tag_cue(acc,n);
         for (k = 0; k < VOICES; k++) {
             Voice *v = &sVoices[k];
             if (!v->on || sBanks[v->bank].paused) {
