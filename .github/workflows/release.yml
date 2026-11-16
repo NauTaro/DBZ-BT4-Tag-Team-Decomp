@@ -48,7 +48,16 @@ jobs:
           revision_patch = int(patch_match[1]) if patch_match else 0
           upstream = value('BT4_UPSTREAM_VERSION')
           suffix = str(revision) + ('.' + str(revision_patch) if revision_patch else '')
-          assert canonical == upstream + '-R' + suffix, 'Canonical revision is inconsistent'
+          project_match = re.search(r'^#define BT4_PROJECT_VERSION "([^"]+)"$', source, re.M)
+          if project_match:
+              project = project_match[1]
+              assert re.fullmatch(r'\d+\.\d+\.\d+\.\d+', project), 'Invalid BT4 project version'
+              expected = project + ('-R' + suffix if revision else '')
+              assert canonical == expected, 'BT4 project release identity is inconsistent'
+              if revision == 0:
+                  assert revision_patch == 0 and release_title == project, 'Invalid base project release'
+          else:
+              assert canonical == upstream + '-R' + suffix, 'Canonical revision is inconsistent'
           assert value('BT4_DISPLAY_VERSION') == release_title, 'Display version and release title disagree'
           tag = os.environ['RELEASE_TAG'].removeprefix('v')
           assert tag == canonical or (revision == 2 and revision_patch == 0 and tag == bridge), 'Tag and BT4 revision disagree'
@@ -305,7 +314,10 @@ jobs:
           import os, pathlib
           section = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
           heading, body = section.split('\n', 1)
-          assert 'BT4decomp ' + heading.removeprefix('# ') == os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
+          changelog_title = heading.removeprefix('# ')
+          if not changelog_title.startswith('BT4decomp '):
+              changelog_title = 'BT4decomp ' + changelog_title
+          assert changelog_title == os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
           pathlib.Path('release-assets/notes.md').write_text(body.strip() + '\n')
           PY
           python3 port/tools/release_draft.py --assets release-assets             --notes release-assets/notes.md --title "$RELEASE_TITLE"             --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"

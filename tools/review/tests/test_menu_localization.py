@@ -45,12 +45,15 @@ int main(int argc,char **argv){
  const char *legacy="{\"schema_version\":1,\"locale\":\"pt-BR\",\"labels\":{\"tbo/wrap-fix/1\":{\"original\":\"Quick Match\",\"text\":\"WWWWWW\"}}}";
  assert(tr_port_parse(legacy,strlen(legacy),"pt-BR",&cat));assert(!cat.lines);
  assert(argc==2 && tr_port_read_path(argv[1],"pt-BR",&cat));assert(cat.lines && cat.lines->count>500);
- int found=0;
+ int found=0,training=0;
  for(int i=0;i<cat.lines->count;i++){
   TrLine *line=&cat.lines->line[i];assert(!strstr(line->text,"WWWW"));
   if(!strcmp(line->original,"Quick Match")){assert(!strcmp(line->text,"Partida rápida"));found=1;}
+  if(!strcmp(line->original,"Fijar")){assert(!strcmp(line->text,"Fixar"));training|=1;}
+  if(!strcmp(line->original,"Luchador")){assert(!strcmp(line->text,"Lutador"));training|=2;}
+  if(!strcmp(line->original,"Record and Playback")){assert(!strcmp(line->text,"Gravar e reproduzir"));training|=4;}
  }
- assert(found);tr_lines_free(cat.lines);return 0;
+ assert(found&&training==7);tr_lines_free(cat.lines);return 0;
 }
 '''
         self.compile_run(code,ROOT/'port/translations/port/pt-BR.json')

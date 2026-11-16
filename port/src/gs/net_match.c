@@ -588,6 +588,41 @@ static int supabase_match_loop(const char *name,const char *addrs){
     Bt4Discovery_End(generation);return 0;
 }
 
+#if defined(BT4_TAG_TURN_PILOT)
+extern int Bt4Pilot_NativeTurn(char server[272], char user[129], char password[129], int *forced);
+
+static int pilot_cancelled(void) { return STOPPED(); }
+
+static int pilot_relay(char *addresses, size_t size) {
+    char server[272], user[129], password[129], address[64], *colon;
+    int forced = 0, installed = 0, sock;
+    void *pending;
+    if (!Bt4Pilot_NativeTurn(server, user, password, &forced)) return 1;
+    SDL_LockMutex(sM.lock);
+    if (STOPPED()) {
+        SDL_UnlockMutex(sM.lock);
+        return 0;
+    }
+    sock = sM.sock;
+    SDL_SetAtomicInt(&sM.sockBusy, 1);
+    SDL_UnlockMutex(sM.lock);
+    pending = Relay_PreparePilot(sock, server, user, password, address, sizeof(address), pilot_cancelled);
+    SDL_LockMutex(sM.lock);
+    if (pending && !STOPPED() && (colon = strrchr(address, ':')) != NULL) {
+        size_t used = forced ? 0 : SDL_strlen(addresses);
+        *colon++ = '\0';
+        SDL_snprintf(addresses + used, size - used, "%s\"[%s]:%s\"", used ? "," : "", address, colon);
+        installed = 1;
+    }
+    Relay_FinishPilot(pending, installed);
+    if ((int)(intptr_t)SDL_GetTLS(&sMine) == SDL_GetAtomicInt(&sM.gen))
+        SDL_SetAtomicInt(&sM.sockBusy, 0);
+    SDL_UnlockMutex(sM.lock);
+    if (!STOPPED()) fprintf(stderr, "bt4: native TURN pilot allocation=%s forced=%d\n", installed ? "ready" : "unavailable", forced);
+    return !forced || installed;
+}
+#endif
+
 static int SDLCALL match_thread(void *arg) {
     char pub[64] = "", alternate[64] = "", lan[64] = "", addrs[256], body[512], answer[4096], key[40] = "", you[64] = "", name[20], relayAddr[64] = "";
     int i, n = 0, hosting, searches = 0, again = 0;
@@ -621,6 +656,13 @@ static int SDLCALL match_thread(void *arg) {
     SDL_snprintf(addrs, sizeof(addrs), "%s%s%s%s%s%s%s", pub[0] ? "\"" : "", pub, pub[0] ? "\"" : "", pub[0] && lan[0] ? "," : "", lan[0] ? "\"" : "", lan,
                  lan[0] ? "\"" : "");
     if(alternate[0]){size_t used=SDL_strlen(addrs);SDL_snprintf(addrs+used,sizeof(addrs)-used,"%s\"%s\"",used?",":"",alternate);}
+#if defined(BT4_TAG_TURN_PILOT)
+    if (supabase_discovery() && !pilot_relay(addrs, sizeof(addrs))) {
+        if (!STOPPED()) set_state(-1, "The TURN pilot could not allocate a relay address.");
+        return 0;
+    }
+    if (STOPPED()) return 0;
+#endif
     if (addrs[0] == '\0') {
         set_state(-1, "This computer's address could not be found (no network?).");
         return 0;

@@ -9,6 +9,7 @@ extern int TagBattle_Active(void);
 #include "sys/job.h"
 #include "sys/pad.h"
 #include "sys/game_pad.h"
+#include "battle/training.h"
 #include "menu/port_screen.h"
 #include "menu/tbo_art.h"
 
@@ -18,6 +19,69 @@ extern int TagBattle_Active(void);
 extern s32 *BtlMember_GetActiveGauge(void *);
 extern s32 BtlSeq_GetState(void);
 #include "dev_rules.inc"
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "tag_team_assist.inc"
+#include "battle/btl_input.h"
+#include "tag_team_revive.inc"
+#include "tag_team_relay.inc"
+#include "battle/tag_team_fusion.h"
+s32 TagFusion_Ticking(void){return BtlSeq_IsFighting() && !(Battle_GetWork()->flags&(BATTLE_FLAG_PAUSE|BATTLE_FLAG_LOADING));}
+void TagFusion_TestPause(s32 on){if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_FUSION_TEST")){if(on)Battle_GetWork()->flags|=BATTLE_FLAG_PAUSE;else Battle_GetWork()->flags&=~BATTLE_FLAG_PAUSE;}}
+#include "tag_team_assist_audit.inc"
+#include "tag_team_relay_audit.inc"
+#include "tag_team_revive_audit.inc"
+#include "tag_team_spectator_audit.inc"
+#include "tag_team_rules_audit.inc"
+#include "tag_team_damage_audit.inc"
+#include "tag_team_online_coop_audit.inc"
+
+static void TagOffline_UpdateSplitSpectators(void) {
+    if (!Battle_IsSplitScreen() || TagBattle_Network()) return;
+    const s32 canWatch = BtlSeq_IsFighting() &&
+        !(Battle_GetWork()->flags & (BATTLE_FLAG_PAUSE | BATTLE_FLAG_LOADING));
+    for (s32 player = 0; player < PAD_COUNT; ++player) {
+        const u32 pressed = canWatch ? gPad[player].gamePressed : 0;
+        const s32 direction = pressed & (PADG_R1 | PADG_RIGHT) ? 1 :
+                              pressed & (PADG_L1 | PADG_LEFT) ? -1 : 0;
+        const f32 *stick = gPad[player].right;
+        const f32 yaw = canWatch && (stick[0] > .15f || stick[0] < -.15f) ? stick[0] : 0;
+        const f32 pitch = canWatch && (stick[1] > .15f || stick[1] < -.15f) ? stick[1] : 0;
+        TagBattle_UpdateSplitSpectator(player, direction, yaw, pitch);
+    }
+}
+#endif
+
+static void TagOffline_ResetBeans(void){
+    extern int Port_TagOfflineBeans(void);
+    s32 actor, beans=Port_TagOfflineBeans();
+    for(actor=0;actor<10;++actor)sTagBeans[actor]=beans;
+}
+
+static void TagOffline_UseBeans(void){
+    extern int Port_TagOfflineBeans(void);
+    extern void BtlMember_AddHealth(void *,s32);
+    s32 actor;
+    if(!Port_TagOfflineBeans()||!BtlSeq_IsFighting()||
+       (Battle_GetWork()->flags&(BATTLE_FLAG_PAUSE|BATTLE_FLAG_LOADING)))return;
+    for(actor=0;actor<TagBattle_Count();++actor){
+        s32 hp,maximum;
+        if(!sTagBeans[actor])continue;
+        const TagHealthRule *healthRule = TagBattle_HealthRule(actor);
+        if (healthRule && healthRule->frozen) continue;
+        hp=BtlCharApi_GetHp(actor);
+        maximum=BtlCharApi_GetHpMax(actor);
+        if(hp<=0||hp>=maximum)continue;
+        if(BattleSide_GetControl(actor)==BTL_CONTROL_PAD){
+            Pad *pad=TagBattle_CommandPad(actor);
+            if(!(pad->held&PAD_L2)||!(pad->pressed&PAD_SELECT))continue;
+            TagBattle_ConsumeCommand(actor,PAD_SELECT);
+        }else if(hp>maximum/4)continue;
+        BtlMember_AddHealth(BtlChar_Get(actor),maximum-hp);
+        --sTagBeans[actor];
+        if(getenv("BT4_RENDER_TEST"))
+            fprintf(stderr,"tag offline: healed actor=%d, beans=%d\n",actor,sTagBeans[actor]);
+    }
+}
 
 /*
  * Battle scene top level, 0x12B570..0x12BD58. The frame order, the pause/restart/exit protocol and the
@@ -146,6 +210,9 @@ extern void BtlObj_UpdateVisibility(s32 view);
 extern void BtlObj_FinishVisibility(s32 split);
 extern void Gsc_Update(void);
 extern void BtlScript_Update(void);
+#ifdef PORT
+extern void PortPanels_SetBattleActive(s32 active);
+#endif
 /* Puts every battle subsystem back to the start of a match (first start and rematch) and fades in over 1 s. */
 s32 Battle_Restart(void) {
 #ifdef PORT
@@ -154,6 +221,10 @@ s32 Battle_Restart(void) {
     sceGsSyncPath(0, 0);
 #endif
     Snd_StopBankAndResume(0x3C);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    /* Clear temporary pad ownership before the native roster reads its pads. */
+    TagFusion_Reset();
+#endif
     TagBattle_ResetPairs();
     if(TagBattle_Network())TagOnline_Reset();
     sTagResultActive=0;
@@ -164,6 +235,13 @@ s32 Battle_Restart(void) {
     BtlGame_Reset();
     BtlStage_Reset();
     BtlChar_ResetAll();
+    Training_Restart();
+    TagOffline_ResetBeans();
+#ifdef BT4_TAG_TEAM_EXPANDED
+    TagAssist_Reset();
+    TagRelay_Reset();
+    TagRevive_Reset();
+#endif
     Fade_ResetAll();
     Fade_Start(0, 1, 1.0f);
     return 0;
@@ -184,12 +262,16 @@ s32 Battle_Init(void) {
     Ot_Init();
     BtlScene_Init(0);
     Battle_Restart();
+#ifdef PORT
+    PortPanels_SetBattleActive(1);
+#endif
     return 0;
 }
 
 /* Stores the result and destroys every battle subsystem. */
 s32 Battle_Term(void) {
 #ifdef PORT
+    PortPanels_SetBattleActive(0);
     sceGsSyncPath(0, 0);
 #endif
     {extern void Port_TagBattleRenderSet(s32);Port_TagBattleRenderSet(0);}
@@ -219,6 +301,12 @@ s32 Battle_Update(void) {
     Heap_TagCheck(0);
 
     BtlChars_UpdateInput();
+#ifdef BT4_TAG_TEAM_EXPANDED
+    TagFusion_Update();
+    TagAssist_Update();
+    TagRelay_Update();
+    TagRevive_Update();
+#endif
     Heap_TagCheck(10);
     BtlChars_UpdateMain();
     Heap_TagCheck(1);
@@ -393,8 +481,10 @@ void Battle_Loop(void) {
             Job_Run();
         }
         Gfx_BeginFrame();
+        /* Online pad delivery belongs to gameplay, independently of the
+         * optional developer pause/rule controls. */
+        if(!TagBattle_Network()&&Port_NetActive())Pad_Update();
         if(DevRules_Online()){
-            if(!TagBattle_Network())Pad_Update();
             devPauseOwned=DevPause_Begin(DevRules_NetworkTick());
         }
         if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) {
@@ -412,6 +502,19 @@ void Battle_Loop(void) {
             }else spectatorTestFrames=0;
             s32 dir=(gPad[0].gamePressed&(PADG_R1|PADG_RIGHT))?1:(gPad[0].gamePressed&(PADG_L1|PADG_LEFT))?-1:0;
             TagBattle_UpdatePairs();if(!TagBattle_Network())TagBattle_UpdateSpectator(dir);
+            TagOffline_UseBeans();
+#ifdef BT4_TAG_TEAM_EXPANDED
+            TagCoop_NetworkSetup();
+            TagJoint_TestPads();
+            TagDamage_TestPads();
+            TagRelay_TestPads();
+            TagRevive_TestPads();
+            TagSpectator_TestPads();
+            TagOffline_UpdateSplitSpectators();
+            TagFusion_ReadPads();
+            TagRelay_ReadPads();
+            TagAssist_ReadPads();
+#endif
         }
         if(TagBattle_Active()){
             s32 actor;
@@ -421,19 +524,71 @@ void Battle_Loop(void) {
         }
         Snd_Update();
         Snd_SendFighters();
+        Training_Tick();
         BtlGame_PreUpdate();
         Battle_UpdateWork();
         BtlAiMgr_Update();
+#ifdef BT4_TAG_TEAM_EXPANDED
+        TagJoint_TestInput();
+        TagDamage_TestInput();
+        TagRelay_TestInput();
+        TagRevive_TestInput();
+        TagSpectator_TestInput();
+        {extern void TagFusion_TestInput(void);TagFusion_TestInput();}
+        TagRevive_PrepareInput();
+        TagAssist_PrepareInput();
+        TagCoop_NetworkInput();
+#endif
         BtlChars_SampleInput();
         draw = Battle_Update();
+#ifdef BT4_TAG_TEAM_EXPANDED
+        TagJoint_TestAfter();
+        TagDamage_TestAfter();
+        TagRelay_TestAfter();
+        TagRevive_TestAfter();
+        TagSpectator_TestAfter(draw);
+        {extern void TagFusion_TestAfterFrame(void);TagFusion_TestAfterFrame();}
+        TagCoop_NetworkAfter();
+        TagRules_Test();
+#endif
         done = BtlGame_Update();
+        if (TagBattle_Local() && BtlSeq_IsFighting() && getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_HEALTH_TEST")) {
+            extern void TagHealth_TestAudit(void);
+            TagHealth_TestAudit();
+            exit(0);
+        }
         if(TagBattle_Network())TagOnline_Trace();
+#ifdef PORT
+        {
+            extern s32 Mods_SplitScreen(void),Port_PresentationSplitDrawing(s32);
+            extern s32 BtlCam_PresentationSplitBegin(void);
+            extern void BtlCam_PresentationSplitEnd(void),BtlObj_PresentationSplitSave(void),BtlObj_PresentationSplitRestore(void);
+            extern s32 gPortResim;
+            if(!gPortResim && Mods_SplitScreen() && BtlSeq_IsFighting() && BtlCam_PresentationSplitBegin()) {
+                s32 pane;
+                BtlObj_PresentationSplitSave();
+                Port_PresentationSplitDrawing(1);
+                for(pane=0;pane<2;++pane){BtlCam_SelectView(pane);BtlCam_ApplyView(0);BtlObj_UpdateVisibility(pane);}
+                BtlObj_FinishVisibility(1);
+                Battle_DrawSplit();
+                Port_PresentationSplitDrawing(0);
+                BtlObj_PresentationSplitRestore();
+                BtlCam_PresentationSplitEnd();
+            } else
+#endif
         if (Battle_IsSplitScreen() && draw) {
             Battle_DrawSplit();
         } else {
             Battle_Draw();
         }
+#ifdef PORT
+        }
+#endif
         TagBattle_ResultDraw();
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_OFFLINE_BATTLE_CAPTURE")&&BtlSeq_IsFighting()){
+            static s32 captureFrames;
+            if(++captureFrames==120){extern void Port_TagUiCapture(s32);Port_TagUiCapture(93);}
+        }
         DevPause_End(devPauseOwned);
         Gfx_EndFrame(2);
         Dma_Flush();

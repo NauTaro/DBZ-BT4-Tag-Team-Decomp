@@ -1,4 +1,10 @@
 // English, Spanish and Brazilian Portuguese labels for the bundled mod UI.
+        {"Split screen", "Pantalla dividida", "Tela dividida"},
+        {"Second view", "Segunda vista", "Segunda câmera"},
+        {"Current target", "Objetivo actual", "Alvo atual"},
+        {"Teammate", "Compañero", "Companheiro"},
+        {"Two local views in online and offline battles. Your opponent keeps their own display settings.", "Dos vistas locales en combates online y offline. Tu rival conserva sus propios ajustes de pantalla.", "Duas câmeras locais em lutas online e offline. O adversário mantém as próprias configurações de tela."},
+        {"Tag Team: follow your target or a living ally. Local two-player battles retain both players' cameras.", "Tag Team: sigue a tu objetivo o a un aliado vivo. Las partidas locales de dos jugadores conservan ambas cámaras.", "Tag Team: acompanhe o alvo ou um aliado vivo. Partidas locais de dois jogadores mantêm as duas câmeras."},
         {"Maximum power", "Máximo poder", "Poder máximo"},
         {"Mods", "Mods", "Mods"},
         {"Special-move cinematic cameras", "Cámaras cinematográficas de ataques especiales", "Câmeras cinematográficas de ataques especiais"},

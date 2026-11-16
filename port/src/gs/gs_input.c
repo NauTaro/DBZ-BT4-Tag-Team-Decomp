@@ -63,6 +63,8 @@ extern int gPortTboTyping;
    passed; 0..PORT_DEADZONE_MAX = a round one of that many percent, stick_bytes below), and vibration (on, strength
    in percent). */
 static int sDeadzone[2][2], sVib[2][2], sTargetStick[2], sTargetLatch[2];
+static int sTagTargetMethod[2];
+static unsigned sTagTargetDpadHeld[2];
 /* What opens and closes the settings window: a key (F1) and a controller button (none), both of the settings
    window's list; and START + SELECT of any controller together, always. */
 static int sOverlayKey = SDL_SCANCODE_F1, sOverlayPad = -1;
@@ -117,6 +119,9 @@ static void load(void) {
         }
         snprintf(name, sizeof(name), "target_stick_p%d", p + 1);
         sTargetStick[p] = Port_Setting(name, 0) != 0;
+        snprintf(name, sizeof(name), "tag_target_method_p%d", p + 1);
+        const int previous = Port_Setting("tag_target_dpad", 0) ? 2 : sTargetStick[p] ? 1 : 0;
+        sTagTargetMethod[p] = range(Port_Setting(name, previous), 0, 2);
         snprintf(name, sizeof(name), "vibration_p%d", p + 1);
         sVib[p][0] = Port_Setting(name, 1) != 0;
         snprintf(name, sizeof(name), "vibration_p%d_strength", p + 1);
@@ -133,6 +138,23 @@ int *PortInput_PadButtons(int player) { pthread_once(&sLoadOnce, load); return s
 int *PortInput_PadSlot(int player) { pthread_once(&sLoadOnce, load); return &sPadSlot[player]; }
 int *PortInput_Deadzone(int player) { pthread_once(&sLoadOnce, load); return sDeadzone[player]; }
 int *PortInput_TargetStick(int player) { pthread_once(&sLoadOnce, load); return &sTargetStick[player]; }
+int PortInput_TagTargetMethod(int player, int method) {
+    pthread_once(&sLoadOnce, load);
+    if(player<0||player>1)return 0;
+    if (method >= 0 && method <= 2) {
+        char key[40];
+        sTagTargetMethod[player] = method;
+        sTargetStick[player] = method == 1;
+        snprintf(key, sizeof(key), "tag_target_method_p%d", player + 1);
+        Port_SettingSave(key, method);
+        snprintf(key, sizeof(key), "target_stick_p%d", player + 1);
+        Port_SettingSave(key, sTargetStick[player]);
+        sTargetLatch[player] = 0;
+        sTagTargetDpadHeld[player] = 0;
+        Port_SettingsWrite();
+    }
+    return sTagTargetMethod[player];
+}
 int *PortInput_Vibration(int player) { pthread_once(&sLoadOnce, load); return sVib[player]; }
 int *PortInput_OverlayKey(void) { pthread_once(&sLoadOnce, load); return &sOverlayKey; }
 int *PortInput_OverlayPad(void) { pthread_once(&sLoadOnce, load); return &sOverlayPad; }
@@ -1265,8 +1287,10 @@ int Port_PadRead(int socket, unsigned char *data) {
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);
     data[2] = rx; data[3] = ry; data[4] = lx; data[5] = ly;
     {
-        extern int PortMods_InBattle(void);
-        if (sTargetStick[socket] && PortMods_InBattle() && !PortSpectator_ConsumesInput()) {
+        extern int PortMods_InBattle(void), Port_TagBattleRenderActive(void);
+        const int tag = Port_TagBattleRenderActive() && PortMods_InBattle() && !PortSpectator_ConsumesInput();
+        const int method = sTagTargetMethod[socket];
+        if ((tag ? method == 1 : sTargetStick[socket]) && PortMods_InBattle() && !PortSpectator_ConsumesInput()) {
             float axes[2]; int dir;
             unsigned char b[2]={rx,ry};
             game_stick(b,axes,&dir);
@@ -1276,6 +1300,17 @@ int Port_PadRead(int socket, unsigned char *data) {
             sTargetLatch[socket]=dir!=0;
             data[2]=data[3]=0x80;
         } else sTargetLatch[socket]=0;
+        if (tag && method == 2) {
+            unsigned held = btn & (B_LEFT | B_RIGHT);
+            unsigned pressed = held & ~sTagTargetDpadHeld[socket];
+            /* Preserve menu navigation and combinations used for transformations and techniques. */
+            if (!(data[17] & 7) && !(btn & (B_L2 | B_L3 | B_R3))) {
+                if (held == B_LEFT && pressed == B_LEFT) data[17] = 0x80 | 3;
+                if (held == B_RIGHT && pressed == B_RIGHT) data[17] = 0x80 | 4;
+            }
+            sTagTargetDpadHeld[socket] = held;
+        } else sTagTargetDpadHeld[socket] = 0;
+        if (tag) data[17] |= (unsigned char)(method << 4);
     }
     return 18;
 }

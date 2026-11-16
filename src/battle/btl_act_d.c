@@ -1492,6 +1492,9 @@ s32 BtlAct_HomingDashHandler(BtlActDChr *chr, s32 phase) {
         }
         if (moving) {
             speed = BtlMoveParam_GetSpeed(chr, 6);
+#ifdef BT4_TAG_TEAM_EXPANDED
+            {extern f32 TagRelay_RushScale(s32);speed*=TagRelay_RushScale(chr->player);}
+#endif
             yawAccel = BtlMoveParam_GetTurnAccel(chr, 0);
             pitchAccel = BtlMoveParam_GetTurnAccel(chr, 1);
             yawMax = BtlMoveParam_GetTurnMax(chr, 0);

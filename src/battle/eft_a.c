@@ -90,6 +90,9 @@ extern void DemoCam_Stop(void);
 
 /* Allocates and clears the record list, then the shape arena. */
 void EftHit_Init(void) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {extern void EftDet_TagImpactReset(void);EftDet_TagImpactReset();}
+#endif
     gEftHitList = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftHitList));
     memset(gEftHitList, 0, sizeof(EftHitList));
     EftHitArena_Init();
@@ -97,6 +100,9 @@ void EftHit_Init(void) {
 
 /* Frees the shape arena and the record list. */
 void EftHit_Term(void) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {extern void EftDet_TagImpactReset(void);EftDet_TagImpactReset();}
+#endif
     EftHitArena_Term();
     if (gEftHitList != NULL) {
         BtlPool_Free(BtlPool_GetCurrent(), gEftHitList);
@@ -163,6 +169,9 @@ void EftHit_BeginFrame(void) {
 
 /* Empties the list and rewinds the arena. */
 void EftHit_Clear(void) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {extern void EftDet_TagImpactReset(void);EftDet_TagImpactReset();}
+#endif
     EftHitArena_Reset();
     gEftHitList->count = 0;
 }
@@ -171,6 +180,34 @@ void EftHit_Clear(void) {
 EftHitList *EftHit_GetList(void) {
     return gEftHitList;
 }
+
+#ifdef BT4_TAG_TEAM_EXPANDED
+s32 EftHit_TestStageDestruction(s32 objId) {
+    extern void BtlScene_CheckStageChange(void);
+    EftHitDef def = {0};
+    EftHitSrc src = {0};
+    EftHitTask task = {0};
+    EftHitList *list = EftHit_GetList();
+    if (!list || list->count >= EFT_HIT_MAX) return 0;
+    const s32 index = list->count++;
+    EftHitRec *record = &list->rec[index];
+    memset(record, 0, sizeof(*record));
+    def.flags = 0x200000;
+    task.flags = 1 | 0x4000;
+    src.def = &def;
+    src.objId = objId;
+    record->objId = objId;
+    record->type = EFT_HIT_TECH;
+    record->flags = EFT_HIT_FLAG_LAST;
+    record->src = &src;
+    record->task = &task;
+    BtlScene_CheckStageChange();
+    const s32 changed = (record->flags & EFT_HIT_FLAG_NO_IMPACT) != 0;
+    memset(record, 0, sizeof(*record));
+    --list->count;
+    return changed;
+}
+#endif
 
 /* Returns the flags of the task that owns record idx (0 when there is none). */
 s32 EftHit_GetTaskFlags(u32 idx) {

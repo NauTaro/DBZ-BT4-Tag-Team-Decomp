@@ -77,6 +77,8 @@ int Port_NetActive(void);
 int Port_NetMe(void);                          // gs/net.c: this copy's side, 0 or 1
 void *BtlChar_FindByObjId(int objId);          // the game: the fighter of a side, NULL outside a fight
 int Port_NetStats(int *out);                   // gs/net.c: the meter's numbers of an online match
+void Port_NetAutomaticOptions(void);
+int Port_NetTimingStats(int *out);
 int Port_TagNetwork(void),Port_TagPing(void),Port_TagLocalBattle(void);
 int Port_LobbyOther(void);
 extern unsigned gPortLiveBlanks;               // plat_stub.c: vertical blanks the game has gone through
@@ -183,6 +185,9 @@ static const char *f1_text(const char *english) {
         {"Video", "Vídeo", "Vídeo"},
         {"Effects", "Efectos", "Efeitos"},
         {"Audio", "Audio", "Áudio"},
+        {"Anime soundtrack", "Música original del anime", "Trilha sonora do anime"},
+        {"Install the Spanish game profile to use its soundtrack with English text and voices.", "Instala el perfil en español para usar su música con los textos y las voces en inglés.", "Instale o perfil em espanhol para usar sua trilha sonora com textos e vozes em inglês."},
+        {"Applies from the next music track.", "Se aplica a partir de la próxima pista.", "Vale a partir da próxima faixa."},
         {"UI", "Interfaz", "Interface"},
         {"Controls", "Controles", "Controles"},
         {"Cheats", "Trucos", "Trapaças"},
@@ -1347,7 +1352,7 @@ static void quick_status(int state, int &lastState, const char *name) {
         // The same for everyone in a quick match, whoever turns out to be the host: rollback of up to 4 frames and
         // the input delay measured from the connection. (The Host tab's own choices are for matches with someone
         // you can agree them with; a stranger's saved ones were not to be inherited unseen.)
-        Port_NetOptions(Port_RollCan() ? 4 : 0, -2);
+        Port_NetAutomaticOptions();
         Port_NetSpeedSet(Port_NetSpeedStandard()); // (every quick match: the competitive standard)
         Port_NetRulesSet(sQueue == 0 ? 0 : sQueue == 1 ? 1 : 2, sQueue >= 2 ? sQueue - 2 : 0, 4);
         Port_NetNameSet(name);
@@ -2646,6 +2651,19 @@ static void audio_tab(PortVideo &v) {
     voice_settings_draw();
     ImGui::SeparatorText(f1_text("Game Audio"));
     ImGui::SliderInt(f1_text("Music"), &v.music, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    if(Port_GameProfileLanguage()==1){
+        const bool available=Port_GameProfileAvailable(0)!=0;
+        bool anime=Port_Setting("anime_music",0)!=0;
+        ImGui::BeginDisabled(!available);
+        if(ImGui::Checkbox(f1_text("Anime soundtrack"),&anime)){
+            Port_SettingSave("anime_music",anime);
+            Port_SettingsWrite();
+        }
+        ImGui::EndDisabled();
+        if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s",f1_text(available?"Applies from the next music track.":
+                "Install the Spanish game profile to use its soundtrack with English text and voices."));
+    }
     ImGui::SliderInt(f1_text("Sound effects"), &v.effects, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
     ImGui::SetItemTooltip(f1_text("Hits, blasts, menu sounds. Takes effect with the next sound that starts."));
     ImGui::SliderInt(f1_text("Voices"), &v.voices, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
@@ -2889,9 +2907,10 @@ static void controls_tab(void) {
         sticks_panel(player);
     }
     {
-        int *setting=PortInput_TargetStick(player);bool enabled=*setting!=0;
-        if(ImGui::Checkbox(f1_text("Right stick enemy targeting"),&enabled)){
-            *setting=enabled;PortInput_Save();
+        int method=PortInput_TagTargetMethod(player,-1);
+        const char *choices[]={"L3",PortOnline_Text("Right stick"),PortOnline_Text("D-pad")};
+        if(ImGui::Combo(PortOnline_Text("Target selection"),&method,choices,3)){
+            PortInput_TagTargetMethod(player,method);
         }
         ImGui::SetItemTooltip(f1_text("Flick toward an enemy to switch targets in Tag Team. In a duel, lock onto your opponent. Release the stick before switching again. Original right-stick actions remain available when this is off."));
     }
@@ -3131,6 +3150,8 @@ extern "C" void Port_UiNotice(const char *text) {
 // A line in the middle of the screen, the picture behind it dimmed, while the game's thread waits inside a blank
 // (the start of an online match, gs/net.c): drawn by the frames it shows meanwhile (Gs_HoldFrame). `ms` > 0: the
 // wait is over; the line stays that long more, over the game's own pictures and without the dimming. NULL: gone.
+#include "dragon_ball_notice.inc"
+
 static char sBanner[256];
 static Uint64 sBannerUntil; // 0: while the game waits
 extern "C" void Port_UiBanner(const char *text, int ms) {
@@ -3276,6 +3297,11 @@ static void meter_draw(void) {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "  nothing arrived from the other player");
             }
             ImGui::Text("delay %d%s, rollback up to %d", n[6], n[7] ? " (auto)" : "", n[5]);
+            int timing[4];
+            if (Port_NetTimingStats(timing) && timing[0] >= 0) {
+                ImGui::Text(PortOnline_Text("Setup ping %d-%d ms"), timing[0], timing[1]);
+                if (timing[2] > 0) ImGui::SameLine(), ImGui::Text("(%d/%d)", timing[2], timing[3]);
+            }
             if (n[9] != 0) { // the desync check found the two games apart (the match goes on)
                 ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "desync since frame %d", n[9]);
             }
@@ -3620,6 +3646,19 @@ static bool frame_build(void) {
     bool voice = sReady && voiceOptions.indicators && (voiceState.sessionMode!=0||(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_ICON_TEST")));
     bool banner = sReady && sBanner[0] != '\0' && !tagMenu;
     Uint64 now = SDL_GetTicks();
+    DragonBallNotice ballNotice = dragon_ball_notice();
+    Uint64 ballElapsed = now - ballNotice.started;
+    bool ballNoticeOn = sReady && !gPortMenuMode && !sOpen && !PortHud_Hidden() &&
+                        gUiPresentH > 0 && gUiPresentW > 0 && ballNotice.stars && ballElapsed < dragonBallNoticeDuration;
+    if (sReady && !gPortMenuMode && getenv("BT4_RENDER_TEST")) {
+        if (const char *sample = getenv("BT4_DRAGON_BALL_NOTICE_TEST")) {
+            SDL_strlcpy(ballNotice.finder, "NauTaro", sizeof(ballNotice.finder));
+            ballNotice.stars = 4;
+            ballNotice.started = 0;
+            ballElapsed = SDL_strtoul(sample, nullptr, 10);
+            ballNoticeOn = gUiPresentH > 0 && gUiPresentW > 0 && ballElapsed < dragonBallNoticeDuration;
+        }
+    }
     bool saving = save_icon_on(now) && sReady && gUiPresentW > 0 && gUiPresentH > 0;
     bool watched = sReady && Port_NetWatchers() > 0 && !sOpen;  // a player's: who watches the match
     if(PortHud_Hidden() && !gPortMenuMode)voice=banner=saving=false;
@@ -3628,7 +3667,7 @@ static bool frame_build(void) {
     meter_count();
     sBuilt = false;
     UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit);
-    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods)) {
+    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -3746,6 +3785,9 @@ static bool frame_build(void) {
             }
         }
         dl->AddText(font, size, ImVec2(x, y), IM_COL32(255, 236, 120, 255), sBanner, NULL, wrap);
+    }
+    if (ballNoticeOn) {
+        dragon_ball_notice_draw(ballNotice, ballElapsed);
     }
     if (saving) {
         save_icon_draw(now);

@@ -117,7 +117,8 @@ again after adding or changing one. Your choices are kept in bt3_mods.txt. A mod
 
 The ones that come with the game: modern_hud (a HUD in the style of later games), modern_camera (inertia, tilt, hit
 reactions, distance, height and zoom), modern_look (anime shading, rim light, colours, ambient shadows), skill_list
-(your moves and their buttons while you hold charge), and two small examples to start from (example_hud,
+(your moves and their buttons while you hold charge), split_screen (two local cameras in online or offline
+battles, with a target or teammate view), and two small examples to start from (example_hud,
 example_camera).
 
 How to write one: docs/port/mods.md in the source repository.
@@ -197,6 +198,8 @@ def take_tbo_art(out, lic):
     (out / "tbo/ui").mkdir(parents=True, exist_ok=True)
     for p in sorted(src.glob("*.png")):
         shutil.copy2(p, out / "tbo/ui" / p.name)
+    for name in ("tag_ui_intro.pss", "tag_ui_loop.pss"):
+        shutil.copy2(src / name, out / "tbo/ui" / name)
     shutil.copy2(src / "CREDITS.md", lic / "tbo-ui-credits.txt")
 
 def bundle_sdl_dependencies(dll, out, lic, prefix):
@@ -265,8 +268,8 @@ def main_win():
     take_lang(out)
     take_translations(out)
     shutil.copy2(ROOT / "port/release/BT4_VERSION.txt", out / "BT4_VERSION.txt")
-    shutil.copy2(setup, out / "BT4decomp-setup.exe")
     shutil.copy2(ROOT / "recomplauncher.json", out / "recomplauncher.json")
+    shutil.copy2(setup, out / "BT4decomp-setup.exe")
     shutil.copy2(dll, out / "SDL3.dll")
     (out / "README.txt").write_text(WIN_README.replace("\n", "\r\n"))
     lic = out / "licenses"

@@ -12,6 +12,7 @@ export class SessionKernel {
         const ptr=this.api.Kernel_Input();this.input.fill(0);this.input.set(new TextEncoder().encode(code));
         this.api.Kernel_Snapshot(id,result,ptr);return this.output.slice().buffer;
     }
+    options(){this.api.Kernel_OptionsSnapshot();return this.output.slice().buffer;}
     take(){return this.api.Kernel_TakeFrame()?this.output.slice().buffer:null;}
 }
 export function createSessionClass(module) {
@@ -51,13 +52,15 @@ export function createSessionClass(module) {
             server.addEventListener('message',event=>this.message(server,event.data));
             server.addEventListener('close',()=>{try{server.close(1000,'');}catch{}this.close(server);});
             server.addEventListener('error',()=>this.close(server));
-            server.send(this.kernel.snapshot(id,0,this.code));
+            const initial=this.kernel.snapshot(id,0,this.code);
+            if(new DataView(initial).getUint32(504,true))server.send(this.kernel.options());
+            server.send(initial);
             return new Response(null,{status:101,webSocket:client});
         }
         broadcast(result=0,only=null){
             this.voice.refresh();
             this.tagLink.refresh();
-            for(const [ws,p] of this.peers)if(!only||ws===only){try{const packet=this.kernel.snapshot(p.id,result,this.code);new DataView(packet).setUint32(508,p.ack,true);ws.send(packet);}catch{this.close(ws);}}
+            for(const [ws,p] of this.peers)if(!only||ws===only){try{const packet=this.kernel.snapshot(p.id,result,this.code);new DataView(packet).setUint32(508,p.ack,true);if(new DataView(packet).getUint32(504,true))ws.send(this.kernel.options());ws.send(packet);}catch{this.close(ws);}}
         }
         message(ws,data){
             const peer=this.peers.get(ws);if(!peer)return;
@@ -121,7 +124,7 @@ export function createSessionClass(module) {
                 v.setUint32(32,parseInt(this.tagLink.generation.slice(8),16),true);
                 v.setUint32(36,parseInt(this.tagLink.generation.slice(0,8),16),true);v.setUint32(40,this.tagLink.epoch,true);
             }
-            try{ws.send(packet);}catch{this.close(ws);}
+            try{if(new DataView(packet).getUint32(504,true))ws.send(this.kernel.options());ws.send(packet);}catch{this.close(ws);}
         }
         commitTagLinkStart(pending){
             if(!this.tagLink.validPending(pending))return false;

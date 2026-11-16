@@ -1,3 +1,52 @@
+# 0.1.39.6 R1 1.0
+
+- Restore controller and keyboard input during online combat. Public builds now deliver gameplay inputs independently of developer pause controls.
+
+<!-- bt4-update:en
+- Fix controls becoming unresponsive when an online fight starts. Update both players before creating a new match.
+-->
+<!-- bt4-update:es
+- Corrige los controles que dejan de responder al comenzar un combate online. Actualicen ambos jugadores antes de crear una nueva partida.
+-->
+<!-- bt4-update:pt
+- Corrige os controles que param de responder quando uma luta online começa. Os dois jogadores devem atualizar antes de criar uma nova partida.
+-->
+
+# BT4decomp 0.1.39.6
+
+- Expand Tag Team with a dedicated local menu, simultaneous character selection, per-fighter health and Boss rules, shared private-room options, cooperative revival, joint attacks, three-link pursuits and cooperative fusions.
+- Add optional split-screen presentation, classic and Modern ally HUDs over the fighters, clearer technique costs and controller-button prompts. Keep the approved Modern HUD layout and Boost priority.
+- Add enemy, ally and free-camera focus modes with one selectable targeting method: L3, right stick or D-pad. Protect Z Counters from accidental retargeting.
+- Correct the two identified effect/technique lifecycle crashes, preserve other players' selections when undoing a choice, and base percentage healing on native health under Tag Team health multipliers.
+- Keep other fighters active during transformations and show a shared attack camera when a sequence stops everyone.
+- Negotiate duel input delay and up to eight rollback frames from the measured connection. Private hosts can retain manual settings.
+- Expand online tournaments to 22 total members, with at most two watching the current bout, original-style bracket pages and a native in-battle winner menu before returning.
+- Add training resource controls, opponent behaviors, four recording slots and an input-delay simulator. Add the English-profile anime soundtrack option using installed Spanish-profile music.
+- Prepare monthly Ranked scoring, the shared Dragon Ball collection and longer private-room idle leases. These service changes remain gated until the separate server rollout.
+- Other open audio, rendering, controller and security reports remain scheduled for the following hotfix; this release does not claim all GitHub issues are fixed.
+
+<!-- bt4-update:en
+- Expanded Tag Team: local and private online options, Boss rules, revival, joint attacks, chained pursuits and cooperative fusions.
+- Optional split screen, classic/Modern ally HUDs, clearer technique costs and enemy/ally/free camera focus.
+- Adaptive duel connection settings, 22-member tournaments and an in-battle winner menu.
+- Expanded training tools, soundtrack options and fixes for the two identified Tag Team crashes.
+- Monthly Ranked rules and Dragon Ball persistence require the separate server activation. Remaining reported bugs follow in a later hotfix.
+-->
+<!-- bt4-update:es
+- Tag Team ampliado: opciones locales y privadas online, modo Jefe, reanimación, ataques conjuntos, acometidas encadenadas y fusiones cooperativas.
+- Pantalla dividida opcional, HUD de aliados clásico/Modern, costes de técnicas más claros y enfoque en enemigos, aliados o cámara libre.
+- Conexión automática para duelos, torneos de 22 miembros y menú de victoria dentro del combate.
+- Entrenamiento ampliado, opciones de música y correcciones de las dos causas de cierre identificadas en Tag Team.
+- Las reglas mensuales de Clasificatorias y la colección persistente de esferas requieren la activación del servidor. Los errores reportados restantes quedan para un hotfix posterior.
+-->
+<!-- bt4-update:pt
+- Tag Team ampliado: opções locais e privadas online, modo Chefe, reanimação, ataques conjuntos, investidas encadeadas e fusões cooperativas.
+- Tela dividida opcional, HUD clássico/Modern dos aliados, custos de técnicas mais claros e foco em inimigos, aliados ou câmera livre.
+- Conexão automática para duelos, torneios com 22 membros e menu de vitória dentro da luta.
+- Treinamento ampliado, opções de música e correções das duas causas de fechamento identificadas no Tag Team.
+- As regras mensais das ranqueadas e a coleção persistente de esferas exigem a ativação do servidor. Os demais erros relatados ficam para um hotfix posterior.
+-->
+
 # 0.1.39.5 R5 1.7
 
 - Online system maintenance and compatibility updates across matchmaking modes.

@@ -114,6 +114,8 @@ s32 BtlAct_CheckSwitchInput(BtlActJChr *chr);
 s32 BtlAct_QueueSwitch(BtlActJChr *chr);
 s32 BtlAct_GetTechniqueAction(BtlActJChr *chr, s32 slot);
 s32 BtlAct_CanUseTechnique(BtlActJChr *chr, s32 slot);
+s32 BtlAct_CanQueueTechnique(BtlActJChr *chr, s32 slot);
+s32 BtlAct_QueueTechnique(BtlActJChr *chr, s32 slot);
 s32 BtlAct_CheckTechniqueInput(BtlActJChr *chr);
 s32 BtlAct_GetSkillAction(BtlActJChr *chr, s32 slot);
 s32 BtlAct_CanUseSkill(BtlActJChr *chr, u32 slot);

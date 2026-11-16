@@ -30,6 +30,15 @@
 
 HudPrompt *gHudPrompt = NULL;
 
+#ifdef PORT
+/* Presentation query only: leave the native command visible until its fade ends. */
+s32 Port_HudPromptVisible(s32 side) {
+    if (gHudPrompt == NULL || side < 0 || side > 1) return 0;
+    return gHudPrompt->btnState[side] > 0 || gHudPrompt->cmd.on[side] ||
+           gHudPrompt->cmdRamp[side].value > 0.0f || gHudPrompt->nameFade[side].value > 0.0f;
+}
+#endif
+
 extern HudPromptIconDef gHudPromptIconDefs[16];
 extern HudPromptIconDef gHudPromptIconDefs16[17];
 extern HudPromptIconDef gHudPromptCueDefs[4];
@@ -1104,6 +1113,9 @@ void HudPrompt_ClearButton(s32 side) {
    is dropped. */
 void HudPrompt_DrawNames(void) {
     s32 i;
+#ifdef PORT
+    Port_GsMarker(0x78);
+#endif
 
     for (i = 0; i < 2; i++) {
         Ramp *fade = &gHudPrompt->nameFade[i];
@@ -1120,9 +1132,19 @@ void HudPrompt_DrawNames(void) {
             Port_GsMarker(HUD_SCR(i) ? PORT_2D_RIGHT : PORT_2D_LEFT); /* (widescreen: each name with its side, as HudCombo_DrawText) */
 #endif
             BtlMenu_SetScript2(BtlCtrl_GetObj(i)->unkBC);
-            BtlText_DrawEntryName(pos->x, pos->y, idx, HUD_SCR(i), alpha); /* (the 4th: left or right aligned) */
+            {
+                s32 x=pos->x;
+#ifdef BT4_TAG_TEAM_EXPANDED
+                extern s32 TagBattle_Active(void),Battle_IsSplitScreen(void);
+                if(TagBattle_Active()&&!Battle_IsSplitScreen())x+=160;
+#endif
+                BtlText_DrawEntryName(x, pos->y, idx, HUD_SCR(i), alpha);
+            }
         }
     }
+#ifdef PORT
+    Port_GsMarker(0x79);
+#endif
 }
 
 /* A white 32x32 sprite, hidden: the icons and glows of the command row are filled in by HudPrompt_UpdateCommand. */

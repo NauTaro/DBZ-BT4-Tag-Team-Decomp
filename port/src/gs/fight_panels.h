@@ -36,6 +36,8 @@ typedef struct FpSide {
     int action;       /* the active fighter's action (0x37: charging ki) */
     int chargeHeld;   /* the charge button (BTLB_CHARGE) is held */
     int cpu;          /* the side is played by the computer (BattleSide_IsCpu) */
+    int switchGauge;  /* 0..100000, native team switching gauge */
+    int promptShown;  /* a native button / command row is showing, including its fade */
     FpMove moves[FP_MOVES];
     /* what the game's HUD was given for this side (src/battle/hud_*.c, Port_HudFeed): */
     int statMask, statUp; /* status icons: bits 0..3 = attack, speed, defence, ki changed; set in statUp = raised */
@@ -56,6 +58,8 @@ typedef struct FpState {
     FpSide side[2];
 } FpState;
 
+void PortPanels_SetBattleActive(int active); /* the game's thread, after setup and before teardown */
+int PortPanels_BattleActive(void);   /* the game's thread, before reading battle overlay memory */
 void PortPanels_GameTick(void);      /* the game's thread, once per blank */
 int PortPanels_Read(FpState *out);   /* any thread: a consistent copy; 0 = nothing read yet */
 

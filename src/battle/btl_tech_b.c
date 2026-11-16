@@ -1607,8 +1607,14 @@ s32 BtlSkill_GetFrames(BtlTechBChr *chr, s32 slot) {
 /* Health the skill gives (negative: takes): table percent of the maximum health. */
 s32 BtlSkill_GetHealthChange(BtlTechBChr *chr, s32 slot) {
     BtlSkillData *tbl = BtlChar_GetObj(chr)->skill;
-
-    return BtlMember_GetActiveGauge(chr)->healthMax * tbl->healthPct[slot] / 100;
+    s32 maximum=BtlMember_GetActiveGauge(chr)->healthMax;
+#ifdef PORT
+    if(tbl->healthPct[slot]>0){
+        extern s32 BtlMember_HealingMaximum(BtlTechBChr *,s32),BtlMember_GetActiveIndex(BtlTechBChr *);
+        maximum=BtlMember_HealingMaximum(chr,BtlMember_GetActiveIndex(chr));
+    }
+#endif
+    return (s32)((s64)maximum * tbl->healthPct[slot] / 100);
 }
 
 /* Ki the skill gives (negative: takes). */

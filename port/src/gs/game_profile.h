@@ -5,6 +5,7 @@ extern "C" {
 #endif
 void Port_GameProfileInit(void);
 int Port_GameProfileEnglish(void);
+int Port_GameProfileAnimeMusicPath(int partition,int file,char *path,int size);
 int Port_GameProfileLanguage(void);
 int Port_GameProfilePortuguese(void);
 int Port_GameProfileAvailable(int english);

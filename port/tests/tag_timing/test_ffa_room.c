@@ -10,7 +10,8 @@ int main(void){
     for(int i=1;i<6;++i)assert(Tt_Join(&room,101+i,"Guest",room.content)==TT_OK);
     assert(Tt_Count(&room)==6);
     assert(Tt_Join(&room,107,"Extra",room.content)==TT_FULL);
-    assert(Tt_SetTeams(&room,101,room.epoch,2,4)==TT_BAD_CHOICE);
+    assert(Tt_SetTeams(&room,101,room.epoch,6,0)==TT_BAD_CHOICE);
+    assert(Tt_SetTeams(&room,101,room.epoch,2,4)==TT_OK);
     assert(Tt_BeginSelect(&room,101,room.epoch)==TT_OK);
     for(int i=0;i<6;++i)assert(Tt_ChooseSeat(&room,101+i,room.epoch,i,100+i,0)==TT_OK);
     unsigned long long digest=Tt_LoadDigest(&room);

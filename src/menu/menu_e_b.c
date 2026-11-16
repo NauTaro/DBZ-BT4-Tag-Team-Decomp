@@ -109,6 +109,13 @@ s32 TeamSel_IsCharaFree(s32 side, s32 chara) {
     s32 i;
 #ifdef PORT
     if(sTagSelectActive){
+#ifdef BT4_TAG_TEAM_EXPANDED
+        extern int Port_TagLocalBattle(void);
+        /* A simultaneous actor is its own slot, including duplicate fighters.
+         * Native unlock/grid validation remains separate from this check. */
+        extern int Port_TagRulesV2(void);
+        if(Port_TagLocalBattle()||Port_TagRulesV2())return 1;
+#endif
         extern int Port_TagCapacity(void),Port_TagTeam(int),Port_TagConfirmed(int),Port_TagPlayerChara(int);
         for(i=0;i<Port_TagCapacity();++i)if(Port_TagTeam(i)==side&&Port_TagConfirmed(i)&&ChrTbl_IsRelated(chara,Port_TagPlayerChara(i)))return 0;
     }
@@ -661,6 +668,10 @@ void TeamSel_Init(s32 section) {
     gTeamSel->unk3EA0 = MPACK_AT(gCommonRes->data[2], 2);
     gTeamSel->nameText = MPACK_AT(gTeamSel->res, 43);
     gTeamSel->formText = MPACK_AT(gTeamSel->res, 44);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    { extern void Port_CacheFighterNames(void *,void *);
+      Port_CacheFighterNames(gTeamSel->nameText,gTeamSel->formText); }
+#endif
     gTeamSel->chipPack = (u32 *)MPACK_AT(gTeamSel->res, 45);
     for (i = 0; i < 250; i++) {
         res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, i + 1);

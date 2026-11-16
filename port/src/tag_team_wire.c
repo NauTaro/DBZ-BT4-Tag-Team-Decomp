@@ -1,5 +1,30 @@
 #include "../include/tag_team_wire.h"
 #include <string.h>
+
+void Ttw_PutOptions(unsigned char *p,const TtOptions *o){
+    int i,words=o->version==TT_OPTION_COMBAT_VERSION?TT_OPTION_WORDS:TT_OPTION_LEGACY_WORDS;Ttw_Write(p,o->version);for(i=0;i<words;++i)Ttw_Write(p+4+i*4,(uint32_t)o->value[i]);
+}
+int Ttw_GetOptions(const unsigned char *p,TtOptions *o){
+    TtOptions next={0};int i,words;next.version=Ttw_Read(p);
+    words=next.version==TT_OPTION_COMBAT_VERSION?TT_OPTION_WORDS:TT_OPTION_LEGACY_WORDS;
+    for(i=0;i<words;++i)next.value[i]=(int32_t)Ttw_Read(p+4+i*4);
+    if(!Tt_OptionsValid(&next))return 0;*o=next;return 1;
+}
+void Ttw_OptionsSnapshot(unsigned char *p,const TtRoom *r){
+    int i,j;Ttw_Request(p,TTW_OPTIONS_STATE,r->epoch);Ttw_Write(p+12,r->options_hash);Ttw_Write(p+16,r->revision);
+    Ttw_PutOptions(p+24,&r->options);
+    for(i=0;i<10;++i)for(j=0;j<8;++j){unsigned v=r->players[i].items[j];int at=(r->options.version==TT_OPTION_COMBAT_VERSION?320:280)+i*16+j*2;p[at]=(unsigned char)v;p[at+1]=(unsigned char)(v>>8);}
+}
+int Ttw_ApplyOptions(const unsigned char *p,TtRoom *r){
+    TtRoom next=*r;int i,j;
+    if(Ttw_Read(p)!=TT_PROTOCOL||Ttw_Read(p+4)!=TTW_OPTIONS_STATE||Ttw_Read(p+8)!=r->epoch||Ttw_Read(p+12)!=r->options_hash||Ttw_Read(p+16)!=r->revision)return 0;
+    if(!Ttw_GetOptions(p+24,&next.options))return 0;
+    for(i=0;i<10;++i)for(j=0;j<8;++j){int at=(next.options.version==TT_OPTION_COMBAT_VERSION?320:280)+i*16+j*2;unsigned v=p[at]|(unsigned)p[at+1]<<8;
+        if(v>350||(!next.options.value[TT_OPT_PRESETS]&&v))return 0;next.players[i].items[j]=(uint16_t)v;}
+    if(Tt_OptionsHash(&next)!=r->options_hash)return 0;
+    *r=next;return 1;
+}
+
 uint32_t Ttw_Read(const unsigned char *p) {
     return (uint32_t)p[0] | (uint32_t)p[1]<<8 | (uint32_t)p[2]<<16 | (uint32_t)p[3]<<24;
 }
@@ -27,6 +52,8 @@ void Ttw_Snapshot(unsigned char *p, const TtRoom *r, uint32_t member, int result
     }
     Ttw_Write(p+472,r->slot_count);Ttw_Write(p+476,r->stage);Ttw_Write(p+480,r->bgm);Ttw_Write(p+484,r->attacks);Ttw_Write(p+488,r->seed);Ttw_Write(p+492,r->result_choice);
     Ttw_Write(p+496,r->free_for_all);
+    Ttw_Write(p+TTW_STATE_BATTLE_RULES,r->battle_rules);
+    Ttw_Write(p+TTW_OPTIONS_HASH,r->options_hash);
 }
 int Ttw_Decode(const unsigned char *p, TtRoom *r, uint32_t *member, int *result, char *code) {
     TtRoom next;int i,phase=(int)Ttw_Read(p+28),size=(int)Ttw_Read(p+32);
@@ -37,7 +64,10 @@ int Ttw_Decode(const unsigned char *p, TtRoom *r, uint32_t *member, int *result,
     next.epoch=Ttw_Read(p+8);next.revision=Ttw_Read(p+20);next.host=Ttw_Read(p+24);
     next.phase=phase;next.team_size=size;next.time=(int)Ttw_Read(p+36);
     next.free_for_all=(int)Ttw_Read(p+496);
-    if(next.free_for_all<0||next.free_for_all>1||(next.free_for_all && Ttw_Read(p+472)!=6))return 0;
+    next.battle_rules=Ttw_Read(p+TTW_STATE_BATTLE_RULES);
+    if(next.battle_rules>TT_RULE_MASK || (phase==TT_CLOSED&&next.battle_rules))return 0;
+    if(next.free_for_all<0||next.free_for_all>1)return 0;
+    next.options_hash=Ttw_Read(p+TTW_OPTIONS_HASH);
     next.slot_count=(int)Ttw_Read(p+472);next.stage=(int)Ttw_Read(p+476);next.bgm=(int)Ttw_Read(p+480);next.attacks=(int)Ttw_Read(p+484);next.seed=Ttw_Read(p+488);next.result_choice=(int32_t)Ttw_Read(p+492);
     if(next.stage<0||next.stage>=0x63||next.bgm<0||next.bgm>65535||next.attacks<0||next.attacks>1)return 0;
     next.delay=(int)Ttw_Read(p+40);next.rollback=(int)Ttw_Read(p+44);

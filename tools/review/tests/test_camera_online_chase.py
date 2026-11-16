@@ -21,6 +21,7 @@ typedef struct {int index;Vec4 pos,rot;} BtlCamView;
 static struct {int valid,side,obj,zoom;u32 blank;Vec4 pos,rot;} sPortCameraPose[2];
 static int gPortResim;static u32 gPortLiveBlanks;
 static int sPortZoomView[2],calls,collisions,natural;
+static int Mods_SplitScreen(void){return 0;}static int Port_PresentationSplitDrawing(int n){return 0;}
 static struct {int flags;} battle;
 #define BATTLE_FLAG_PAUSE 1
 static void *Battle_GetWork(void);

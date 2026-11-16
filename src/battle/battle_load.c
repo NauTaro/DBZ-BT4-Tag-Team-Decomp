@@ -1887,6 +1887,10 @@ s32 Battle_GetScript(void) {
 
 /* 1 when the battle is drawn in split-screen. */
 s32 Battle_IsSplitScreen(void) {
+#ifdef PORT
+    extern s32 Port_PresentationSplitDrawing(s32);
+    if(Port_PresentationSplitDrawing(-1))return 1;
+#endif
     return SETUP()->rule.screenMode == 1;
 }
 
@@ -1963,7 +1967,11 @@ s32 BattleSide_GetOptionB(s32 side) {
 
 /* Returns the side's controller number. */
 s32 BattleSide_GetPad(s32 side) {
-    return Side(side)->pad;
+    s32 pad=Side(side)->pad;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagFusion_Pad(s32,s32);pad=TagFusion_Pad(side,pad);
+#endif
+    return pad;
 }
 
 /* Returns who controls the side (0 pad, 2 CPU). */

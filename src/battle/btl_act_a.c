@@ -1,5 +1,8 @@
 #include "common.h"
 #include "battle/btl_act_a.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+extern s32 TagRelay_IgnoreBodyStop(s32 actor);
+#endif
 
 /*
  * Fighter action handlers, first group: 0x1E3158..0x1EA5F8 (two parts: to 0x1E6CC0, and from there; the second
@@ -3320,7 +3323,11 @@ s32 BtlAct_BlowAwayHandler(BtlActBChr *chr, s32 phase) {
                     BtlAct_Request(chr, 0xE7);
                 }
             }
-        } else if (BtlMove_IsBlockedByOpponent(chr)) {
+        } else if (BtlMove_IsBlockedByOpponent(chr)
+#ifdef BT4_TAG_TEAM_EXPANDED
+            && !TagRelay_IgnoreBodyStop(chr->player)
+#endif
+        ) {
             sel = BtlAct_IsAirMotion(chr, 0);
             if (__builtin_fabsf(BtlOpp_GetYawFromFacing(chr)) < BTL_DEG(90.0f)) {
                 hit = sel;

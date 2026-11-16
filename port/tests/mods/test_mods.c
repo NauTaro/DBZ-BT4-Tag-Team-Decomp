@@ -25,6 +25,7 @@ int Port_NetActive(void) { return 0; }
 int Port_NetMe(void) { return 0; }
 int Port_TagNetwork(void) { return 0; }
 int Port_TagLocalBattle(void) { return 0; }
+int Port_TagBattleRenderActive(void) { return 0; }
 int Port_HudSwap(void) { return 0; }
 const char *MenuTranslation_Text(const char *id) { return strcmp(id, "combo-hits/0/0") == 0 ? "Golpes" : NULL; }
 const char *MenuTranslation_Locale(void) { return "es"; }
@@ -341,7 +342,8 @@ int main(void) {
     }
     CHECK(moved >= 90);
     }
-    CHECK(Mods_Count() == 6); /* (example_camera, example_hud, modern_camera, modern_hud, modern_look, skill_list) */
+    CHECK(Mods_Count() == 7); /* (example_camera, example_hud, modern_camera, modern_hud, modern_look, skill_list, split_screen) */
+    CHECK(mod("split_screen") != NULL && !mod("split_screen")->enabled);
     CHECK(Mods_Look()->shading == 100 && Mods_Look()->energy_light == 50); /* (modern_look at its defaults) */
     for (i = 0; i < Mods_Count(); i++) {
         CHECK(Mods_Info(i)->error[0] == '\0');
@@ -363,7 +365,7 @@ int main(void) {
     ++gPortVBlanks;
     Mods_Tick();
 
-    /* An update from a launcher that omits mods/: recover all six scripts
+    /* An update from a launcher that omits mods/: recover all seven scripts
        from the reserved package copy, off by default, and preserve an edit. */
     {
         char destination[512], path[600];
@@ -372,7 +374,7 @@ int main(void) {
         setenv("BT3_MODS", destination, 1);
         setenv("BT3_MODS_SETTINGS", "", 1);
         Mods_ReloadAsk(); Mods_Tick();
-        CHECK(Mods_Count() == 6);
+        CHECK(Mods_Count() == 7);
         for (i = 0; i < Mods_Count(); i++) CHECK(!Mods_Info(i)->enabled && !Mods_Info(i)->error[0]);
         snprintf(path, sizeof(path), "%s/modern_hud/mod.lua", destination);
         fp = fopen(path, "w"); CHECK(fp != NULL);

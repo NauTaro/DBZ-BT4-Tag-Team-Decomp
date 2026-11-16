@@ -15,6 +15,7 @@
 #include <atomic>
 #include <vector>
 #include "match_supabase.h"
+#include "net_lobby.h"
 #include "../../include/tag_team.h"
 #include "supabase_signal.h"
 #include "voice.h"
@@ -27,6 +28,7 @@ namespace {
 std::mutex lock;unsigned serial=20000;
 std::string text(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
 unsigned number(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_number_unsigned()?p->get<unsigned>():0;}
+bool jsonFlag(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_boolean()&&p->get<bool>();}
 struct Discovery {
     unsigned generation=0,init=0,countsRequest=0,tagCountsRequest=0,reconcile=0;bool on=false,waiting=false,refreshRoom=false;
     Bt4DiscoveryStatus status={};Dj descriptor,profile,localAddresses;std::string wire,content;
@@ -45,9 +47,14 @@ struct Discovery {
     unsigned outcomeTick=0,reportSerial=0;int outcomeBits=0,reportState=0;
     int resultRating=0,resultDelta=0;
     Uint64 reportAt=0;Dj report,characters;
+    unsigned rockCandidate=0,rockCandidateTick=0;
+    bool rockSubmitted=false,quick=false,rockRoundEnded=false;
 } d;
 bool rankedNext=false;
 std::atomic<bool> rankedActive{false};
+std::atomic<bool> rankedRocksAvailable{false};
+std::atomic<unsigned> rankedRockSeed{0};
+extern "C" void Port_UiDragonBallFound(const char *,unsigned);
 // Keep an authenticated liveness proof while fighting, then briefly after a
 // remote disconnect. No simulation, GPU or blocking network work runs here.
 struct RankedWatch {
@@ -55,12 +62,20 @@ struct RankedWatch {
     Uint64 next=0,until=0;
     unsigned request=0;
     bool concede=false,peerGone=false,pending=false,notify=false,sentConcede=false,heartbeatAcknowledged=false;
-    bool settled=false;
+    bool settled=false,review=false;
     int rating=0,delta=0;
     Dj characters;
 };
 std::vector<RankedWatch> rankedWatches;
-std::deque<std::pair<int,int>> rankedSettlements;
+struct RankedRockProof {
+    std::string match,project;
+    unsigned event=0,request=0;
+    bool ranked=false;
+    Uint64 next=0,until=0;
+};
+std::deque<RankedRockProof> rankedRockProofs;
+struct RankedSettlement {int rating,delta;bool review;};
+std::deque<RankedSettlement> rankedSettlements;
 std::atomic<bool> settlementReady{false};
 Uint64 nextSettlement;
 SDL_Thread *rankedWatcher=nullptr;
@@ -69,16 +84,46 @@ unsigned watchSerial=900000;
 void watchNotify(const RankedWatch &w){
     if(!w.notify||!w.settled)return;
     if(rankedSettlements.size()==4)rankedSettlements.pop_front();
-    rankedSettlements.emplace_back(w.rating,w.delta);
+    rankedSettlements.push_back({w.rating,w.delta,w.review});
     settlementReady=true;
 }
 bool characterReply(const Dj &,Uint64);
 void characterStep(Uint64);
+void ensureMatchWatcher();
+
+bool queueRockProof(const std::string &match,unsigned event,bool ranked) {
+    if (match.empty() || !event || rankedRockProofs.size()>=4) return false;
+    const auto now=SDL_GetTicks();
+    rankedRockProofs.push_back({match,Bt4Signal_Project(),event,0,ranked,now,now+120000});
+    ensureMatchWatcher();
+    return true;
+}
 void watchStep(Uint64 now){
     char raw[2048];
     while(Bt4Signal_Read(5,raw,sizeof(raw))>0){
         Dj e=Dj::parse(raw,nullptr,false);if(!e.is_object())continue;
         if(characterReply(e,now))continue;
+        const unsigned reply = number(e,"serial");
+        auto proof = std::find_if(rankedRockProofs.begin(),rankedRockProofs.end(),
+                                  [reply](const RankedRockProof &p){return reply && p.request==reply;});
+        if(proof!=rankedRockProofs.end()){
+            proof->request=0;
+            proof->next=now+3000;
+            auto body=e.find("body");
+            if(body!=e.end()&&body->is_object()){
+                const auto state=text(*body,"state"),failure=text(*body,"error");
+                if(state=="applied"){
+                    const unsigned stars=number(*body,"stars");
+                    const auto finder=text(*body,"finder");
+                    const bool current=d.on&&proof->match==text(d.descriptor,"generation")&&rankedRockSeed!=0;
+                    if(current&&stars>=1&&stars<=7&&!finder.empty()&&finder.size()<=19)
+                        Port_UiDragonBallFound(finder.c_str(),stars);
+                }
+                if(state=="applied"||state=="disputed"||state=="unavailable"||state=="expired"||
+                   failure=="NOT_A_PARTICIPANT"||failure=="BAD_ROCK_EVENT")proof->until=1;
+            }
+            continue;
+        }
         for(auto &w:rankedWatches)if(w.pending&&w.request==number(e,"serial")){
             w.pending=false;w.next=now+5000;
             auto b=e.find("body");if(b==e.end()||!b->is_object())continue;
@@ -93,6 +138,7 @@ void watchStep(Uint64 now){
                     w.settled=true;
                     w.rating=rating->get<int>();
                     w.delta=delta->get<int>();
+                    w.review=jsonFlag(*b,"under_review");
                     // The server can settle a concession before UDP sees the peer leave.
                     if(!w.until)continue;
                     watchNotify(w);
@@ -117,6 +163,17 @@ void watchStep(Uint64 now){
             w.next=now+(w.pending?25000:5000);
         }
     }
+    for(auto &proof:rankedRockProofs){
+        if(now>=proof.until||now<proof.next||proof.project!=Bt4Signal_Project())continue;
+        const unsigned request=++watchSerial;
+        const std::string args=Dj{{"match",proof.match},{"event",proof.event}}.dump();
+        if(Bt4Signal_Command(5,request,proof.ranked?"ranked_rock":"quick_rock",args.c_str())){
+            proof.request=request;
+            proof.next=now+20000;
+        }else proof.next=now+3000;
+    }
+    rankedRockProofs.erase(std::remove_if(rankedRockProofs.begin(),rankedRockProofs.end(),
+        [now](const RankedRockProof &p){return now>=p.until;}),rankedRockProofs.end());
     characterStep(now);
     rankedWatches.erase(std::remove_if(rankedWatches.begin(),rankedWatches.end(),[&](const RankedWatch &w){return w.until&&now>=w.until;}),rankedWatches.end());
 }
@@ -201,17 +258,17 @@ void refreshStatus(){
         for(const auto &member:*members)if(number(member,"peer")==target)snprintf(d.status.peerName,sizeof(d.status.peerName),"%s",text(member,"name").c_str());
         if(d.status.peerCount)d.status.state=3;
     }else if(host)d.status.state=2;
-    if(host){char previous[32][64];memcpy(previous,d.status.watchAddr,sizeof(previous));int old=d.status.watchCount;d.status.watchCount=0;memset(d.status.watchAddr,0,sizeof(d.status.watchAddr));
+    if(host){char previous[MATCH_WATCH_ADDRS][64];memcpy(previous,d.status.watchAddr,sizeof(previous));int old=d.status.watchCount;d.status.watchCount=0;memset(d.status.watchAddr,0,sizeof(d.status.watchAddr));
         for(const auto &member:*members){unsigned peer=number(member,"peer");if(peer==self||(!d.status.lobby&&text(member,"role")!="spectator"))continue;
             auto p=d.addresses.find(peer);if(p==d.addresses.end()||!p->second.is_array())continue;
             std::string seen;
-            for(const auto &address:p->second)if(address.is_string()&&address.get_ref<const std::string&>().size()<64&&d.status.watchCount<32){
+            for(const auto &address:p->second)if(address.is_string()&&address.get_ref<const std::string&>().size()<64&&d.status.watchCount<MATCH_WATCH_ADDRS){
                 const auto &value=address.get_ref<const std::string&>();
                 snprintf(d.status.watchAddr[d.status.watchCount++],64,"%s",value.c_str());
                 if(seen.empty()&&value.rfind("relay=",0)!=0&&value.find(':')!=std::string::npos)seen="seen="+value.substr(0,value.rfind(':'));
             }
             // Native lobby pending-member tracking needs this alongside candidates.
-            if(!seen.empty()&&d.status.watchCount<32)snprintf(d.status.watchAddr[d.status.watchCount++],64,"%s",seen.c_str());}
+            if(!seen.empty()&&d.status.watchCount<MATCH_WATCH_ADDRS)snprintf(d.status.watchAddr[d.status.watchCount++],64,"%s",seen.c_str());}
         if(old!=d.status.watchCount||memcmp(previous,d.status.watchAddr,sizeof(previous)))++d.status.watchGen;
     }
 }
@@ -241,6 +298,10 @@ void metadata(const Dj &body){
     auto generation=text(body,"generation");if(generation.empty())return;
     if(d.descriptor.is_object()&&!text(d.descriptor,"generation").empty()&&generation!=text(d.descriptor,"generation"))return;
     d.descriptor=body;d.waiting=false;auto members=body.find("members");if(members==body.end()||!members->is_array())return;
+    if((d.ranked||d.quick)&&!d.rockRoundEnded){
+        const unsigned seed=number(body,d.ranked?"ranked_rock_seed":"quick_rock_seed");
+        if(seed && seed<=8388608)rankedRockSeed=seed;
+    }
     // Endpoint announcements are also retained in the authenticated descriptor.
     // A broadcast accepted before the recipient subscribed is not delivery.
     auto endpoints=body.find("udp");
@@ -306,7 +367,7 @@ void pump(){
                 d.reportPending=false;d.reportAt=SDL_GetTicks()+3000;
                 std::string state=text(*body,"state"),failure=text(*body,"error");
                 if(state=="applied"||state=="already_applied"){
-                    d.reportState=2;d.resultRating=(int)std::min(100000u,number(*body,"rating"));
+                    d.reportState=jsonFlag(*body,"under_review")?3:2;d.resultRating=(int)std::min(100000u,number(*body,"rating"));
                     auto delta=body->find("delta");d.resultDelta=delta!=body->end()&&delta->is_number_integer()
                         ?(int)std::max<int64_t>(-100000,std::min<int64_t>(100000,delta->get<int64_t>())):0;
                 }
@@ -366,11 +427,15 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     d.announcements.clear();d.retryAt.clear();d.earlySignals.clear();d.reconcile=0;d.reconcileAt=0;d.refreshRoom=false;
     d.ranked=rankedNext&&role==3;rankedNext=false;d.sawFight=false;d.reportPending=false;
     rankedActive=d.ranked;
+    rankedRockSeed=0;d.rockCandidate=d.rockCandidateTick=0;d.rockSubmitted=d.rockRoundEnded=false;
+    d.quick=role==3&&!d.ranked;
     d.outcomeTick=d.reportSerial=0;d.outcomeBits=d.reportState=0;d.reportAt=0;d.report=Dj();d.characters=Dj();
     d.resultRating=d.resultDelta=0;
     char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.content=hash;d.wire="bt4-duel-"+std::to_string(protocol);
-    d.profile={{"mode",role==5?"lobby":"duel"},{"wire",d.wire},{"content",d.content},{"rules",queue&&*queue?queue:"S"},{"name",std::string(name).substr(0,19)},{"capacity",8}};
+    if(d.ranked&&rankedRocksAvailable)d.wire+=":rock1";
+    d.profile={{"mode",role==5?"lobby":"duel"},{"wire",d.wire},{"content",d.content},{"rules",queue&&*queue?queue:"S"},{"name",std::string(name).substr(0,19)},{"capacity",role==5?LOBBY_SLOTS:LOBBY_CLASSIC_SLOTS}};
     if(d.ranked){d.profile["ruleset"]="solo";d.profile["rules"]="S";}
+    if(d.quick)d.profile["rock_version"]=1;
     d.began=SDL_GetTicks();d.leaseAt=d.began+60000;
     if(!Bt4Signal_Open()){d.on=false;rankedActive=false;return 0;}
     // Explicit reset precedes the new admission in the single HTTP queue.
@@ -432,7 +497,7 @@ extern "C" void Bt4Discovery_End(unsigned generation){std::lock_guard<std::mutex
     if(d.waiting)rpc("cancel",Dj::object());
     if(d.ranked&&d.sawFight){auto m=text(d.descriptor,"generation");for(auto &w:rankedWatches)if(w.match==m&&!w.until){w.until=SDL_GetTicks()+120000;w.next=0;}}
     Dj leave=Dj::object();auto generationId=text(d.descriptor,"generation");if(!generationId.empty())leave["generation"]=generationId;
-    rpc("leave",leave);d.earlySignals.clear();d.on=false;d.turn={};d.turnRequest=0;rankedActive=false;}
+    rpc("leave",leave);d.earlySignals.clear();d.on=false;d.turn={};d.turnRequest=0;rankedActive=false;rankedRockSeed=0;}
 extern "C" int Bt4Discovery_Counts(int protocol,uint64_t content,int out[5]){
     std::lock_guard<std::mutex> g(lock);if(!out)return 0;pump();Uint64 now=SDL_GetTicks();
     if(!d.lastCounts||now-d.lastCounts>=30000){d.lastCounts=now;char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.countsRequest=++serial;
@@ -447,10 +512,22 @@ extern "C" int Bt4Discovery_TagCounts(uint64_t content,int out[3]){
 }
 extern "C" void Port_RankedSearch(int selected){std::lock_guard<std::mutex> g(lock);rankedNext=selected!=0;}
 extern "C" int Port_RankedActive(void){return rankedActive.load();}
+extern "C" unsigned Port_RankedRockSeed(void){return rankedRockSeed.load();}
+extern "C" void Port_RankedObserveRock(int state,unsigned event,unsigned tick,unsigned confirmed){
+    if(!rankedRockSeed)return;
+    std::lock_guard<std::mutex> guard(lock);
+    if(!d.on||(!d.ranked&&!d.quick))return;
+    if(state>=4&&state<=6)d.rockRoundEnded=true;
+    if(d.rockRoundEnded&&state<4){rankedRockSeed=0;return;}
+    if(state<3||state>6||d.rockSubmitted)return;
+    if(event!=d.rockCandidate){d.rockCandidate=event;d.rockCandidateTick=tick;}
+    if(!event||confirmed<d.rockCandidateTick)return;
+    d.rockSubmitted=queueRockProof(text(d.descriptor,"generation"),event,d.ranked);
+}
 extern "C" void Port_RankedShutdown(void){
     watchQuit=true;
     if(rankedWatcher){SDL_WaitThread(rankedWatcher,nullptr);rankedWatcher=nullptr;}
-    std::lock_guard<std::mutex> guard(lock);rankedWatches.clear();
+    std::lock_guard<std::mutex> guard(lock);rankedWatches.clear();rankedRockProofs.clear();
 }
 extern "C" void Port_RankedDisconnected(int peerGone){
     std::lock_guard<std::mutex> guard(lock);
@@ -461,11 +538,12 @@ extern "C" int Port_RankedTakeSettlement(int *rating,int *delta){
     std::lock_guard<std::mutex> guard(lock);
     Uint64 now=SDL_GetTicks();
     if(rankedSettlements.empty()||now<nextSettlement)return 0;
-    *rating=rankedSettlements.front().first;
-    *delta=rankedSettlements.front().second;
+    *rating=rankedSettlements.front().rating;
+    *delta=rankedSettlements.front().delta;
+    int result=rankedSettlements.front().review?2:1;
     rankedSettlements.pop_front();settlementReady=!rankedSettlements.empty();
     nextSettlement=now+2000;
-    return 1;
+    return result;
 }
 extern "C" int Port_RankedResult(int *rating,int *delta){
     std::lock_guard<std::mutex> g(lock);
@@ -560,6 +638,10 @@ void profileRoute(){
     rankedStatusRequest=rankedTopRequest=nicknameRequest=0;
     nextRankedStatus=nextRankedTop=0;
     rankedView.state=0;rankedView.rating=rankedView.wins=rankedView.losses=0;
+    rankedView.streakScoring=rankedView.streakWins=rankedView.streakPoints=0;
+    rankedView.monthlyReset=rankedView.dragonBalls=rankedView.collectionPosition=0;
+    rankedView.nextReset[0]=0;
+    rankedRocksAvailable=false;
     rankedView.season[0]=0;
     nicknameState=BT4_NICKNAME_LOADING;nickname.clear();
     nextNicknameCheck=0;
@@ -594,12 +676,28 @@ void profilePump(Uint64 now){
             rankedStatusRequest=0;
             auto enabled=body->find("enabled");
             rankedView.state=enabled!=body->end()&&enabled->is_boolean()&&enabled->get<bool>()?1:-1;
-            snprintf(rankedView.season,sizeof(rankedView.season),"%s",text(*body,"season").c_str());
+            const std::string season=text(*body,"season");
+            if(!season.empty()&&rankedView.season[0]&&season!=rankedView.season){
+                rankedTotal=0;rankedEntries={};rankedView.page=0;rankedView.topState=0;
+                rankedTopRequest=0;nextRankedTop=0;rankedPage();
+            }
+            snprintf(rankedView.season,sizeof(rankedView.season),"%s",season.c_str());
             rankedView.rating=(int)std::min(100000u,number(*body,"rating"));
             rankedView.wins=(int)std::min(100000u,number(*body,"wins"));
             rankedView.losses=(int)std::min(100000u,number(*body,"losses"));
+            rankedView.streakScoring=text(*body,"scoring")=="streak";
+            rankedView.streakWins=(int)std::min(100000u,number(*body,"streak_wins"));
+            rankedView.streakPoints=(int)std::min(100000u,number(*body,"streak_points"));
+            auto weekly=body->find("monthly_reset");
+            rankedView.monthlyReset=weekly!=body->end()&&weekly->is_boolean()&&weekly->get<bool>();
+            rankedRocksAvailable=jsonFlag(*body,"ranked_rocks");
+            rankedView.dragonBalls=(int)std::min(7u,number(*body,"dragon_balls"));
+            rankedView.collectionPosition=(int)std::min(100000u,number(*body,"collection_position"));
+            snprintf(rankedView.nextReset,sizeof(rankedView.nextReset),"%s",text(*body,"next_reset_at").c_str());
         }else if(id==rankedTopRequest){
             rankedTopRequest=0;
+            const std::string season=text(*body,"season");
+            if(!season.empty()&&rankedView.season[0]&&season!=rankedView.season){nextRankedStatus=nextRankedTop=0;continue;}
             auto entries=body->find("entries");
             if(entries==body->end()||!entries->is_array()){
                 if(rankedView.topState==0)rankedView.topState=-1;
@@ -615,6 +713,7 @@ void profilePump(Uint64 now){
                 r.rating=(int)std::min(100000u,number(row,"rating"));
                 r.wins=(int)std::min(100000u,number(row,"wins"));
                 r.losses=(int)std::min(100000u,number(row,"losses"));
+                r.dragonBalls=(int)std::min(7u,number(row,"dragon_balls"));
             }
             rankedPage();
         }

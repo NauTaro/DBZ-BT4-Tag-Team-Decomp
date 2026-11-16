@@ -2,6 +2,7 @@
 #ifdef PORT
 #include <stdio.h>
 #include <stdlib.h>
+#include "plat_songs.h"
 #endif
 #include "menu/menu_x.h"
 #include "menu/menu_y.h"
@@ -17,6 +18,7 @@ extern s32 Bt4_BgmNormalize(s32 count,s32 *ids,s32 random);
 Option *gOption = NULL; /* 0x3BC364 */
 #ifdef PORT
 #include "tag_team_hud_editor.inc"
+
 #endif
 
 /*
@@ -380,11 +382,16 @@ s32 Option_Input(void) {
         break;
     case OPT_ITEM_SCREEN:
         if (gPad[0].gameRepeat & (PADG_UP|PADG_DOWN)) {
-            static const s32 order[5]={OPT_ITEM_TYPE,OPT_ITEM_SCR2,OPT_ITEM_ADJUST,OPT_ITEM_TAG_HUD,OPT_ITEM_SCR_RESET};
+            static const s32 order[]={OPT_ITEM_TYPE,OPT_ITEM_SCR2,OPT_ITEM_ADJUST,
+#ifndef BT4_TAG_TEAM_EXPANDED
+                OPT_ITEM_TAG_HUD,
+#endif
+                OPT_ITEM_SCR_RESET};
+            const s32 rows=sizeof(order)/sizeof(order[0]);
             s32 pos=0;
             OPT_PLATE(gOption->cursor==OPT_ITEM_SCR_RESET?OPT_CLIP_BOTTOM:OPT_CLIP_ROW_SCREEN,"fl_off_start");
-            for(i=0;i<5;++i)if(order[i]==gOption->cursor)pos=i;
-            pos=(pos+((gPad[0].gameRepeat&PADG_UP)?4:1))%5;
+            for(i=0;i<rows;++i)if(order[i]==gOption->cursor)pos=i;
+            pos=(pos+((gPad[0].gameRepeat&PADG_UP)?rows-1:1))%rows;
             gOption->cursor=order[pos];
             OPT_PLATE(gOption->cursor==OPT_ITEM_SCR_RESET?OPT_CLIP_BOTTOM:OPT_CLIP_ROW_SCREEN,"fl_on_start");
             Snd_PlaySe(1,0);
@@ -737,7 +744,12 @@ s32 Option_Input(void) {
         } else if (gPad[0].gamePressed & PADG_CROSS) {
             OPT_PLATE(OPT_CLIP_BGM, "fl_ok");
             if (gOption->bgmIds[gOption->bgmCursor] != 0x19) {
-                Bgm_Play(gOption->bgmIds[gOption->bgmCursor] + 0x816);
+                extern void Port_SettingSave(const char *,int);
+                extern void Port_SettingsWrite(void);
+                s32 track=PORT_BGM_FILE(gOption->bgmIds[gOption->bgmCursor]);
+                Port_SettingSave("main_menu_bgm",track);
+                Port_SettingsWrite();
+                Bgm_Play(track);
                 Snd_PlaySe(1, 1);
             } else {
                 Snd_PlaySe(1, 7);
@@ -1473,7 +1485,9 @@ void Option_Draw(void) {
                 sprintf(name, "mc_menu_plate_%d", i + 1);
                 Option_SetMenuText(flash, &ref, name, uv);
             }
+#ifndef BT4_TAG_TEAM_EXPANDED
             TagHudScreen_Prepare(flash);
+#endif
 
             for (i = 0; i < 4; i++) {
                 uv.x0 = 0;

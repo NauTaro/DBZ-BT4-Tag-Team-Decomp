@@ -16,6 +16,8 @@
 #include <string.h>
 
 #include "gs/fight_panels.h"
+#include "gs/mods.h"
+#include "gs/tag_hud.h"
 #include "port_addr.h" /* (Port_Ptr: a game address as a pointer) */
 
 #if (defined(__x86_64__) || defined(__aarch64__)) && defined(__clang__)
@@ -29,7 +31,7 @@
 extern int gPortResim; /* gs/state.c: blanks being run again */
 extern int gsSkipFrame;
 
-/* src/battle/btl_char_mgr.c / btl_seq.c: there from Battle_Init to Battle_Term, NULL outside (see a11y_game.c) */
+/* The native overlay may reuse these slots outside the battle scene. */
 extern void GAME_PTR gBtlChars;
 extern void GAME_PTR gBtlSeq;
 typedef struct {
@@ -132,10 +134,111 @@ static void entry_name(const uint16_t *p, int n, char *out, int size) {
 static FpState sState;           /* the copy the render thread reads */
 static volatile unsigned sSeq;   /* odd while it is written */
 static int sWritten;
+static int sBattleActive;
+
+void PortPanels_SetBattleActive(int active) {
+    sBattleActive = active;
+}
+
+int PortPanels_BattleActive(void) {
+    return sBattleActive && gBtlChars != NULL && gBtlSeq != NULL;
+}
 
 /* Which portrait each slot's path is for, so the files are looked up only when a member changes. */
 static int sPathKey[2][FP_MEMBERS];
 static char sPath[2][FP_MEMBERS][FP_PATH];
+
+static TagHudState sTagState;
+static struct { int count[2],viewer[2];TagHudFloating item[2][4]; } sFloatingAllies;
+void Port_TagAllyHudReset(void){memset(&sFloatingAllies,0,sizeof(sFloatingAllies));}
+void Port_TagAllyHudFeed(int pane,int viewer,int actor,int x,int y){
+    int i;
+    if(pane<0||pane>1||actor<0||actor>=10||x<0||x>100000||y<0||y>100000)return;
+    i=sFloatingAllies.count[pane];if(i>=4)return;
+    sFloatingAllies.viewer[pane]=viewer;sFloatingAllies.count[pane]=i+1;
+    sFloatingAllies.item[pane][i]=(TagHudFloating){actor,x,y};
+}
+static unsigned sTagSeq;
+static int sTagPathKey[10];
+static char sTagPath[10][FP_PATH];
+static int rd(uint8_t GAME_PTR p,int off);
+extern int TagBattle_Active(void),TagBattle_Count(void),TagBattle_ViewActor(void),TagBattle_Target(int),TagBattle_Allied(int,int);
+extern int Battle_IsSplitScreen(void),BattleSide_GetObjId(int);
+extern void GAME_PTR BtlChar_Get(int);
+int Port_TagActorName(int actor,char *out,int cap) {
+    extern int Port_CachedFighterName(int,char *,int);
+    if(!PortPanels_BattleActive()||actor<0||actor>=TagBattle_Count())return 0;
+    return Port_CachedFighterName(BtlCharApi_GetChara(BattleSide_GetObjId(actor)),out,cap);
+}
+
+static void tag_snapshot(void) {
+    static TagHudState st;
+    int i;
+    memset(&st,0,sizeof(st));
+    if(PortPanels_BattleActive()&&TagBattle_Active()){
+        st.active=1;st.count=TagBattle_Count();
+        if(st.count<1||st.count>10)st.count=0;
+        st.view=TagBattle_ViewActor();st.target=TagBattle_Target(st.view);st.split=Battle_IsSplitScreen();
+        st.views[0]=0;st.views[1]=1;
+#ifdef BT4_TAG_TEAM_EXPANDED
+        if(st.split){
+            extern int TagBattle_SplitViewActor(int), TagBattle_SplitSpectating(int);
+            st.views[0]=TagBattle_SplitViewActor(0);
+            st.views[1]=TagBattle_SplitViewActor(1);
+            st.spectating[0]=TagBattle_SplitSpectating(0);
+            st.spectating[1]=TagBattle_SplitSpectating(1);
+        }
+#endif
+        if(Mods_SplitScreen()){
+            st.split=1;st.views[0]=Port_PresentationSplitActor(0);st.views[1]=Port_PresentationSplitActor(1);
+            st.spectating[1]=1; /* additional camera never grants another fighter's inputs */
+        }
+        if(st.split)for(i=0;i<2;++i)if(sFloatingAllies.viewer[i]==st.views[i]){
+            st.floatingCount[i]=sFloatingAllies.count[i];
+            memcpy(st.floating[i],sFloatingAllies.item[i],sizeof(st.floating[i]));
+        }
+        for(i=0;i<st.count;++i){
+            TagHudActor *a=&st.actor[i];
+            uint8_t GAME_PTR chr=(uint8_t GAME_PTR)BtlChar_Get(i);
+            uint8_t GAME_PTR m;
+            int active,count,key;
+            if(!chr)continue;
+            active=rd(chr,CHR_ACTIVE);count=rd(chr,CHR_MEMBER_COUNT);
+            if(active<0||active>=count||count>5)continue;
+            m=chr+CHR_MEMBERS+active*MEMBER_SIZE;
+            a->found=1;a->team=TagBattle_Allied(i,st.view)?0:1;a->cpu=BattleSide_IsCpu(i)!=0;
+            a->portrait.present=rd(m,MEMBER_PRESENT)!=0;
+#ifdef BT4_TAG_TEAM_EXPANDED
+            {extern int TagFusion_Absent(int),TagFusion_Controller(int);
+             if(TagFusion_Absent(i))a->portrait.present=0;
+             a->cpu=BattleSide_IsCpu(TagFusion_Controller(i))!=0;}
+#endif
+            a->portrait.chara=BtlCharApi_GetChara(BattleSide_GetObjId(i));
+            a->portrait.costume=rd(m,MEMBER_COSTUME);a->portrait.hp=rd(m,MEMBER_GAUGE);a->portrait.hpMax=rd(m,MEMBER_GAUGE+4);
+            a->ki=rd(m,MEMBER_GAUGE+12);a->kiMax=rd(m,MEMBER_GAUGE+16);
+            a->blast=rd(m,MEMBER_GAUGE+20);a->blastMax=rd(m,MEMBER_GAUGE+24);a->maxPower=rd(m,MEMBER_GAUGE+28);
+            a->poweredUp=BtlChar_TestFlag(chr,CHR_POWERED_UP)!=0;
+            key=(a->portrait.chara<<8 | (a->portrait.costume&255))+1;
+            if(key!=sTagPathKey[i]){
+                sTagPathKey[i]=key;sTagPath[i][0]=0;
+                if(a->portrait.chara>=0&&a->portrait.chara<CHARA_MAX)
+                    Port_FilePath(1,FACE_FILE+a->portrait.chara-1,NULL,sTagPath[i],FP_PATH);
+            }
+            memcpy(a->portrait.path,sTagPath[i],FP_PATH);
+        }
+    }else memset(sTagPathKey,0,sizeof(sTagPathKey));
+    __atomic_add_fetch(&sTagSeq,1,__ATOMIC_ACQ_REL);memcpy(&sTagState,&st,sizeof(st));
+    __atomic_add_fetch(&sTagSeq,1,__ATOMIC_RELEASE);
+}
+int PortPanels_TagRead(TagHudState *out) {
+    int tries;unsigned a,b;
+    for(tries=0;tries<64;++tries){
+        a=__atomic_load_n(&sTagSeq,__ATOMIC_ACQUIRE);if(a&1)continue;
+        memcpy(out,&sTagState,sizeof(*out));__atomic_thread_fence(__ATOMIC_ACQUIRE);
+        b=__atomic_load_n(&sTagSeq,__ATOMIC_ACQUIRE);if(a==b)return out->active;
+    }
+    memset(out,0,sizeof(*out));return 0;
+}
 
 static int rd(uint8_t GAME_PTR p, int off) {
     return *(int GAME_PTR)(p + off);
@@ -205,8 +308,16 @@ static void read_side(FpState *st, int side) {
         s->next = i;
     }
     s->action = BtlAct_GetCurrent(chr);
+    {
+        extern int BtlSide_GetSwitchGauge(int actor), Port_HudPromptVisible(int side);
+        s->switchGauge = BtlSide_GetSwitchGauge(actor);
+        s->promptShown = Port_HudPromptVisible(side);
+    }
     s->chargeHeld = BtlInput_IsHeld(chr, BTLB_CHARGE) != 0;
     s->cpu = BattleSide_IsCpu(actor) != 0;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {extern int TagFusion_Controller(int);if(TagBattle_Active())s->cpu=BattleSide_IsCpu(TagFusion_Controller(actor))!=0;}
+#endif
     {
         uint8_t GAME_PTR obj = (uint8_t GAME_PTR)BtlChar_GetObj(chr);
         uint32_t at = obj != NULL ? (uint32_t)rd(obj, OBJ_NAMES) : 0;
@@ -257,8 +368,9 @@ void PortPanels_GameTick(void) {
     if (gPortResim || gsSkipFrame) {
         return;
     }
+    tag_snapshot();
     memset(&st, 0, sizeof(st));
-    if (gBtlChars != NULL && gBtlSeq != NULL) {
+    if (PortPanels_BattleActive()) {
         read_side(&st, 0);
         read_side(&st, 1);
         st.battle = st.side[0].found && st.side[1].found;

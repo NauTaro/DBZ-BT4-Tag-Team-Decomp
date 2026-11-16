@@ -384,7 +384,16 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
     prevButtons = chr->input.rec.buttons;
     prevCommands = chr->input.rec.commands;
     stick[1] = stick[0] = BTL_STICK_CENTER;
-    if (chr->injectOn) {
+    extern s32 Training_ControlledActor(void);
+    extern void Training_FilterInput(s32,u32 *,u8 *);
+    s32 trainingActor=Training_ControlledActor();
+    if(trainingActor==1&&chr->player==1){
+        buttons=BtlInput_RemapButtons(gPad[0].held,in->mask);
+        stick[0]=BtlInput_StickToByte(gPad[0].left[0]);
+        stick[1]=BtlInput_StickToByte(gPad[0].left[1]);
+        buttons=BtlInput_MergeStick(chr,buttons,stick);
+        commands=BtlInput_BuildCommands(chr,buttons,prevButtons);
+    }else if (chr->injectOn) {
         f32 x = chr->injectStickX;
         f32 y = chr->injectStickY;
 
@@ -421,6 +430,11 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
         buttons = BtlInput_MergeStick(chr, buttons, stick);
         buttons = BtlInput_AddDoubleTaps(chr, buttons, prevButtons, in->padStatus);
         commands = BtlInput_BuildCommands(chr, buttons, prevButtons);
+    }
+    if(trainingActor>=0){
+        Training_FilterInput(chr->player,&buttons,stick);
+        buttons=BtlInput_MergeStick(chr,buttons,stick);
+        commands=BtlInput_BuildCommands(chr,buttons,prevButtons);
     }
     active = 0;
     if (BtlChar_TestFlag(chr, 2) || BtlChar_TestFlag(chr, 3)) {
@@ -558,18 +572,69 @@ void BtlInput_Sample(BtlInputChr *chr) {
     u32 targetPressed=TagBattle_Network()?((TagBattle_NetPad(chr->player)[6]&1)?PAD_L3:0):pad->pressed;
     s32 targetDirection=TagBattle_Network()?((TagBattle_NetPad(chr->player)[6]>>1)&7):
         (pad->data[17]&0x80)?pad->data[17]&7:0;
+    const u32 targetMethod=TagBattle_Network()?(TagBattle_NetPad(chr->player)[6]>>4)&3:(pad->data[17]>>4)&3;
+    if(targetMethod!=0)targetPressed&=~PAD_L3;
     if(TagBattle_Active() && !chr->injectOn){
-        extern s32 TagBattle_TargetDirection(s32 actor,s32 direction);
-        if(targetDirection)TagBattle_TargetDirection(chr->player,targetDirection);
+        extern s32 TagBattle_TargetDirection(s32 actor,s32 direction),TagBattle_Target(s32 actor);
+        extern s32 TagBattle_LocalActor(void);
+        extern void Port_SeTagCue(s32);
+        s32 previous=TagBattle_Target(chr->player);
+#ifdef BT4_TAG_TEAM_EXPANDED
+        extern s32 TagBattle_DevCombatActive(void);
+        extern s32 TagBattle_Focus(s32);
+        const s32 cameraControls=TagBattle_DevCombatActive()&&BattleSide_GetControl(chr->player)==BTL_CONTROL_PAD;
+        const s32 previousFocus=cameraControls?TagBattle_Focus(chr->player):-1;
+        if(cameraControls){
+            u32 buttons;
+            if(TagBattle_Network())memcpy(&buttons,TagBattle_NetPad(chr->player),4);
+            else buttons=BtlInput_RemapButtons(pad->held,in->mask);
+            u32 pressed=pad->pressed,held=pad->held;
+            if(TagBattle_Network()){
+                const Pad *command=TagBattle_CommandPad(chr->player);
+                pressed=command->pressed;
+                held=command->held;
+            }
+            if((pressed&PAD_SELECT)&&!(held&PAD_L2)){
+                TagBattle_StepCamera(chr->player);
+                targetDirection=0;
+                targetPressed&=~PAD_L3;
+            }
+            /* The native Z Counter opens on Up + Rush. Keep both the L3
+             * action and remapped directional targeting out of that chord. */
+            if((buttons&(BTLB_UP|BTLB_RUSH))==(BTLB_UP|BTLB_RUSH)){
+                targetDirection=0;
+                targetPressed&=~PAD_L3;
+            }
+            if((targetPressed&PAD_L3)&&(buttons&(BTLB_CHARGE|BTLB_LOCKON))){
+                extern void TagBattle_ChangeFocus(s32,s32);
+                TagBattle_ChangeFocus(chr->player,(buttons&BTLB_CHARGE)!=0);
+                targetPressed&=~PAD_L3;
+                targetDirection=0;
+            }
+        }
+#endif
         extern char *getenv(const char *name);
         static s32 tested;
         if(!tested && getenv("BT4_TAG_TARGET_TEST") && BtlChar_TestFlag(chr,3) && BtlChar_FrameMod(240)==0){targetPressed|=PAD_L3;tested=1;}
         if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_HUD_SWEEP") && BtlChar_TestFlag(chr,3) && BtlChar_FrameMod(30)==0)targetPressed|=PAD_L3;
-        if(targetPressed & PAD_L3){
+#ifdef BT4_TAG_TEAM_EXPANDED
+        if(cameraControls){
+            if(targetDirection||(targetPressed&PAD_L3))TagBattle_NavigateCamera(chr->player,targetDirection);
+        }else
+#endif
+        if(targetDirection)TagBattle_TargetDirection(chr->player,targetDirection);
+        else if(targetPressed & PAD_L3){
             extern s32 TagBattle_Target(s32 actor);
             TagBattle_CycleTarget(chr->player);
             if(getenv("BT4_TAG_TARGET_TEST"))fprintf(stderr,"tag target: actor %d now targets %d through L3 input\n",chr->player,TagBattle_Target(chr->player));
         }
+        if((previous!=TagBattle_Target(chr->player)
+#ifdef BT4_TAG_TEAM_EXPANDED
+           ||(cameraControls&&previousFocus!=TagBattle_Focus(chr->player))
+#endif
+           )&&
+           (!TagBattle_Network()||chr->player==TagBattle_LocalActor()))
+            Port_SeTagCue(Battle_IsSplitScreen()?(chr->player==1?1:-1):0);
     }
 
     in->padStatus = pad->status;

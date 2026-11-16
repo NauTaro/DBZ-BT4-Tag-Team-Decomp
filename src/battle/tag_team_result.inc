@@ -33,7 +33,10 @@ u16 *TagBattle_ResultText(s32 id) {
         sTagResultWinner==2?(en?"TEAM 2 WINS":"GANA EL EQUIPO 2"):(en?"DRAW":"EMPATE");break;
     case 0x7111: text=sTagResultPending>=0?(en?"Waiting for players...":"Esperando jugadores..."):(en?"Rematch":"Revancha");break;
     case 0x7112: text=en?"Return to Character Select":"Volver a elegir personaje";break;
-    default: text="Tenkaichi Budokai Online";break;
+    default:{
+        extern s32 PortTag_DedicatedMenu(void);
+        text=PortTag_DedicatedMenu()?(en?"Back to Tag Team":"Volver a Tag Team"):"Tenkaichi Budokai Online";
+        break;}
     }
     for(i=0;text[i]&&i<127;++i)line[i]=(u8)text[i];
     line[i]=0;return line;

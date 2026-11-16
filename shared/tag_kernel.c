@@ -6,6 +6,7 @@
 void *memset(void *p,int c,unsigned long n){unsigned char *d=p;while(n--)*d++=(unsigned char)c;return p;}
 void *memcpy(void *p,const void *s,unsigned long n){unsigned char*d=p;const unsigned char*b=s;while(n--)*d++=*b++;return p;}
 int memcmp(const void *a,const void *b,unsigned long n){const unsigned char*x=a,*y=b;while(n--){if(*x!=*y)return *x-*y;++x;++y;}return 0;}
+int strcmp(const char*a,const char*b){while(*a&&*a==*b){++a;++b;}return (unsigned char)*a-(unsigned char)*b;}
 int snprintf(char *dst,unsigned long cap,const char *fmt,...){
     va_list a;unsigned n=0;va_start(a,fmt);
     while(*fmt){char buf[24];const char*s=buf;
@@ -40,6 +41,10 @@ int Kernel_Humans(void){return Tt_Humans(&room);}
 int Kernel_Seat(unsigned member){return Tt_Seat(&room,member);}
 unsigned Kernel_Epoch(void){return room.epoch;}
 unsigned Kernel_Host(void){return room.host;}
+unsigned Kernel_BattleRules(void){return room.battle_rules;}
+unsigned Kernel_OptionsHash(void){return room.options_hash;}
+unsigned Kernel_OptionsVersion(void){return room.options.version;}
+void Kernel_OptionsSnapshot(void){Ttw_OptionsSnapshot(output,&room);}
 void Kernel_Seed(unsigned seed){room.seed=seed;}
 void Kernel_Leave(unsigned member){
     int i,seat=Tt_Seat(&room,member);
@@ -94,15 +99,37 @@ int Kernel_Command(unsigned member){
     switch(cmd){
     case TTW_OPEN:
         if(room.phase)return TT_BAD_PHASE;
-        if(a<2||a>5||b<0||b>4||Ttw_Read(input+20)>12||Ttw_Read(input+52)>1||Ttw_Read(input+56)>4||Ttw_Read(input+60)>1||(Ttw_Read(input+60)&&a!=3))return TT_BAD_CHOICE;
+        if(a<2||a>5||b<0||b>4||Ttw_Read(input+20)>12||Ttw_Read(input+52)>1||Ttw_Read(input+56)>4||Ttw_Read(input+60)>1)return TT_BAD_CHOICE;
+        if(Ttw_Read(input+TTW_OPEN_BATTLE_RULES)>TT_RULE_MASK||
+           (Ttw_Read(input+TTW_OPEN_BATTLE_RULES)&&Ttw_Read(input+64)))return TT_BAD_CHOICE;
+        TtOptions options;int extended=Ttw_Read(input+TTW_OPEN_OPTIONS)!=0;
+        if(extended&&!Ttw_GetOptions(input+TTW_OPEN_OPTIONS,&options))return TT_BAD_CHOICE;
+        if(extended&&Ttw_Read(input+64)){
+            TtOptions defaults;Tt_OptionsDefault(&defaults);defaults.value[TT_OPT_PRESETS]=0;
+            if(memcmp(&defaults,&options,sizeof(options)))return TT_BAD_CHOICE;
+        }
         Tt_Open(&room,member,name,a,read64(input+24));room.time=b;room.delay=Ttw_Read(input+20);
+        if(extended){room.options=options;room.options_hash=Tt_OptionsHash(&room);}
+        room.battle_rules=Ttw_Read(input+TTW_OPEN_BATTLE_RULES);
         Tt_SetMode(&room,member,room.epoch,Ttw_Read(input+60));
         if(Ttw_Read(input+52))Tt_FillCPU(&room,member,room.epoch,Ttw_Read(input+56));return TT_OK;
-    case TTW_JOIN:return room.phase==TT_CLOSED?TT_BAD_MEMBER:Tt_Join(&room,member,name,read64(input+24));
+    case TTW_JOIN:
+        if(room.phase==TT_CLOSED)return TT_BAD_MEMBER;
+        if(room.battle_rules&&Ttw_Read(input+TTW_JOIN_BATTLE_RULES)<1)return TT_MISMATCH;
+        if(room.options_hash&&Ttw_Read(input+TTW_JOIN_BATTLE_RULES)<
+           (room.options.version==TT_OPTION_COMBAT_VERSION?3u:2u))return TT_MISMATCH;
+        return Tt_Join(&room,member,name,read64(input+24));
     case TTW_PING:return TT_OK;
     case TTW_SELECT:return Tt_BeginSelect(&room,member,epoch);
-    case TTW_CANCEL_SELECT:return Tt_Seat(&room,member)<0?TT_BAD_MEMBER:Tt_CancelSelect(&room,room.host,epoch);
-    case TTW_CHOOSE:return Tt_ChooseSeat(&room,member,epoch,Ttw_Read(input+20),a,b);
+    case TTW_CANCEL_SELECT:return Tt_CancelSelect(&room,member,epoch);
+    case TTW_CHOOSE:{uint16_t items[8];int i,seat=(int)Ttw_Read(input+20);
+        if(seat==-1)seat=Tt_Seat(&room,member);
+        /* Legacy CHOOSE stored a load digest here, not equipment. */
+        if(!room.options.version)return Tt_ChooseSeat(&room,member,epoch,seat,a,b);
+        for(i=0;i<8;++i)items[i]=input[24+i*2]|(unsigned)input[25+i*2]<<8;
+        return Tt_ChooseItems(&room,member,epoch,seat,a,b,items);}
+    case TTW_OPTIONS:{TtOptions options;if(!Ttw_GetOptions(input+24,&options))return TT_BAD_CHOICE;
+        return Tt_SetOptions(&room,member,epoch,&options);}
     case TTW_LOAD:
         rc=Tt_BeginLoad(&room,member,epoch,read64(input+24));if(!rc){Tt_InputsReset(&frames,room.epoch,Tt_Count(&room));last_pad_valid=0;sync_reset();}return rc;
     case TTW_LOADED:return Tt_Loaded(&room,member,epoch,read64(input+24));
@@ -114,6 +141,7 @@ int Kernel_Command(unsigned member){
         return rc;
     case TTW_TEAMS:return Tt_SetTeams(&room,member,epoch,a,b);
     case TTW_SLOT:return Tt_SetSlot(&room,member,epoch,a,b,Ttw_Read(input+20));
+    case TTW_BATTLE_RULES:return Tt_SetBattleRules(&room,member,epoch,(unsigned)a);
     case TTW_ARENA:return Tt_SetArena(&room,member,epoch,a,b,Ttw_Read(input+20));
     case 19:return Tt_MovePlayer(&room,member,epoch,a,b);
     case TTW_INPUT:

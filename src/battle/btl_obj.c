@@ -34,6 +34,23 @@ extern s32 Bt4_ModelFile(s32, s32, s32);
 #include "sys/dma.h"
 #include "sys/file.h"
 #include "sys/heap.h"
+#ifdef PORT
+#include "../../port/src/port_host.h"
+PORT_HOST static BtlObjState sPresentationSplitStates[BTL_OBJ_MAX];
+PORT_HOST static BtlObjVis sPresentationSplitVis;
+/* Rendering recomputes visibility for both cameras, then returns the native
+ * records to exactly the state produced by the shared simulation. */
+void BtlObj_PresentationSplitSave(void) {
+    s32 i;
+    sPresentationSplitVis=gBtlObjWork->vis;
+    for(i=0;i<BTL_OBJ_MAX;++i)if(gBtlObjTbl[i])sPresentationSplitStates[i]=gBtlObjTbl[i]->state;
+}
+void BtlObj_PresentationSplitRestore(void) {
+    s32 i;
+    gBtlObjWork->vis=sPresentationSplitVis;
+    for(i=0;i<BTL_OBJ_MAX;++i)if(gBtlObjTbl[i])gBtlObjTbl[i]->state=sPresentationSplitStates[i];
+}
+#endif
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern f32 sqrtf(f32 x);

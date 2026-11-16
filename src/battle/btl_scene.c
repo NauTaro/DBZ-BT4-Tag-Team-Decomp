@@ -7,6 +7,9 @@ extern int TagBattle_Active(void);
 #include "battle/btl_scene.h"
 #include "sys/common.h"
 #include "sys/heap.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+extern s32 BtlStage_GetChangeTarget(void);
+#endif
 
 /*
  * Battle effect scene, 0x12C9F0..0x12DD80: the task tree the fighter-attached effects run in and the services
@@ -392,6 +395,10 @@ void BtlScene_SetSingleView(s32 singleView) {
 
 /* Returns 1 when one view is drawn (not split-screen, or the camera forced it). */
 s32 BtlScene_IsSingleView(void) {
+#ifdef PORT
+    extern s32 Port_PresentationSplitDrawing(s32);
+    if(Port_PresentationSplitDrawing(-1))return 0;
+#endif
     if (!Battle_IsSplitScreen()) {
         return 1;
     }
@@ -625,13 +632,20 @@ void BtlScene_CheckStageChange(void) {
     if (!BtlGame_IsFighting()) {
         return;
     }
+    s32 canDestroy = Battle_GetRuleUnk10();
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (canDestroy && TagBattle_Local()) {
+        const s32 nextStage = BtlStage_GetChangeTarget();
+        canDestroy = nextStage >= 0 && nextStage != Battle_GetStage();
+    }
+#endif
     for (i = 0; i < list->count; i++) {
         rec = &list->rec[i];
         hit = 0;
         target = BtlCharApi_GetOpponentObjId(rec->objId);
         attr = EftHit_GetTaskFlags(i);
         if (rec->active != 0) {
-            if (Battle_GetRuleUnk10() && EftHit_HasDefFlag200000(rec) && BtlCharApi_IsTargetBelowHalfHp(rec->objId, target)) {
+            if (canDestroy && EftHit_HasDefFlag200000(rec) && BtlCharApi_IsTargetBelowHalfHp(rec->objId, target)) {
                 hit = 1;
             } else if (BtlCharApi_CanTechniqueFinish(rec->objId, target)) {
                 hit = 2;

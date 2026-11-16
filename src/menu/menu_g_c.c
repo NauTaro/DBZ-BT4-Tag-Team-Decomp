@@ -3,10 +3,57 @@
 #include "sys/pad.h"
 #include "sys/save.h"
 #ifdef PORT
+#include <stdio.h>
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
 extern int Port_MenuPart(int part);
 extern void Port_MenuDuelSettings(int on);
+#include "menu/port_screen.h"
+#include "menu/tbo_art.h"
+#include "../../port/src/gs/online_language.h"
+extern void Flash_ClipSetCustomDraw(MFlash *,MFlashRef *,void *,void *);
+extern void PortTagMenu_DrawLabel(void *,void *);
+extern void IconWin_PortHideWords(void);
+extern void MsgWin_PortDrawString(u16 *);
+static s32 sTagHome,sTagHomeFrames,sTagPlate;
+static s32 DuelMenu_TagAvailable(void){
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 Port_NetSession(void);
+    return !Port_NetSession();
+#else
+    return 0;
+#endif
+}
+static void DuelMenu_DrawTagType(void){
+    f32 x;
+    s32 selected=gDuelMenu->sel[DUEL_LEVEL_TYPE]==3;
+    extern s32 Port_MenusWide(void);
+    if(gDuelMenu->level!=DUEL_LEVEL_TYPE||!DuelMenu_TagAvailable())return;
+    Ps_PageSet();Ps_SetShift(0);Ps_Align(0);
+    x=(Port_MenusWide()?Ps_Left():0)+43.0f;
+    Ps_Sprite(selected?TBO_MAIN_TAG_ON:TBO_MAIN_TAG_OFF,x,299,x+588,332,0,0,1,1,PS_PLAIN,0x80);
+}
+
+static void TagHome_Background(void) {
+    extern s32 Port_PageAspectMilli(void);
+    f32 aspect=(f32)Port_PageAspectMilli()/1000.0f,pic=16.0f/9.0f;
+    f32 u=aspect<pic?aspect/pic:1,v=aspect<pic?1:pic/aspect;
+    Ps_PageSet();Ps_SetShift(0);
+    Ps_SpriteScreen(TBO_TAG_MOVIE,0,0,512,448,.5f-u*.5f,.5f-v*.5f,.5f+u*.5f,.5f+v*.5f,PS_PLAIN,0x80);
+}
+static void TagMenu_Message(const char *text) {
+    extern s32 Port_TrLine(const char *,char *,s32);
+    static u16 line[256];char translated[512];
+    const unsigned char *p;s32 n=1;
+    if(Port_TrLine(text,translated,sizeof(translated)))text=translated;else text=PortOnline_Text(text);
+    line[0]=0xFEFF;p=(const unsigned char*)text;
+    while(*p&&n<254){unsigned c=*p++;if((c&0xE0)==0xC0&&*p)c=((c&31)<<6)|(*p++&63);
+        else if((c&0xF0)==0xE0&&p[0]&&p[1]){c=((c&15)<<12)|((p[0]&63)<<6)|(p[1]&63);p+=2;}line[n++]=(u16)c;}
+    line[n]=0;
+    {s32 at=1,last=1,start=1;for(;at<n;++at){if(line[at]==' ')last=at;
+        if(at-start>=31&&last>start){line[last]='\n';start=last+1;}}}
+    MsgWin_PortDrawString(line);
+}
 #endif
 
 DuelMenu *gDuelMenu = NULL; /* 0x3B38E8 */
@@ -351,13 +398,21 @@ void DuelMenu_Draw(void) {
 
 #ifdef PORT
     Port_MenuPage(16); /* widescreen menus: this screen's page, its backdrop filling the width */
+    if(sTagHome)TagHome_Background();else {
     Port_MenuFill(1);
     Sprite_DrawPicture(DM->bg, 0, 0, 0x80);
     Port_MenuFill(0);
+    }
 #else
     Sprite_DrawPicture(DM->bg, 0, 0, 0x80);
 #endif
     flash = &DM->flash[0];
+#ifdef PORT
+    if(sTagHome){
+        for(i=0;i<2;i++){Flash_FindLabel(flash,NULL,DM_GUIDE(i),&ref);Flash_ClipSetFlags(flash,&ref,2,0);}
+        for(i=1;i<=6;i++){sprintf(name,"mc_kemuri_%d",i);Flash_FindLabel(flash,NULL,name,&ref);Flash_ClipSetFlags(flash,&ref,2,0);}
+    }
+#endif
     for (i = 0; i < 2; i++) {
         Flash_FindLabel(flash, DM_GUIDE(i), i ? "mc_guide_nappa_eye" : "mc_guide_bejita_eye", &ref);
         FlashAnim_Blink(flash, &ref, &DM->blink[i], 0);
@@ -378,6 +433,12 @@ void DuelMenu_Draw(void) {
         }
         DM_SET_UV(name, "mc_menu_text_off");
         DM_SET_UV(name, "mc_menu_text_on");
+#ifdef PORT
+        if(sTagHome){
+            Flash_FindLabel(flash,name,"mc_menu_text_off",&ref);Flash_ClipSetCustomDraw(flash,&ref,(void*)PortTagMenu_DrawLabel,(void*)(u32)i);
+            Flash_FindLabel(flash,name,"mc_menu_text_on",&ref);Flash_ClipSetCustomDraw(flash,&ref,(void*)PortTagMenu_DrawLabel,(void*)(u32)(i+4));
+        }
+#endif
     }
     for (i = 0; i < 3; i++) {
         DM_ROW_UV(i, 0x200);
@@ -505,6 +566,14 @@ void DuelMenu_Draw(void) {
     }
 #endif
     IconWin_Draw();
+#ifdef PORT
+    if(sTagHome){
+        Ps_PageSet();Ps_SetShift(0);
+        Ps_Sprite(TBO_TAG_LOGO,Ps_Left()+4,4,Ps_Left()+189,76,0,0,1,1,PS_PLAIN,0x80);
+    } else if(DM->level==DUEL_LEVEL_TYPE&&DM->sel[DUEL_LEVEL_TYPE]==3&&DuelMenu_TagAvailable()){
+        TagMenu_Message("Create a local Tag Team battle with CPU fighters.");
+    } else
+#endif
     MsgWin_Draw(0, 0, DM->voiceLine);
 #ifdef PORT
     Port_MenuPage(0);
@@ -523,6 +592,7 @@ void DuelMenu_ClipGoto(s32 level, char *label) {
         sprintf(name, "mc_menu_plate_%d", DM->sel[level] + 1);
         break;
     case DUEL_LEVEL_TYPE:
+        if (DM->sel[level] == 3) return;
         sprintf(name, "mc_mode_%d", DM->sel[level] + 1);
         break;
     case DUEL_LEVEL_DP:
@@ -681,26 +751,28 @@ void DuelMenu_Input(s32 *result) {
             DuelMenu_Idle();
         }
         break;
-    case DUEL_LEVEL_TYPE:
+    case DUEL_LEVEL_TYPE: {
+        s32 choices=3;
+#ifdef PORT
+        choices+=DuelMenu_TagAvailable();
+#endif
         if (gPad[0].gameRepeat & PADG_UP) {
             DM->idle = 0;
             DM_LEVEL_GOTO("fl_off_start");
             DM_CUR--;
-            if (DM_CUR < 0) {
-                DM_CUR = 2;
-            }
+            if (DM_CUR < 0) DM_CUR=choices-1;
             DM_LEVEL_GOTO("fl_on_start");
-            DM_SAY(0, DM->sel[DUEL_LEVEL_TYPE] + 5);
+            if(DM_CUR<3){DM_SAY(0, DM->sel[DUEL_LEVEL_TYPE] + 5);}
+            else Voice_StopWithLip();
             Snd_PlaySe(1, 0);
         } else if (gPad[0].gameRepeat & PADG_DOWN) {
             DM->idle = 0;
             DM_LEVEL_GOTO("fl_off_start");
             DM_CUR++;
-            if (DM_CUR >= 3) {
-                DM_CUR = 0;
-            }
+            if (DM_CUR >= choices) DM_CUR=0;
             DM_LEVEL_GOTO("fl_on_start");
-            DM_SAY(0, DM->sel[DUEL_LEVEL_TYPE] + 5);
+            if(DM_CUR<3){DM_SAY(0, DM->sel[DUEL_LEVEL_TYPE] + 5);}
+            else Voice_StopWithLip();
             Snd_PlaySe(1, 0);
         } else if (gPad[0].gamePressed & PADG_CROSS) {
             char name[64];
@@ -710,6 +782,15 @@ void DuelMenu_Input(s32 *result) {
                 Snd_PlaySe(1, 7);
                 break;
             }
+#ifdef PORT
+            if(DM_CUR==3){
+                *result=2+DM->sel[DUEL_LEVEL_TOP];
+                Flash_GotoLabel(&DM->flash[0],"fl_exit",1);
+                ColorFade_StartOut(0,0,0,20);
+                Snd_PlaySe(1,1);
+                break;
+            }
+#endif
             DM_LEVEL_GOTO("fl_ok");
             if (DM_CUR == 2) {
                 DM->level = DUEL_LEVEL_DP;
@@ -725,6 +806,7 @@ void DuelMenu_Input(s32 *result) {
 
             DM->idle = 0;
             DM_LEVEL_GOTO("fl_off_start");
+            if(DM_CUR==3)DM_CUR=DUEL_PROG->battleType;
             DM->level = DUEL_LEVEL_TOP;
             DM_LEVEL_GOTO("fl_on_start");
             sprintf(name, "fl_mode_%d_cansel", DM_CUR + 1);
@@ -732,9 +814,10 @@ void DuelMenu_Input(s32 *result) {
             DM_SAY(0, DM->sel[DUEL_LEVEL_TOP] + 1);
             Snd_PlaySe(1, 2);
         } else {
-            DuelMenu_Idle();
+            if(DM_CUR!=3)DuelMenu_Idle();
         }
         break;
+    }
     case DUEL_LEVEL_DP:
         if (gPad[0].gameRepeat & PADG_UP) {
             DM->idle = 0;
@@ -1004,6 +1087,9 @@ s32 DuelMenu_Run(s32 section) {
             DuelMenu_UpdateStart();
         }
         DuelMenu_Draw();
+#ifdef PORT
+        DuelMenu_DrawTagType();
+#endif
         DuelMenu_UpdateReset();
         ColorFade_Draw();
         Gfx_EndFrame(1);
@@ -1036,6 +1122,24 @@ s32 DuelMenu_Run(s32 section) {
                 DUEL_PROG->dpLimit = gDuelMenu->sel[2];
             }
         } else if (gDuelMenu->startState == 0 && gDuelMenu->reset.state == 0) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+            if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_OFFLINE_TEST")&&
+               ColorFade_IsInDone()&&(DM->flash[0].flags&MFLASH_PAD)){
+                s32 mode=atoi(getenv("BT4_TAG_OFFLINE_TEST"));
+                static s32 reviewFrames;
+                if(DM->level==DUEL_LEVEL_TOP){
+                    DM->sel[0]=mode==4?1:mode-1;
+                    if(mode==2||mode==4)DM->flags&=~DUELMENU_NO_PAD2;
+                    gPad[0].gamePressed=PADG_CROSS;
+                }else if(DM->level==DUEL_LEVEL_TYPE){
+                    if(mode==2||mode==4)DM->flags&=~DUELMENU_NO_PAD2;
+                    if(DM_CUR!=3)gPad[0].gameRepeat=PADG_UP;
+                    else if(getenv("BT4_TAG_DUEL_CAPTURE")){
+                        if(++reviewFrames==32){extern void Port_TagUiCapture(s32);Port_TagUiCapture(94);}
+                    }else gPad[0].gamePressed=PADG_CROSS;
+                }
+            }
+#endif
             DuelMenu_Input(&result);
         }
     }
@@ -1043,3 +1147,33 @@ s32 DuelMenu_Run(s32 section) {
     Dma_ResetBuffers();
     return result;
 }
+
+#ifdef PORT
+/* Tag Team keeps Duel's movie, plates and window resources for every section. */
+void PortTagHome_Init(void) {
+    sTagHome=1;
+    sTagHomeFrames=0;
+    sTagPlate=-1;
+    DuelMenu_Init(1);
+    DM->level=DUEL_LEVEL_TOP;
+    IconWin_PortHideWords();
+    MsgWin_SetText(NULL);
+}
+
+void PortTagHome_Draw(s32 section) {
+    Flash_Advance(&DM->flash[0]);
+    if(sTagPlate!=section&&(DM->flash[0].flags&MFLASH_PAD)){
+        if(sTagPlate>=0)DuelMenu_ClipGoto(DUEL_LEVEL_TOP,"fl_off_start");
+        DM->sel[0]=section;
+        DuelMenu_ClipGoto(DUEL_LEVEL_TOP,"fl_on_start");
+        sTagPlate=section;
+    }
+    DuelMenu_Draw();
+    ++sTagHomeFrames;
+}
+
+void PortTagHome_Term(void) {
+    DuelMenu_Term();
+    sTagHome=0;
+}
+#endif

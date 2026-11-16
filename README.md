@@ -26,9 +26,9 @@ BT4decomp adapts **BT4 B14 Rev2** for Windows, Linux and Apple Silicon. It runs 
 
 | Mode | What it offers |
 | --- | --- |
-| **Tag Team** | Simultaneous battles with up to five fighter slots per team, six-player Free for All, room codes and individual targeting. Tag Team Quick Match gathers four players for 2 vs 2; Create Room offers team and Free for All presets. |
+| **Tag Team** | Simultaneous battles with up to five fighter slots per team, ten-player Free for All, room codes and individual targeting. Tag Team Quick Match gathers four players for 2 vs 2; Create Room offers team and Free for All presets. |
 | **1 vs 1** | Peer rollback netplay, custom rooms with configurable rollback and input delay, and duel Quick Match. |
-| **Tournaments** | Two to eight entrants, automatic byes, a live bracket and match rejoining. |
+| **Tournaments** | Up to 22 connected participants, with one or two spectator seats, automatic byes, a bracket and match rejoining. |
 | **Spectators** | Join without occupying a fighter slot; follow either side or use a split view. |
 
 Game menus support **English and Spanish**, with an optional Brazilian Portuguese pack. Setup supports **English, Spanish and Brazilian Portuguese**. F1 settings support **English, Spanish and Brazilian Portuguese**. **F1 > Spectator** offers free camera, fighter tracking and fight overview, with target, speed, zoom and reset controls. Keyboard and controller camera input replaces local fighter input while the camera is active; Start remains available. Panoramic mode expands menus and HUD across the viewport. Hiding the combat HUD also dismisses the Start pause menu; press Start to open it again.
@@ -42,7 +42,7 @@ Game menus support **English and Spanish**, with an optional Brazilian Portugues
       <h3>Proximity voice</h3>
       <p>Talk across both teams, with volume adjusted by fighter distance. Choose microphone and output devices, voice activation, threshold and playback volume.</p>
       <h3>Display controls</h3>
-      <p>Windows offers Vulkan, Direct3D 12 and OpenGL. Adjust render scale, aspect ratio, effects and motion presentation independently of combat simulation.</p>
+      <p>Windows offers Vulkan, native Direct3D 11, Direct3D 12 and OpenGL. Adjust render scale, aspect ratio, effects and motion presentation independently of combat simulation.</p>
       <h3>Custom content</h3>
       <p>Add compatible stages with matching PNG previews, or install custom music. See the <a href="docs/port/adding_stages.md">stage guide</a> and <a href="docs/port/adding_songs.md">music guide</a>.</p>
     </td>
@@ -51,7 +51,7 @@ Game menus support **English and Spanish**, with an optional Brazilian Portugues
 
 ## Script mods
 
-F1 > Mods manages the included Modern HUD, Modern Camera, Modern Look and Skill List scripts. Mods start disabled. Each player can choose their own presentation settings; existing scripts and settings are preserved by automatic updates. F1 > Controls offers optional right-stick enemy targeting. F1 > Spectator can keep the normal camera during special attacks. See the [Lua mod guide](docs/port/mods.md). F1 > Tech offers optional mechanics adjustments for offline duels; online matches, Tag Team and replays retain their original rules.
+F1 > Mods manages the included Modern HUD, Modern Camera, Modern Look and Skill List scripts. Mods start disabled. Each player can choose their own presentation settings; existing scripts and settings are preserved by automatic updates. F1 > Controls selects one target control method: L3, the right stick or the D-pad. F1 > Spectator can keep the normal camera during special attacks. See the [Lua mod guide](docs/port/mods.md). F1 > Tech offers optional mechanics adjustments for offline duels; online matches, Tag Team and replays retain their original rules.
 
 ## Installation
 
@@ -83,11 +83,11 @@ Open **F1 > Updates > Check for updates** to look for a new version. The game al
 
 Installations that predate the signed updater need one initial package installation. Subsequent published signed updates can install through the launcher.
 
-Revision tags follow the upstream engine version, for example `v0.1.39.5-R1`. A new upstream adaptation starts at R1; subsequent BT4 changes increment the revision. Patch revisions are also supported. All Tag Team participants must use the same room protocol and a compatible published build.
+The current BT4 release is `v0.1.39.6`. Earlier packages used revision tags such as `v0.1.39.5-R5.8`. All Tag Team participants must use the same room protocol and a compatible published build.
 
 ## Source and online compatibility
 
-The source integrates **Tenkaichi3Decomp 0.1.39.5**, with BT4 revisions tracked separately as **R1, R2, R3** and onward. The `main` branch can contain changes awaiting release; the Download button points to the published package. See the [changelog](CHANGELOG.md) for source changes and [release notes](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) for packaged builds.
+The source integrates **Tenkaichi3Decomp 0.1.39.5**, with the BT4 project release tracked separately as **0.1.39.6**. The `main` branch can contain changes awaiting release; the Download button points to the published package. See the [changelog](CHANGELOG.md) for source changes and [release notes](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) for packaged builds.
 
 Use compatible BT4 data and the same published launcher on every participating computer. The selected language does not define the online compatibility family.
 
@@ -96,15 +96,13 @@ Use compatible BT4 data and the same published launcher on every participating c
 
 1 vs 1 uses the upstream peer rollback path. Lobby matches can relay through the lobby owner when the assigned fighters cannot connect directly.
 
-Rooms and Quick Match use authenticated private Supabase signaling. Tag Team room authority runs on the owner's computer from admission onward; gameplay and voice travel between participants. The default connection no longer uses Cloudflare coordination or a hosted game/audio relay. STUN assists direct connection discovery. Networks that block peer traffic, including some CGNAT configurations, can still prevent a direct connection. No public relay is bundled.
+Rooms, profiles, Quick Match, tournaments and Ranked use authenticated Cloudflare coordination. Combat remains peer-to-peer with rollback; TURN provides a fallback when a direct connection is unavailable. The connection setup measures latency and variation to select input delay and a rollback window. Routes, distance, packet loss and each computer's speed still affect play.
 
-The Free signaling project has provider quotas, including concurrent Realtime connection limits. P2P reduces server traffic; it does not provide unlimited hosting capacity. R6 was validated with local native multi-client combat, tournaments and synthetic voice; this is not a cross-ISP or load-capacity benchmark.
+Tag Team room authority runs on the owner's computer. Gameplay and voice use separate queues. A relay fallback is available for restricted networks. If the native coordinator leaves, the round ends; live coordinator migration is not implemented.
 
-The online hub shows an authenticated aggregate of players in the online menus, refreshed every five minutes. Entries expire after a missed refresh. The active route supplies measured ping. A single human fighting CPU uses local input scheduling. If the native coordinator leaves, the round ends; live coordinator migration is not implemented. Geographic routes and network conditions still affect latency.
+Ranked seasons reset points and streaks on the first day of each month at 00:00 Argentina time (UTC-3). Accounts, match history and collected Dragon Balls are retained. See the [Ranked rules](docs/RANKED_RULES.md) and [connection timing guide](docs/ONLINE_CONNECTION_TIMING.md).
 
-Voice and gameplay have separate queues. Native packages include the RTC SDK. SDP and ICE negotiation use private Supabase inboxes; Opus audio travels over peer media tracks. The default provider does not relay voice through WebSockets.
-
-See the [compatibility and validation profile](BT4_PROFILE.md), [signaling architecture](supabase/README.md) and [native SDK build notes](port/release/RTC_SDK.md). Local tests and package builds do not establish performance on every remote PC, router or graphics driver.
+Local tests and package builds do not establish performance on every remote PC, router or graphics driver.
 
 </details>
 

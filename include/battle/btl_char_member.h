@@ -209,6 +209,7 @@ void BtlMember_NextSwitchTarget(BtlMemberChr *chr);
 void BtlMember_PrevSwitchTarget(BtlMemberChr *chr);
 s32 BtlMember_Damage(BtlMemberChr *chr, s32 amount, s32 flags);
 void BtlMember_AddHealth(BtlMemberChr *chr, s32 amount);
+s32 BtlMember_HealingMaximum(BtlMemberChr *chr,s32 member);
 s32 BtlMember_HasHealth(BtlMemberChr *chr, s32 amount);
 s32 BtlMember_AddKi(BtlMemberChr *chr, s32 amount);
 s32 BtlMember_HasKi(BtlMemberChr *chr, s32 amount);

@@ -29,6 +29,13 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {160, 100, 50}, /* compact keyboard bar */
     {160, 107, 54}, /* compact keyboard selection */
     {2420, 2728, 0}, /* radar */
+    {1672, 941, 0}, /* tag_team_art */
+    {1254, 1254, 0}, /* tag_team_icon */
+    {2168, 725, 0}, /* tag_team_logo, supplied heading with transparent background */
+    {512, 128, 0}, /* tag_team_buttons_en, composed from native Duel glyphs */
+    {512, 128, 0}, /* tag_team_buttons_es */
+    {512, 128, 0}, /* tag_team_buttons_pt */
+    {2168, 725, 0}, /* same logo with the native unselected text material */
     {512, 512, 0}, /* discord */
 };
 

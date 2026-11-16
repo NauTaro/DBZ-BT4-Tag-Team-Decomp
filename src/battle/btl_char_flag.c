@@ -153,6 +153,14 @@ s32 BtlChar_IsFlagDropped(BtlFlagChr *chr, u32 n) {
 void BtlChar_UpdateLockOn(BtlFlagChr *chr) {
     f32 range;
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagBattle_Focus(s32);
+    if(TagBattle_Focus(chr->player)!=-1){
+        BtlChar_ClearFlag(chr,5);
+        BtlChar_ClearFlag(chr,0x13);
+        return;
+    }
+#endif
     if (BtlChar_TestFlag(chr, 0x93)) {
         BtlChar_ClearFlag(chr, 5);
     }

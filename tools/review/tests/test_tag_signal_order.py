@@ -23,6 +23,7 @@ class TagSignalOrderTests(unittest.TestCase):
 #define JSON_NOEXCEPTION
 #include "JSON"
 using Pj=nlohmann::json;using Uint64=unsigned long long;
+static constexpr unsigned TT_CPU_MEMBER=0x80000000u;
 static Uint64 now=1000;static Uint64 SDL_GetTicks(){return now;}
 static unsigned number(const Pj &j,const char *k){auto p=j.find(k);return p!=j.end()&&p->is_number_unsigned()?p->get<unsigned>():0;}
 static std::string text(const Pj &j,const char *k){auto p=j.find(k);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
@@ -61,7 +62,9 @@ int main(){
  assert(expired.earlySignals.empty()&&descriptions==2);
  Session bounded;for(int i=0;i<100;++i)bounded.receiveSignal(signal("candidate"));assert(bounded.earlySignals.size()==32);
  Session invalid;auto bad=signal("offer");bad["body"]["sdp"]=std::string(14001,'x');invalid.receiveSignal(bad);
- invalid.receiveSignal(signal("offer",11,2));invalid.receiveSignal(signal("unknown"));assert(invalid.earlySignals.empty());
+ invalid.receiveSignal(signal("offer",TT_CPU_MEMBER,2));invalid.receiveSignal(signal("unknown"));assert(invalid.earlySignals.empty());
+ // Peer identifiers survive room departures; they are not roster slot indices.
+ invalid.receiveSignal(signal("answer",11,1));assert(invalid.earlySignals.size()==1);
 }
 '''.replace('"JSON"','"'+(ROOT/'port/third_party/voice/json.hpp').as_posix()+'"').replace('PRODUCTION',production)
         with tempfile.TemporaryDirectory() as directory:

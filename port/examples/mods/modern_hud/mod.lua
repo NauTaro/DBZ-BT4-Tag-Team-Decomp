@@ -69,12 +69,12 @@ end
 
 -- ------------------------------------------------------------------------------------------------- a side's view
 -- X / Y: units -> HUD coordinates, mirrored on the right side
-local U, W = 1, 640
+local U, W, viewportX = 1, 640, 0
 local function view(right, dx, dy)
     dx, dy = dx or 0, dy or 0
     return {
         right = right,
-        X = right and function(x) return W - x * U + dx end or function(x) return x * U + dx end,
+        X = right and function(x) return W - x * U + dx + viewportX end or function(x) return x * U + dx + viewportX end,
         Y = function(y) return y * U + dy end,
     }
 end
@@ -244,10 +244,10 @@ local function draw_combo(hud, v, f, an, now)
         if (an.dmgTo or 0) > 0 then
             local dmg = min(99999, floor(shown_damage(an, now) + 0.5))
             local loc = bt3.locale()
-            local dot = loc == "es" or loc == "pt"
+            local dot = loc == "es" or loc == "pt" or loc == "pt-BR"
             local t = dmg >= 1000 and string.format("%d%s%03d", dmg // 1000, dot and "." or ",", dmg % 1000) or tostring(dmg)
             text_fx(hud, v, t, x0 + 30 + slide, y0 + 80, 24 * U, rgba(255, 255, 255, 1), rgba(169, 226, 255, 1), rgba(4, 10, 28, 0.95))
-            text_fx(hud, v, dot and "DAÑO" or "DAMAGE", 8, y0 + 79, 15 * U, rgba(207, 232, 255, 1), rgba(143, 184, 232, 1),
+            text_fx(hud, v, (loc == "pt" or loc == "pt-BR") and "DANO" or loc == "es" and "DAÑO" or "DAMAGE", 8, y0 + 79, 15 * U, rgba(207, 232, 255, 1), rgba(143, 184, 232, 1),
                     rgba(4, 10, 28, 0.95), nil, true)
         end
     end
@@ -296,12 +296,51 @@ local function draw_timer(hud, timer, now)
     })
 end
 
+-- Reserve portraits fit between the ki/status row and the combo counter. Keep
+-- every member visible, with the native switch target and recharge gauge.
+local function draw_reserves(hud, side, right, f)
+    local members = f.members
+    if not members or #members < 2 or f.actor then return end
+    local v, slot = view(right), 0
+    for member, m in ipairs(members) do
+        if member ~= f.active and m.present then
+            local x, y, size = 242 + slot * 53, 126, 46
+            local alive, nextUp = (m.hp or 0) > 0, member == f.next
+            local edge = nextUp and rgba(255, 207, 70, 1) or rgba(85, 145, 200, .65)
+            local x0, x1 = min(v.X(x), v.X(x + size)), max(v.X(x), v.X(x + size))
+            hud.fill(x0, v.Y(y), size * U, size * U, rgba(5, 12, 26, .8))
+            hud.portrait(side, x0 + 2 * U, v.Y(y + 2), (size - 4) * U, (size - 4) * U, {
+                member = member, head = 1, flip = right,
+                tint = alive and rgba(255, 255, 255, 1) or rgba(100, 100, 110, .65),
+            })
+            hud.rect(x0, v.Y(y), size * U, size * U, edge, (nextUp and 1.5 or .7) * U)
+            hud.fill(x0, v.Y(y + size + 2), size * U, 4 * U, rgba(4, 8, 18, .95))
+            local hp = clamp01((m.hp or 0) / max(m.hp_max or 1, 1))
+            if hp > 0 then
+                local filled = size * hp * U
+                hud.fill(right and x1 - filled or x0, v.Y(y + size + 2), filled, 4 * U, rgba(80, 220, 125, 1))
+            end
+            if not alive then hud.line(x0 + 4 * U, v.Y(y + size - 4), x1 - 4 * U, v.Y(y + 4), rgba(200, 80, 70, .8), 1.5 * U) end
+            slot = slot + 1
+        end
+    end
+    if slot > 0 then
+        local x, y, width = 242, 183, (slot - 1) * 53 + 46
+        local x0 = min(v.X(x), v.X(x + width))
+        hud.fill(x0, v.Y(y), width * U, 3 * U, rgba(4, 8, 18, .9))
+        local ready = clamp01((f.switch_gauge or 0) / 100000)
+        local filled = width * ready * U
+        if ready > 0 then hud.fill(right and x0 + width * U - filled or x0, v.Y(y), filled, 3 * U, rgba(255, 207, 70, 1)) end
+    end
+end
+
 local function draw_side(hud, side, right, f, an, now)
     local v = view(right)
     local hpMax = (f.hp_max or 0) > 0 and f.hp_max or 10000
     local hp = min(max(f.hp or 0, 0), hpMax)
     local bars = min(max((hpMax + 9999) // 10000, 1), 7)
-    local left = hp > 0 and min((hp + 9999) // 10000, 7) or 0
+    local left = hp > 0 and (hp + 9999) // 10000 or 0
+    local function hpcol(n) return kBar[min(max(n,1),#kBar)] end
     local dt = an.frameAt and (now - an.frameAt) or 0
     an.frameAt = now
     local key = (f.active << 16) | ((f.chara or 0) + 1)
@@ -340,6 +379,7 @@ local function draw_side(hud, side, right, f, an, now)
     -- the fighter
     local wx0, wx1 = v.X(0), v.X(230)
     hud.portrait(side, v.X(kFaceX), v.Y(kFaceY), kArtW * U, 0, {
+        actor = f.actor,
         face = true, flip = right, tint = rgba(255, 255, 255, 1),
         window = { x0 = min(wx0, wx1), y0 = v.Y(0), x1 = max(wx0, wx1), y1 = v.Y(210) },
         fade = { x = v.X(kFaceX + 8), y = v.Y(kFaceY - 10), r0 = 52 * U, r1 = 116 * U },
@@ -383,7 +423,7 @@ local function draw_side(hud, side, right, f, an, now)
     outline(hud, t, b, rgba(OUTLINE[1], OUTLINE[2], OUTLINE[3], OUTLINE[4]), 1.2 * U)
     local barPart = left > 0 and clamp01((hp - (left - 1) * 10000) / 10000) or 0
     if left > 1 then
-        strip(hud, w, x0, x1, 18, thick(x0), thick(x1), 8, 12, col(kBar[left - 1][1], 0.72, 1), col(kBar[left - 1][2], 0.8, 1), true, x0, x1)
+        strip(hud, w, x0, x1, 18, thick(x0), thick(x1), 8, 12, col(hpcol(left - 1)[1], 0.72, 1), col(hpcol(left - 1)[2], 0.8, 1), true, x0, x1)
     end
     local trailPart = left > 0 and clamp01((an.trail - (left - 1) * 10000) / 10000) or 0
     if trailPart > barPart + 0.002 then
@@ -393,7 +433,7 @@ local function draw_side(hud, side, right, f, an, now)
     end
     if barPart > 0.002 and left > 0 then
         local xe = x0 + len * barPart
-        strip(hud, w, x0, xe, 18, thick(x0), thick(xe), 8, 8, col(kBar[left][1], 1, 1), col(kBar[left][2], 1, 1), true, x0, x1)
+        strip(hud, w, x0, xe, 18, thick(x0), thick(xe), 8, 8, col(hpcol(left)[1], 1, 1), col(hpcol(left)[2], 1, 1), true, x0, x1)
         -- the shine along its top: its ends on the bar's own slanted ends (the bar's top runs 8 further than its
         -- bottom over its thickness, so a band s deep runs 8 * s / thickness further)
         local s0, s1 = 5, 4
@@ -435,7 +475,38 @@ local function draw_side(hud, side, right, f, an, now)
     end
 
     draw_stats(hud, v, f, an, dt)
-    draw_combo(hud, v, f, an, now)
+    draw_combo(hud, f.actor and view(right,0,150*U) or v, f, an, now)
+    if hpMax > 70000 then
+        hud.text(v.X(210),v.Y(104),tostring(hp).." / "..tostring(hpMax),rgba(225,245,255,1),20*U,"left")
+    end
+end
+
+-- Tenkaichi Tag Team distribution, with this mod's own portraits and curves.
+-- An ally is a compact gauge, not a second full dashboard or team card.
+local function draw_tag_ally(hud,f,y,base,right,floating)
+    local oldU=U
+    U=base*.58
+    local v=view(right,0,y)
+    local hp=max(f.hp or 0,0)
+    local tier=hp>0 and ceil(hp/10000) or 0
+    local part=tier>0 and clamp01((hp-(tier-1)*10000)/10000) or 0
+    local c=kBar[min(max(tier,1),#kBar)]
+    local under=kBar[min(max(tier-1,1),#kBar)]
+    hud.portrait(1,v.X(53),v.Y(64),170*U,0,{
+        actor=f.actor,face=true,flip=right,tint=hp>0 and rgba(255,255,255,1) or rgba(92,101,113,.85),
+        window={x0=min(v.X(0),v.X(132)),y0=v.Y(0),x1=max(v.X(0),v.X(132)),y1=v.Y(126)},
+        fade={x=v.X(55),y=v.Y(54),r0=35*U,r1=76*U},
+    })
+    local t,b=strip(hud,v,100,407,18,25,18,8,12,rgba(4,10,26,.95),rgba(4,10,26,.95))
+    outline(hud,t,b,rgba(0,0,0,.85),1.2*U)
+    if tier>1 then strip(hud,v,103,404,21,18,11,7,10,col(under[1],.6,1),col(under[2],.7,1)) end
+    if part>0 then strip(hud,v,103,103+301*part,21,18,18-7*part,7,7,col(c[1],1,1),col(c[2],1,1),true,103,404) end
+    local ki=hp>0 and clamp01((f.ki or 0)/max(f.ki_max or 100000,1)) or 0
+    strip(hud,v,101,397,49,7,7,3,3,rgba(8,17,32,.95),rgba(8,17,32,.95))
+    if ki>0 then strip(hud,v,101,101+296*ki,49,7,7,3,3,rgba(255,215,64,1),rgba(237,148,27,1)) end
+    hud.text(v.X(102),v.Y(91),hp<=0 and "KO" or tostring(tier),rgba(231,245,255,1),24*U,right and "right" or "left")
+    if not floating and (f.hp_max or 0)>70000 then hud.text(v.X(143),v.Y(91),tostring(hp).." / "..tostring(f.hp_max),rgba(211,232,245,1),21*U,right and "right" or "left") end
+    U=oldU
 end
 
 return {
@@ -479,7 +550,70 @@ return {
         hud.hide_game("gauges")
         if drawTimer then hud.hide_game("timer") end
         if drawCombo then hud.hide_game("combo") end
+        if game.tag_team and game.split then
+            local tag, base = game.tag_team, U
+            for pane = 1, 2 do
+                local actor = tag.views and tag.views[pane] or pane
+                local own = tag.actors[actor]
+                if own and own.found then
+                    U, W, viewportX = base * .65, hud.w * .5, (pane - 1) * hud.w * .5
+                    local f = setmetatable(own, { __index = game.fighters[pane] })
+                    if not drawCombo then f.hud_hits, f.hud_damage = 0, -1 end
+                    draw_side(hud, pane, pane == 2, f, anim[pane], now)
+                    -- Ally widgets follow the native per-viewport world anchors.
+                end
+            end
+            U, W, viewportX = base, hud.w, 0
+            local scale=(hud.h/448)*.16/.58
+            for paneIndex,pane in ipairs(tag.floating_allies or {}) do
+                for _,anchor in ipairs(pane) do
+                    local ally=tag.actors[anchor.actor]
+                    if ally and ally.found and not ally.absorbed and (ally.hp or 0)>0 then
+                        viewportX=anchor.x*hud.w-407*.16*(hud.h/448)*.5
+                        hud.actor_anchor(paneIndex,anchor.actor,anchor.x*hud.w,anchor.y*hud.h)
+                        draw_tag_ally(hud,ally,anchor.y*hud.h,scale,false,true)
+                        hud.unanchor()
+                    end
+                end
+            end
+            viewportX=0
+            if drawTimer then draw_timer(hud, game.timer, now) end
+            lastTime = now
+            return
+        end
+        if game.tag_team and not game.split then
+            local tag=game.tag_team
+            local own=tag.actors[tag.view]
+            if own and own.found then
+                -- Retain native hit/status notifications for the viewed fighter.
+                local f=setmetatable(own,{__index=game.fighters[1]})
+                if not drawCombo then f.hud_hits,f.hud_damage=0,-1 end
+                draw_side(hud,1,false,f,anim[1],now)
+                local allies={}
+                for _,a in ipairs(tag.actors) do if a.actor~=tag.view and a.team==0 and a.found and not a.absorbed then allies[#allies+1]=a end end
+                for i,a in ipairs(allies) do draw_tag_ally(hud,a,hud.h-(#allies-i+1)*104*U,U) end
+            end
+            -- The shared native Tag layer owns its radar, target and corner timer.
+            lastTime=now
+            return
+        end
+        if game.presentation_split then
+            local base=U
+            for pane=1,2 do
+                local f=game.fighters[pane]
+                if f then
+                    U,W,viewportX=base*.65,hud.w*.5,(pane-1)*hud.w*.5
+                    draw_side(hud,pane,pane==2,f,anim[pane],now)
+                    draw_reserves(hud,pane,pane==2,f)
+                end
+            end
+            U,W,viewportX=base,hud.w,0
+            hud.hide_game("team")
+            if drawTimer then draw_timer(hud,game.timer,now) end
+            return
+        end
         local swap = game.swapped and 1 or 0
+        hud.hide_game("team")
         for place = 0, 1 do
             local side = (place ~ swap) + 1
             local f = game.fighters[side]
@@ -488,6 +622,7 @@ return {
                     f = setmetatable({ hud_hits = 0, hud_damage = -1, hit_seq = anim[side].hitSeq, message_seq = anim[side].msgSeq }, { __index = f })
                 end
                 draw_side(hud, side, place == 1, f, anim[side], now)
+                draw_reserves(hud, side, place == 1, f)
             end
         end
         if drawTimer then draw_timer(hud, game.timer, now) end

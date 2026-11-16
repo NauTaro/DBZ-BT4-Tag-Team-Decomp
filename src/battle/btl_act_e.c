@@ -1364,6 +1364,10 @@ void BtlAct_ClashBlowsHandler(BtlActEChr *chr, s32 phase) {
                 BtlAnim_AdvanceLoop(chr, 0);
                 BtlChar_SetFlag(chr, 0x13C);
                 BtlChar_SetFlag(chr, 0xED);
+#ifdef BT4_TAG_TEAM_EXPANDED
+                {extern s32 TagFusion_ClashExtra(s32,s32);
+                 if(TagFusion_ClashExtra(chr->player,0x4F))BtlAct_CountAndMarkOpponent(chr);}
+#endif
                 if (BtlInput_TestAction(chr, 0x4F, 1)) {
                     BtlAct_CountAndMarkOpponent(chr);
 #ifdef PORT /* PC build: BT3_CLASH_LOG=1 */
@@ -1585,7 +1589,12 @@ s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
                 if (chr->actionFrame > 0) {
                     BtlChar_SetFlag(chr, c->pick + 0xE9);
                     if (chr->unkE58 == -1) {
-                        if (BtlInput_IsPressed(chr, 0x78000000)) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+                        extern s32 TagFusion_ClashChoice(s32,s32,s32);
+                        s32 shared=TagFusion_ClashChoice(chr->player,c->pick,c->prevPick);
+                        if(shared>0)chr->unkE58=chr->actionFrame;
+#endif
+                        if (chr->unkE58==-1 && BtlInput_IsPressed(chr, 0x78000000)) {
                             if (BtlInput_IsPressed(chr, 0x8000000 << c->pick) &&
                                 !BtlInput_IsPressed(chr, 0x78000000 ^ (0x8000000 << c->pick))) {
                                 chr->unkE58 = chr->actionFrame;
@@ -1596,6 +1605,9 @@ s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
                                 chr->unkE58 = -2;
                             }
                         }
+#ifdef BT4_TAG_TEAM_EXPANDED
+                        if(chr->unkE58==-1 && shared<0)chr->unkE58=-2;
+#endif
                     }
                 }
                 BtlChar_SetFlag(chr, 0x18);

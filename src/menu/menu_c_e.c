@@ -549,6 +549,10 @@ void CharSel_Init(s32 section) {
 
     gCharSel->nameText = MPACK_AT(gCharSel->res, 43);
     gCharSel->formText = MPACK_AT(gCharSel->res, 44);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    { extern void Port_CacheFighterNames(void *,void *);
+      Port_CacheFighterNames(gCharSel->nameText,gCharSel->formText); }
+#endif
     gCharSel->chipPack = (u32 *)MPACK_AT(gCharSel->res, 45);
     for (i = 0; i < 250; i++) {
         CS_RES(gCharSel->chipPack, i + 1);

@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "gs/fight_panels.h"
 #include "gs/mods.h"
 #include "port_addr.h"
 
@@ -31,8 +32,6 @@
 
 extern int gPortResim; /* gs/state.c: blanks being run again */
 extern int gsSkipFrame; /* gs_draw.c: a presentation frame deliberately discarded */
-extern void GAME_PTR gBtlChars;
-extern void GAME_PTR gBtlSeq;
 extern void GAME_PTR BtlChar_FindByObjId(int objId);
 extern void GAME_PTR BtlChar_FindBySide(int side);
 extern int BtlChar_TestFlag(void GAME_PTR chr, unsigned n);
@@ -42,9 +41,62 @@ extern int TagBattle_Active(void),TagBattle_Count(void),TagBattle_ViewActor(void
 extern int BattleSide_GetObjId(int side);
 extern int PortSpectator_Mode(void);
 
+static int sSplitDrawing;
+static int sSplitActors[2];
+int Port_PresentationSplitDrawing(int change) {
+    if(change>=0)sSplitDrawing=change!=0;
+    return sSplitDrawing;
+}
+
+int Port_PresentationSplitActor(int pane) {
+    extern int Port_NetView(void),Battle_GetHumanSide(void);
+    int own,target,i,count;
+    pane=pane!=0;
+    if(sSplitDrawing)return sSplitActors[pane];
+    if(!TagBattle_Active()) {
+        own=Port_NetView();
+        if(own<0||own>1)own=Battle_IsSplitScreen()?0:Battle_GetHumanSide();
+        if(own<0||own>1)own=0;
+        return sSplitActors[pane]=own^pane;
+    }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(Battle_IsSplitScreen()) {
+        extern int TagBattle_SplitViewActor(int);
+        return sSplitActors[pane]=TagBattle_SplitViewActor(pane);
+    }
+#endif
+    own=TagBattle_ViewActor();count=TagBattle_Count();
+    if(own<0||own>=count)own=0;
+    if(!pane)return sSplitActors[pane]=own;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {
+        extern int TagBattle_LocalActor(void),TagFusion_Absent(int);
+        if(TagFusion_Absent(TagBattle_LocalActor()))return sSplitActors[pane]=own;
+    }
+#endif
+    target=TagBattle_Target(own);
+    if(Mods_SplitScreen()==2) {
+        extern int TagBattle_Allied(int,int),BtlCharApi_GetHp(int);
+        for(i=0;i<count;++i)if(i!=own&&TagBattle_Allied(own,i)&&BtlCharApi_GetHp(i)>0) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+            extern int TagFusion_Absent(int);
+            if(TagFusion_Absent(i))continue;
+#endif
+            return sSplitActors[pane]=i;
+        }
+    }
+    return sSplitActors[pane]=target>=0&&target<count?target:own;
+}
+
 int PortMods_ViewActor(int side) {
     int own,target,count;
+    if(Mods_SplitScreen())return Port_PresentationSplitActor(side);
     if(!TagBattle_Active())return side;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(Battle_IsSplitScreen()){
+        extern int TagFusion_ViewActor(int);return TagFusion_ViewActor(side);
+    }
+#endif
     count=TagBattle_Count();own=TagBattle_ViewActor();
     if(own<0 || own>=count)own=0;
     target=TagBattle_Target(own);
@@ -119,7 +171,7 @@ void PortMods_GameTick(void) {
         return;
     }
     memset(&sGame, 0, sizeof(sGame));
-    if (gBtlChars != NULL && gBtlSeq != NULL) {
+    if (PortPanels_BattleActive()) {
         for (side = 0; side < 2; side++) {
             chr = (uint8_t GAME_PTR)BtlChar_FindBySide(PortMods_ViewActor(side));
             if (chr != NULL) {
@@ -129,7 +181,7 @@ void PortMods_GameTick(void) {
             }
         }
         sGame.battle = sGame.f[0].found && sGame.f[1].found;
-        sGame.split = sGame.battle && Battle_IsSplitScreen();
+        sGame.split = sGame.battle && (Battle_IsSplitScreen() || Mods_SplitScreen());
     } else { memset(sNatural,0,sizeof(sNatural)); memset(sPausedCamera,0,sizeof(sPausedCamera)); }
     Mods_Tick();
 }

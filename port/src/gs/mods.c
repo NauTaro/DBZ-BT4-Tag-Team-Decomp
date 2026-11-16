@@ -47,6 +47,9 @@
 #include "bundled_skill_list_0394.h"
 #include "bundled_mods_r1.h"
 #include "bundled_modern_hud_r2.h"
+#include "bundled_mods_r58_tag_hotfix2.h"
+#include "bundled_modern_hud_hotfix3.h"
+#include "tag_hud.h"
 
 extern unsigned gPortVBlanks;                     /* plat_stub.c */
 extern volatile int gUiPresentW, gUiPresentH;     /* gs_draw.c: the game's picture in the window */
@@ -86,6 +89,11 @@ static volatile unsigned sHudSeq;
 void Mods_Lock(void) { pthread_mutex_lock(&sLock); }
 void Mods_Unlock(void) { pthread_mutex_unlock(&sLock); }
 int Mods_Count(void) { return sCount; }
+int Port_ModernHudActive(void) {
+    for(int i=0;i<sCount;++i)if(sMod[i].L&&!sMod[i].dead&&sInfo[i].enabled&&
+        !strcmp(sInfo[i].folder,"modern_hud")&&(sInfo[i].hooks&MODS_HOOK_HUD))return 1;
+    return 0;
+}
 ModsInfo *Mods_Info(int i) { return i >= 0 && i < sCount ? &sInfo[i] : NULL; }
 void Mods_SettingChanged(void) { sDirty = 1; }
 void Mods_ReloadAsk(void) { sReload = 1; }
@@ -322,6 +330,15 @@ static int safe_rel(const char *name) {
 
 static int sHideBuild;              /* the game's HUD pieces the scripts stood in for during this blank */
 static volatile int sHide;          /* ... during the last one (gs_draw.c leaves them out) */
+static int sSplitBuild, sSplit;
+int Mods_SplitScreen(void) { return sSplit; }
+static int l_split_screen(lua_State *L) {
+    const char *second = luaL_optstring(L, 2, "target");
+    if (strcmp(second,"target") && strcmp(second,"ally"))
+        return luaL_error(L,"split_screen: second view must be target or ally");
+    if (lua_toboolean(L,1)) sSplitBuild = !strcmp(second,"ally") ? 2 : 1;
+    return 0;
+}
 
 /* the pictures scripts asked for (bt3.image): their files, for the render thread */
 #define MODS_IMAGES 256
@@ -724,6 +741,9 @@ static int l_hud_portrait(lua_State *L) {
         return 0;
     }
     c->i0 = side - 1;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    { int actor=(int)opt_num(L,6,"actor",0);if(actor>=1&&actor<=10)c->i0=actor+1; }
+#endif
     c->i1 = (int)opt_num(L, 6, "member", 0) - 1;
     band = opt_str(L, 6, "band", "colour");
     c->i2 = band[0] == 'g' ? 1 : band[0] == 'w' || band[0] == 's' ? 2 : 0;
@@ -775,11 +795,19 @@ static int l_hud_unclip(lua_State *L) {
 
 /* hud.hide_game("gauges", "timer", "combo"): the game's own pieces are left out of the picture this blank (the mod
    draws its own in their place). Asked again every blank, like the shapes. */
+static int l_hud_actor_anchor(lua_State *L){
+    int pane=(int)luaL_checkinteger(L,1)-1,actor=(int)luaL_checkinteger(L,2)-1;
+    ModsCmd *c;
+    if(pane<0||pane>1||actor<0||actor>=10)return luaL_error(L,"actor_anchor: invalid pane or actor");
+    if((c=hud_cmd(MODS_CMD_ACTOR_ANCHOR))!=NULL){c->i0=pane;c->i1=actor;c->f[0]=num(L,3);c->f[1]=num(L,4);}
+    return 0;
+}
+static int l_hud_unanchor(lua_State *L){hud_cmd(MODS_CMD_UNANCHOR);return 0;}
 static int l_hud_hide_game(lua_State *L) {
     int n = lua_gettop(L), k;
     for (k = 1; k <= n; k++) {
         const char *s = luaL_checkstring(L, k);
-        sHideBuild |= strcmp(s, "gauges") == 0 ? 1 : strcmp(s, "timer") == 0 ? 2 : strcmp(s, "combo") == 0 ? 4 : 0;
+        sHideBuild |= strcmp(s, "gauges") == 0 ? 1 : strcmp(s, "timer") == 0 ? 2 : strcmp(s, "combo") == 0 ? 4 : strcmp(s,"prompt")==0 ? 8 : strcmp(s,"team")==0 ? 16 : 0;
     }
     return 0;
 }
@@ -824,6 +852,7 @@ static void push_hud(lua_State *L) {
                                    {"disc", l_hud_disc}, {"gradient", l_hud_gradient}, {"poly", l_hud_poly},
                                    {"path", l_hud_path}, {"text", l_hud_text}, {"image", l_hud_image},
                                    {"portrait", l_hud_portrait}, {"clip", l_hud_clip}, {"unclip", l_hud_unclip},
+                                    {"actor_anchor", l_hud_actor_anchor}, {"unanchor", l_hud_unanchor},
                                    {"band", l_hud_band}, {"glow", l_hud_glow},
                                    {"hide_game", l_hud_hide_game}, {NULL, NULL}};
     lua_getfield(L, LUA_REGISTRYINDEX, "bt3_hud");
@@ -927,7 +956,9 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
     set_bool(L, "battle", fp->battle && g->battle);
     set_bool(L, "hud_shown", fp->gauges);
     set_bool(L, "online", Port_NetSession() || Port_NetActive() || (Port_TagNetwork()&&!Port_TagLocalBattle()));
-    if (Port_NetSession() || Port_NetActive()) {
+    if (Mods_SplitScreen() && (Port_NetSession() || Port_NetActive())) {
+        set_int(L, "me", 1);
+    } else if (Port_NetSession() || Port_NetActive()) {
         extern int Port_NetMe(void);
         set_int(L, "me", Port_NetMe() + 1);
     } else if (Port_TagNetwork() && !Port_TagLocalBattle()) {
@@ -936,7 +967,8 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
         set_int(L, "me", 1);
     }
     set_bool(L, "split", g->split);
-    set_bool(L, "swapped", Port_HudSwap());
+    set_bool(L, "swapped", Mods_SplitScreen()?0:Port_HudSwap());
+    set_bool(L, "presentation_split", Mods_SplitScreen()!=0);
     if (fp->battle && fp->timerSet) {
         lua_createtable(L, 0, 2);
         set_int(L, "value", fp->timer);
@@ -975,6 +1007,8 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
         set_int(L, "message_seq", s->msgSeq);
         set_bool(L, "charging", s->action == 0x37);   /* (ki charge: action 0x37) */
         set_bool(L, "charge_held", s->chargeHeld);    /* (the charge button held) */
+        set_int(L, "switch_gauge", s->switchGauge); /* 0..100000: native team switch readiness */
+        set_bool(L, "prompt_shown", s->promptShown); /* native Boost / clash commands take priority */
         set_bool(L, "cpu", s->cpu);                   /* (played by the computer) */
         {   /* the moves: 1, 2 the skills (Blast 1), 3, 4 the techniques (Blast 2), 5 the ultimate; buttons with the
                charge button held (src/battle/btl_input.c, inputs 113, 114, 108..110) */
@@ -1023,6 +1057,48 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
         lua_rawseti(L, -2, side + 1);
     }
     lua_setfield(L, -2, "fighters");
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {
+        TagHudState tag;
+        if(PortPanels_TagRead(&tag)&&tag.active){
+            lua_createtable(L,0,4);
+            set_int(L,"view",tag.view+1);set_int(L,"target",tag.target+1);set_int(L,"count",tag.count);
+            lua_createtable(L,2,0);
+            for(k=0;k<2;++k){lua_pushinteger(L,tag.views[k]+1);lua_rawseti(L,-2,k+1);}
+            lua_setfield(L,-2,"views");
+            lua_createtable(L,2,0);
+            for(k=0;k<2;++k){lua_pushboolean(L,tag.spectating[k]);lua_rawseti(L,-2,k+1);}
+            lua_setfield(L,-2,"spectating");
+            lua_createtable(L,2,0);
+            for(int pane=0;pane<2;++pane){
+                lua_createtable(L,tag.floatingCount[pane],0);
+                for(int n=0;n<tag.floatingCount[pane]&&n<4;++n){
+                    TagHudFloating *item=&tag.floating[pane][n];
+                    lua_createtable(L,0,3);set_int(L,"actor",item->actor+1);
+                    set_num(L,"x",item->x/100000.0);set_num(L,"y",item->y/100000.0);
+                    lua_rawseti(L,-2,n+1);
+                }
+                lua_rawseti(L,-2,pane+1);
+            }
+            lua_setfield(L,-2,"floating_allies");
+            lua_createtable(L,tag.count,0);
+            for(k=0;k<tag.count;++k){
+                TagHudActor *a=&tag.actor[k];
+                lua_createtable(L,0,16);
+                set_int(L,"actor",k+1);set_int(L,"team",a->team);set_int(L,"active",1);set_int(L,"count",1);
+                set_bool(L,"found",a->found);set_bool(L,"cpu",a->cpu);
+                set_bool(L,"absorbed",!a->portrait.present);
+                set_int(L,"chara",a->portrait.chara);set_int(L,"costume",a->portrait.costume);
+                set_int(L,"hp",a->portrait.hp);set_int(L,"hp_max",a->portrait.hpMax);
+                set_int(L,"ki",a->ki);set_int(L,"ki_max",a->kiMax);
+                set_int(L,"blast",a->blast);set_int(L,"blast_max",a->blastMax);
+                set_int(L,"max_power",a->maxPower);set_bool(L,"powered_up",a->poweredUp);
+                lua_rawseti(L,-2,k+1);
+            }
+            lua_setfield(L,-2,"actors");lua_setfield(L,-2,"tag_team");
+        }
+    }
+#endif
 }
 
 /* ------------------------------------------------------------------------------------------------ loading */
@@ -1268,6 +1344,8 @@ static void open_libs(lua_State *L, int i) {
     lua_setfield(L, -2, "log");
     lua_pushcfunction(L, l_look);
     lua_setfield(L, -2, "look");
+    lua_pushcfunction(L, l_split_screen);
+    lua_setfield(L, -2, "split_screen");
     lua_setglobal(L, "bt3");
 }
 
@@ -1288,6 +1366,11 @@ static void upgrade_bundled_text(const char *source, const char *folder, char **
     int match = !strcmp(folder,"skill_list") && *size == sizeof(kSkillList0394) && !memcmp(*text,kSkillList0394,*size);
     struct Stock { const char *name; const unsigned char *data; long size; } stock[] = {
         {"modern_hud", kR2_modern_hud, sizeof(kR2_modern_hud)},
+        {"modern_hud", kPublicR58_modern_hud, sizeof(kPublicR58_modern_hud)-1},
+        {"modern_hud", kTagHotfix2_modern_hud, sizeof(kTagHotfix2_modern_hud)-1},
+        {"modern_hud", kTagHotfix3ModernHud, sizeof(kTagHotfix3ModernHud)-1},
+        {"skill_list", kPublicR58_skill_list, sizeof(kPublicR58_skill_list)-1},
+        {"skill_list", kTagHotfix2_skill_list, sizeof(kTagHotfix2_skill_list)-1},
         {"modern_camera", kR1_modern_camera, sizeof(kR1_modern_camera)},
         {"modern_look", kR1_modern_look, sizeof(kR1_modern_look)},
         {"skill_list", kR1_skill_list, sizeof(kR1_skill_list)}
@@ -1381,7 +1464,7 @@ static int by_name(const void *a, const void *b) {
  * any file the player already has. No script is enabled by installing it. */
 static void seed_bundled(const char *source, const char *destination) {
     static const char *const names[] = {
-        "example_camera", "example_hud", "modern_camera", "modern_hud", "modern_look", "skill_list"
+        "example_camera", "example_hud", "modern_camera", "modern_hud", "modern_look", "skill_list", "split_screen"
     };
     char path[1024], directory[1024], target[1100];
     size_t i;
@@ -1504,6 +1587,8 @@ void Mods_Tick(void) {
     ModsGame g;
     int i;
 
+    sSplitBuild = 0;
+
     if (sReload || !sLoaded) {
         sReload = 0;
         load_all();
@@ -1513,6 +1598,7 @@ void Mods_Tick(void) {
         settings_save();
     }
     if (sCount == 0) {
+        sSplit = 0;
         if (sHud.count != 0 || sHide != 0 || memcmp(&sLook, &kLookNone, sizeof(sLook)) != 0) { /* (the last mod gone: its shapes and look too) */
             hud_begin();
             hud_publish();
@@ -1526,6 +1612,7 @@ void Mods_Tick(void) {
     hud_begin();
     for (i = 0; i < sCount; i++) {
         lua_State *L = sMod[i].L;
+        extern int Port_TagBattleRenderActive(void);
         if (L == NULL || sMod[i].dead || !sInfo[i].enabled) {
             continue;
         }
@@ -1537,13 +1624,18 @@ void Mods_Tick(void) {
             lua_pushvalue(L, -2);
             call(i, 1, 0);
         }
-        if (runs(i, MODS_HOOK_HUD) && push_fn(i, "on_hud")) {
+        if (runs(i, MODS_HOOK_HUD) &&
+#ifndef BT4_TAG_TEAM_EXPANDED
+            !(Port_TagBattleRenderActive()&&!strcmp(sInfo[i].folder,"modern_hud")) &&
+#endif
+            push_fn(i, "on_hud")) {
             push_hud(L);
             lua_pushvalue(L, -3);
             call(i, 2, 0);
         }
         lua_settop(L, 0);
     }
+    sSplit = sSplitBuild;
     hud_publish();
 }
 

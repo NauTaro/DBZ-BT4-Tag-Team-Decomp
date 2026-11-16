@@ -1380,7 +1380,12 @@ void EftSweep_AddMark(EftTask *task) {
                 Vec3_Sub(&dir, &w->pose.cur, &w->pos);
                 Vec3_Normalize(&dir, &dir);
                 dir.w = 1.0f;
+#ifdef PORT
+                extern s32 BtlStage_DestroyObjByAttack(s32 owner, s32 idx, Vec4 *hitPos);
+                BtlStage_DestroyObjByAttack(w->owner ? w->owner->objId : -1, hit->obj, &dir);
+#else
                 BtlStage_DestroyObj(-1, hit->obj, &dir);
+#endif
             }
             return;
         }

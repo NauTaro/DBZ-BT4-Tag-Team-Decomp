@@ -263,16 +263,21 @@ static void portrait_face(ImDrawList *dl, SDL_GPUTexture *tex, const ModsCmd &c,
     dl->PopTexture();
 }
 
+#include "tag_hud.h"
 void ModsUi_Draw(void) {
     if (gUiPresentW <= 0 || gUiPresentH <= 0 || !Mods_HudRead(&sDraw)) {
         return;
     }
     static FpState fp;
     bool haveFp = PortPanels_Read(&fp) && fp.battle;
+    static TagHudState tag;
+    bool haveTag=PortPanels_TagRead(&tag)&&tag.active;
     ImDrawList *dl = ImGui::GetBackgroundDrawList();
     float k = (float)gUiPresentH / MODS_HUD_H; // HUD units -> window pixels
     // (a picture that changed shape since the scripts drew: their layout keeps its own width, centred)
     float ox = (float)gUiPresentX + ((float)gUiPresentW - sDraw.w * k) * 0.5f, oy = (float)gUiPresentY;
+    const float baseOx=ox,baseOy=oy;
+    bool anchorVisible=true;
     ImFont *game = Ui_FontBold() != NULL ? Ui_FontBold() : ImGui::GetFont(), *ui = ImGui::GetFont();
     ImVec2 c0((float)gUiPresentX, oy), c1((float)(gUiPresentX + gUiPresentW), oy + (float)gUiPresentH);
     int clips = 0;
@@ -282,6 +287,14 @@ void ModsUi_Draw(void) {
     dl->PushClipRect(c0, c1, true);
     for (int i = 0; i < sDraw.count; i++) {
         const ModsCmd &c = sDraw.cmd[i];
+        if(c.kind==MODS_CMD_ACTOR_ANCHOR){
+            float x,y;
+            anchorVisible=Port_TagRenderAllyAnchor(c.i0,c.i1,&x,&y)!=0;
+            if(anchorVisible){ox=baseOx+(x*sDraw.w-c.f[0])*k;oy=baseOy+(y*MODS_HUD_H-c.f[1])*k;}
+            continue;
+        }
+        if(c.kind==MODS_CMD_UNANCHOR){ox=baseOx;oy=baseOy;anchorVisible=true;continue;}
+        if(!anchorVisible)continue;
         ImVec2 a = P(c.f[0], c.f[1]);
         ImVec2 b(a.x + c.f[2] * k, a.y + c.f[3] * k);
         ImU32 cc = col(c.color);
@@ -330,15 +343,24 @@ void ModsUi_Draw(void) {
             break;
         }
         case MODS_CMD_PORTRAIT: {
-            if (!haveFp || c.i0 < 0 || c.i0 > 1) {
+            if (!haveFp || c.i0 < 0 || c.i0 > 11) {
                 break;
             }
-            const FpSide &s = fp.side[c.i0];
-            int m = c.i1 >= 0 ? c.i1 : s.active;
+            const FpMember *member=nullptr;
+            if(c.i0>=2){
+                int actor=c.i0-2;
+                if(!haveTag||actor>=tag.count||!tag.actor[actor].found)break;
+                member=&tag.actor[actor].portrait;
+            }else{
+                const FpSide &s=fp.side[c.i0];
+                int m=c.i1>=0?c.i1:s.active;
+                if(m<0||m>=FP_MEMBERS)break;
+                member=&s.m[m];
+            }
             SDL_GPUTexture *tex;
             float hx, hy, hs, fx, fy;
-            if (m < 0 || m >= FP_MEMBERS || !s.m[m].present ||
-                !FightPanels_Art(s.m[m].path, s.m[m].chara, s.m[m].costume, &tex, &hx, &hy, &hs, &fx, &fy)) {
+            if (!member->present ||
+                !FightPanels_Art(member->path, member->chara, member->costume, &tex, &hx, &hy, &hs, &fx, &fy)) {
                 break;
             }
             if (c.flags & MODS_F_FACE) {

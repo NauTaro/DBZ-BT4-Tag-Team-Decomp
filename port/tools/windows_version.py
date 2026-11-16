@@ -9,7 +9,8 @@ def render(role):
     version=(ROOT/'port/include/bt4_version.h').read_text(encoding='utf-8')
     def value(key):
         return re.search(r'^#define '+key+r' "([^"]+)"$',version,re.M)[1]
-    numeric=value('BT4_UPSTREAM_VERSION').split('.')
+    project=re.search(r'^#define BT4_PROJECT_VERSION "([^"]+)"$',version,re.M)
+    numeric=(project[1] if project else value('BT4_UPSTREAM_VERSION')).split('.')
     assert len(numeric)==4 and all(n.isdigit() and int(n)<=65535 for n in numeric)
     canonical=value('BT4_CANONICAL_VERSION')
     filename='BT4decomp.exe' if role=='game' else 'BT4decomp-setup.exe'

@@ -47,6 +47,18 @@ static void ThRear(const float *view,const float *p,float *out) {
         if(ThAbs(out[1])<0.0001f)out[1]=1;
     }
 }
+/* One compact native/Modern HUD above a visible ally. Keep it within its viewport,
+ * away from the top gauges and lower technique/assist controls. If two allies
+ * overlap, omit the additional strip instead of displacing it off its fighter. */
+static int ThAllyPlate(float x,float y,float left,float right,const float *placed,int count,float *out) {
+    int i;
+    y-=24;
+    if(!(x>=left+30&&x<=right-30&&y>=76&&y<=310) || count<0 || count>=4)return 0;
+    for(i=0;i<count;++i)
+        if(ThAbs(x-placed[i*2])<61&&ThAbs(y-placed[i*2+1])<28)return 0;
+    out[0]=x;out[1]=y;
+    return 1;
+}
 static void ThRay(float cx,float cy,float dx,float dy,float x0,float y0,float x1,float y1,float *p) {
     float t=1.0e20f,q;
     if(ThAbs(dx)+ThAbs(dy)<0.0001f){dx=0;dy=1;}

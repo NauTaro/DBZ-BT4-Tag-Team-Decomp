@@ -3057,6 +3057,10 @@ void BtlAct_ClashStruggleHandler(ActGChr *chr, s32 phase) {
         BtlChar_SetFlag(chr, 0x45);
         BtlChar_SetFlag(chr, 0x46);
         BtlChar_SetFlag(chr, 0x134);
+#ifdef BT4_TAG_TEAM_EXPANDED
+        {extern s32 TagFusion_ClashExtra(s32,s32);
+         if(chr->actionFrame>=0x10 && TagFusion_ClashExtra(chr->player,0x50))chr->clashPower+=3;}
+#endif
         if (chr->actionFrame >= 0x10 && BtlInput_TestAction(chr, 0x50, 1)) {
             chr->clashPower += 3;
 #ifdef PORT /* PC build: BT3_CLASH_LOG=1 says what a clash counts (testing the Square option) */
@@ -3194,6 +3198,10 @@ s32 BtlAct_SuperLaunchedUpHandler(ActGChr *chr, s32 phase) {
  * on every frame: the battle is frozen until the model has loaded.
  */
 s32 BtlAct_ChangeRandomCharaHandler(ActGChr *chr, s32 phase) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {extern s32 TagFusion_Separating(s32);extern void TagFusion_Action(void *,s32);
+     if(TagFusion_Separating(chr->player)){TagFusion_Action(chr,phase);return 0;}}
+#endif
 #ifdef PORT
     {extern s32 Bt4BodyChange_Active(s32);extern void Bt4BodyChange_Action(void *,s32);
      if(Bt4BodyChange_Active(chr->player)){Bt4BodyChange_Action(chr,phase);return 0;}}

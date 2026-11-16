@@ -14,6 +14,7 @@
 extern void Port_SettingText(const char *,const char *,char *,int);
 extern void Port_SettingTextSave(const char *,const char *);
 extern void Port_SettingsWrite(void);
+extern int Port_Setting(const char *,int);
 static int sEnglish,sLanguage,sExternal,sSkip,sReady[3];
 static int sMenuActive,sMenuChoice,sMenuAlpha;
 void Port_GameProfileMenuSet(int active,int choice,int alpha){
@@ -110,6 +111,21 @@ void Port_GameProfileInit(void){
     music_prepare();
 }
 int Port_GameProfileEnglish(void){return sEnglish;}
+int Port_GameProfileAnimeMusicPath(int partition,int file,char *path,int size){
+    const char *root=sRoots[0];
+    unsigned char mark[2];
+    FILE *stream;
+    int valid;
+    /* BGM IDs start at 0x816, in archive 1 whose indices are global ID - 1. */
+    if(sLanguage!=1||!sReady[0]||partition!=1||file<0x815||file>=0x8ff||
+       !Port_Setting("anime_music",0))return 0;
+    if(SDL_snprintf(path,(size_t)size,"%s/pzs4us1/%05d.bin",root,file)>=size)return 0;
+    stream=fopen(path,"rb");
+    if(!stream)return 0;
+    valid=fread(mark,1,sizeof(mark),stream)==sizeof(mark)&&mark[0]==0x80&&mark[1]==0;
+    fclose(stream);
+    return valid;
+}
 int Port_GameProfileLanguage(void){return sLanguage;}
 int Port_GameProfilePortuguese(void){return sLanguage==2;}
 int Port_GameProfileAvailable(int language){return language>=0&&language<3?sReady[language]:0;}

@@ -3,6 +3,10 @@
 #include "battle/battle.h"
 #include "sys/randf.h"
 #include "sys/heap.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 /*
  * Battle HUD: the gauge part (health, ki, blast stock, powered-up timer, status icons, face), 0x21CA60-0x222400.
@@ -107,8 +111,17 @@ extern void HudGfx_CallEnd(void (*fn)(void)); /* run a GS state function (end) *
    and counters on the right. With the swap (gs/net.c) the two sides change places on THIS copy's screen only: a
    side's data is the same, where it is drawn is the other side's place. HUD_SCR(side) is the place of a side. */
 extern int Port_HudSwap(void);
-#define HUD_SCR(side) ((side) ^ Port_HudSwap())
+#ifdef BT4_TAG_TEAM_EXPANDED
+static s32 sTagHudActor=-1;
+static s32 sTagHudMirror;
+#define HUD_ACTOR(side) (sTagHudActor>=0?sTagHudActor:(side))
+#define HUD_SCR(side) (sTagHudActor>=0?sTagHudMirror:((side)^Port_HudSwap()))
 #else
+#define HUD_ACTOR(side) (side)
+#define HUD_SCR(side) ((side) ^ Port_HudSwap())
+#endif
+#else
+#define HUD_ACTOR(side) (side)
 #define HUD_SCR(side) (side)
 #endif
 extern void HudSprite_SetMirror(HudBSprite *spr, s32 mirror);
@@ -277,7 +290,7 @@ void HudGauge_UpdateAura(void) {
     HudBSprite *spr;
     Ramp *ramp;
 
-    if (BtlSide_IsPoweredUp(gHudGauge->side) && !BtlCtrl_IsActiveDead(gHudGauge->side)) {
+    if (BtlSide_IsPoweredUp(HUD_ACTOR(gHudGauge->side)) && !BtlCtrl_IsActiveDead(HUD_ACTOR(gHudGauge->side))) {
         gHudGauge->auraAlpha[gHudGauge->side] += 0x10;
         if (gHudGauge->auraAlpha[gHudGauge->side] > 0x80) {
             gHudGauge->auraAlpha[gHudGauge->side] = 0x80;
@@ -316,7 +329,7 @@ void HudGauge_UpdateAura(void) {
     HudSprite_InitPlain(spr, 0, 0, 0xFF, (u8)((f32)gHudGauge->auraAlpha[gHudGauge->side] * 0.0078125f * 44.0f));
     HudSprite_SetRect(spr, 0, 0x180, 0, 0x6C);
     ramp = &gHudGauge->lowHpPulse[gHudGauge->side];
-    if (gHudGauge->hp[gHudGauge->side] <= 10000 && !BtlCtrl_IsActiveDead(gHudGauge->side)) {
+    if (gHudGauge->hp[gHudGauge->side] <= 10000 && !BtlCtrl_IsActiveDead(HUD_ACTOR(gHudGauge->side))) {
         if (!HUDG_PAUSED() && Ramp_Step(ramp)) {
             if (ramp->value == 0.0f) {
                 Ramp_Start(ramp, 0.5f, 0.0f, 1.0f);
@@ -538,7 +551,7 @@ void HudGauge_UpdateBlast(void) {
         { 0x00, 0x20, 0x00, 0x20 }, { 0x20, 0x40, 0x00, 0x20 }, { 0x40, 0x60, 0x00, 0x20 }, { 0x60, 0x80, 0x00, 0x20 },
         { 0x00, 0x20, 0x20, 0x40 }, { 0x20, 0x40, 0x20, 0x40 }, { 0x40, 0x60, 0x20, 0x40 }, { 0x60, 0x80, 0x20, 0x40 },
     };
-    s32 max = BtlSide_GetBlastMax(gHudGauge->side);
+    s32 max = BtlSide_GetBlastMax(HUD_ACTOR(gHudGauge->side));
     HudBSprite *spr;
     u32 n;
     s32 r;
@@ -807,11 +820,17 @@ extern void Port_GsMarker(s32 effect);
 
 /* Marks the side's life bar so the renderer does not take it for a full-screen flash at very wide ratios. */
 static void HudGauge_HpAnchor(s32 stretch) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(sTagHudActor>=0){Port_GsMarker(0x19);return;}
+#endif
     Port_GsMarker((stretch ? 0x15 : 0x10) + (HUD_SCR(gHudGauge->side) != 0));
 }
 
 /* Adds half the extra screen width before the renderer narrows the panel, bringing the bar to the timer. */
 static s32 HudGauge_WideHpExtra(void) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(sTagHudActor>=0)return 0;
+#endif
     extern int Port_HudLayout(void); /* gs_draw.c: 1 = the long bars were asked for in the settings */
     s32 aspect = Port_AspectMilli();
     return Port_HudLayout() == 1 && aspect > 1340 ? (256 * (aspect * 3 - 4000) + 2000) / 4000 : 0;
@@ -894,6 +913,14 @@ void HudGauge_DrawHp(void) {
 #endif
     HUDG_HP_CLEAR();
     HudGauge_UpdateHp();
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(sTagHudActor>=0&&getenv("BT4_TAG_ASSIST_TEST")){
+        static s32 recorded[10];
+        if(!recorded[sTagHudActor]++ || recorded[sTagHudActor]==100)
+            fprintf(stderr,"tag gauge state: actor=%d hp=%d shown=%d tex=%d sub=%d\n",sTagHudActor,
+                gHudGauge->hp[0],gHudGauge->hpShown[0],gHudGauge->spr[8].tex,gHudGauge->spr[8].texSub);
+    }
+#endif
     HudGfx_CallBegin(HudGauge_GsBeginMask);
     HUDG_HP_DRAW(1, 0);
     HUDG_HP_DRAW(2, 1);
@@ -1003,6 +1030,9 @@ void HudGauge_DrawFace(HudBGroup *node) {
             } else {
                 HudSprite_SetColor(spr, 0x80, 0x80, 0x80, 0x80);
             }
+#ifdef BT4_TAG_TEAM_EXPANDED
+            if(sTagHudActor>=0&&gHudGauge->hp[0]<=0)HudSprite_SetColor(spr,0x35,0x35,0x35,0x65);
+#endif
             HudSprite_SetMirror(spr, HUD_SCR(gHudGauge->side));
             HudSprite_DrawAt(spr, gHudGauge->faceRes[gHudGauge->side], 0, 0x2C00, 0x2CD0);
         }
@@ -1040,7 +1070,11 @@ void HudGauge_SelectSide(s32 side) {
 
     gHudGauge->side = side;
 #ifdef PORT
-    Port_GsMarker(HUD_SCR(side) ? PORT_2D_RIGHT : PORT_2D_LEFT);
+    Port_GsMarker(
+#ifdef BT4_TAG_TEAM_EXPANDED
+        sTagHudActor>=0?0x19:
+#endif
+        HUD_SCR(side)?PORT_2D_RIGHT:PORT_2D_LEFT);
 #endif
     gHudGauge->grp->flags = (gHudGauge->grp->flags & ~2) | (flip << 1);
     HudSprite_SetMirror(&gHudGauge->spr[35], flip);
@@ -1089,6 +1123,9 @@ void HudGauge_SetStatIcons(s32 side, s32 mask, s32 pos) {
     s32 n = 0;
     s32 i;
 #ifdef PORT
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if(sTagHudActor<0)
+#endif
     Port_HudFeed(2, side, mask, pos);
 #endif
 
@@ -1743,3 +1780,7 @@ void HudGauge_Init(HudBGroup **out, void *res) {
     grp->draw = NULL;
     *out = gHudGauge->grp;
 }
+
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "tag_team_native_gauges.inc"
+#endif

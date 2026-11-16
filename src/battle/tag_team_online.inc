@@ -11,6 +11,44 @@ extern const char *Port_TagError(void);
 extern void *BtlChar_Get(s32 actor);
 extern void BtlCam_SelectView(s32 view),BtlCam_ApplyView(s32 scissor);
 static u8 sTagOnlinePads[10][18];
+static Pad sTagCommandPads[10];
+static u32 sTagCommandHeld[10];
+static u32 sTagConsumed[10];
+static u32 sTagSourceHeld[10],sTagSourcePressed[10];
+u32 TagBattle_SourcePressed(s32 actor){return actor>=0&&actor<10?sTagSourcePressed[actor]:0;}
+static s32 TagOnline_InputActor(s32 actor){
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagFusion_InputActor(s32);actor=TagFusion_InputActor(actor);
+#endif
+    return actor>=0&&actor<10?actor:0;
+}
+void *TagBattle_CommandPad(s32 actor){
+    extern s32 BattleSide_GetPad(s32);
+    if(TagBattle_Network())return &sTagCommandPads[TagOnline_InputActor(actor)];
+    s32 pad=BattleSide_GetPad(actor);return &gPad[pad>=0&&pad<PAD_COUNT?pad:0];
+}
+void *TagBattle_SourceCommandPad(s32 actor){
+    return TagBattle_Network()?&sTagCommandPads[actor>=0&&actor<10?actor:0]:TagBattle_CommandPad(actor);
+}
+void TagBattle_ConsumeCommand(s32 actor,u32 rawMask){
+    if(!TagBattle_Network()||actor<0||actor>=10)return;
+    u32 mask=0;
+    if(rawMask&PAD_R3)mask|=BTLB_R3|BTLB_L3R3;
+    if(rawMask&PAD_SELECT)mask|=BTLB_SELECT;
+    if(rawMask&PAD_CROSS)mask|=BTLB_DASH|BTLB_CROSS;
+    sTagConsumed[TagOnline_InputActor(actor)]|=mask;
+}
+static void TagOnline_CommandPads(void){
+    for(s32 i=0;i<10;++i){
+        const u8 v=sTagOnlinePads[i][17];Pad *p=&sTagCommandPads[i];
+        u32 buttons;memcpy(&buttons,sTagOnlinePads[i],4);sTagSourcePressed[i]=buttons&~sTagSourceHeld[i];sTagSourceHeld[i]=buttons;
+        u32 held=(v&1?PAD_R3:0)|(v&2?PAD_L2:0)|(v&4?PAD_SELECT:0)|(v&8?PAD_CROSS:0)|(v&16?PAD_L3:0);
+        memset(p,0,sizeof(*p));p->held=held;p->pressed=held&~sTagCommandHeld[i];p->repeat=p->pressed;
+        p->gameHeld=(v&1?PADG_R3:0)|(v&2?PADG_L2:0)|(v&4?PADG_SELECT:0)|(v&8?PADG_CROSS:0)|(v&16?PADG_L3:0);
+        p->gamePressed=(p->pressed&PAD_R3?PADG_R3:0)|(p->pressed&PAD_L2?PADG_L2:0)|(p->pressed&PAD_SELECT?PADG_SELECT:0)|(p->pressed&PAD_CROSS?PADG_CROSS:0)|(p->pressed&PAD_L3?PADG_L3:0);
+        p->gameRepeat=p->gamePressed;sTagCommandHeld[i]=held;sTagConsumed[i]=0;
+    }
+}
 static u32 sTagOnlineFrame;
 static u32 sTagOnlinePressed;
 static u32 sTagOnlinePausePressed,sTagOnlinePauseRepeat;
@@ -26,7 +64,11 @@ extern void Port_TagHash(u32 frame,u32 hash),Port_TagYield(void);
 extern void Port_TagHashActor(s32,u32,u32,u32,u32,u32,u32,u32,u32,u32,u32);
 static s32 sTagOnlineSent,sTagOnlineLoaded,sTagOnlineAck,sTagOnlineArm,sTagOnlineStart;
 s32 TagBattle_Network(void){return TagBattle_Active()&&Port_TagNetwork();}
-u8 *TagBattle_NetPad(s32 actor){return sTagOnlinePads[actor>=0&&actor<10?actor:0];}
+u8 *TagBattle_NetPad(s32 actor){
+    static u8 sampled[10][18];s32 source=TagOnline_InputActor(actor);if(actor<0||actor>=10)actor=0;
+    memcpy(sampled[actor],sTagOnlinePads[source],18);u32 buttons;memcpy(&buttons,sampled[actor],4);
+    buttons&=~sTagConsumed[source];memcpy(sampled[actor],&buttons,4);return sampled[actor];
+}
 /* Byte 8 is a one-frame sequence command, separate from fighter buttons and
  * the local combat pause menu. Every peer consumes the same delivered frame. */
 s32 TagBattle_NetIntroSkip(void){
@@ -36,6 +78,8 @@ s32 TagBattle_NetIntroSkip(void){
 static void TagOnline_Reset(void){
     s32 i;extern void Port_Srand(u32),Rand_SeedByArray(u32 *,s32);extern s32 Port_Rand(void);
     u32 key[4];sTagOnlineCaptured=0;sTagOnlinePressed=0;sTagOnlinePausePressed=sTagOnlinePauseRepeat=0;sTagOnlinePausePending=0;sTagOnlineEnding=0;sTagOnlineWaitStarted=0;sTagOnlineFrame=sTagOnlineSent=sTagOnlineLoaded=sTagOnlineAck=sTagOnlineArm=sTagOnlineStart=0;
+    memset(sTagSourceHeld,0,sizeof(sTagSourceHeld));memset(sTagSourcePressed,0,sizeof(sTagSourcePressed));
+    memset(sTagCommandPads,0,sizeof(sTagCommandPads));memset(sTagCommandHeld,0,sizeof(sTagCommandHeld));memset(sTagConsumed,0,sizeof(sTagConsumed));
     memset(sTagOnlinePads,0,sizeof(sTagOnlinePads));for(i=0;i<10;++i)sTagOnlinePads[i][4]=sTagOnlinePads[i][5]=127;
     Port_TagMenuSet(0,0);
     if(!TagBattle_Network())return;
@@ -90,8 +134,11 @@ static s32 TagOnline_Tick(void){
         memcpy(packet,&buttons,4);packet[4]=BtlInput_StickToByte(pad->left[0]);packet[5]=BtlInput_StickToByte(pad->left[1]);
         packet[6]=(sTagOnlinePressed&PAD_L3)!=0;
         if(pad->data[17]&0x80)packet[6]|=(pad->data[17]&7)<<1;
+        packet[6]|=pad->data[17]&0x30;
         packet[7]=pad->status==0||pad->status==1?pad->status:2;
         packet[8]=sequence!=3 && (sTagOnlinePressed&PAD_START)?1:0;
+        {u32 raw=pad->held|sTagOnlinePressed;
+            packet[17]=(raw&PAD_R3?1:0)|(raw&PAD_L2?2:0)|(raw&PAD_SELECT?4:0)|(raw&PAD_CROSS?8:0)|(raw&PAD_L3?16:0);}
         if(sTagOnlinePausePending||(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)){memset(packet,0,sizeof(packet));packet[4]=packet[5]=127;}
         if(!sTagOnlinePausePending&&!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")){
             u32 n=sTagOnlineFrame,held=0;packet[4]=packet[5]=127;
@@ -101,7 +148,22 @@ static s32 TagOnline_Tick(void){
             else held=BTLB_BLAST|BTLB_BLAST2|BTLB_TRIANGLE;
             memcpy(packet,&held,4);packet[6]=n%150==0;packet[7]=0;
         }
-        {extern void Port_DevRulesEncode(u8 *);Port_DevRulesEncode(packet+9);}
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_COOP_TEST")){
+            s32 mode=atoi(getenv("BT4_TAG_COOP_TEST"));if(mode==4)mode=2;u32 n=sTagOnlineFrame,held=0;packet[4]=packet[5]=127;packet[6]=packet[8]=packet[17]=0;
+            if(mode==1){if(actor==0&&n>=600&&n<604){packet[17]=3;held=BTLB_CHARGE|BTLB_R3;}
+                if(actor==2&&n>=610&&n<614){packet[17]=1;held=BTLB_R3;}}
+            if(mode==2){if(actor==2&&n>=610&&n<614){packet[17]=1;held=BTLB_R3;}
+                if(n>=1000&&n<1004)held=BTLB_RUSH|BTLB_BLAST|BTLB_CIRCLE;
+                if(n>=1050&&n<1054){packet[17]=17;held=BTLB_R3|BTLB_L3R3;}}
+            if(mode==5&&actor==0){
+                if(n==600||n==620||n==655){packet[17]=4;held=BTLB_SELECT;}
+                if(n==640)packet[6]=8;
+                if(n==675)packet[6]=0x21; /* L3 held while the D-pad is selected */
+                if(n==690)packet[6]=0x11; /* L3 held while the right stick is selected */
+            }
+            memcpy(packet,&held,4);
+        }
+        /* Bytes 9..16 are reserved. Dev and Test run the same online rules. */
         if(!Port_TagSendInput(sTagOnlineFrame+Port_TagDelay(),packet))return -1;
         sTagOnlinePressed=0;
         sTagOnlineSent=1;
@@ -110,6 +172,7 @@ static s32 TagOnline_Tick(void){
         static s32 waitTick;if(++waitTick%4){if(!sTagOnlineWaitStarted)sTagOnlineWaitStarted=Port_TagMenuMillis();return 0;}
     }
     if(!Port_TagTakeFrame(sTagOnlinePads)){if(!sTagOnlineWaitStarted)sTagOnlineWaitStarted=Port_TagMenuMillis();return 0;}
+    TagOnline_CommandPads();
     if(sTagOnlinePausePressed||sTagOnlinePauseRepeat){
         gPad[0].gamePressed|=sTagOnlinePausePressed;
         gPad[0].gameRepeat|=sTagOnlinePauseRepeat;
