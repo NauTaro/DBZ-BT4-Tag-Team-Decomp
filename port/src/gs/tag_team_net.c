@@ -496,13 +496,18 @@ int Port_TagJoinCode(const char *code){
 }
 
 static SDL_AtomicInt sTagRenderActive;
+static int sTagOwnCamera;
 void Port_TagJointRecordMark(int tick){
     extern unsigned gPortVBlanks;
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_PIPE"))
         fprintf(stderr,"tag joint demo clock: tick=%d ms=%llu blank=%u\n",tick,
             (unsigned long long)SDL_GetTicks(),gPortVBlanks);
 }
-void Port_TagBattleRenderSet(int active){SDL_SetAtomicInt(&sTagRenderActive,active!=0);}
+void Port_TagBattleRenderSet(int active){
+    extern int Port_NetOwnCamera(void);
+    if(active&&!SDL_GetAtomicInt(&sTagRenderActive))sTagOwnCamera=Port_NetOwnCamera();
+    SDL_SetAtomicInt(&sTagRenderActive,active!=0);
+}
 int Port_TagBattleRenderActive(void){return SDL_GetAtomicInt(&sTagRenderActive);}
 
 /* Cached verification of the compatible base data, independent of release labels. */
@@ -1275,6 +1280,11 @@ const char *Port_TagCode(void){return room_code;}
 const char *Port_TagError(void){return error;}
 
 int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
+    /* The original camera distance affects native targeting angles. Carry the
+     * owner's choice with the shared input, never read a local preference on
+     * the receiving simulation. Byte 10 was reserved; the packet stays 18 bytes. */
+    unsigned char withCamera[TT_PAD_BYTES];
+    memcpy(withCamera,pad,TT_PAD_BYTES);withCamera[10]=(unsigned char)(0x80|sTagOwnCamera);pad=withCamera;
 
     unsigned char packet[TT_WIRE_BYTES];
 

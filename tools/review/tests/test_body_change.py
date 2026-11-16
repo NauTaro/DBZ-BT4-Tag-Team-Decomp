@@ -26,7 +26,7 @@ void BtlChar_SetFlag(BtlMgrChr *p,s32 flag){(void)p;(void)flag;}
 void BtlChar_ClearFlag(BtlMgrChr *p,s32 flag){(void)p;(void)flag;}
 s32 BtlChange_TryRequestChara(s32 actor,s32 chara,s32 costume,s32 variant,s32 anim,s32 unk,s32 voice){
     assert(actor>=0&&actor<count&&chara==sBody[actor].chara&&costume==sBody[actor].costume);
-    assert(variant==sBody[actor].variant&&anim==-1&&unk==-1&&voice==-1);
+    assert(variant==sBody[actor].variant&&anim==chara&&unk==chara&&voice==chara);
     if(!allowQueue)return 0;++requests;++requested[actor];return 1;
 }
 s32 BtlChange_IsLoadedFor(s32 actor){return actor==loadActor;}

@@ -193,13 +193,19 @@ typedef struct EftCharSlot {
     /* 0x4 */ s32 on;
 } EftCharSlot;
 
-/* gEftCharSlot (0x50 bytes): one slot per kind and fighter. */
+/* Five independent kinds for every actor. The console retains its native
+ * two-fighter layout; the PC roster can contain ten simultaneous fighters. */
+#ifdef PORT
+#define EFT_CHAR_SLOT_COUNT 10
+#else
+#define EFT_CHAR_SLOT_COUNT 2
+#endif
 typedef struct EftCharSlots {
-    /* 0x00 */ EftCharSlot kind0[2];
-    /* 0x10 */ EftCharSlot kind1[2];
-    /* 0x20 */ EftCharSlot kind2[2];
-    /* 0x30 */ EftCharSlot kind3[2];
-    /* 0x40 */ EftCharSlot absorb[2]; /* the drain glow (EftAbsorb, eft_l_c.c) */
+    EftCharSlot kind0[EFT_CHAR_SLOT_COUNT];
+    EftCharSlot kind1[EFT_CHAR_SLOT_COUNT];
+    EftCharSlot kind2[EFT_CHAR_SLOT_COUNT];
+    EftCharSlot kind3[EFT_CHAR_SLOT_COUNT];
+    EftCharSlot absorb[EFT_CHAR_SLOT_COUNT]; /* the drain glow (EftAbsorb, eft_l_c.c) */
 } EftCharSlots;
 
 /* ---- blade trail ---------------------------------------------------------------------------------------- */

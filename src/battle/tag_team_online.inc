@@ -69,6 +69,11 @@ u8 *TagBattle_NetPad(s32 actor){
     memcpy(sampled[actor],sTagOnlinePads[source],18);u32 buttons;memcpy(&buttons,sampled[actor],4);
     buttons&=~sTagConsumed[source];memcpy(sampled[actor],&buttons,4);return sampled[actor];
 }
+s32 TagBattle_NetCameraDistance(s32 actor){
+    if(actor<0||actor>=10)return 0;
+    const u8 value=sTagOnlinePads[actor][10];
+    return value>=0x80&&value<=0x82?value-0x80:0;
+}
 /* Byte 8 is a one-frame sequence command, separate from fighter buttons and
  * the local combat pause menu. Every peer consumes the same delivered frame. */
 s32 TagBattle_NetIntroSkip(void){
@@ -163,7 +168,8 @@ static s32 TagOnline_Tick(void){
             }
             memcpy(packet,&held,4);
         }
-        /* Bytes 9..16 are reserved. Dev and Test run the same online rules. */
+        /* Transport adds the owner's camera distance in byte 10. Other
+         * reserved bytes stay zero; Dev and Test use the same online rules. */
         if(!Port_TagSendInput(sTagOnlineFrame+Port_TagDelay(),packet))return -1;
         sTagOnlinePressed=0;
         sTagOnlineSent=1;

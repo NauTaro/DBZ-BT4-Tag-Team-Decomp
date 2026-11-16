@@ -7,7 +7,7 @@
 #include <stdint.h>
 #define TT_MAX_PLAYERS 10
 #define TT_TEAM_MAX 5
-#define TT_PAD_BYTES 18 /* 0..3 buttons, 4..5 stick, 6 target, 7 status, 8 sequence, 9..16 Dev rules, 17 cooperative commands */
+#define TT_PAD_BYTES 18 /* 0..3 buttons, 4..5 stick, 6 target, 7 status, 8 sequence, 10 camera distance, 17 cooperative commands */
 #define TT_INPUT_HISTORY 512
 #define TT_PROTOCOL 0x54540009u
 /* Versioned private-room rules, carried on the reliable room channel. */

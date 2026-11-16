@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_SETTINGS 250
+#define MAX_SETTINGS 4096 /* per-fighter rules and bindings can exceed 250 */
 static struct { char name[24]; int value; } sSet[MAX_SETTINGS];
 /* The few settings that are text (online name, menu language): `name="text"` in the file, after the numbers. A
    release from before these reads past such a line. */
@@ -36,7 +36,7 @@ static void load(void) {
     int value;
     FILE *fp = path() != NULL ? fopen(path(), "r") : NULL;
 
-    while (fp != NULL && fgets(line, sizeof(line), fp) != NULL && sCount < MAX_SETTINGS) {
+    while (fp != NULL && fgets(line, sizeof(line), fp) != NULL) {
         int start = 0;
         sscanf(line, " %23[a-z0-9_]=\"%n", name, &start);
         if (start > 0) {
@@ -51,8 +51,15 @@ static void load(void) {
                 sText[i].value[length] = '\0';
             }
         } else if (sscanf(line, " %23[a-z0-9_]=%d", name, &value) == 2) {
-            strcpy(sSet[sCount].name, name);
-            sSet[sCount++].value = value;
+            int i;
+            /* Last saved value wins on load, with one writable entry per key.
+             * Keeping duplicates made Save update the first while Setting
+             * returned the unchanged last entry. */
+            for(i=0;i<sCount&&strcmp(sSet[i].name,name)!=0;++i){}
+            if(i<MAX_SETTINGS){
+                if(i==sCount)strcpy(sSet[sCount++].name,name);
+                sSet[i].value=value;
+            }
         }
     }
     if (fp != NULL) {

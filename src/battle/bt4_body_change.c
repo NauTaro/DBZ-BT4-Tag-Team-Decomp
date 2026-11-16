@@ -82,7 +82,10 @@ void Bt4BodyChange_Action(void *fighter,s32 phase){
     if(phase==1){
         if(p->state==BODY_REQUEST){
             BtlAct_SetFormCurrent(chr);chr->newChara=p->chara;chr->newCostume=p->costume;chr->new20=p->variant;
-            if(BtlChange_TryRequestChara(chr->side,p->chara,p->costume,p->variant,-1,-1,-1))p->state=BODY_LOADING;
+            /* Negative animation/data/voice IDs request a model-only costume
+             * reload. Body Change needs the recipient body's complete move
+             * data and voice bank as well as its visible model. */
+            if(BtlChange_TryRequestChara(chr->side,p->chara,p->costume,p->variant,p->chara,p->chara,p->chara))p->state=BODY_LOADING;
         }else if(p->state==BODY_LOADING&&BtlChange_IsLoadedFor(chr->side)){
             BtlChange_SetReady(chr->side);BtlAnim_Request(chr,0,0.0f);p->state=BODY_READY;
         }else if(p->state==BODY_LOADED){

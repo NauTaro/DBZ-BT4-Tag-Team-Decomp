@@ -551,6 +551,7 @@ static struct { SDL_JoystickID id; SDL_Gamepad *pad; } sOpen[MAX_PADS];
 static SDL_JoystickID sIds[MAX_PADS];
 static int sIdCount, sInit;
 
+#include "gs_generic_pad.h"
 static void pads_refresh(void) {
     static unsigned calls;
     SDL_JoystickID *ids;
@@ -559,11 +560,19 @@ static void pads_refresh(void) {
 
     if (!sInit) {
         SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+        SDL_AddGamepadMappingsFromFile("gamecontrollerdb.txt");
         sInit = 1;
         test_pad();
     } else if (calls++ % 120 != 0) { /* look for plugged and unplugged controllers about once a second */
         return;
     }
+    ids = SDL_GetJoysticks(&n);
+    for (i = 0; ids != NULL && i < n; ++i) {
+        if (sTestPad != NULL && !SDL_IsJoystickVirtual(ids[i])) continue;
+        if (PortInput_MapGenericPad(ids[i]))
+            fprintf(stderr,"bt3: input: standard USB pad enabled; bindings available in F1\n");
+    }
+    SDL_free(ids);
     ids = SDL_GetGamepads(&n);
     sIdCount = 0;
     for (i = 0; ids != NULL && i < n && sIdCount < MAX_PADS; i++) {

@@ -1377,9 +1377,9 @@ void BtlMember_ApplyItems(BattleMember *m) {
     s32 stats[5];
     s32 i;
 #ifdef PORT
-    s32 online;
-    extern int Port_NetSession(void),Port_TagNetwork(void);
-    online=Port_NetSession()||Port_TagNetwork();
+    s32 restricted;
+    extern int Port_NetItemsRestricted(void),Port_TagNetwork(void),Port_TagOfflineCustom(void);
+    restricted=Port_NetItemsRestricted()||(Port_TagNetwork()&&!Port_TagOfflineCustom());
 #endif
 
 #ifdef PORT
@@ -1387,15 +1387,16 @@ void BtlMember_ApplyItems(BattleMember *m) {
        index beyond the ISO's 350-entry item table on either path. */
     for (i = 0; i < 8; ++i) {
         if (m->items.id[i] > SAVE_ITEM_COUNT ||
-            (online && !Bt4Potara_VisualItem(m->items.id[i])))
+            (restricted && !Bt4Potara_VisualItem(m->items.id[i])))
             m->items.id[i] = 0;
     }
 #endif
     ItemSet_GetStats(&m->items, stats, ability, m->chara);
 #ifdef PORT
-    if(online){
+    if(restricted){
         /* Aura Potara also contain a Ki-start bit in the original table.
-           Retain their visual component only on both online transports. */
+           Competitive matches retain only their visual component. Private
+           matches apply the authoritative equipped set in full. */
         stats[0]=stats[1]=stats[2]=stats[3]=0;
         Bt4Potara_OnlineAbilities(ability);
     }

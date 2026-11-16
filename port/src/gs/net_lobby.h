@@ -129,6 +129,7 @@ enum { LOBBY_START = 1, LOBBY_BACK, LOBBY_LEAVE, LOBBY_KICK, LOBBY_MOVE, LOBBY_R
 enum { LOBBY_RULE_BATTLE = 0, LOBBY_RULE_TIME, LOBBY_RULE_SPEED, LOBBY_RULE_ROLLBACK, LOBBY_RULE_DELAY, LOBBY_RULE_MODE, LOBBY_RULE_ENTRANTS, LOBBY_RULE_BEAM_CLASH };
 #define LOBBY_LONG_BEAM_CLASH (1u << 28)
 #define LOBBY_TOURNAMENT_RESULT (1u << 29)
+#define NET_RULE_RESTRICT_ITEMS (1u << 30)
 
 int Port_LobbyView(PortLobbyView *out);   /* 0: no lobby (state 0) */
 /* START (versus: the match of 1P and 2P; a tournament: its next match, the two put in 1P and 2P), BACK (the owner:

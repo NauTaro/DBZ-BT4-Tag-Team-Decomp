@@ -57,6 +57,14 @@ extern u64 EftVram_AddClut(EftTTex *tex);                        /* steps a text
 extern void EftTexSet_Load8(void *tex, s32 *entry);              /* builds a texture set from a pack entry */
 
 extern s32 EftCam_IsActive(void);
+#ifdef PORT
+extern s32 TagBattle_Active(void),BtlScene_IsCharInView(s32);
+/* Fields built around the current camera belong to their owner's view.
+ * Explicit world positions still represent effects everybody can see. */
+static s32 EftStreak_InView(EftStreakWork *w) {
+    return !TagBattle_Active() || (w->flags & EFT_STREAK_POS_SET) || BtlScene_IsCharInView(w->objId);
+}
+#endif
 extern void EftGfx_DrawPolyScaledZ(EftTClipVtx *v, s32 blend, s32 a2, s32 a3, s32 a4, s32 a5, u64 tex0, f32 scale);
 
 extern void BtlCharApi_GetNodePos(s32 objId, s32 node, Vec4 *out);
@@ -235,7 +243,7 @@ void EftStreak_PostUpdate(EftTTask *task) {
    distance plus half its height, or the position given by EftStreak_SetPos), or that point's screen position for
    a screen field. Every drawn streak is a quad of width x length at (pos, offset), the whole field turned by
    `angle` about the view axis. */
-#if 0
+#if defined(PORT)
 /* NON-MATCHING: 2 of 387 instructions: in the argument set-up of the last memset at the top (the `d` initialiser) the
    original has `addiu s1,sp,0xC0` in front of `move a1,zero`, this C the other way round (scheduling only).
    Round 4 (the permuter did not move it in 171,000 iterations either): the first block runs from the entry to
@@ -265,6 +273,7 @@ void EftStreak_Draw(EftTTask *task) {
     Vec4 d = { 0 };
     f32 dist = 0.0f;
 
+    if (!EftStreak_InView(w)) return;
     Mtx_StoreIdentity(&frame);
     Mtx_InverseRT(&camInv, &gBtlCamView->view);
     Vec4_Set((Vec4 *)camInv.m[3], 0.0f, 0.0f, 0.0f, 1.0f);

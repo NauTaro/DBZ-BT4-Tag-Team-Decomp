@@ -465,7 +465,11 @@ void ChrCam_UpdateInput(ChrCamChr *chr) {
 #ifdef BT4_TAG_TEAM_EXPANDED
     extern s32 TagBattle_DevCombatActive(void),TagBattle_CameraMode(s32);
     if (TagBattle_DevCombatActive()) {
-        chr->cam.distMode=TagBattle_CameraMode(chr->side);
+        extern s32 TagBattle_Network(void),TagBattle_NetCameraDistance(s32),BattleSide_GetOptionA(s32);
+        const s32 focus=TagBattle_CameraMode(chr->side);
+        /* Focus modes remain enemy / ally / free. Enemy focus starts with the
+         * saved A/B/C distance, synchronized per actor when playing online. */
+        chr->cam.distMode=focus?focus:TagBattle_Network()?TagBattle_NetCameraDistance(chr->side):BattleSide_GetOptionA(chr->side);
     } else
 #endif
     if (BtlInput_IsPressed(chr, 0x800000)) {

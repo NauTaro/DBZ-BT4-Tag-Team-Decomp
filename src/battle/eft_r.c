@@ -152,7 +152,7 @@ s32 EftCharaFx_Stop(s32 objId) {
     EftRTask *task = EftCharSlot_Get3(objId);
     EftCharaFxWork *w;
 
-    if (task == NULL) {
+    if (task == NULL || task->work == NULL) {
         return 0;
     }
     w = task->work;

@@ -740,7 +740,8 @@ void Port_Trace(unsigned vblanks) {
         }
         if (started && *(int GAME_PTR)(chr+0x948) >= 0x106 && *(int GAME_PTR)(chr+0x948) <= 0x126) entered = 1;
         if(started&&getenv("BT4_TEST_ACTION")&&*(int GAME_PTR)(chr+0x948)>=0xB4&&*(int GAME_PTR)(chr+0x948)<=0xBF)entered=1;
-        if (entered && vblanks-began > 180 && *(int GAME_PTR)(chr+0x948) < 0xFD && *(int GAME_PTR)(other+0x948) < 0xFD && (!getenv("BT4_TEST_ACTION")||*(int GAME_PTR)(chr+0x948)<0xB4||*(int GAME_PTR)(chr+0x948)>0xBF)) {
+        extern int Bt4BodyChange_Active(int);
+        if (entered && !Bt4BodyChange_Active(actor) && !Bt4BodyChange_Active(victim) && vblanks-began > 180 && *(int GAME_PTR)(chr+0x948) < 0xFD && *(int GAME_PTR)(other+0x948) < 0xFD && (!getenv("BT4_TEST_ACTION")||*(int GAME_PTR)(chr+0x948)<0xB4||*(int GAME_PTR)(chr+0x948)>0xBF)) {
             if(!recovered){recovered=vblanks;fprintf(stderr,"bt4: tech recovered vb=%u\n",vblanks);}
             if(getenv("BT4_TAG_OWNERSHIP_TEST")&&vblanks-recovered<120)return;
             fprintf(stderr,"bt4: tech end action=%x tick=%d\n",*(int GAME_PTR)(chr+0x948),tick);

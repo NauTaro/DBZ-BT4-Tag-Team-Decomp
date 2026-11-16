@@ -4685,7 +4685,12 @@ static s32 Tb_BrPageIndex(void) {
 static void Tb_BrPageView(PortLobbyView *page) {
     const PortLobbyView *full = &sTbLv;
     *page = *full;
-    if (full->tourSize <= LOBBY_CLASSIC_SLOTS) return;
+    if (full->tourSize <= LOBBY_CLASSIC_SLOTS) {
+        /* Empty first-round seats are byes, never pending qualifiers. */
+        for (s32 l = 0; l < full->tourSize; ++l)
+            if (page->tourLeaf[l] < 0) page->tourLeaf[l] = -2;
+        return;
+    }
     const s32 sections = full->tourSize / 8, index = Tb_BrPageIndex();
     const s32 finals = index == sections, size = finals ? sections : 8;
     page->tourSize = size;

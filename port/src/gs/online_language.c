@@ -7,6 +7,7 @@ extern int Port_GameProfilePortuguese(void);
 static int sRaw;
 void PortOnline_Raw(int on){if(on)sRaw++;else if(sRaw)sRaw--;}
 static const char *const kRankedText[][3]={
+{"BYE","PASE DIRECTO","AVANÇO DIRETO"},
 {"Points and streaks","Puntos y rachas","Pontos e sequências"},
 {"Monthly reset","Reinicio mensual","Reinício mensal"},
 {"Weekly standings","Clasificación semanal","Classificação semanal"},

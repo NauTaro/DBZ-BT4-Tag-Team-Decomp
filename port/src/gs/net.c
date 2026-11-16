@@ -177,6 +177,9 @@ static int sGoPending; /* a lobby's session has been asked for and has not begun
    seconds, none). One word: type | dp << 4 | time << 8. The host's travels with its other choices (T_HELLO_ACK,
    T_CONFIG); headless.c applies it on both sides when the session enters the versus mode. */
 static uint32_t sRules = 3u << 8; /* single battle, 240 seconds: the game's defaults */
+static void rules_items_restrict(int competitive) {
+    sRules = competitive ? sRules | NET_RULE_RESTRICT_ITEMS : sRules & ~NET_RULE_RESTRICT_ITEMS;
+}
 
 /* The match's seed. A session is a fresh start of the program on both sides with the same fixed seed (plat_sys.c),
    so the game's random numbers were the same in every session: "Random" at the character select gave the same
@@ -233,6 +236,11 @@ static uint32_t own_options(void) {
         fclose(fp);
     }
     return OPT_MARK | (a > 15 ? 0 : a) | (b > 15 ? 0 : b) << 8; /* (anything else: the defaults) */
+}
+
+int Port_NetOwnCamera(void) {
+    const int camera=(int)(own_options()&255);
+    return camera<=2?camera:0;
 }
 
 static void opts_take(int player, const uint8_t *at) {
@@ -3364,6 +3372,12 @@ int Port_NetSession(void) {
     return Port_NetActive() && sSession;
 }
 
+/* The host's rules word is delivered to players and spectators alike. A
+ * private match must not depend on another machine's matchmaking UI state. */
+int Port_NetItemsRestricted(void) {
+    return Port_NetSession() && (sRules & NET_RULE_RESTRICT_ITEMS) != 0;
+}
+
 /* For the game's start-up (src/menu/menu_i_c.c, menu_a_c.c): 1 when it has to be the game's own whatever the
    player's settings say, which is in every session. BT3_TEST_OWN_START=1 (testing the check above): this copy
    follows its settings in a session too, as 0.1.32 and 0.1.33 did. */
@@ -3602,6 +3616,9 @@ int Port_LobbyStart(int host, const char *address, int port) {
         sLobby = -1;
         return sLobby;
     }
+    /* A new private/address room cannot inherit a previous queue's policy.
+     * StartCode reapplies the competitive flag for Quick Match and Ranked. */
+    rules_items_restrict(0);
     if (sHandSock >= 0) { /* (a session that was asked for and never began) */
         closesocket(sHandSock);
         sHandSock = -1;
@@ -3771,6 +3788,7 @@ int Port_LobbyStartCode(int host, const char *code) {
     sKnockGen = -1;
     memset(sKnockUntil, 0, sizeof(sKnockUntil));
     snprintf(sCodeAsked, sizeof(sCodeAsked), "%s", sQuickQueue < 0 && code != NULL ? code : "");
+    rules_items_restrict(sQuickQueue >= 0);
     Match_Begin(sQuickQueue >= 0 ? 3 : sWatchByCode ? 4 : sLobbyRole, sSock, sCodeLocalPort, sQuickQueue >= 0 ? kMatchQueues[sQuickQueue] : code, sMyName, NET_VERSION);
     return sLobby;
 }

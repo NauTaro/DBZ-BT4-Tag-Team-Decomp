@@ -1,0 +1,58 @@
+BT4decomp 0.1.39.6 R1 1.2 - Candidato de prueba / Test candidate
+
+ESPAÑOL
+- Correcciones de dos fallos detectados en los cierres de Tag Team: efectos de
+  diez luchadores y casillas pendientes de la selección simultánea.
+- El cambio de cuerpo de Ginyu recarga también técnicas, datos y voces del cuerpo.
+- Potharas con sus efectos en salas privadas, torneos y Tag Team personalizable.
+  Partida rápida y Rankeds conservan las restricciones competitivas.
+- Los espacios de pase directo del torneo se distinguen de rondas pendientes.
+  Ajustado el anclaje del cuadro del torneo original en pantalla panorámica.
+- Los efectos de líneas de velocidad de otra técnica respetan la vista del jugador.
+- Tag Team conserva la distancia de cámara A/B/C guardada al enfocar enemigos.
+- Ajustadas las rutas de voces y diálogos de BT4, incluido el juego online.
+- Compatibilidad adicional con mandos USB genéricos de distribución estándar.
+- Mejor guardado de opciones en archivos extensos o con claves duplicadas.
+- Integración con RecompLauncher, correspondiente al PR #64.
+
+Todos los participantes deben aplicar el mismo parche y crear una sala nueva.
+El ZIP conserva los datos de idioma de la instalación y no incluye guardados
+ni ajustes personales. La firma oficial de Windows continúa pendiente.
+
+ENGLISH
+- Fixes for two reported Tag Team crashes: ten-fighter effects and unconfirmed
+  slots during simultaneous character selection.
+- Ginyu's Body Change also reloads the new body's moves, data and voices.
+- Potara effects are supported in private rooms, tournaments and custom Tag Team.
+  Quick Match and Ranked retain competitive item restrictions.
+- Tournament byes are distinguished from pending qualifiers. The original
+  tournament bracket uses consistent widescreen positioning.
+- Technique speed-line effects respect the player view they belong to.
+- Tag Team uses the saved A/B/C camera distance when focusing on enemies.
+- Corrected BT4 voice and dialogue file routing, including online playback.
+- Additional support for standard-layout generic USB controllers.
+- Improved settings persistence for large files and duplicate keys.
+- RecompLauncher integration from PR #64.
+
+Every participant must apply the same patch and create a new room.
+The ZIP retains the installed language and contains no personal saves or
+settings. Official Windows code signing remains pending.
+
+PORTUGUÊS
+- Correções de duas falhas de Tag Team: efeitos de dez lutadores e espaços ainda
+  não confirmados durante a seleção simultânea de personagens.
+- A troca de corpo de Ginyu também recarrega golpes, dados e vozes do novo corpo.
+- Efeitos de Potaras nas salas privadas, torneios e Tag Team personalizado.
+  Partida Rápida e Ranked mantêm as restrições competitivas de itens.
+- Os avanços diretos no torneio se distinguem dos classificados pendentes.
+  Ajustado o posicionamento da chave original em tela panorâmica.
+- Efeitos de linhas de velocidade respeitam a visão do jogador correspondente.
+- Tag Team usa a distância de câmera A/B/C salva ao focar inimigos.
+- Ajustadas as rotas de vozes e diálogos de BT4, inclusive nas partidas online.
+- Suporte adicional a controles USB genéricos com disposição padrão.
+- Melhor gravação de opções em arquivos extensos ou com chaves duplicadas.
+- Integração com RecompLauncher, do PR #64.
+
+Todos devem aplicar o mesmo patch e criar uma sala nova.
+O ZIP mantém o idioma instalado e não inclui saves nem configurações pessoais.
+A assinatura oficial do Windows continua pendente.

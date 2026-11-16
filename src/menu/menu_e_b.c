@@ -281,7 +281,12 @@ void TeamSel_SetTeamTex(s32 side) {
         gTeamSel->teamTex[side][slot[i]] = NULL;
         if (i < gTeamSel->side[side]->memberCount) {
             s32 id = gTeamSel->side[side]->member[i].chara;
-            MTexRes *res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, id + 1);
+            MTexRes *res;
+
+            /* Simultaneous Tag selection can confirm a later seat while
+             * earlier seats are empty. Entry zero is the pack header. */
+            if (id < 0) continue;
+            res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, id + 1);
 
             gTeamSel->teamTex[side][slot[i]] = res->tex;
             if (gTeamSel->battleType == 2) {

@@ -25,6 +25,10 @@ int Port_PageAspectMilli(void){return 2333;}
 int Port_MenuPartNow(void),Port_MenuClipPart(const char *,int,int),Port_MenuMessageX(int);
 void Port_MenuPage(int);
 int main(void){
+    Port_MenuPage(21);
+    assert(Port_MenuPartNow()==4); /* bracket edges share the chips' coordinates */
+    assert(Port_MenuClipPart("mc_tree_line",500,1)==-1);
+    Port_MenuPage(0);
     Port_MenuPage(37);
     /* All native glyphs, including ones beyond x=250, inherit one anchor. */
     assert(Port_MenuPartNow()==4);

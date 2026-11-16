@@ -548,10 +548,13 @@ static void stop(Player *p) {
    near-silent files each (0x87CA..0x87D3, 0x8D26..0x8D2F); 0x8D30 and on are the fight's streamed effects (the
    clash, a transformation's, the moves', a stage's), played the same for both voice sets: until 0.1.38 the range
    ran on to 0x8D4D, and online a player with the second set heard a guide's line in the place of those effects. */
+#include "gs_voice_files.h"
 static const char *voice_own_path(const char *path, char *buf, size_t size) {
     extern int Port_NetVoiceAlt(void); /* net.c */
-    const char *dir = strstr(path, "pzs3us2/"), *num;
+    const char *dir = strstr(path, "pzs4us0/"), *num;
+    int bt4=dir!=NULL,base=bt4?0x10CC0:0xD48;
     int fid, id, other = 0;
+    if(!dir)dir=strstr(path,"pzs3us2/");
 
     if (dir == NULL || !Port_NetVoiceAlt()) {
         return path;
@@ -560,17 +563,10 @@ static const char *voice_own_path(const char *path, char *buf, size_t size) {
     if (sscanf(num, "%d.bin", &fid) != 1) {
         return path;
     }
-    id = fid + 0xD48;
-    if (id >= 0x87D4 && id < 0x8D30) {
-        other = id - 0x55C;
-    } else if (id >= 0xCC32 && id < 0x10B16) {
-        other = id - 0x3EE4;
-    } else if (id >= 0x10B6C && id < 0x10BA4) {
-        other = id - 0x38;
-    } else {
-        return path;
-    }
-    snprintf(buf, size, "%.*s%05d.bin", (int)(num - path), path, other - 0xD48);
+    id = fid + base;
+    other=PortVoice_OtherStream(id,bt4);
+    if(!other)return path;
+    snprintf(buf, size, "%.*s%05d.bin", (int)(num - path), path, other - base);
     {
         FILE *fp = fopen(buf, "rb");
         if (fp == NULL) {

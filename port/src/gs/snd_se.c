@@ -496,16 +496,19 @@ static void stop(int mask, int id, int handle) {
    sequences). So the bank the game sets is recognised by the start of its header table and this copy plays the
    same numbers from the other set's bank (file 0xBDA + fighter), read here from the disc's files. */
 extern int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size); /* plat_file.c */
-#define VOICE_BANKS 161
-#define VOICE_BANK_DEFAULT (0xC7B - 1) /* file numbers of partition 1 (id - 1) */
-#define VOICE_BANK_OTHER (0xBDA - 1)
+#include "gs_voice_files.h"
+extern int gPortVariant;
+#define VOICE_BANKS (gPortVariant?250:161)
+#define VOICE_BANK_DEFAULT PortVoice_Bank(0,0,gPortVariant!=0)
+#define VOICE_BANK_OTHER PortVoice_Bank(0,1,gPortVariant!=0)
 
 static uint8_t *bank_file(int flid, long *size) {
     char path[512];
     uint8_t *b = NULL;
     FILE *fp;
 
-    if (!Port_FilePath(1, flid, NULL, path, sizeof(path)) || (fp = fopen(path, "rb")) == NULL) {
+    const int part=gPortVariant?0:1,index=flid-(gPortVariant?0x10CC0:1);
+    if (!Port_FilePath(part, index, NULL, path, sizeof(path)) || (fp = fopen(path, "rb")) == NULL) {
         return NULL;
     }
     fseek(fp, 0, SEEK_END);

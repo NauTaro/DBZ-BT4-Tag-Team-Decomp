@@ -135,7 +135,7 @@ void Port_MenuPage(int screen) {
     Port_MenuPart(screen == 0 ? PORT_MENU_NONE : screen == 2 ? PORT_MENU_LEFT
                   : screen == 52 ? PORT_MENU_FILL /* (Tenkaichi Budokai Online: its page stretched as before) */
                   : screen == 51 ? PORT_MENU_CENTER_FREE /* (the logo page before the title: a picture of the whole 4:3 screen) */
-                  : screen == 37 ? PORT_MENU_CENTER_ALL /* one coordinate space for composite Potara rows and tooltips */
+                  : screen == 21 || screen == 37 ? PORT_MENU_CENTER_ALL /* keep bracket segments and composite Potara rows in one coordinate space */
                   : screen == 1 ? PORT_MENU_CENTER_FREE /* (the title: its characters' art goes on past the 4:3 screen's edges,
                                                     Piccolo's cape at the top right: not cut there; its plates, parked off
                                                     the screen, are by their own rule) */

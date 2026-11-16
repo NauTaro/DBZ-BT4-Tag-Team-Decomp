@@ -657,10 +657,15 @@ void BtlPartner_HandleEvents(FxObj *obj, FxChr *chr) {
     }
     BtlFxObj_HandleFlagEvents(obj);
     BtlFxObj_PlayEventSounds(obj);
+#ifdef PORT
+    /* BT4's streamed character voices no longer use the BT3 archive ranges. */
+    { extern s32 Voice_CharaFile(s32,s32);sound=Voice_CharaFile(0,0); }
+#else
     sound = 0xCC32;
     if (!(gSaveData->flags & 1)) {
         sound = 0x8D4E;
     }
+#endif
     kind = -1;
     mask = -1;
     on = -1;
