@@ -25,6 +25,7 @@ int Port_NetActive(void) { return 0; }
 int Port_NetMe(void) { return 0; }
 int Port_TagNetwork(void) { return 0; }
 int Port_TagLocalBattle(void) { return 0; }
+int Port_TagBattleRenderActive(void) { return 0; }
 int Port_HudSwap(void) { return 0; }
 const char *MenuTranslation_Text(const char *id) { return strcmp(id, "combo-hits/0/0") == 0 ? "Golpes" : NULL; }
 const char *MenuTranslation_Locale(void) { return "es"; }
