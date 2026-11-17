@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {OnlineCore} from '../online_core.mjs';
 import {OnlineCoordinator} from '../online_worker.mjs';
 import {launchRanked,rankedMonthAt,rankedMonthStart,rankedMonthEnd,advanceRankedMonth,rankedCollection} from '../ranked_seasons.mjs';
-import {rankedRockSeed} from '../ranked_rocks.mjs';
+import {rankedRockSeed,RANKED_ROCK_ODDS} from '../ranked_rocks.mjs';
 
 const LAUNCH=Date.parse('2026-11-16T03:00:00Z'),NEXT=Date.parse('2026-12-01T03:00:00Z');
 const plan={id:'launch:2026-11-16',not_before:LAUNCH};
@@ -60,6 +60,7 @@ test('close archives the standings then zeroes points and streaks without granti
     assert.equal(f.c.one('SELECT count(*) n FROM ranked_resets').n,2);
     assert.equal(f.command(users[3],'ranked_status').dragon_balls,0);
 });
+
 test('standings break ties using points, wins, fewer losses and stable account id',()=>{
     const f=fixture(),users=['Alpha','Beta','Gamma','Delta','Zero'].map(n=>f.user(n));
     f.now(LAUNCH);f.launch();
@@ -69,14 +70,24 @@ test('standings break ties using points, wins, fewer losses and stable account i
     const archive=f.c.one("SELECT standings FROM ranked_resets WHERE id='month:2026-11-01'");
     assert.deepEqual(JSON.parse(archive.standings).map(row=>row.user_id),[...tied,users[1],users[0]]);
 });
+test('one roll in 24 preserves the public client seed range even for high random draws',()=>{
+    assert.equal(RANKED_ROCK_ODDS,24);
+    assert.equal(Array.from({length:24000},(_,i)=>rankedRockSeed(i)).filter(Boolean).length,1000);
+    for(const draw of [0,24,201326568,201326592,402653184,4294967280,4294967295]){
+        const seed=rankedRockSeed(draw);
+        assert.equal(seed!==0,draw%24===0);
+        assert.ok(seed===0 || Number.isInteger(seed)&&seed>=1&&seed<=8388608);
+    }
+    assert.equal(rankedRockSeed(24*8388608),1);
+});
 test('one roll per ranked pairing, shared by both clients, with no roll for casual or legacy rooms',t=>{
     const customRandom=crypto.getRandomValues.bind(crypto);
     let draws=0;
     t.mock.method(crypto,'getRandomValues',array=>{
-        if(array instanceof Uint32Array){++draws;array[0]=512;return array;}
+        if(array instanceof Uint32Array){++draws;array[0]=RANKED_ROCK_ODDS;return array;}
         return customRandom(array);
     });
-    assert.equal(Array.from({length:1024},(_,i)=>rankedRockSeed(i)).filter(Boolean).length,2);
+    assert.equal(Array.from({length:RANKED_ROCK_ODDS*2},(_,i)=>rankedRockSeed(i)).filter(Boolean).length,2);
     const f=fixture(),users=['Alpha','Beta','Gamma','Delta'].map(n=>f.user(n));
     f.now(LAUNCH);f.launch();
     const args={mode:'duel',wire:'test:rock1',content:'abcd',rules:'S',ruleset:'solo'};
@@ -129,7 +140,7 @@ test('only supported clients in the normal Quick Match queue can roll for a publ
     let draws=0;
     t.mock.method(crypto,'getRandomValues',data=>{
         if(!(data instanceof Uint32Array))return random(data);
-        data[0]=512;
+        data[0]=RANKED_ROCK_ODDS;
         ++draws;
         return data;
     });

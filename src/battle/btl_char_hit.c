@@ -882,6 +882,8 @@ s32 BtlHit_CheckClash(void) {
                     BtlCharSnd_PlayCommon(a, 0x4F);
                     BtlCharSnd_PlayCommon(b, 0x4B);
                 } else {
+                    extern s32 TagClash_BeginVanish(s32,s32);
+                    if(!TagClash_BeginVanish(a->player,b->player))continue;
                     BtlChar_SetFlag(a, 0x62);
                     BtlChar_SetFlag(b, 0x62);
                     a->stopLen = 2;

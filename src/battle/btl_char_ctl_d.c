@@ -241,12 +241,14 @@ void BtlChar_PlaceOnPath(BtlCtlChr *chr) {
     Vec4 delta;
     Vec4 pos;
     Vec4 rot;
-    s32 *work = gBtlChars->unk7C;
+    extern void *TagClash_GetExchange(s32);
+    extern s32 TagClash_ExchangeSide(s32);
+    s32 *work = TagClash_GetExchange(chr->player);
 
     if (BtlChar_TestFlag(chr, 0xF8)) {
         BtlCtlPath *path = BtlStage_GetPath(work[2]);
 
-        if (path != NULL) {
+        if (path != NULL && path->count>path->first) {
             s32 index = work[3] % (path->count - path->first) + path->first;
             BtlCtlPathPoint *first = path->points;
             BtlCtlPathPoint *point = &first[index];
@@ -275,7 +277,7 @@ void BtlChar_PlaceOnPath(BtlCtlChr *chr) {
             rot.y = 0.0f;
             rot.z = 0.0f;
             rot.w = 0.0f;
-            if (chr->player == 0) {
+            if (TagClash_ExchangeSide(chr->player) == 0) {
                 Vec4_Sub(&pos, &pos, &side);
                 rot.y = atan2f(side.x, side.z);
             } else {

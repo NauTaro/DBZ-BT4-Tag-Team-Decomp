@@ -1,8 +1,12 @@
 export const RANKED_ROCK_WIRE = ':rock1';
-export const RANKED_ROCK_ODDS = 512;
+export const RANKED_ROCK_ODDS = 24;
+const MAX_ROCK_SEED = 8388608;
 const MAX_ROCK_EVENT = 256 * 64 * 2;
 
 export function rankedRockSeed(draw) {
+    // Lower odds must still fit the seed accepted by existing public clients.
+    // This modulus preserves whether the original draw was divisible by odds.
+    draw %= MAX_ROCK_SEED * RANKED_ROCK_ODDS;
     return draw % RANKED_ROCK_ODDS === 0 ? Math.floor(draw / RANKED_ROCK_ODDS) + 1 : 0;
 }
 

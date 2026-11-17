@@ -299,6 +299,7 @@ void TagBattle_SetReturn(s32 choice){sTagReturn=choice;}
 s32 TagBattle_TakeReturn(void){s32 r=sTagReturn;sTagReturn=0;return r;}
 void TagBattle_ResetPairs(void){
     s32 i;
+    extern void TagClash_Reset(void);TagClash_Reset();
     sTagViewActor=sTagLocalActor;
 #ifdef BT4_TAG_TEAM_EXPANDED
     memset(sTagSplitView, 0, sizeof(sTagSplitView));
@@ -326,7 +327,16 @@ s32 TagBattle_ReservePair(s32 a,s32 b){
      BtlMember_ClearQueuedDamage(BtlChar_Get(b));}
     return 1;
 }
-static s32 TagBattle_PairedAction(s32 action){return (action>=0xB4&&action<=0xBF)||(action>=0x12D&&action<=0x132)||(action>=0x133&&action<=0x13B);}
+static s32 TagBattle_PairedAction(s32 action){return (action>=0xB4&&action<=0xBF)||(action>=0xFA&&action<=0xFC)||(action>=0x12D&&action<=0x132)||(action>=0x133&&action<=0x13B);}
+void TagBattle_ReleasePair(s32 a){
+    if(a<0||a>=sTagActors)return;
+    s32 b=sTagPairs[a];
+    if(b<0||b>=sTagActors||sTagPairs[b]!=a)return;
+    extern void *BtlChar_Get(s32);extern void ChrCam_EndCut(void *);
+    ChrCam_EndCut(BtlChar_Get(a));ChrCam_EndCut(BtlChar_Get(b));
+    sTagPairs[a]=sTagPairs[b]=sTagAttackers[a]=sTagAttackers[b]=-1;
+    sTagPairGrace[a]=sTagPairGrace[b]=0;
+}
 void TagBattle_UpdatePairs(void){
     extern void *BtlChar_Get(s32 actor);
     extern s32 BtlAct_GetCurrent(void *chr);
@@ -334,7 +344,9 @@ void TagBattle_UpdatePairs(void){
     for(a=0;a<sTagActors;++a){b=sTagPairs[a];if(b<=a||b>=sTagActors)continue;
         s32 attacker=sTagAttackers[a];
         {extern s32 Bt4BodyChange_Active(s32);
-        if(attacker>=0&&(TagBattle_PairedAction(BtlAct_GetCurrent(BtlChar_Get(attacker)))||Bt4BodyChange_Active(attacker)))sTagPairGrace[a]=6;
+        s32 other=attacker==a?b:a,otherAction=BtlAct_GetCurrent(BtlChar_Get(other));
+        if(attacker>=0&&(TagBattle_PairedAction(BtlAct_GetCurrent(BtlChar_Get(attacker)))||
+           otherAction==0xFB||otherAction==0xFC||Bt4BodyChange_Active(attacker)))sTagPairGrace[a]=6;
         else if(--sTagPairGrace[a]<=0){
             extern void ChrCam_EndCut(void *);
             ChrCam_EndCut(BtlChar_Get(a));ChrCam_EndCut(BtlChar_Get(b));

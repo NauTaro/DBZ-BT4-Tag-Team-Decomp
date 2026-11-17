@@ -1,3 +1,26 @@
+# BT4decomp 0.1.39.6 R1 1.3
+
+- Fix Tag Team camera shaking when switching between lock-on and free view.
+- Fix aerial clashes that could leave fighters invisible or unable to move, including interference from another fighter.
+
+All players must update and create a new room. Saves, languages and personal settings are retained.
+
+<!-- bt4-update:en
+- Fix camera shaking between lock-on and free view in Tag Team.
+- Fix fighters becoming invisible or stuck after aerial clashes.
+- Everyone must update and create a new room.
+-->
+<!-- bt4-update:es
+- Corrige los tirones de cámara entre el fijado de objetivo y la vista libre en Tag Team.
+- Corrige los luchadores invisibles o inmovilizados después de los choques aéreos.
+- Todos deben actualizar y crear una sala nueva.
+-->
+<!-- bt4-update:pt
+- Corrige os movimentos bruscos da câmera entre a mira e a visão livre no Tag Team.
+- Corrige lutadores invisíveis ou presos após confrontos aéreos.
+- Todos devem atualizar e criar uma sala nova.
+-->
+
 # BT4decomp 0.1.39.6 R1 1.2
 
 - Correcciones de cierres, cámaras y selección de personajes en Tag Team.

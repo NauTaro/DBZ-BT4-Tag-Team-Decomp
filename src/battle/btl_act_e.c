@@ -67,6 +67,7 @@ extern f32 BtlOpp_GetClosingTime(BtlActEChr *chr);
 extern s32 BtlInput_IsPressed(BtlActEChr *chr, u32 mask);
 extern void BtlCharSnd_PlayCommonFar(BtlActEChr *chr, s32 id);
 extern void BtlChar_RequestPlaceOnPath(BtlActEChr *chr);
+extern void ChrCam_EndCut(BtlActEChr *chr);
 extern void BtlAnim_EnableHandle(BtlActEChr *chr);
 extern s32 BtlAct_GetRequested(BtlActEChr *chr);
 
@@ -1504,7 +1505,8 @@ s32 BtlAct_ClashVanishHandler(BtlActEChr *chr, s32 phase) {
  * The sequence answers with flags 0xC5 (again), 0xC6 (over), 0xC7 (won) and 0xC8 (lost).
  */
 s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
-    BtlActEClashC *c = &gBtlChars->clashC;
+    extern void *TagClash_GetExchange(s32);
+    BtlActEClashC *c = TagClash_GetExchange(chr->player);
     s32 *counter = &chr->work[2];
     s32 wait;
     f32 duration;
@@ -1661,6 +1663,10 @@ s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
     if (phase == 3) {
         if (BtlAct_GetRequested(chr) != 0xFC) {
             chr->clashCountB = 0;
+            /* A cancelled QTE must not retain its vanished/placement state. */
+            BtlChar_ClearFlag(chr,0xB);BtlChar_ClearFlag(chr,0xE);
+            BtlChar_ClearFlagRange(chr,0xC4,0xC8);
+            ChrCam_EndCut(chr);
         }
     }
 }

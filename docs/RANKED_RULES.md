@@ -30,7 +30,7 @@ derrotas y, si todo coincide, identificador estable de la cuenta.
 
 Rompe rocas en Clasificatorias o en Partida rápida de Tenkaichi Budokai Online
 para buscar esferas. En los mapas con rocas
-aptas, hay una posibilidad entre 512 de que una de ellas esconda una esfera.
+aptas, hay una posibilidad entre 24 de que una de ellas esconda una esfera.
 Si rompes esa roca, la esfera cuenta para tu colección después de que ambos
 juegos confirmen el hallazgo. Hay como máximo una por combate.
 

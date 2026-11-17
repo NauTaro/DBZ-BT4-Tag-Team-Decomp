@@ -82,7 +82,7 @@ def main(p,mac=False):
         shutil.rmtree(out)
     p.take_program(exe,out);p.take_lang(out);p.take_translations(out)
     shutil.copy2(setup,out/'BT4decomp-setup');shutil.copy2(root/'port/release/BT4_VERSION.txt',out/'BT4_VERSION.txt');shutil.copy2(root/'recomplauncher.json',out/'recomplauncher.json')
-    shutil.copy2(root/'port/release/CHANGELOG_R1_1_2.txt',out/'CHANGELOG-R1-1.2.txt')
+    shutil.copy2(root/'port/release/CHANGELOG_R1_1_3.txt',out/'CHANGELOG-R1-1.3.txt')
     for name in ('lib','licenses','textures','stages','songs','mods'):(out/name).mkdir()
     licenses=out/'licenses'
     for source,target in [('LICENSE','bt4decomp-agpl.txt'),('LICENSE-MIT','bt4decomp-mit.txt'),

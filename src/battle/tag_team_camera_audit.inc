@@ -5,6 +5,22 @@ static s32 TagAudit_CameraPolicy(void){
     sTagAuditChecks=sTagAuditFailures=0;
     TagAudit_Clear();TagBattle_ResetPairs();
     for(i=0;i<BtlChar_GetCount();++i)BtlChar_Get(i)->action=0xB;
+    {
+        extern void TagBattle_ChangeFocus(s32,s32),TagBattle_FocusEnemy(s32);
+        extern void BtlChar_ToggleHeldFlag(BtlMgrChr *,s32);
+        TagBattle_ChangeFocus(0,0);
+        for(k=0;k<120;++k){
+            BtlChar_UpdateLockOn(BtlChar_Get(0));
+            BtlChar_SetHeldFlag(BtlChar_Get(0),5);
+            BtlChar_SetFlag(BtlChar_Get(0),5);
+            BtlChar_ToggleHeldFlag(BtlChar_Get(0),5);
+            TagAudit_Check("free_focus_rejects_every_lock_on_writer",!BtlChar_TestFlag(BtlChar_Get(0),5));
+        }
+        TagBattle_ChangeFocus(0,1);BtlChar_SetHeldFlag(BtlChar_Get(0),5);
+        TagAudit_Check("ally_focus_does_not_reacquire_enemy",!BtlChar_TestFlag(BtlChar_Get(0),5));
+        TagBattle_FocusEnemy(0);BtlChar_SetHeldFlag(BtlChar_Get(0),5);
+        TagAudit_Check("enemy_focus_restores_normal_lock_on",BtlChar_TestFlag(BtlChar_Get(0),5));
+    }
     grabTarget=TagBattle_Target(0);BtlChar_Get(0)->action=0xB4;
     TagBattle_CycleTarget(0);
     TagAudit_Check("grab_approach_keeps_original_target",TagBattle_Target(0)==grabTarget&&!TagBattle_SetTarget(0,3));

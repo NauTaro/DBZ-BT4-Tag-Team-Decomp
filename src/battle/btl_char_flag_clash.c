@@ -2,6 +2,7 @@ extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int)
 extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/btl_char_flag.h"
+#include "battle/tag_clash.h"
 #include <stdio.h>
 
 /*
@@ -55,9 +56,11 @@ extern void BtlMember_Damage(BtlFlagChr *chr, s32 damage, s32 flags);    /* appl
 extern BtlFlagRoster *gBtlChars;
 extern s32 TagBattle_Count(void),TagBattle_Target(s32 actor);
 static s32 sTagBlowTicks[10][10];
+static void TagClash_ResetExchanges(void);
 void TagClash_Reset(void) {
     s32 i,j;
     for(i=0;i<10;++i)for(j=0;j<10;++j)sTagBlowTicks[i][j]=0;
+    TagClash_ResetExchanges();
 }
 /* Punch clashes keep their own timer and result for each participating pair.
    The original manager only observes actors 0 and 1, so later roster seats
@@ -244,12 +247,12 @@ void BtlClash_SetMidCut(Vec4 *mid, f32 bias) {
 }
 
 /* Clash C camera: a one-frame cut placed at the first point of a stage path, looking along its angles. */
-void BtlClash_SetPathCut(s32 n) {
+static void BtlClash_SetPairPathCut(s32 n,s32 actor) {
     Vec4 pos;
     Vec4 look;
     BtlClashPath *path = BtlStage_GetPath(n);
 
-    if (path != NULL) {
+    if (path != NULL && path->end>path->first) {
         f32 *p = path->points;
 
         pos.x = p[0];
@@ -260,10 +263,11 @@ void BtlClash_SetPathCut(s32 n) {
         look.y = pos.y - sinf(p[4]);
         look.z = pos.z + cosf(p[5]);
         look.w = 1.0f;
-        ChrCam_SetCut(BtlChar_Get(0), &pos, &D_002EC2A0, &pos, &D_002EC2A0, &look, &D_002EC2A0, -1, 0.0f, 0.0f, 0.0f,
+        ChrCam_SetCut(BtlChar_Get(actor), &pos, &D_002EC2A0, &pos, &D_002EC2A0, &look, &D_002EC2A0, -1, 0.0f, 0.0f, 0.0f,
                       0.0f, 0.0f, 0.0f, -1, -1, -1, 1, 0x45);
     }
 }
+void BtlClash_SetPathCut(s32 n){BtlClash_SetPairPathCut(n,0);}
 
 /* Squashes the clash balance into -0.8..0.8: x / (|x| + 1) with x = lead / 20. */
 f32 BtlClash_CalcBias(s32 lead) {
@@ -493,10 +497,10 @@ s32 BtlClash_UpdateB(s32 state) {
 }
 
 /* Clash C, one frame: every exchange moves the pair to a random point of a random stage path. */
-s32 BtlClash_UpdateC(s32 state) {
-    BtlClashC *c = &gBtlChars->clashC;
-    BtlFlagChr *chr0 = BtlChar_Get(0);
-    BtlFlagChr *chr1 = BtlChar_Get(1);
+static s32 BtlClash_PairAction(BtlFlagChr *a,BtlFlagChr *b,s32 action){
+    return BtlAct_GetCurrent(a)==action&&BtlAct_GetCurrent(b)==action;
+}
+static s32 BtlClash_UpdatePairC(s32 state,BtlClashC *c,BtlFlagChr *chr0,BtlFlagChr *chr1) {
     BtlClashPath *path;
     BtlFlagChr *winner;
     BtlFlagChr *loser;
@@ -504,10 +508,11 @@ s32 BtlClash_UpdateC(s32 state) {
     switch (state) {
     case 9:
         c->count = 0;
-        c->path = (BtlChar_Rand() >> 2) % (u32)(BtlStage_GetPathCount() - 1) + 1;
+        {s32 paths=BtlStage_GetPathCount();
+         c->path=paths>1?(BtlChar_Rand()>>2)%(u32)(paths-1)+1:0;}
         c->hold = (BtlChar_Rand() >> 2) % 10 < 7 ? 2 : 1;
         path = BtlStage_GetPath(c->path);
-        if (path != NULL) {
+        if (path != NULL && path->end>path->first) {
             c->point = (BtlChar_Rand() >> 2) % (u32)(path->end - path->first) + path->first;
         } else {
             c->point = 0;
@@ -522,8 +527,9 @@ s32 BtlClash_UpdateC(s32 state) {
         state++;
         break;
     case 10:
-        if (BtlClash_BothInActionFC()) {
-            BtlClash_SetPathCut(c->path);
+        if (BtlClash_PairAction(chr0,chr1,0xFC)) {
+            BtlClash_SetPairPathCut(c->path,chr0->player);
+            if(TagBattle_Active()) BtlClash_SetPairPathCut(c->path,chr1->player);
         }
         if (BtlChar_TestFlag(chr0, 0xC4) && BtlChar_TestFlag(chr1, 0xC4)) {
             /* Two human players each answer the same exchange. A valid later
@@ -560,20 +566,22 @@ s32 BtlClash_UpdateC(s32 state) {
                 c->hold--;
                 if (c->hold <= 0) {
                     s32 prev = c->path;
-                    s32 n = (BtlChar_Rand() >> 2) % (u32)(BtlStage_GetPathCount() - 2);
+                    s32 paths=BtlStage_GetPathCount();
+                    s32 n=paths>2?(BtlChar_Rand() >> 2) % (u32)(paths-2):0;
                     c->path = n + 1;
-                    if (c->path >= prev) {
+                    if (paths>2 && c->path >= prev) {
                         c->path = n + 2;
                     }
+                    if(paths<=1)c->path=0;
                     c->hold = (BtlChar_Rand() >> 2) % 10 < 7 ? 2 : 1;
                     c->point = 0;
                     path = BtlStage_GetPath(c->path);
-                    if (path != NULL) {
+                    if (path != NULL && path->end>path->first) {
                         c->point = (BtlChar_Rand() >> 2) % (u32)(path->end - path->first) + path->first;
                     }
                 } else {
                     path = BtlStage_GetPath(c->path);
-                    if (path != NULL) {
+                    if (path != NULL && path->end>path->first+1) {
                         s32 prev = c->point;
                         c->point = (BtlChar_Rand() >> 2) % (u32)(path->end - path->first - 1) + path->first;
                         if (c->point >= prev) {
@@ -589,14 +597,15 @@ s32 BtlClash_UpdateC(s32 state) {
                 BtlChar_SetFlag(chr1, 0xC5);
             }
         }
-        if (!BtlClash_BothInActionFB() && !BtlClash_BothInActionFC()) {
+        if ((BtlAct_GetCurrent(chr0)!=0xFB&&BtlAct_GetCurrent(chr0)!=0xFC)||
+            (BtlAct_GetCurrent(chr1)!=0xFB&&BtlAct_GetCurrent(chr1)!=0xFC)) {
             state = 0;
-            BtlClash_EndActionFC(0);
-            BtlClash_EndActionFC(1);
+            if(BtlAct_GetCurrent(chr0)==0xFC)BtlChar_SetFlag(chr0,0xC6);
+            if(BtlAct_GetCurrent(chr1)==0xFC)BtlChar_SetFlag(chr1,0xC6);
         }
         break;
     case 11:
-        if (!BtlClash_BothInActionFC()) {
+        if (!BtlClash_PairAction(chr0,chr1,0xFC)) {
             state = 0;
         }
         break;
@@ -604,14 +613,22 @@ s32 BtlClash_UpdateC(s32 state) {
     return state;
 }
 
+s32 BtlClash_UpdateC(s32 state){
+    return BtlClash_UpdatePairC(state,&gBtlChars->clashC,BtlChar_Get(0),BtlChar_Get(1));
+}
+
+#include "tag_team_clash_exchange.inc"
+
 /* Runs the clash sequences: starts one when both fighters enter a clash action, then steps it. */
 void BtlClash_Update(void) {
     s32 *state = &gBtlChars->clashState;
 
     if(TagBattle_Active()) {
         TagClash_UpdateBlows();
+        TagClash_UpdateExchanges();
         /* FA pairs are handled above, including seats 0 and 1. */
         if(*state>=6 && *state<=8)*state=0;
+        if(*state>=9 && *state<=11)*state=0;
         if(BtlClash_BothInActionFA())return;
     }
 
@@ -622,7 +639,7 @@ void BtlClash_Update(void) {
         if (BtlClash_BothInActionFA()) {
             *state = 6;
         }
-        if (BtlClash_BothInActionFB()) {
+        if (!TagBattle_Active() && BtlClash_BothInActionFB()) {
             *state = 9;
         }
     }
@@ -684,6 +701,7 @@ s32 TagClash_RunRegression(void) {
     ok &= BtlChar_TestFlag(BtlChar_Get(6),0xC0) && BtlChar_TestFlag(BtlChar_Get(7),0xBF);
     for(i=1;i<5;++i)ok &= !BtlChar_TestFlag(BtlChar_Get(i),0xBF) && !BtlChar_TestFlag(BtlChar_Get(i),0xC0);
     printf("tag clash regression: independent pairs 0/5 and 6/7, winners and bystanders %s\n",ok?"PASS":"FAIL");
+    ok &= TagClash_RunVanishRegression();
     return !ok;
 }
 

@@ -49,6 +49,13 @@ void BtlChar_SetHeldFlag(BtlFlagChr *chr, u32 n) {
     u32 i = n >> 3;
     u8 m = 1 << (n & 7);
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+    /* Search/idle/hit handlers also acquire lock-on after the sequence pass.
+       The selected ally/free focus must remain authoritative for every writer. */
+    extern s32 TagBattle_Focus(s32);
+    if (n == 5 && TagBattle_Focus(chr->player) != -1) return;
+#endif
+
     if (chr->stage < chr->stamp[n]) {
         chr->prevHeld[i] &= ~m;
         chr->prevHeld[i] |= chr->held[i] & m;
@@ -90,6 +97,14 @@ void BtlChar_ToggleHeldFlag(BtlFlagChr *chr, u32 n) {
     u32 i = n >> 3;
     u8 m = 1 << (n & 7);
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagBattle_Focus(s32);
+    if (n == 5 && TagBattle_Focus(chr->player) != -1) {
+        BtlChar_ClearFlag(chr, n);
+        return;
+    }
+#endif
+
     if (chr->stage < chr->stamp[n]) {
         chr->prevHeld[i] &= ~m;
         chr->prevHeld[i] |= chr->held[i] & m;
@@ -102,6 +117,11 @@ void BtlChar_ToggleHeldFlag(BtlFlagChr *chr, u32 n) {
 void BtlChar_SetFlag(BtlFlagChr *chr, u32 n) {
     u32 i = n >> 3;
     u8 m = 1 << (n & 7);
+
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern s32 TagBattle_Focus(s32);
+    if (n == 5 && TagBattle_Focus(chr->player) != -1) return;
+#endif
 
     if (chr->stage < chr->stamp[n]) {
         chr->prevPulse[i] &= ~m;

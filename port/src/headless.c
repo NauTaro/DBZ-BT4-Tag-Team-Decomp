@@ -635,6 +635,10 @@ void Port_Trace(unsigned vblanks) {
         fflush(stdout);
         exit(failed ? 3 : 0);
     }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CLASH_SCENE_TEST")&&!Port_NetSession()&&gBtlSeq&&gBtlSeq->state==3&&BtlSeq_GetClock()[0]>=180){
+        extern int TagClash_SceneStep(int);int result=TagClash_SceneStep(atoi(getenv("BT4_TAG_CLASH_SCENE_TEST")));
+        if(result>=0){fflush(stdout);exit(result);}
+    }
     if (getenv("BT4_TAG_CLASH_REGRESSION") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=150) {
         extern int TagClash_RunRegression(void);
         int failed=TagClash_RunRegression();fflush(stdout);exit(failed?3:0);
