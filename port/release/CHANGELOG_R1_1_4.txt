@@ -1,0 +1,19 @@
+BT4decomp 0.1.39.6 R1 1.4
+
+ENGLISH
+- Confirmed Ranked abandonment costs 100 points, down to zero. The opponent receives the normal win reward.
+- Fix incorrect surrender attribution during connection failures and pending result recovery.
+- Broaden online admission on shared connections and improve profile and HTTPS recovery.
+- Update before entering Ranked. Saves, languages, settings and existing points are retained.
+
+ESPAÑOL
+- Abandonar una Ranked cuesta 100 puntos, hasta llegar a cero. El rival recibe la recompensa normal de victoria.
+- Corrige rendiciones atribuidas incorrectamente durante cortes de conexión y la recuperación de resultados pendientes.
+- Amplía el acceso online en conexiones compartidas y mejora la recuperación del perfil y de HTTPS.
+- Actualiza antes de entrar en Rankeds. Se conservan guardados, idiomas, ajustes y puntos actuales.
+
+PORTUGUÊS
+- Abandonar uma Ranked custa 100 pontos, até chegar a zero. O adversário recebe a recompensa normal da vitória.
+- Corrige desistências atribuídas incorretamente durante falhas de conexão e a recuperação de resultados pendentes.
+- Amplia o acesso online em conexões compartilhadas e melhora a recuperação do perfil e de HTTPS.
+- Atualize antes de entrar nas Rankeds. Saves, idiomas, ajustes e pontos atuais são mantidos.

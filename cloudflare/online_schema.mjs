@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS online_presence(user_id TEXT PRIMARY KEY, expires INT
 CREATE TABLE IF NOT EXISTS ranked_players(user_id TEXT NOT NULL, ruleset TEXT NOT NULL, name TEXT NOT NULL, rating INTEGER NOT NULL DEFAULT 1000 CHECK(rating BETWEEN 0 AND 100000), wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id,ruleset));
 CREATE TABLE IF NOT EXISTS ranked_matches(id TEXT PRIMARY KEY, season TEXT NOT NULL, a TEXT NOT NULL, b TEXT NOT NULL, admitted INTEGER NOT NULL, started_a INTEGER, started_b INTEGER, seen_a INTEGER NOT NULL, seen_b INTEGER NOT NULL, completed INTEGER, winner TEXT, digest TEXT, void INTEGER NOT NULL DEFAULT 0, chars TEXT);
 CREATE TABLE IF NOT EXISTS ranked_reports(match_id TEXT NOT NULL, user_id TEXT NOT NULL, outcome INTEGER NOT NULL, digest TEXT NOT NULL, PRIMARY KEY(match_id,user_id));
+CREATE TABLE IF NOT EXISTS ranked_abandonments(match_id TEXT PRIMARY KEY REFERENCES ranked_matches(id),penalty INTEGER NOT NULL CHECK(penalty=100),quitter TEXT,reason TEXT CHECK(reason IN ('local_quit','liveness_timeout')),confirmed INTEGER,penalty_applied INTEGER,reward_applied INTEGER);
+CREATE TABLE IF NOT EXISTS ranked_disconnect_claims(match_id TEXT NOT NULL REFERENCES ranked_matches(id),claimant TEXT NOT NULL,began INTEGER NOT NULL,last_seen INTEGER NOT NULL,PRIMARY KEY(match_id,claimant));
+CREATE INDEX IF NOT EXISTS ranked_disconnect_claims_seen ON ranked_disconnect_claims(last_seen);
 CREATE TABLE IF NOT EXISTS ranked_history(match_id TEXT NOT NULL, user_id TEXT NOT NULL, before_rating INTEGER NOT NULL, after_rating INTEGER NOT NULL, delta INTEGER NOT NULL, PRIMARY KEY(match_id,user_id));
 CREATE TABLE IF NOT EXISTS ranked_streaks(user_id TEXT PRIMARY KEY, wins INTEGER NOT NULL, points INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS ranked_streak_matches(match_id TEXT PRIMARY KEY);

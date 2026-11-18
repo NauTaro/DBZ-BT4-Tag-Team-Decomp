@@ -1,3 +1,27 @@
+# BT4decomp 0.1.39.6 R1 1.4
+
+- Ranked: confirmed abandonment costs 100 points, down to zero. The opponent receives the normal win reward.
+- Fix incorrect surrender attribution during connection failures and recovery of pending match results.
+- Broaden online admission for shared connections. Other scoring rules and existing points are retained.
+
+Update before searching for a new Ranked match. Saves, languages and personal settings are retained.
+
+<!-- bt4-update:en
+- Confirmed Ranked abandonment costs 100 points, down to zero; the opponent receives the normal win reward.
+- Fix incorrect surrender attribution during connection failures.
+- Broaden online admission for shared connections. Update before entering Ranked.
+-->
+<!-- bt4-update:es
+- Abandonar una Ranked cuesta 100 puntos, hasta llegar a cero; el rival recibe la recompensa normal de victoria.
+- Corrige las rendiciones atribuidas incorrectamente durante cortes de conexión.
+- Amplía el acceso online en conexiones compartidas. Actualiza antes de entrar en Rankeds.
+-->
+<!-- bt4-update:pt
+- Abandonar uma Ranked custa 100 pontos, até chegar a zero; o adversário recebe a recompensa normal da vitória.
+- Corrige desistências atribuídas incorretamente durante falhas de conexão.
+- Amplia o acesso online em conexões compartilhadas. Atualize antes de entrar nas Rankeds.
+-->
+
 # BT4decomp 0.1.39.6 R1 1.3
 
 - Fix Tag Team camera shaking when switching between lock-on and free view.

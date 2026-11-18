@@ -2,6 +2,7 @@ import {ONLINE_SCHEMA} from './online_schema.mjs';
 import {migrateCharacters,characterSelection,saveRankedCharacters,mirrorRanked,reportOnlineMatch} from './online_characters.mjs';
 import {advanceRankedMonth,rankedCollection,rankedMonthAt,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
 import {claimRankedRock,claimQuickRock,RANKED_ROCK_WIRE,rollRankedRock,rollQuickRock} from './ranked_rocks.mjs';
+import {admitAbandonment,abandonmentEnabled,abandonmentProof,confirmAbandonment,confirmedAbandonment,eloForfeitReward,ABANDONMENT_PENALTY,ABANDONMENT_GRACE_MS} from './ranked_abandonment.mjs';
 const bytes=s=>new TextEncoder().encode(s).length;
 const error=code=>{throw new Error(code);};
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -53,6 +54,7 @@ export class OnlineCore {
     prune(){
         advanceRankedMonth(this);
         const now=this.now();for(const r of this.rows('SELECT id FROM online_rooms WHERE expires<=?',now))this.close(r.id);
+        this.run('DELETE FROM ranked_disconnect_claims WHERE last_seen<?',now-300000);
         for(const [table,column] of [['online_queue','expires'],['online_signals','expires'],['online_presence','expires'],['online_sessions','expires']])this.run(`DELETE FROM ${table} WHERE ${column}<=?`,now);
         // Profiles, registered names, match results and rating history are never pruned.
     }
@@ -116,6 +118,7 @@ export class OnlineCore {
             const now=this.now(),season=this.rankedSeason(),b=waiting[1].user_id,streak=this.rankedScoring()==='streak';
             for(const u of [host,b])this.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo',?,?) ON CONFLICT(user_id,ruleset) DO UPDATE SET name=excluded.name",u,this.name(u),streak?0:1000);
             this.run('INSERT INTO ranked_matches(id,season,a,b,admitted,seen_a,seen_b) VALUES(?,?,?,?,?,?,?)',first.generation,season,host,b,now,now,now);
+            admitAbandonment(this,first.generation);
             if(streak)this.run('INSERT INTO ranked_streak_matches VALUES(?)',first.generation);
             if(monthlyRanked(this)&&a.wire.endsWith(RANKED_ROCK_WIRE))rollRankedRock(this,first.generation);
         }else if(quickRocks&&waiting.every(player=>player.supports_rocks))rollQuickRock(this,first.generation,host,waiting[1].user_id);
@@ -167,21 +170,30 @@ export class OnlineCore {
         const a=this.one("SELECT rating FROM ranked_players WHERE user_id=? AND ruleset='solo'",m.a).rating;
         const b=this.one("SELECT rating FROM ranked_players WHERE user_id=? AND ruleset='solo'",m.b).rating;
         const streak=!!this.one('SELECT 1 FROM ranked_streak_matches WHERE match_id=?',m.id);
+        const abandonment=confirmedAbandonment(this,m,winner,digest);
         const review=streak?this.streakReviewReason(m,winner,digest):null;
         if(review)this.run('INSERT INTO ranked_reviews VALUES(?,?,?)',m.id,this.now(),review);
         let deltas=[0,0];
-        if(streak&&!review)deltas=[this.streakDelta(m.a,a,winner),this.streakDelta(m.b,b,winner)];
-        if(!streak){
+        if(abandonment){
+            const wi=winner===m.a?0:1,li=1-wi,ratings=[a,b];
+            if(!review)deltas[wi]=streak?this.streakDelta(winner,ratings[wi],winner):eloForfeitReward(ratings[wi],ratings[li]);
+            deltas[li]=-Math.min(ratings[li],abandonment.penalty);
+            // A confirmed departure resets the quitter's streak, even if the reward is reviewed.
+            this.run('INSERT INTO ranked_streaks VALUES(?,0,0) ON CONFLICT(user_id) DO UPDATE SET wins=0,points=0',abandonment.quitter);
+            this.run('UPDATE ranked_abandonments SET penalty_applied=?,reward_applied=? WHERE match_id=?',-deltas[li],deltas[wi],m.id);
+        }else if(streak&&!review)deltas=[this.streakDelta(m.a,a,winner),this.streakDelta(m.b,b,winner)];
+        if(!streak&&!abandonment){
             const score=winner===m.a?1:winner===m.b?0:.5;
             const gain=Math.max(-a,b-100000,Math.min(b,100000-a,Math.round(32*(score-1/(1+10**((b-a)/400))))));
             deltas=[gain,-gain];
         }
         for(const [u,before,delta] of [[m.a,a,deltas[0]],[m.b,b,deltas[1]]]){
-            const win=!review&&winner===u?1:0,loss=!review&&winner&&winner!==u?1:0;
+            const win=!review&&winner===u?1:0,loss=(!review||abandonment)&&winner&&winner!==u?1:0;
             this.run("UPDATE ranked_players SET rating=rating+?,wins=wins+?,losses=losses+? WHERE user_id=? AND ruleset='solo'",delta,win,loss,u);
             this.run('INSERT INTO ranked_history VALUES(?,?,?,?,?)',m.id,u,before,before+delta,delta);
-            if(!review)this.run('INSERT INTO ranked_weekly VALUES(?,?,?,?) ON CONFLICT(season,user_id) DO UPDATE SET wins=wins+excluded.wins,losses=losses+excluded.losses',m.season,u,win,loss);
+            if(!review||(abandonment&&u===abandonment.quitter))this.run('INSERT INTO ranked_weekly VALUES(?,?,?,?) ON CONFLICT(season,user_id) DO UPDATE SET wins=wins+excluded.wins,losses=losses+excluded.losses',m.season,u,win,loss);
         }
+        this.run('DELETE FROM ranked_disconnect_claims WHERE match_id=?',m.id);
         this.run('UPDATE ranked_matches SET completed=?,winner=?,digest=? WHERE id=?',this.now(),winner,digest,m.id);
         mirrorRanked(this,this.one('SELECT * FROM ranked_matches WHERE id=?',m.id));
     }
@@ -190,11 +202,14 @@ export class OnlineCore {
         advanceRankedMonth(this);const season=this.rankedSeason(),monthly=monthlyRanked(this);
         const paused=this.one("SELECT value FROM online_meta WHERE key='ranked_paused'")?.value==='1';
         if(paused&&op==='queue')error('RANKED_NOT_ENABLED');
+        // Legacy clients infer surrender from pause ownership. They must update
+        // before a new match can use the fixed abandonment penalty.
+        if(op==='queue'&&abandonmentEnabled(this)&&a.abandonment_version!==2)error('UPDATE_REQUIRED');
         if(op==='queue')return this.queue(user,a,true);
         if(op==='status'){
             const scoring=this.rankedScoring();
             const streak=scoring==='streak'?this.one('SELECT wins,points FROM ranked_streaks WHERE user_id=?',user):null;
-            return {version:1,enabled:!paused,season,scoring,weekly_reset:false,monthly_reset:monthly,reset_period:monthly?'monthly':null,ranked_rocks:monthly,next_reset_at:monthly?new Date(rankedMonthEnd(this.now())).toISOString():null,
+            return {version:1,enabled:!paused,season,scoring,forfeit_penalty:abandonmentEnabled(this)?ABANDONMENT_PENALTY:0,forfeit_grace_seconds:ABANDONMENT_GRACE_MS/1000,weekly_reset:false,monthly_reset:monthly,reset_period:monthly?'monthly':null,ranked_rocks:monthly,next_reset_at:monthly?new Date(rankedMonthEnd(this.now())).toISOString():null,
                 ...rankedCollection(this,user),streak_wins:streak?.wins??0,streak_points:streak?.points??0,
                 ...(this.one("SELECT rating,wins,losses FROM ranked_players WHERE user_id=? AND ruleset='solo'",user)||{rating:scoring==='streak'?0:1000,wins:0,losses:0})};
         }
@@ -232,7 +247,7 @@ export class OnlineCore {
             this.settlement(m,a.outcome===0?m.a:a.outcome===1?m.b:null,a.digest);return result('applied');
         }
         if(!['heartbeat','forfeit'].includes(op))error('BAD_REQUEST');
-        const side=user===m.a?'a':'b',firstStart=m['started_'+side]==null;
+        const side=user===m.a?'a':'b',firstStart=m['started_'+side]==null,previousSeen=m['seen_'+side];
         if(op==='heartbeat'){
             this.run(`UPDATE ranked_matches SET seen_${side}=?,started_${side}=coalesce(started_${side},?) WHERE id=?`,now,now,m.id);
             m['seen_'+side]=now;m['started_'+side]=m['started_'+side]??now;
@@ -240,8 +255,11 @@ export class OnlineCore {
         saveRankedCharacters(this,m,a);
         if(selection&&firstStart)mirrorRanked(this,m);
         if(m.started_a==null||m.started_b==null)return result('waiting');
+        const policy=this.one('SELECT 1 FROM ranked_abandonments WHERE match_id=?',m.id);
+        const proof=policy?abandonmentProof(this,m,user,op,a,previousSeen,now):null;
         let quitter=null;
-        if(op==='forfeit'&&a.reason==='local_quit')quitter=user;
+        if(policy)quitter=proof?.quitter??null;
+        else if(op==='forfeit'&&a.reason==='local_quit')quitter=user;
         else if(op==='heartbeat'&&a.peer_gone===true){
             const other=side==='a'?'b':'a';if(m['seen_'+other]<now-45000)quitter=other==='a'?m.a:m.b;
         }
@@ -249,6 +267,7 @@ export class OnlineCore {
         const winner=quitter===m.a?m.b:m.a;
         const conflicting=this.rows('SELECT outcome FROM ranked_reports WHERE match_id=?',m.id).some(r=>r.outcome!==(winner===m.a?0:1));
         if(conflicting&&!(op==='forfeit'&&a.reason==='local_quit'))return result('waiting');
+        if(proof)confirmAbandonment(this,m,proof,now);
         this.settlement(m,winner,'forfeit:'+quitter);return result('applied');
     }
     command(user,op,a={}){

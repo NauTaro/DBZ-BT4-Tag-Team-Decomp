@@ -7,6 +7,12 @@ extern int Port_GameProfilePortuguese(void);
 static int sRaw;
 void PortOnline_Raw(int on){if(on)sRaw++;else if(sRaw)sRaw--;}
 static const char *const kRankedText[][3]={
+{"Wins earn +13, +15, +17... A normal defeat ends your streak and deducts 37% of its points. A confirmed abandonment costs 100 points, down to zero, and ends your streak. The opponent receives the normal win reward. A draw keeps your points and streak.",
+ "Las victorias suman +13, +15, +17... Una derrota normal corta la racha y descuenta el 37% de sus puntos. Abandonar cuesta 100 puntos, hasta llegar a cero, y corta la racha. El rival recibe los puntos de una victoria normal. Un empate mantiene puntos y racha.",
+ "As vitórias rendem +13, +15, +17... Uma derrota normal encerra a sequência e desconta 37% dos pontos dela. Abandonar custa 100 pontos, até chegar a zero, e encerra a sequência. O adversário recebe os pontos de uma vitória normal. Um empate mantém pontos e sequência."},
+{"Points depend on your score and your opponent's. A confirmed abandonment costs 100 points, down to zero. The opponent receives the normal win reward. An unclear connection failure does not identify who left.",
+ "Los puntos dependen de tu puntuación y la del rival. Un abandono confirmado cuesta 100 puntos, hasta llegar a cero. El rival recibe los puntos de una victoria normal. Si no queda claro quién se desconectó, no se aplica esta sanción.",
+ "Os pontos dependem da sua pontuação e da do adversário. Um abandono confirmado custa 100 pontos, até chegar a zero. O adversário recebe os pontos de uma vitória normal. Se não ficar claro quem se desconectou, essa penalidade não é aplicada."},
 {"BYE","PASE DIRECTO","AVANÇO DIRETO"},
 {"Points and streaks","Puntos y rachas","Pontos e sequências"},
 {"Monthly reset","Reinicio mensual","Reinício mensal"},

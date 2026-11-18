@@ -53,6 +53,13 @@ static BtlMenu sPresentationPauseMenu;
 static BtlMenuItem sPresentationPauseItems[32];
 static s32 sPresentationPauseReady;
 static s32 sHudPauseDismissRequested;
+static s32 sRankedPauseQuitPad = -1;
+static void PauseMenu_RecordRankedQuit(s32 pad, s32 which, s32 id) {
+    extern int Port_RankedActive(void);
+    if (which == 0 && pad >= 0 && pad <= 1 && Port_RankedActive() &&
+        (id == 0xD || id == 0xE || id == 0xF)) sRankedPauseQuitPad = pad;
+}
+s32 PauseMenu_ConfirmedQuitPad(void) { return sRankedPauseQuitPad; }
 extern int PortHud_Hidden(void);
 extern void PortHud_Toggle(void);
 /* The menu input is simulated on both 1v1 peers; only its owner changes
@@ -469,6 +476,7 @@ BtlMenu *PauseMenu_PortConfirmBox(void) {
 /* Battle start: allocates the menu work. */
 void PauseMenu_Init(void) {
 #ifdef PORT
+    sRankedPauseQuitPad=-1;
     sPresentationPauseReady=0;
     sHudPauseDismissRequested=0;
     Training_Init();
@@ -654,6 +662,7 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
     if (item != NULL) {
         Snd_PlaySe(1, 1);
 #ifdef PORT
+        PauseMenu_RecordRankedQuit(pad, which, item->id);
         {
             extern int TagBattle_Network(void);
             extern void Port_TagClose(void);

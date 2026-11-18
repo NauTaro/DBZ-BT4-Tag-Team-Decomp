@@ -40,6 +40,10 @@ enum {
     BTL_MENU_ITEM_CONTROLS = 4 /* as the first item: the menu is the controls page */
 };
 
+#ifdef PORT
+s32 PauseMenu_ConfirmedQuitPad(void);
+#endif
+
 /* BtlMenu.mode: what confirm does to an item of type 0 */
 enum {
     BTL_MENU_MODE_TOGGLE = 0, /* value ^= 1 */

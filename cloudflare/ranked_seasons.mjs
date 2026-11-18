@@ -64,3 +64,19 @@ export function launchRanked(c,{id,not_before}={}){
     c.run("DELETE FROM online_queue WHERE wire LIKE 'ranked-v1:%'");
     return {state:'applied',season,applied_at:c.now()};
 }
+
+// Explicit operator reset of the current scoring epoch. It does not close
+// rooms, revoke sessions or rewrite historical results and collected awards.
+export function resetRanked(c,{id,not_before}={}){
+    if(typeof id!=='string'||!/^reset:[a-zA-Z0-9._-]{1,80}$/.test(id)||!Number.isSafeInteger(not_before)||not_before<=0)
+        throw new Error('BAD_REQUEST');
+    const previous=c.one('SELECT * FROM ranked_resets WHERE id=?',id);
+    if(previous)return {state:'already_applied',season:previous.new_season,applied_at:previous.applied};
+    if(!monthlyRanked(c))throw new Error('RANKED_NOT_LAUNCHED');
+    if(c.now()<not_before)throw new Error('RANKED_RESET_TOO_EARLY');
+    const season=rankedMonthAt(c.now()),at=c.now();
+    reset(c,id,season,at,'manual',standings(c,season));
+    return {state:'applied',season,applied_at:at,
+        scores:c.one('SELECT count(*) players,min(rating) minimum,max(rating) maximum,sum(rating) total FROM ranked_players'),
+        archived:c.one('SELECT count(*) players,sum(rating) total FROM ranked_reset_players WHERE reset_id=?',id)};
+}

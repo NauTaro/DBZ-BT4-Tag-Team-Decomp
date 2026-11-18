@@ -2,7 +2,7 @@ import {OnlineCore,clientAtLeast} from './online_core.mjs';
 import {verifyAccess,legacyProof,legacyBootstrap,createSession,sha256} from './online_auth.mjs';
 import {roomTurn} from './online_turn.mjs';
 import {importRows} from './online_migration.mjs';
-import {launchRanked,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
+import {launchRanked,resetRanked,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
 
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 async function readJson(request,limit=24576){
@@ -79,11 +79,12 @@ export class OnlineCoordinator {
         // All token rotations are serialized across awaits; one refresh token can be consumed only once.
         const previous=this.authTail;let release;this.authTail=new Promise(resolve=>release=resolve);await previous;
         try{
-            this.budget(ip,'auth',10);let user,oldHash=null;
+            this.budget(ip,'auth',600);let user,oldHash=null;
             if(path==='/v5/auth/refresh'){
                 if(typeof body.refresh_token!=='string'||body.refresh_token.length>256)throw new Error('AUTH_REQUIRED');
                 oldHash=await sha256(body.refresh_token);user=this.core.one('SELECT user_id FROM online_sessions WHERE hash=? AND expires>?',oldHash,Date.now())?.user_id;
                 if(!user)throw new Error('AUTH_REQUIRED');
+                this.budget(user,'auth_refresh',30);
             }else if(path==='/v5/auth/exchange'){
                 const subject=await legacyProof(body.source,body.access_token);
                 const alias=this.core.one('SELECT user_id FROM online_aliases WHERE source=? AND subject=?',body.source,subject);
@@ -118,7 +119,7 @@ export class OnlineCoordinator {
                 if(this.core.one("SELECT value FROM online_meta WHERE key='admission'")?.value!=='open')throw new Error('MIGRATION_IN_PROGRESS');
                 user=crypto.randomUUID();this.core.run('INSERT INTO online_users VALUES(?,?)',user,Date.now());
             }
-            return await createSession(this.core,user,this.env.AUTH_SECRET,oldHash);
+            return await createSession(this.core,user,this.env.AUTH_SECRET,oldHash,path==='/v5/auth/refresh'?body.refresh_token:null);
         }finally{release();}
     }
     async fetch(request){
@@ -130,7 +131,7 @@ export class OnlineCoordinator {
                 if(!releaseAdmin&&(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET)))return json({error:'AUTH_REQUIRED'},401);
                 const body=await readJson(request,1048576);
                 if(path==='/v5/admin/ranked-audit')return json({
-                    configuration:this.core.rows("SELECT key,value FROM online_meta WHERE key IN ('ranked_scoring','ranked_monthly_reset','ranked_weekly_reset','ranked_season','ranked_epoch_ms','ranked_paused','admission','minimum_client') ORDER BY key"),
+                    configuration:this.core.rows("SELECT key,value FROM online_meta WHERE key IN ('ranked_scoring','ranked_monthly_reset','ranked_weekly_reset','ranked_season','ranked_epoch_ms','ranked_paused','ranked_abandonment_v2','admission','minimum_client') ORDER BY key"),
                     users:this.core.one('SELECT count(*) n FROM online_users').n,
                     names:this.core.one('SELECT count(*) n FROM online_names').n,
                     scores:this.core.one('SELECT count(*) n,min(rating) minimum,max(rating) maximum,sum(rating) total FROM ranked_players'),
@@ -161,6 +162,15 @@ export class OnlineCoordinator {
                 if(path==='/v5/admin/ranked'&&['paused','open'].includes(body.state)){
                     this.core.run("INSERT INTO online_meta VALUES('ranked_paused',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",body.state==='paused'?'1':'0');return json({state:body.state});
                 }
+                if(path==='/v5/admin/ranked-abandonment'&&request.method==='POST'){
+                    if(typeof body.enabled!=='boolean')throw new Error('BAD_REQUEST');
+                    this.ctx.storage.transactionSync(()=>{
+                        const wasEnabled=this.core.one("SELECT value FROM online_meta WHERE key='ranked_abandonment_v2'")?.value==='1';
+                        this.core.run("INSERT INTO online_meta VALUES('ranked_abandonment_v2',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",body.enabled?'1':'0');
+                        if(body.enabled&&!wasEnabled)this.core.run("DELETE FROM online_queue WHERE wire LIKE 'ranked-v1:%'");
+                    });
+                    return json({enabled:body.enabled,penalty:100,grace_seconds:45,applies_to:'new_matches'});
+                }
                 if(path==='/v5/admin/ranked-scoring'&&['elo','streak'].includes(body.scoring)){
                     if(monthlyRanked(this.core)&&body.scoring!=='streak')throw new Error('RANKED_ALREADY_LAUNCHED');
                     this.core.run("INSERT INTO online_meta VALUES('ranked_scoring',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",body.scoring);
@@ -169,6 +179,10 @@ export class OnlineCoordinator {
                 if(path==='/v5/admin/ranked-launch'&&request.method==='POST'){
                     const result=this.ctx.storage.transactionSync(()=>launchRanked(this.core,body));
                     await this.ctx.storage.setAlarm(Math.min(Date.now()+600000,rankedMonthEnd(Date.now())));
+                    return json(result);
+                }
+                if(path==='/v5/admin/ranked-reset'&&request.method==='POST'){
+                    const result=this.ctx.storage.transactionSync(()=>resetRanked(this.core,body));
                     return json(result);
                 }
                 return json({error:'BAD_REQUEST'},400);
@@ -213,7 +227,7 @@ export class OnlineCoordinator {
             }
             if(path==='/v5/socket'){
                 if(request.headers.get('Upgrade')?.toLowerCase()!=='websocket')return json({error:'WEBSOCKET_REQUIRED'},426);
-                this.budget(request.headers.get('CF-Connecting-IP')||'local','ws',20);
+                this.budget(request.headers.get('CF-Connecting-IP')||'local','ws',600);
                 const pair=new WebSocketPair(),client=pair[0],server=pair[1];
                 this.ctx.acceptWebSocket(server);server.serializeAttachment({user:null,expires:Date.now()+10000});
                 return new Response(null,{status:101,webSocket:client});
@@ -270,6 +284,12 @@ export class OnlineCoordinator {
 export default {
     async fetch(request,env){
         const path=new URL(request.url).pathname;if(!path.startsWith('/v5/'))return json({error:'NOT_FOUND'},404);
-        return env.ONLINE.get(env.ONLINE.idFromName(env.COORDINATOR_ID||'bt4-online-authority-v5'),{locationHint:'sam'}).fetch(request);
+        if(path==='/v5/panel/turn'){
+            if(request.method!=='POST'||!env.PANEL_SECRET||!safeEqual(bearer(request),env.PANEL_SECRET))return json({error:'AUTH_REQUIRED'},401);
+            try{return json(await roomTurn(env));}
+            catch(e){return json({error:'TURN_FAIL',msg:e instanceof Error?e.message:String(e)},502);}
+        }
+        try{return await env.ONLINE.get(env.ONLINE.idFromName(env.COORDINATOR_ID||'bt4-online-authority-v5'),{locationHint:'sam'}).fetch(request);}
+        catch(doErr){return json({do_error:String(doErr&&doErr.stack||doErr).slice(0,1500)},500);}
     }
 };

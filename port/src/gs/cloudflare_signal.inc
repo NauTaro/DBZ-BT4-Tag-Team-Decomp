@@ -63,8 +63,8 @@ static bool cloudAuthenticate(){
 static int cloudEntry(void*){
     const bool diagnostics=SDL_getenv("BT4_SIGNAL_DIAGNOSTICS")!=nullptr;
     const bool forceHttp=SDL_getenv("BT4_SIGNAL_HTTPS_ONLY")!=nullptr;
-    std::unique_ptr<VoiceWs> socket;bool ready=false,onlineMenu=false,authSent=false;
-    Uint64 retry=0,heartbeat=0,authAt=0;unsigned failures=0,cleanupSerial=0xf0000000u;
+    std::unique_ptr<VoiceWs> socket;bool ready=false,onlineMenu=false,authSent=false,identityReady=false;
+    Uint64 retry=0,heartbeat=0,authAt=0,httpOnlyUntil=0;unsigned failures=0,authFailures=0,cleanupSerial=0xf0000000u;
     Uint64 pollAt=0;std::array<bool,2> searching={false,false};
     std::map<uint64_t,std::pair<Job,Uint64>> pending;
     auto key=[](int c,unsigned s){return (uint64_t)(unsigned)c<<32|s;};
@@ -95,10 +95,11 @@ static int cloudEntry(void*){
     };
     auto disconnect=[&](){
         if(diagnostics)fprintf(stderr,"bt4: Cloudflare reconnect ready=%d pending=%u\n",(int)ready,(unsigned)pending.size());
+        if(!ready)httpOnlyUntil=SDL_GetTicks()+60000;
         // The server can reject a cached access token before the local renewal
         // deadline. Refresh it after a failed socket authentication instead of
         // presenting the same rejected token on every reconnect.
-        if(authSent&&!ready){identities[2].access.clear();identities[2].renewAt=0;}
+        if(authSent&&!ready){identities[2].access.clear();identities[2].renewAt=0;identityReady=false;}
         socket.reset();ready=false;authSent=false;state.status=0;
         for(auto &item:pending){Job j=std::move(item.second.first);j.notBefore=SDL_GetTicks()+1000;
             std::lock_guard<std::mutex> guard(state.lock);if(state.jobs.size()<64)state.jobs.push_front(std::move(j));}
@@ -111,7 +112,9 @@ static int cloudEntry(void*){
             for(const auto &g:state.releasedGenerations)if(g==state.roomGeneration)state.roomGeneration.clear();state.releasedGenerations.clear();}
         if(wanted&&!socket&&now>=retry){
             if(cloudAuthenticate()){
-                if(forceHttp){retry=now+60000;state.status=1;}
+                identityReady=true;
+                authFailures=0;
+                if(forceHttp||now<httpOnlyUntil){retry=now+60000;state.status=1;}
                 else{
                 // VoiceWs normalizes HTTPS for curl; WinHTTP's URL parser
                 // accepts https://, not the wss:// scheme used by browsers.
@@ -119,7 +122,7 @@ static int cloudEntry(void*){
                 if(diagnostics)fprintf(stderr,"bt4: Cloudflare opening websocket\n");
                 authAt=now;heartbeat=now+20000;
                 }
-            }else{if(diagnostics)fprintf(stderr,"bt4: Cloudflare identity unavailable HTTP=%ld\n",lastHttpStatus);state.status=-1;retry=now+5000;}
+            }else{identityReady=false;fprintf(stderr,"bt4: Cloudflare identity unavailable HTTP=%ld; retrying without replacing the account\n",lastHttpStatus);state.status=-1;retry=now+(lastHttpStatus==429?60000:std::min(30000u,2000u<<std::min(4u,authFailures++)));}
         }
         if(socket&&socket->status<0){disconnect();continue;}
         if(socket&&socket->status==1&&!authSent){socket->text(Sj{{"op","authenticate"},{"access_token",identities[2].access}}.dump());authSent=true;authAt=now;if(diagnostics)fprintf(stderr,"bt4: Cloudflare socket authentication queued\n");}
@@ -148,14 +151,14 @@ static int cloudEntry(void*){
         if(ready&&now>=heartbeat){socket->text("ping");heartbeat=now+20000;}
         if(ready&&now>=identities[2].renewAt){
             if(cloudAuthenticate()){socket->text(Sj{{"op","authenticate"},{"access_token",identities[2].access}}.dump());heartbeat=now+20000;}
-            else{disconnect();continue;}
+            else{identityReady=false;disconnect();continue;}
         }
         bool expired=false;for(const auto &p:pending)if(now>p.second.second+12000){expired=true;break;}
         if(expired){disconnect();continue;}
         Job job;bool have=false;
         // A proxy may permit HTTPS but reject WebSocket upgrades. Retained
         // descriptors/signals make that fallback usable without lost offers.
-        bool httpFallback=!ready&&!identities[2].access.empty()&&(forceHttp||now>=authAt+3000);
+        bool httpFallback=!ready&&identityReady&&!identities[2].access.empty()&&(forceHttp||now<httpOnlyUntil||now>=authAt+3000);
         if((ready||httpFallback)&&pending.size()<24){std::lock_guard<std::mutex> guard(state.lock);
             auto it=std::find_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.notBefore<=now;});
             if(it!=state.jobs.end()){job=std::move(*it);state.jobs.erase(it);have=true;}}
@@ -164,10 +167,10 @@ static int cloudEntry(void*){
             if(bt4route::admission(job.op)&&Update_OnlineRequired()){complete(job,Sj{{"error","UPDATE_REQUIRED"}});continue;}
             if(bt4route::admission(job.op))job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",2}};
             if(httpFallback){
-                Sj body;bool ok=cloudAuthenticate()&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
+                Sj body;identityReady=cloudAuthenticate();bool ok=identityReady&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
                 if(!ok&&lastHttpStatus==401&&body.is_object()&&str(body,"error")=="AUTH_REQUIRED"){
                     identities[2].access.clear();identities[2].renewAt=0;
-                    ok=cloudAuthenticate()&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
+                    identityReady=cloudAuthenticate();ok=identityReady&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
                 }
                 if(!ok&&!body.is_object())body={{"error","SIGNALING_UNAVAILABLE"}};
                 complete(job,body);state.status=ok?1:-1;

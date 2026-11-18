@@ -1,5 +1,11 @@
 # Clasificatorias mensuales
 
+La nueva sanción por abandono se habilita desde el servidor:
+[política de abandono](RANKED_ABANDONMENT.md). En partidas admitidas con esa
+política, el abandono descuenta 100 puntos, hasta un mínimo de cero, y termina
+la racha. No se suma el descuento del 37 %. El rival recibe la recompensa
+normal de victoria, salvo si el resultado queda en revisión.
+
 Estas reglas corresponden al sistema nuevo. Su activación es una operación
 explícita del servidor; instalar el cliente no reinicia la clasificación.
 

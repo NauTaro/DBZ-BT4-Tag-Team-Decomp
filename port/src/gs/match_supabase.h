@@ -29,6 +29,7 @@ typedef struct Bt4RankedView {
     int streakScoring,streakWins,streakPoints;
     int monthlyReset,dragonBalls,collectionPosition;
     char nextReset[40];
+    int forfeitPenalty; /* server-advertised policy; zero for older/default routes */
 } Bt4RankedView;
 void Port_RankedRefresh(int refreshStatus);
 void Port_RankedView(Bt4RankedView *out);

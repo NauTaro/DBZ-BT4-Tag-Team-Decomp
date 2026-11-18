@@ -21,6 +21,8 @@ int Port_GameProfileEnglish(void){return language==0;}
 int Port_GameProfilePortuguese(void){return language==2;}
 '''+"static const char *"+guide+r'''
 int main(){Bt4RankedView v={0};const char *original,*translated;
+for(int policy=0;policy<=1;policy++){
+v.forfeitPenalty=policy?100:0;
 for(int monthly=0;monthly<=1;monthly++){
   v.streakScoring=v.monthlyReset=monthly;
   for(int page=0;page<3;page++){
@@ -31,12 +33,15 @@ for(int monthly=0;monthly<=1;monthly++){
     }
   }
 }
+}
 language=2;assert(!strcmp(PortOnline_Text("Collection: %d/7"),"Coleção: %d/7"));
 language=1;assert(!strcmp(PortOnline_Text("Collection: %d/7"),"Colección: %d/7"));
 v.streakScoring=v.monthlyReset=1;
+v.forfeitPenalty=0;
 assert(strstr(Tb_RankedGuideText(&v,0),"37%"));
 assert(strstr(Tb_RankedGuideText(&v,0),"+13"));
 assert(strstr(Tb_RankedGuideText(&v,1),"1st at 00:00"));
+v.forfeitPenalty=100;assert(strstr(Tb_RankedGuideText(&v,0),"100 points"));
 PortOnline_Raw(1);{char raw[]="Collection: %d/7";assert(PortOnline_Text(raw)==raw);}
 PortOnline_Raw(0);
 puts("PASS: one-screen guide, active and legacy rules, ES/EN/PT and profile labels");

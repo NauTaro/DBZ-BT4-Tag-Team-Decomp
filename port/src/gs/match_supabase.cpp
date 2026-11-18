@@ -197,11 +197,13 @@ void watchFight(){
 }
 void watchFinish(bool concede,bool disconnected=false,bool peerGone=false){
     auto match=text(d.descriptor,"generation");
-    for(auto &w:rankedWatches)if(w.match==match&&!w.until){
-        w.until=SDL_GetTicks()+120000;
-        w.concede=concede&&!d.reportSerial;
-        w.peerGone=peerGone&&!d.reportSerial;
-        w.notify=disconnected&&!d.reportSerial;
+    for(auto &w:rankedWatches)if(w.match==match&&(!w.until||(disconnected&&!w.settled))){
+        if(!w.until)w.until=SDL_GetTicks()+120000;
+        w.concede=w.concede||(concede&&!d.reportSerial);
+        // A missing opponent may prevent their normal result report as well.
+        // Keep proving our presence even when our own report is already waiting.
+        w.peerGone=w.peerGone||peerGone;
+        w.notify=w.notify||(disconnected&&d.reportState!=2&&d.reportState!=3);
         if(w.settled){watchNotify(w);w.until=1;continue;}
         if(!w.pending)w.next=0;
     }
@@ -434,7 +436,7 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.content=hash;d.wire="bt4-duel-"+std::to_string(protocol);
     if(d.ranked&&rankedRocksAvailable)d.wire+=":rock1";
     d.profile={{"mode",role==5?"lobby":"duel"},{"wire",d.wire},{"content",d.content},{"rules",queue&&*queue?queue:"S"},{"name",std::string(name).substr(0,19)},{"capacity",role==5?LOBBY_SLOTS:LOBBY_CLASSIC_SLOTS}};
-    if(d.ranked){d.profile["ruleset"]="solo";d.profile["rules"]="S";}
+    if(d.ranked){d.profile["ruleset"]="solo";d.profile["rules"]="S";d.profile["abandonment_version"]=2;}
     if(d.quick)d.profile["rock_version"]=1;
     d.began=SDL_GetTicks();d.leaseAt=d.began+60000;
     if(!Bt4Signal_Open()){d.on=false;rankedActive=false;return 0;}
@@ -640,6 +642,7 @@ void profileRoute(){
     rankedView.state=0;rankedView.rating=rankedView.wins=rankedView.losses=0;
     rankedView.streakScoring=rankedView.streakWins=rankedView.streakPoints=0;
     rankedView.monthlyReset=rankedView.dragonBalls=rankedView.collectionPosition=0;
+    rankedView.forfeitPenalty=0;
     rankedView.nextReset[0]=0;
     rankedRocksAvailable=false;
     rankedView.season[0]=0;
@@ -688,6 +691,7 @@ void profilePump(Uint64 now){
             rankedView.streakScoring=text(*body,"scoring")=="streak";
             rankedView.streakWins=(int)std::min(100000u,number(*body,"streak_wins"));
             rankedView.streakPoints=(int)std::min(100000u,number(*body,"streak_points"));
+            rankedView.forfeitPenalty=(int)std::min(100u,number(*body,"forfeit_penalty"));
             auto weekly=body->find("monthly_reset");
             rankedView.monthlyReset=weekly!=body->end()&&weekly->is_boolean()&&weekly->get<bool>();
             rankedRocksAvailable=jsonFlag(*body,"ranked_rocks");
@@ -723,7 +727,7 @@ void profilePump(Uint64 now){
         rankedTopRequest=0;nextRankedTop=now+15000;
         if(rankedView.topState==0)rankedView.topState=-1;
     }
-    if(nicknameRequest&&now>=nicknameDeadline){nicknameRequest=0;nicknameState=BT4_NICKNAME_UNAVAILABLE;}
+    if(nicknameRequest&&now>=nicknameDeadline){nicknameRequest=0;nicknameState=BT4_NICKNAME_UNAVAILABLE;nextNicknameCheck=now+15000;}
 }
 }
 extern "C" void Port_RankedPage(int direction){
@@ -771,10 +775,10 @@ extern "C" int Port_OnlineNicknameView(char name[20]){
     std::lock_guard<std::mutex> guard(rankedLock);
     Uint64 now=SDL_GetTicks();
     profileRoute();profilePump(now);
-    bool recheck=(nicknameState==BT4_NICKNAME_OPTIONAL||nicknameState==BT4_NICKNAME_REQUIRED)&&now>=nextNicknameCheck;
+    bool recheck=(nicknameState==BT4_NICKNAME_OPTIONAL||nicknameState==BT4_NICKNAME_REQUIRED||nicknameState==BT4_NICKNAME_UNAVAILABLE)&&now>=nextNicknameCheck;
     if(!nicknameRequest&&(nicknameState==BT4_NICKNAME_LOADING||recheck)){
         nicknameRequest=profileRequest("nickname_get","{}");nicknameDeadline=now+ProfileTimeout;
-        if(!nicknameRequest)nicknameState=BT4_NICKNAME_UNAVAILABLE;
+        if(!nicknameRequest){nicknameState=BT4_NICKNAME_UNAVAILABLE;nextNicknameCheck=now+15000;}
     }
     if(name)snprintf(name,20,"%s",nickname.c_str());
     return nicknameState;

@@ -9,8 +9,11 @@ static std::vector<CapturedCommand> capturedCommands;
 static int CaptureDiscoveryCommand(int,unsigned id,const char *op,const char *args){
     capturedCommands.push_back({id,op,Sj::parse(args)});return 1;
 }
+static int CaptureDiscoveryOpen(){return 1;}
 #define Bt4Signal_Command CaptureDiscoveryCommand
+#define Bt4Signal_Open CaptureDiscoveryOpen
 #include "../src/gs/match_supabase.cpp"
+#undef Bt4Signal_Open
 #undef Bt4Signal_Command
 
 extern "C" void PortVoice_P2PSession(int,const char*,const PortVoiceRoomMember*,int){}
@@ -78,9 +81,10 @@ int main(){
     rankedStatusRequest=4;
     emit(4,{{"event","reply"},{"serial",4u},{"body",{{"enabled",true},{"season","2026-11-01"},
         {"scoring","streak"},{"monthly_reset",true},{"dragon_balls",4u},{"ranked_rocks",true},
-        {"collection_position",0u},{"next_reset_at","2026-12-01T03:00:00.000Z"}}}});
+        {"collection_position",0u},{"forfeit_penalty",100u},{"next_reset_at","2026-12-01T03:00:00.000Z"}}}});
     Port_RankedView(&v);assert(v.monthlyReset&&v.streakScoring&&v.dragonBalls==4&&rankedRocksAvailable);
     assert(!strcmp(v.nextReset,"2026-12-01T03:00:00.000Z"));
+    assert(v.forfeitPenalty==100);
     rankedTopRequest=5;
     emit(4,{{"event","reply"},{"serial",5u},{"body",{{"season","2026-11-01"},{"entries",Dj::array({{{"name","Winner"},{"dragon_balls",999u}}})}}}});
     Port_RankedView(&v);assert(v.count==1&&v.top[0].dragonBalls==7);
@@ -100,6 +104,13 @@ int main(){
     Port_OnlineNicknameSubmit("Blue Phoenix");
     emit(4,{{"event","reply"},{"serial",nicknameRequest},{"body",{{"state","ready"},{"name","Blue Phoenix"}}}});
     assert(Port_OnlineNicknameView(nickname)==BT4_NICKNAME_READY&&!strcmp(nickname,"Blue Phoenix"));
+    Port_OnlineNicknameBegin();Port_OnlineNicknameView(nickname);
+    emit(4,{{"event","reply"},{"serial",nicknameRequest},{"body",{{"error","RATE_LIMITED"}}}});
+    assert(Port_OnlineNicknameView(nickname)==BT4_NICKNAME_UNAVAILABLE&&!nicknameRequest);
+    nextNicknameCheck=0;Port_OnlineNicknameView(nickname);
+    assert(nicknameRequest&&capturedCommands.back().op=="nickname_get");
+    emit(4,{{"event","reply"},{"serial",nicknameRequest},{"body",{{"state","ready"},{"name","Blue Phoenix"}}}});
+    assert(Port_OnlineNicknameView(nickname)==BT4_NICKNAME_READY);
     assert(!Bt4Signal_Command(0,50,"ranked_top","{}"));
     assert(!Bt4Signal_Command(4,51,"create","{}"));
     Bt4Signal_Listen(4,0);
@@ -197,6 +208,22 @@ int main(){
     assert(rankedWatches.empty()&&Port_RankedTakeSettlement(&rating,&delta)&&rating==1032&&delta==16);
     assert(!Bt4Signal_Command(0,52,"ranked_forfeit","{}"));
     assert(!Bt4Signal_Command(5,53,"create","{}"));
+    // A pending normal result must not prevent attribution when the opponent disappears.
+    rankedWatches.clear();capturedCommands.clear();d.sawFight=false;d.reportSerial=0;
+    d.reportState=0;d.outcomeBits=0;d.reportPending=false;nextSettlement=0;
+    Port_RankedObserve(3,0,350,350,0,-1);
+    Port_RankedObserve(4,1,351,351,0,-1);Port_RankedObserve(4,1,375,375,0,-1);
+    assert(d.reportSerial&&rankedWatches.size()==1&&rankedWatches[0].until);
+    assert(!rankedWatches[0].peerGone&&!rankedWatches[0].concede);
+    Port_RankedDisconnected(1);
+    assert(rankedWatches[0].peerGone&&rankedWatches[0].notify&&!rankedWatches[0].concede);
+    watchStep(now+20);
+    assert(capturedCommands.back().op=="ranked_heartbeat"&&capturedCommands.back().args["peer_gone"]==true);
+    reply({{"state","applied"},{"rating",1045},{"delta",13}});watchStep(now+21);
+    assert(Port_RankedTakeSettlement(&rating,&delta)&&rating==1045&&delta==13);
+    assert(!Port_RankedTakeSettlement(&rating,&delta));
+    // A duplicate shared teardown does not turn a remote failure into our concession.
+    Port_RankedDisconnected(0);assert(rankedWatches.empty());
     // The actual non-ranked adapter snapshots both sides, retries independently,
     // and allocates a new key for a rematch rather than replacing the selection.
     capturedCommands.clear();d.ranked=false;duelFight=false;duelFinished=false;
@@ -256,6 +283,9 @@ int main(){
     assert(Port_RankedRockSeed()==0);
     Port_RankedShutdown();Bt4Signal_Listen(5,0);
     rankedActive=false;
+    capturedCommands.clear();Port_RankedSearch(1);
+    assert(Bt4Discovery_Begin(d.generation+1,3,1,123,"Admission","","[\"127.0.0.1:1\"]","S"));
+    assert(capturedCommands.back().op=="ranked_queue"&&capturedCommands.back().args["abandonment_version"]==2);
     Bt4Signal_Listen(0,0);
     assert(!state.thread&&state.jobs.empty());
     SDL_Quit();

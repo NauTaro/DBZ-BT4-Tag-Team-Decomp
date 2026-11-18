@@ -36,7 +36,17 @@ export async function legacyBootstrap(source,token,fetcher=fetch){
     const [name,ranked]=await Promise.all([rpc('bt4_api',{p_op:'nickname_get',p_args:{}}),rpc('bt4_ranked_api',{p_op:'status',p_args:{ruleset:'solo'}})]);
     return {name:name.state==='ready'&&typeof name.name==='string'?name.name:null,ranked};
 }
-export async function createSession(core,user,secret,oldHash=null){
+export async function createSession(core,user,secret,oldHash=null,oldRefresh=null){
+    if(oldRefresh!==null){
+        // A desktop recovery credential remains usable across a lost response.
+        // Its plaintext is never stored server-side. Prove ownership before renewal.
+        if(typeof oldRefresh!=='string'||await sha256(oldRefresh)!==oldHash||
+           !core.one('SELECT 1 FROM online_sessions WHERE hash=? AND user_id=? AND expires>?',oldHash,user,core.now()))
+            throw new Error('AUTH_REQUIRED');
+        const access=await issueAccess(user,secret,core.now());
+        core.run('UPDATE online_sessions SET expires=? WHERE hash=? AND user_id=?',core.now()+30*86400000,oldHash,user);
+        return {access_token:access,refresh_token:oldRefresh,expires_in:900,user:{id:user}};
+    }
     const refresh=randomToken(),hash=await sha256(refresh),expires=core.now()+30*86400000;
     // Called inside the coordinator's serialized auth critical section.
     // Retain the previous token briefly: a lost HTTP response must not erase a

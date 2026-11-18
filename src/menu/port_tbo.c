@@ -2563,6 +2563,9 @@ static f32 Tb_RankedRuleBlock(s32 slot,const char *heading,const char *original,
     return y+18+14*count[slot]+10;
 }
 static const char *Tb_RankedGuideText(const Bt4RankedView *v,s32 section){
+    if(section==0&&v->forfeitPenalty==100)return v->streakScoring?
+        "Wins earn +13, +15, +17... A normal defeat ends your streak and deducts 37% of its points. A confirmed abandonment costs 100 points, down to zero, and ends your streak. The opponent receives the normal win reward. A draw keeps your points and streak.":
+        "Points depend on your score and your opponent's. A confirmed abandonment costs 100 points, down to zero. The opponent receives the normal win reward. An unclear connection failure does not identify who left.";
     if(section==0)return v->streakScoring?
         "The longer your winning streak, the more you earn: +13, +15, +17... Lose or quit and your streak ends. You lose 37% of what you earned in that streak. A draw keeps it going.":
         "You start with 1,000 points. Win to gain points and lose to give some back. How much changes depends on your score and your opponent's.";
