@@ -140,7 +140,7 @@ function finishRanked(f, first, second, winner, forfeit=false){
     return {result,match};
 }
 
-test('streaks preserve existing ratings and charge only the rounded loss on the current streak',()=>{
+test('streaks preserve win rewards but losses depend on opponent rating',()=>{
     const f=fixture(),a=f.user('Rising');
     f.c.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo','Rising',1000)",a);
     f.c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");
@@ -154,8 +154,8 @@ test('streaks preserve existing ratings and charge only the rounded loss on the 
     assert.equal(status.streak_points,640);
     const victor=f.user('Rival');
     const result=finishRanked(f,a,victor,victor).result;
-    assert.equal(result.delta,-237);
-    assert.equal(result.rating,1403);
+    assert.equal(result.delta,-32);
+    assert.equal(result.rating,1608);
     status=f.invoke(a,'ranked_status');
     assert.equal(status.streak_wins,0);
     assert.equal(status.streak_points,0);
@@ -191,6 +191,7 @@ test('streak draws preserve the streak and older admitted games settle under Elo
     f.c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");
     assert.equal(f.invoke(a,'ranked_forfeit',{match:id,reason:'local_quit'}).delta,-16);
     f.invoke(a,'leave',{generation:id});
+    f.tick(30001);
     assert.equal(finishRanked(f,a,b,a).result.delta,13);
     assert.equal(finishRanked(f,a,b,null).result.delta,0);
     assert.equal(f.invoke(a,'ranked_status').streak_wins,1);

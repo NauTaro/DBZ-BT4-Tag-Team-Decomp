@@ -792,6 +792,7 @@ static s32 Tb_SearchNews(void) {
     if (sTb->found && Port_NetSessionsEnded() != sTb->ended) {
         sTb->found = 0;
         if (Port_NetTakeRankedRequeue() && sTb->waitBack == TB_RANKED) {
+            Port_LobbyCancel(); /* retire the previous descriptor before a fresh queue */
             Tb_SetMode(TB_RANKED);
             Tb_RankedStart();
         } else Tb_SetMode(TB_HUB);
@@ -2564,10 +2565,10 @@ static f32 Tb_RankedRuleBlock(s32 slot,const char *heading,const char *original,
 }
 static const char *Tb_RankedGuideText(const Bt4RankedView *v,s32 section){
     if(section==0&&v->forfeitPenalty==100)return v->streakScoring?
-        "Wins earn +13, +15, +17... A normal defeat ends your streak and deducts 37% of its points. A confirmed abandonment costs 100 points, down to zero, and ends your streak. The opponent receives the normal win reward. A draw keeps your points and streak.":
+        "Wins earn +13, +15, +17... A normal defeat ends your streak and costs 1 to 32 points based on both ratings, with no percentage penalty. Confirmed abandonment costs 100 points, down to zero. Your opponent receives the normal win reward. Draws keep points and streaks.":
         "Points depend on your score and your opponent's. A confirmed abandonment costs 100 points, down to zero. The opponent receives the normal win reward. An unclear connection failure does not identify who left.";
     if(section==0)return v->streakScoring?
-        "The longer your winning streak, the more you earn: +13, +15, +17... Lose or quit and your streak ends. You lose 37% of what you earned in that streak. A draw keeps it going.":
+        "Wins earn +13, +15, +17... A normal defeat ends your streak and costs 1 to 32 points based on both ratings, down to zero. At equal ratings you lose 16 points, regardless of your streak. Draws keep points and streaks.":
         "You start with 1,000 points. Win to gain points and lose to give some back. How much changes depends on your score and your opponent's.";
     if(section==1)return v->monthlyReset?
         "A new month starts on the 1st at 00:00 in Argentina. Points and streaks go back to zero.":

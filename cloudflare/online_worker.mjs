@@ -1,3 +1,4 @@
+import {disallowedRequest,disallowedClient} from './online_access.mjs';
 import {OnlineCore,clientAtLeast} from './online_core.mjs';
 import {verifyAccess,legacyProof,legacyBootstrap,createSession,sha256} from './online_auth.mjs';
 import {roomTurn} from './online_turn.mjs';
@@ -48,6 +49,7 @@ export class OnlineCoordinator {
         this.turnPending.set(id,pending);return pending;
     }
     dispatch(user,op,args){
+        if(ADMIT.has(op)&&disallowedClient(args?._client))throw new Error('CLIENT_NOT_ALLOWED');
         const committed=this.ctx.storage.transactionSync(()=>{
             this.budget(user,op,op==='signal'?300:op==='lease'||op==='get'?120:60);
             if(ADMIT.has(op)&&this.core.one("SELECT value FROM online_meta WHERE key='admission'")?.value!=='open')throw new Error('MIGRATION_IN_PROGRESS');
@@ -123,6 +125,7 @@ export class OnlineCoordinator {
         }finally{release();}
     }
     async fetch(request){
+        if(disallowedRequest(request))return json({error:'CLIENT_NOT_ALLOWED'},403);
         const url=new URL(request.url),path=url.pathname;
         try{
             if(path==='/v5/health')return json({service:'BT4decomp Online',schema:5,admission:this.core.one("SELECT value FROM online_meta WHERE key='admission'")?.value||'closed'});
@@ -283,7 +286,13 @@ export class OnlineCoordinator {
 }
 export default {
     async fetch(request,env){
+        if(disallowedRequest(request))return json({error:'CLIENT_NOT_ALLOWED'},403);
         const path=new URL(request.url).pathname;if(!path.startsWith('/v5/'))return json({error:'NOT_FOUND'},404);
+        if(path==='/v5/panel/legacy/sql'||path==='/v5/panel/legacy/exec'){
+            if(request.method!=='POST'||!env.PANEL_SECRET||!safeEqual(bearer(request),env.PANEL_SECRET))return json({error:'AUTH_REQUIRED'},401);
+            if(!env.LEGACY)return json({error:'SERVICE_UNAVAILABLE'},503);
+            return env.LEGACY.fetch(new Request('https://legacy.internal'+path.replace('/legacy',''),request));
+        }
         if(path==='/v5/panel/turn'){
             if(request.method!=='POST'||!env.PANEL_SECRET||!safeEqual(bearer(request),env.PANEL_SECRET))return json({error:'AUTH_REQUIRED'},401);
             try{return json(await roomTurn(env));}

@@ -1,15 +1,16 @@
 # Ranked abandonment policy
 
-This policy is disabled by default and requires an explicit server activation.
-It does not introduce the proposed hybrid scoring system,
-reset scores, or modify ordinary match scoring.
+The policy defaults off in a fresh database and is enabled in production.
+See ONLINE_BASELINE_20261119.md and RANKED_RULES.md for the current ordinary
+loss rule and deployment baseline. This patch does not reset scores or add
+the deferred hybrid win bonuses.
 
 ## Player-facing behavior
 
 An authenticated surrender after both players have started, or a sustained
 one-sided disappearance confirmed by the server, counts as a defeat for the
 departing player. Their penalty is 100 points, with a minimum balance of zero.
-Their streak ends. The 37% streak deduction is not charged in addition.
+Their streak ends. The normal loss is not charged in addition.
 
 The remaining player receives the normal victory reward under the match's
 existing scoring policy. The reward is not funded by the quitter's balance.

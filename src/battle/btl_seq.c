@@ -1533,6 +1533,16 @@ s32 BtlSeqReady_Exit(BtlSeqWaitCtx *ctx) {
 
 /* Gives the result menu to pad 0 when one pad plays, else to the winning side. */
 void BtlSeq_SetResultPad(void) {
+#ifdef PORT
+    {
+        extern int Port_NetActive(void), Port_RankedActive(void);
+        if (Port_NetActive() && Port_RankedActive() && BattleResult_HasWinner()) {
+            /* Online has one physical pad per machine, but two shared pad slots. */
+            BtlPause_SetPad(BattleResult_GetWinnerSide());
+            return;
+        }
+    }
+#endif
     if (BtlPause_GetPadCount() == 1) {
         BtlPause_SetPad(0);
     } else {

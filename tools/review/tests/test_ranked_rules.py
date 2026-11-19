@@ -38,7 +38,8 @@ language=2;assert(!strcmp(PortOnline_Text("Collection: %d/7"),"Coleção: %d/7")
 language=1;assert(!strcmp(PortOnline_Text("Collection: %d/7"),"Colección: %d/7"));
 v.streakScoring=v.monthlyReset=1;
 v.forfeitPenalty=0;
-assert(strstr(Tb_RankedGuideText(&v,0),"37%"));
+assert(!strstr(Tb_RankedGuideText(&v,0),"37%"));
+assert(strstr(Tb_RankedGuideText(&v,0),"16 points"));
 assert(strstr(Tb_RankedGuideText(&v,0),"+13"));
 assert(strstr(Tb_RankedGuideText(&v,1),"1st at 00:00"));
 v.forfeitPenalty=100;assert(strstr(Tb_RankedGuideText(&v,0),"100 points"));

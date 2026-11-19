@@ -106,10 +106,24 @@ export class OnlineCore {
             if(a.rock_version===1)this.run('INSERT OR IGNORE INTO quick_rock_queue VALUES(?)',user);
             else this.run('DELETE FROM quick_rock_queue WHERE user_id=?',user);
         }
-        const waiting=this.rows(`SELECT q.user_id,c.user_id IS NOT NULL AS supports_rocks
+        let waiting=this.rows(`SELECT q.user_id,c.user_id IS NOT NULL AS supports_rocks
             FROM online_queue q LEFT JOIN quick_rock_queue c ON c.user_id=q.user_id
             WHERE q.mode=? AND q.wire=? AND q.content=? AND q.rules=? AND q.expires>?
-            ORDER BY q.made,q.user_id LIMIT ?`,a.mode,wire,a.content,a.rules,this.now(),desired);
+            ORDER BY q.made,q.user_id LIMIT ?`,a.mode,wire,a.content,a.rules,this.now(),ranked?40:desired);
+        if(ranked&&waiting.length>=2){
+            const recent=this.rows('SELECT a,b FROM ranked_matches WHERE completed>=? AND void=0',this.now()-30000);
+            const blocked=new Set(recent.map(m=>[m.a,m.b].sort().join(':')));
+            let pair=[];
+            for(let i=0;i<waiting.length&&!pair.length;i++){
+                for(let j=i+1;j<waiting.length;j++){
+                    if(!blocked.has([waiting[i].user_id,waiting[j].user_id].sort().join(':'))){
+                        pair=[waiting[i],waiting[j]];
+                        break;
+                    }
+                }
+            }
+            waiting=pair;
+        }
         if(waiting.length<desired)return {version:1,state:'waiting'};
         const host=waiting[0].user_id;
         const first=this.create(host,{...a,wire,capacity:a.mode==='duel'?40:desired,listed:false});
@@ -152,15 +166,13 @@ export class OnlineCore {
             ORDER BY completed DESC LIMIT 4`,m.a,m.b,m.b,m.a,this.now()-3600000);
         if(digest.startsWith('forfeit:')&&recent.filter(r=>r.winner===winner&&r.digest?.startsWith('forfeit:')).length>=2)
             return 'repeated_forfeits';
-        if(recent.length===4&&recent.every(r=>r.winner===winner))
-            return 'repeated_one_sided_results';
         return null;
     }
-    streakDelta(user,rating,winner){
+    streakDelta(user,rating,winner,opponentRating){
         if(!winner)return 0;
         const current=this.one('SELECT wins,points FROM ranked_streaks WHERE user_id=?',user)||{wins:0,points:0};
         const won=user===winner;
-        const delta=won?Math.min(100000-rating,13+2*current.wins):-Math.min(rating,Math.round(current.points*37/100));
+        const delta=won?Math.min(100000-rating,13+2*current.wins):-Math.min(rating,Math.max(1,Math.round(32/(1+10**((opponentRating-rating)/400)))));
         this.run('INSERT INTO ranked_streaks VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET wins=excluded.wins,points=excluded.points',
             user,won?current.wins+1:0,won?current.points+delta:0);
         return delta;
@@ -176,12 +188,12 @@ export class OnlineCore {
         let deltas=[0,0];
         if(abandonment){
             const wi=winner===m.a?0:1,li=1-wi,ratings=[a,b];
-            if(!review)deltas[wi]=streak?this.streakDelta(winner,ratings[wi],winner):eloForfeitReward(ratings[wi],ratings[li]);
+            if(!review)deltas[wi]=streak?this.streakDelta(winner,ratings[wi],winner,ratings[li]):eloForfeitReward(ratings[wi],ratings[li]);
             deltas[li]=-Math.min(ratings[li],abandonment.penalty);
             // A confirmed departure resets the quitter's streak, even if the reward is reviewed.
             this.run('INSERT INTO ranked_streaks VALUES(?,0,0) ON CONFLICT(user_id) DO UPDATE SET wins=0,points=0',abandonment.quitter);
             this.run('UPDATE ranked_abandonments SET penalty_applied=?,reward_applied=? WHERE match_id=?',-deltas[li],deltas[wi],m.id);
-        }else if(streak&&!review)deltas=[this.streakDelta(m.a,a,winner),this.streakDelta(m.b,b,winner)];
+        }else if(streak&&!review)deltas=[this.streakDelta(m.a,a,winner,b),this.streakDelta(m.b,b,winner,a)];
         if(!streak&&!abandonment){
             const score=winner===m.a?1:winner===m.b?0:.5;
             const gain=Math.max(-a,b-100000,Math.min(b,100000-a,Math.round(32*(score-1/(1+10**((b-a)/400))))));
@@ -209,7 +221,7 @@ export class OnlineCore {
         if(op==='status'){
             const scoring=this.rankedScoring();
             const streak=scoring==='streak'?this.one('SELECT wins,points FROM ranked_streaks WHERE user_id=?',user):null;
-            return {version:1,enabled:!paused,season,scoring,forfeit_penalty:abandonmentEnabled(this)?ABANDONMENT_PENALTY:0,forfeit_grace_seconds:ABANDONMENT_GRACE_MS/1000,weekly_reset:false,monthly_reset:monthly,reset_period:monthly?'monthly':null,ranked_rocks:monthly,next_reset_at:monthly?new Date(rankedMonthEnd(this.now())).toISOString():null,
+            return {version:1,enabled:!paused,season,scoring,normal_loss_policy:'opponent_rating_v1',forfeit_penalty:abandonmentEnabled(this)?ABANDONMENT_PENALTY:0,forfeit_grace_seconds:ABANDONMENT_GRACE_MS/1000,weekly_reset:false,monthly_reset:monthly,reset_period:monthly?'monthly':null,ranked_rocks:monthly,next_reset_at:monthly?new Date(rankedMonthEnd(this.now())).toISOString():null,
                 ...rankedCollection(this,user),streak_wins:streak?.wins??0,streak_points:streak?.points??0,
                 ...(this.one("SELECT rating,wins,losses FROM ranked_players WHERE user_id=? AND ruleset='solo'",user)||{rating:scoring==='streak'?0:1000,wins:0,losses:0})};
         }

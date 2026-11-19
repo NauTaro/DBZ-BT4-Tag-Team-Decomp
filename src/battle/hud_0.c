@@ -53,6 +53,8 @@ static BtlMenu sPresentationPauseMenu;
 static BtlMenuItem sPresentationPauseItems[32];
 static s32 sPresentationPauseReady;
 static s32 sHudPauseDismissRequested;
+extern int Port_RankedActive(void);
+extern void BattleResult_Set(s32 flags, s32 reason);
 static s32 sRankedPauseQuitPad = -1;
 static void PauseMenu_RecordRankedQuit(s32 pad, s32 which, s32 id) {
     extern int Port_RankedActive(void);
@@ -60,6 +62,15 @@ static void PauseMenu_RecordRankedQuit(s32 pad, s32 which, s32 id) {
         (id == 0xD || id == 0xE || id == 0xF)) sRankedPauseQuitPad = pad;
 }
 s32 PauseMenu_ConfirmedQuitPad(void) { return sRankedPauseQuitPad; }
+static s32 PauseMenu_RankedRequeue(s32 pad, s32 which, s32 id) {
+    extern int Port_NetMe(void);
+    extern void Port_NetRequestRankedRequeue(void);
+    if (which != 1 || id != 0x13 || !Port_RankedActive()) return 0;
+    if (Port_NetMe() == pad) Port_NetRequestRankedRequeue();
+    /* Return to the original Online search screen, never the rematch path. */
+    BattleResult_Set(BTL_RESULT_ABORT, 8);
+    return 1;
+}
 extern int PortHud_Hidden(void);
 extern void PortHud_Toggle(void);
 /* The menu input is simulated on both 1v1 peers; only its owner changes
@@ -695,13 +706,7 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
             break;
         case 0x13:
 #ifdef PORT
-            if (which == 1 && item->text[0] == 0x6FFD) {
-                extern int Port_NetMe(void);
-                extern void Port_NetRequestRankedRequeue(void);
-                if (Port_NetMe() == pad) Port_NetRequestRankedRequeue();
-                set(BTL_RESULT_ABORT, 0x20);
-                break;
-            }
+            if (PauseMenu_RankedRequeue(pad, which, item->id)) break;
 #endif
             set(BTL_RESULT_ABORT, 0x8000);
             break;

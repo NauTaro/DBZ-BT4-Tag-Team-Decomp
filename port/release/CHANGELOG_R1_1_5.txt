@@ -1,0 +1,23 @@
+BT4decomp 0.1.39.6 R1 1.5
+
+- The winner controls the Ranked results menu, regardless of who hosted.
+- Search Again returns to the Ranked radar and starts a fresh search.
+- Ordinary defeats use both players' ratings. Repeated normal wins against the same rival are scored normally.
+
+Update from the game menu to keep your existing installation, saves and settings. Both players should update before searching for Ranked.
+
+<!-- bt4-update:en
+- The winner controls the Ranked results menu.
+- Search Again returns to the Ranked radar for a new match.
+- Ordinary defeats no longer deduct a percentage of your streak.
+-->
+<!-- bt4-update:es
+- El ganador controla el menú de resultados de Ranked.
+- Volver a buscar te lleva al radar de Ranked para una partida nueva.
+- Las derrotas normales ya no descuentan un porcentaje de la racha.
+-->
+<!-- bt4-update:pt
+- O vencedor controla o menu de resultados da Ranked.
+- Buscar novamente volta ao radar da Ranked para uma nova partida.
+- As derrotas normais já não descontam uma porcentagem da sequência.
+-->

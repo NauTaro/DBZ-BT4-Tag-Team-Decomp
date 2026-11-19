@@ -434,7 +434,10 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     d.outcomeTick=d.reportSerial=0;d.outcomeBits=d.reportState=0;d.reportAt=0;d.report=Dj();d.characters=Dj();
     d.resultRating=d.resultDelta=0;
     char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.content=hash;d.wire="bt4-duel-"+std::to_string(protocol);
-    if(d.ranked&&rankedRocksAvailable)d.wire+=":rock1";
+    if(d.ranked){
+        d.wire+=":result2";
+        if(rankedRocksAvailable)d.wire+=":rock1";
+    }
     d.profile={{"mode",role==5?"lobby":"duel"},{"wire",d.wire},{"content",d.content},{"rules",queue&&*queue?queue:"S"},{"name",std::string(name).substr(0,19)},{"capacity",role==5?LOBBY_SLOTS:LOBBY_CLASSIC_SLOTS}};
     if(d.ranked){d.profile["ruleset"]="solo";d.profile["rules"]="S";d.profile["abandonment_version"]=2;}
     if(d.quick)d.profile["rock_version"]=1;
