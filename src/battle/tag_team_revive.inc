@@ -4,10 +4,10 @@
 #include "battle/tag_team_fusion.h"
 extern void BtlAct_ClearQueue(void *),BtlAct_Request(void *,s32);
 extern void BtlChar_ClearFlag(void *,s32),BtlChar_SetHeldFlag(void *,s32);
-extern void BtlAi_TagRescueInput(s32,f32 *,s32,s32);
+extern s32 BtlAi_TagRescueInput(s32,f32 *,s32,s32);
 
 typedef struct TagReviveSlot {
-    s32 progress,helpers,completed,ready,settled,hp,seen,target,busy;
+    s32 progress,helpers,completed,ready,settled,hp,seen,target,busy,retry;
     f32 last[4];
 } TagReviveSlot;
 static TagReviveSlot sTagRevive[10];
@@ -82,6 +82,7 @@ void TagRevive_PrepareInput(void){
     for(actor=0;actor<TagBattle_Count();++actor){
         TagReviveSlot *s=&sTagRevive[actor];s32 best=-1;f32 distance=1.0e20f,goal[4];
         s->busy=0;
+        if(s->retry>0){--s->retry;continue;}
         if(!sTagReviveCpu||BattleSide_GetControl(actor)==BTL_CONTROL_PAD||!TagRevive_Idle(actor))continue;
         for(i=0;i<TagBattle_Count();++i){
             f32 d;
@@ -97,11 +98,14 @@ void TagRevive_PrepareInput(void){
              * ally. Retain the intent while unsafe, but release control to AI. */
             if(s->target<0||s->target>=TagBattle_Count()||
                !TagBattle_Allied(actor,s->target)||!TagRevive_Downed(s->target))s->target=-1;
+            BtlAi_TagRescueInput(actor,NULL,0,0);
             continue;
         }
-        s->target=best;s->busy=1;
+        if(s->target!=best)BtlAi_TagRescueInput(actor,NULL,0,0);
+        s->target=best;
         BtlCharApi_GetBasePos(BattleSide_GetObjId(best),goal);
-        BtlAi_TagRescueInput(actor,goal,TagRevive_InRange(actor,best),sTagReviveCharge);
+        s->busy=BtlAi_TagRescueInput(actor,goal,TagRevive_InRange(actor,best),sTagReviveCharge);
+        if(!s->busy){s->retry=60;BtlAi_TagRescueInput(actor,NULL,0,0);}
     }
 }
 void TagRevive_Update(void){
@@ -111,6 +115,9 @@ void TagRevive_Update(void){
     for(actor=0;actor<TagBattle_Count();++actor){
         TagReviveSlot *s=&sTagRevive[actor];f32 p[4],dx,dy,dz;s32 hp=BtlCharApi_GetHp(actor);
         BtlCharApi_GetBasePos(BattleSide_GetObjId(actor),p);
+        if(s->seen&&s->target>=0&&hp<s->hp&&BattleSide_GetControl(actor)!=BTL_CONTROL_PAD){
+            s->retry=60;s->busy=0;BtlAi_TagRescueInput(actor,NULL,0,0);
+        }
         dx=p[0]-s->last[0];dy=p[1]-s->last[1];dz=p[2]-s->last[2];
         s->settled=s->seen&&dx*dx+dy*dy+dz*dz<.25f&&hp>=s->hp;
         memcpy(s->last,p,sizeof(p));s->seen=1;s->hp=hp;s->helpers=0;

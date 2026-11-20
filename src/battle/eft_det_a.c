@@ -5,6 +5,21 @@ extern s32 TagBattle_Count(void);
 extern s32 TagBattle_Target(s32 actor);
 #include "battle/eft_det_a.h"
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+static u32 sTagHitTargets[sizeof(((EftDetList *)0)->rec) / sizeof(EftDetRec)];
+
+/* Prefer the lock only if that fighter was actually hit. */
+s32 EftDet_TagHitTarget(s32 index, s32 preferred) {
+    u32 targets = sTagHitTargets[index];
+    if (preferred >= 0 && preferred < 32 && (targets & (1u << preferred))) return preferred;
+    return targets ? __builtin_ctz(targets) : -1;
+}
+
+static void EftDet_RecordTagHit(s32 index, s32 target) {
+    if (TagBattle_Active() && target >= 0 && target < 32) sTagHitTargets[index] |= 1u << target;
+}
+#endif
+
 /*
  * 0x1AE2A8..0x1B16F0: effect texture tail, volley aim, fighter-against-fighter volumes, the hit detection over
  * the effect hit records, and the ground probe. See include/battle/eft_det_a.h for the layouts.
@@ -76,6 +91,10 @@ extern void BtlCharApi_GetNodePos(s32 objId, s32 node, EftDetVec *out);
 extern s32 BtlCharApi_IsSightBlocked(s32 objId);
 extern s32 BtlCharApi_IsLockedOn(s32 objId);
 extern void BtlCharApi_SetHeldFlagAA(s32 objId);
+#ifdef PORT
+extern void EftTechEvt_RequestStop(s32 objId);
+extern s32 TagClash_BeginBeam(s32 objA, s32 objB);
+#endif
 extern void BtlCharApi_ShakeCamsNear(EftDetVec *pos, f32 near, f32 far, f32 arg3, f32 arg4);
 extern void BtlCharApi_RumbleNear(EftDetVec *pos, f32 near, f32 far, f32 power, f32 time);
 extern s32 BtlSeq_GetState(void);
@@ -783,6 +802,9 @@ void EftDet_PrepareAll(void) {
 
 /* The hit detection of one frame; nothing while the battle is paused. */
 void EftDet_Update(void) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    memset(sTagHitTargets, 0, sizeof(sTagHitTargets));
+#endif
     if (Battle_GetWork()->flags & 0x100) {
         return;
     }
@@ -896,6 +918,9 @@ void EftDet_HitFighter(EftDetRec *rec, s32 target, s32 idx) {
             EftHit_SetTaskFlag(idx, 2, rec->shape.contact);
         }
     } else if (BtlColl_Hit(target, rec)) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+        EftDet_RecordTagHit(idx, target);
+#endif
         if (EftHit_RearmImpact(rec)) {
             EftHit_SetTaskFlag(idx, 1, rec->shape.contact);
         }
@@ -935,6 +960,9 @@ s32 EftDet_HitFighterMulti(EftDetRec *rec, s32 target, s32 idx) {
             EftHit_SetTaskFlag(idx, 2, rec->shape.contact);
         }
     } else if (BtlColl_Hit(target, rec)) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+        EftDet_RecordTagHit(idx, target);
+#endif
         EftHit_IncHitCount(rec);
         EftHit_SetCountA(rec, 0);
         if (!EftHit_HasDefFlag20(rec)) {
@@ -1166,6 +1194,9 @@ void EftDet_ClashPass(void) {
             for (j = i; j < list->count; j++) {
                 s32 hit = 0;
                 s32 result;
+#ifdef PORT
+                if (TagBattle_Active() && !EftHit_CanHit(&list->rec[i], 2)) break;
+#endif
 
                 if (list->rec[i].objId != list->rec[j].objId &&
                     (!TagBattle_Active() || !TagBattle_Allied(list->rec[i].objId,list->rec[j].objId))) {
@@ -1188,6 +1219,9 @@ void EftDet_ClashPass(void) {
                                 hit = 1;
                             }
                         }
+#ifdef PORT
+                        if (!hit) continue;
+#endif
                         result = EftHit_Clash(&list->rec[i], &list->rec[j]);
                         if (hit) {
                             list->rec[i].shape.hitFlags |= EFT_DET_HIT_CLASH;
@@ -1198,6 +1232,24 @@ void EftDet_ClashPass(void) {
                                 EftHit_SetTaskFlag(j, 8, list->rec[j].shape.hitPos);
                             }
                             if (result & 4) {
+#ifdef PORT
+                                if (BtlSeq_GetState() >= 4 || (TagBattle_Active() &&
+                                    !TagClash_BeginBeam(list->rec[i].objId, list->rec[j].objId)) ||
+                                    (!TagBattle_Active() && BtlCharApi_IsSightBlocked(list->rec[i].objId))) {
+                                    EftHit_SetTaskFlag(i, 8, list->rec[i].shape.hitPos);
+                                    EftHit_SetTaskFlag(j, 8, list->rec[j].shape.hitPos);
+                                } else if (!EftStruggle_IsActive()) {
+                                    s32 a = list->rec[i].objId, b = list->rec[j].objId;
+                                    EftTechEvt_RequestStop(a);
+                                    EftTechEvt_RequestStop(b);
+                                    BtlCharApi_SetHeldFlagAA(a);
+                                    BtlCharApi_SetHeldFlagAA(b);
+                                    EftHit_SetTaskFlag(i, 0x100, list->rec[i].shape.hitPos);
+                                    EftHit_SetTaskFlag(j, 0x100, list->rec[j].shape.hitPos);
+                                    EftStruggle_Start(&list->rec[i].shape.hitPos, &list->rec[i], &list->rec[j]);
+                                    break;
+                                }
+#else
                                 if (BtlCharApi_IsSightBlocked(list->rec[i].objId)) {
                                     EftHit_SetTaskFlag(i, 8, list->rec[i].shape.hitPos);
                                     EftHit_SetTaskFlag(j, 8, list->rec[j].shape.hitPos);
@@ -1213,6 +1265,7 @@ void EftDet_ClashPass(void) {
                                         EftStruggle_Start(&list->rec[i].shape.hitPos, &list->rec[i], &list->rec[j]);
                                     }
                                 }
+#endif
                             }
                         }
                     }

@@ -62,15 +62,21 @@ int main(void){
             PortLobbyView view;Tb_BrPageView(&view);
             for(int i=0;i<view.tourSize;++i){int original=sTbLv.tourLeaf[pageIndex*8+i];assert(view.tourLeaf[i]==(original<0?-2:original));}
         }
-        if(sL.t.size>8){PortLobbyView view;pageIndex=sections;Tb_BrPageView(&view);for(int i=0;i<view.tourSize;++i)assert(view.tourLeaf[i]==-1);}
+        if(sL.t.size>8){PortLobbyView view;pageIndex=sections;Tb_BrPageView(&view);assert(view.tourSize==sections);for(int i=0;i<view.tourSize;++i)assert(view.tourLeaf[i]==-1);}
         while(sL.t.state==1){
             int m=sL.t.cur;assert(m>=0&&played<n);
             int a=t_part(m,0),b=t_part(m,1);assert(a>=0&&b>=0&&a!=b);
             sL.t.win[m]=choice?b:a;sL.t.how[m]=HOW_PLAYED;++played;t_resolve();
         }
         assert(played==n-1&&sL.t.champ>=0&&sL.t.champ<n);
+        if(sL.t.size>8){
+            PortLobbyView view;pageIndex=sections;
+            memcpy(sTbLv.tourWin,sL.t.win,sizeof(sTbLv.tourWin));Tb_BrPageView(&view);
+            assert(view.tourChamp==sL.t.champ);
+            for(int i=0;i<view.tourSize;++i)assert(view.tourLeaf[i]==sL.t.win[sL.t.size-sL.t.size/4+i]);
+        }
     }
-    puts("Tournament: 2..22 entrants, automatic byes, both winners and all UI pages PASS");
+    printf("Tournament: 2..%d entrants, automatic byes, both winners and all UI pages PASS\n",TOUR);
 }
 '''
         probes.ReportedTagCrashes.native(self,code)

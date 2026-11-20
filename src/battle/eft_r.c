@@ -166,7 +166,7 @@ s32 EftCharaFx_Stop(s32 objId) {
 /* ---- beam struggle ------------------------------------------------------------------------------------------ */
 
 /* Starts the struggle between two technique records that met head-on (called by the hit pass, 0x1B0910, after it
-   set task flag 0x100 on both). The task gets copies of both records, object 0's first. Returns how far along the
+   set task flag 0x100 on both). The task gets copies of both records in object order. Returns how far along the
    line between the two start points record 0 got. */
 f32 EftStruggle_Start(EftRVec *pos, EftRRec *a, EftRRec *b) {
     EftStruggleArg arg;
@@ -174,7 +174,7 @@ f32 EftStruggle_Start(EftRVec *pos, EftRRec *a, EftRRec *b) {
 
     memset(&arg, 0, sizeof(EftStruggleArg));
     Vec4_Copy(&arg.pos, pos);
-    if (a->objId == 0) {
+    if (a->objId < b->objId) {
         arg.rec[0] = *a;
         arg.rec[1] = *b;
     } else {
@@ -184,7 +184,7 @@ f32 EftStruggle_Start(EftRVec *pos, EftRRec *a, EftRRec *b) {
     arg.rec[1].pose.start.w = 1.0f;
     arg.rec[0].pose.start.w = 1.0f;
     d = Vec3_Dist(&arg.rec[1].pose.start, &arg.rec[0].pose.start);
-    arg.ratio = Vec3_Dist(&arg.rec[0].pose.start, &arg.rec[0].pose.pos) / d;
+    arg.ratio = d > 0.001f ? Vec3_Dist(&arg.rec[0].pose.start, &arg.rec[0].pose.pos) / d : 0.5f;
     BtlTaskList_AddTail(gEftStruggle->list, &gEftStruggleClass, &arg);
     return arg.ratio;
 }
@@ -202,8 +202,6 @@ s32 EftStruggle_IsActive(void) {
 void EftStruggle_End(s32 winner) {
     EftRTask *task;
     EftStruggle *w;
-    s32 layer;
-    s32 loser;
 
     if (gEftStruggle == NULL) {
         return;
@@ -223,21 +221,11 @@ void EftStruggle_End(s32 winner) {
         return;
     }
     w->flags |= EFT_STRUGGLE_END;
-    if (winner == -1) {
-        EftTechEvt_RequestExpire(0);
-        EftTechEvt_RequestExpire(1);
-        BtlScene_Reset(2);
-        BtlScene_Reset(3);
-    } else {
-        if (winner == 0) {
-            loser = 1;
-            layer = 3;
-        } else {
-            loser = 0;
-            layer = 2;
-        }
-        EftTechEvt_RequestExpire(loser);
-        BtlScene_Reset(layer);
+    for (s32 side = 0; side < 2; ++side) {
+        s32 objId = w->arg.rec[side].objId;
+        if (objId == winner) continue;
+        EftTechEvt_RequestExpire(objId);
+        BtlScene_Reset(2 + objId);
     }
 }
 
@@ -535,8 +523,9 @@ void EftStruggle_Step(EftRTask *task) {
     f32 tmp;
 
     w->frames++;
-    if (!BtlCharApi_IsInClashA(0) || !BtlCharApi_IsInClashA(1)) {
-        w->flags |= EFT_STRUGGLE_END;
+    if (w->frames > 5 && (!BtlCharApi_IsInClashA(w->arg.rec[0].objId) ||
+                         !BtlCharApi_IsInClashA(w->arg.rec[1].objId))) {
+        EftStruggle_End(-1);
     }
     if (w->flags & EFT_STRUGGLE_END) {
         BtlTask_SetDead(task);

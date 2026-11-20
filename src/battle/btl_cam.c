@@ -5,6 +5,9 @@ extern int TagBattle_Active(void);
 #include "battle/battle.h"
 #include "battle/btl_cam.h"
 #ifdef PORT
+extern int Port_NetView(void);
+extern int TagBattle_Network(void);
+extern s32 BtlSeq_IsFighting(void);
 #include "battle/stg_a.h" /* (script mods' camera: the stage) */
 #endif
 #include "battle/btl_demo_cam.h"
@@ -399,7 +402,7 @@ static s32 BtlCam_PortZoom(BtlCamView *view, s32 zoom) {
    BtlCam_UpdateView. How much wider than the game's the selected view is drawn: the culling of what is drawn (the
    stage's frustum, src/battle/stg_a.c; the effects' clip planes, eft_a.c) widens by as much, or what the wider view
    shows at its edges is left out. 1 without (never narrower than the game's). */
-static s32 sPortZoomView[2] = {1000, 1000};
+PORT_HOST static s32 sPortZoomView[2] = {1000, 1000};
 /* Host presentation state. A priority/chase override can read the same view
  * twice during one blank, and rollback can rebuild old blanks. Neither should
  * advance Lua inertia or stage-collision hysteresis a second time. */
@@ -408,6 +411,11 @@ PORT_HOST static struct {
     u32 blank;
     Vec4 pos, rot;
 } sPortCameraPose[2];
+PORT_HOST static struct {
+    s32 valid, obj, stage;
+    u32 blank;
+    Vec4 pos, rot;
+} sOnlineCamera[2];
 PORT_HOST static f32 sPortCollisionHeld[2] = {1.0f, 1.0f};
 PORT_HOST static s32 sPortCollisionClear[2], sPortCollisionObj[2];
 f32 Port_CamCull(void) {
@@ -490,6 +498,7 @@ void BtlCam_Reset(void) {
 #ifdef PORT
     sPortFreeCamLive = 0;
     memset(sPortCameraPose, 0, sizeof(sPortCameraPose));
+    memset(sOnlineCamera, 0, sizeof(sOnlineCamera));
     sPortCollisionHeld[0] = sPortCollisionHeld[1] = 1.0f;
     memset(sPortCollisionClear, 0, sizeof(sPortCollisionClear));
     sPortCollisionObj[0] = sPortCollisionObj[1] = -1;
@@ -520,6 +529,47 @@ void BtlCam_Term(void) {
 }
 
 #ifdef PORT
+static void BtlCam_BlendOnlinePose(BtlCamView *view, Vec4 *previousPos, Vec4 *previousRot) {
+    f32 weight = Vec3_DistSq(previousPos, &view->pos) > 64.0f ? 0.32f : 0.80f;
+    for (s32 i = 0; i < 3; ++i) {
+        f32 *pos = (f32 *)&view->pos, *rot = (f32 *)&view->rot;
+        const f32 oldPos = ((f32 *)previousPos)[i], oldRot = ((f32 *)previousRot)[i];
+        f32 delta = rot[i] - oldRot;
+        if (delta > 3.14159265f) delta -= 6.28318531f;
+        if (delta < -3.14159265f) delta += 6.28318531f;
+        pos[i] = oldPos + weight * (pos[i] - oldPos);
+        rot[i] = oldRot + (delta > 0.25f || delta < -0.25f ? 0.32f : weight) * delta;
+        if (rot[i] > 3.14159265f) rot[i] -= 6.28318531f;
+        if (rot[i] < -3.14159265f) rot[i] += 6.28318531f;
+    }
+}
+
+/* Keep presentation history on the host, across rollback. Let continuous
+ * movement through, but spread sudden prediction corrections over a few
+ * visible ticks. The stage trace still runs on the resulting pose. */
+static void BtlCam_SmoothOnline(BtlCamView *view, s32 objId) {
+    extern s32 BtlSeq_IsFighting(void), ChrCam_IsCutActive(void *);
+    extern void *BtlChar_FindByObjId(s32);
+    extern u32 gPortLiveBlanks;
+    const s32 pane = view->index & 1;
+    __typeof__(sOnlineCamera[0]) *p = &sOnlineCamera[pane];
+    void *chr = BtlChar_FindByObjId(objId);
+    if ((!TagBattle_Network() && Port_NetView() < 0) || !Mods_WantCamera() || !chr ||
+        PortSpectator_Mode() || !BtlSeq_IsFighting() || ChrCam_IsCutActive(chr)) {
+        p->valid = 0;
+        return;
+    }
+    if (p->valid && p->obj == objId && p->stage == Battle_GetStage() && gPortLiveBlanks - p->blank <= 4) {
+        BtlCam_BlendOnlinePose(view, &p->pos, &p->rot);
+    }
+    p->valid = 1;
+    p->obj = objId;
+    p->stage = Battle_GetStage();
+    p->blank = gPortLiveBlanks;
+    p->pos = view->pos;
+    p->rot = view->rot;
+}
+
 static void BtlCam_PortMods(BtlCamView *view,s32 side,s32 objId) {
         extern s32 gPortResim;
         extern u32 gPortLiveBlanks;
@@ -552,7 +602,10 @@ static void BtlCam_PortMods(BtlCamView *view,s32 side,s32 objId) {
         Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot, (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)!=0);
         sPortZoomView[view->index & 1] = Port_ModsCamZoom(side); /* (the zoom, the stage: what they also asked) */
         if (Port_ModsCamCollide(side)) {
+            BtlCam_SmoothOnline(view, objId);
             BtlCam_PortCollide(view, objId);
+        } else {
+            sOnlineCamera[k].valid = 0;
         }
         sPortCameraPose[k].valid = 1;
         sPortCameraPose[k].blank = gPortLiveBlanks;
@@ -941,6 +994,23 @@ s32 BtlCam_UpdateOverride(void) {
     s32 ret = 0;
     s32 idx;
 
+#ifdef PORT
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_ONLINE_CAMERA_REGRESSION") && BtlSeq_IsFighting()) {
+        BtlCamView view = {0};
+        Vec4 pos = {0}, rot = {0};
+        view.pos.x = 20.0f;
+        view.rot.y = -3.1f;
+        rot.y = 3.1f;
+        BtlCam_BlendOnlinePose(&view, &pos, &rot);
+        s32 pass = view.pos.x > 6.3f && view.pos.x < 6.5f && view.rot.y > 3.1f && view.rot.y < 3.14f;
+        view.pos.x = 1.0f;
+        BtlCam_BlendOnlinePose(&view, &pos, &rot);
+        pass &= view.pos.x > 0.79f && view.pos.x < 0.81f;
+        fprintf(stderr, "online camera step: correction damping and short-angle wrap %s\n", pass ? "PASS" : "FAIL");
+        exit(pass ? 0 : 3);
+    }
+#endif
+
     if(TagBattle_Active()&&Battle_IsSplitScreen()){
         extern s32 TagBattle_SharedCutOwner(void);
         const s32 shared=TagBattle_SharedCutOwner();
@@ -1035,6 +1105,9 @@ s32 BtlCam_UpdateOverride(void) {
            player's view, full screen. That is this function's own case of "one view has priority", with the
            local player's view taking the place when the game itself gives none priority. */
         if (idx < 0) {
+            idx = Port_NetView();
+        }
+        if (Mods_WantCamera() && !PortSpectator_Mode() && BtlSeq_IsFighting() && Port_NetView() >= 0) {
             idx = Port_NetView();
         }
 #endif

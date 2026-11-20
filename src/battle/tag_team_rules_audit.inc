@@ -44,7 +44,7 @@ static void TagRules_NetworkTest(void) {
 /* Hidden integration fixture: exercise match setup, the transformation gate and native stage loading. */
 static void TagRules_Test(void) {
     TagRules_NetworkTest();
-    static s32 tick, target, passed = 1;
+    static s32 tick, target, repeatedTarget = -1, passed = 1;
     const char *test = getenv("BT4_RENDER_TEST") ? getenv("BT4_TAG_BATTLE_RULE_TEST") : NULL;
     if (!test || !TagBattle_Local() || !BtlSeq_IsFighting()) return;
 
@@ -93,6 +93,28 @@ static void TagRules_Test(void) {
         passed &= BtlStage_IsReady() && BtlChar_GetCount() == TagBattle_Count() &&
             (destruction ? Battle_GetStage() == target && BtlStage_GetId() != Battle_GetStartStage()
                          : Battle_GetStage() != target);
+        if (destruction) {
+            const s32 nextStage = BtlStage_GetChangeTarget();
+            s32 *hp = BtlMember_GetActiveGauge(BtlChar_Get(1));
+            hp[0] = hp[1] * 2 / 5;
+            TagBattle_SetTarget(0, 1);
+            const s32 shouldChange = nextStage >= 0 && nextStage != Battle_GetStage() && nextStage != BtlStage_GetId();
+            const s32 accepted = EftHit_TestStageDestruction(BattleSide_GetObjId(0));
+            passed &= accepted == shouldChange;
+            fprintf(stderr, "tag rules repeated destruction: accepted=%d expected=%d stage=%d next=%d\n",
+                    accepted, shouldChange, Battle_GetStage(), nextStage);
+            if (accepted) { repeatedTarget = nextStage; return; }
+        }
+    } else if (tick == 835 && repeatedTarget >= 0) {
+        passed &= BtlStage_IsReady() && Battle_GetStage() == repeatedTarget &&
+                  !(Battle_GetWork()->flags & BATTLE_FLAG_LOADING) && BtlChar_GetCount() == TagBattle_Count();
+    } else {
+        return;
+    }
+    if (tick >= 430) {
+        for (s32 actor = 0; actor < TagBattle_Count(); ++actor) {
+            if (BtlCharApi_GetHp(actor) > 0 && BtlChar_TestFlag(BtlChar_Get(actor), 0x137)) passed = 0;
+        }
         fprintf(stderr, "tag rules result: %s selected-stage=%d stage-asset=%d actors=%d\n",
                 passed ? "PASS" : "FAIL", Battle_GetStage(), BtlStage_GetId(), BtlChar_GetCount());
         exit(passed ? 0 : 3);

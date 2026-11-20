@@ -508,7 +508,7 @@ static char *sTbHubSay[HUB_COUNT]={
     "Open a lobby, choose the rules and invite players or spectators.",
     "Join a lobby with its code or the host address.",
     "Build two teams for simultaneous battles with players and CPU fighters.",
-    "Create an online tournament for 2 to 8 players. Follow the bracket and watch each match.",
+    "Create an online tournament for up to 32 players. Follow the bracket and watch the matches.",
     "Set the name other players see."
 };
 static void Tb_LobbyOpen(void);
@@ -4084,7 +4084,7 @@ static void Tb_LobbyUpdate(s32 live) {
 #define LB_R0 258.0f  /* the code, the rules, the buttons */
 #define LB_R1 502.0f
 
-/* The places: the players' first (1P and 2P; a tournament's Entrants rule makes 2 to 8 of them), then the
+/* The places: the players first, then the
    spectators' under their heading. */
 static s32 Tb_LobbyFirstRow(void) {
     return sTb->lbPlace < sTbLv.slots ? sTb->lbPlace / LB_ROWS * LB_ROWS : 0;
@@ -4214,6 +4214,10 @@ static void Tb_DrawLobbyText(void) {
         Ps_Align(2);
         Ps_Text(226.0f, Ps_TextTop(65.0f, .44f), line, .44f, 70.0f, 2);
         Ps_Align(0);
+        if (v->mode && v->entrants < v->slots) {
+            sprintf(line, Tb_Fmt("SPECTATORS  %d / %d"), (int)watch, (int)(v->slots - v->entrants));
+            Ps_Text(26.0f, Ps_TextTop(296.0f, .46f), line, .46f, 200.0f, 2);
+        }
     }
     for (i = Tb_LobbyFirstRow(); i < v->slots && i < Tb_LobbyFirstRow() + LB_ROWS; i++) {
         f32 y = Tb_LobbyRowY(i);
@@ -4224,7 +4228,7 @@ static void Tb_DrawLobbyText(void) {
         if (i < v->entrants) {
             sprintf(tag, v->mode ? "%d" : "%dP", (int)(i + 1)); /* (a tournament's places: 1..N) */
         } else if (v->slots > LB_ROWS) {
-            Ps_Copy(tag, "S", sizeof(tag));
+            sprintf(tag, "S%d", (int)(i - v->entrants + 1));
         } else {
             sprintf(tag, "%d", (int)(i - v->entrants + 1));
         }
@@ -4686,6 +4690,13 @@ static s32 Tb_BrPageIndex(void) {
     return r >= 3 ? sections : (focus - (sTbLv.tourSize - (sTbLv.tourSize >> r))) / (8 >> (r + 1));
 }
 
+static void Tb_BrPageChip(s32 index, f32 *x0, f32 *x1) {
+    const s32 sections = Tb_BrPageCount() - 1;
+    const f32 width = sections * 25.0f + 69.0f;
+    *x0 = 256.0f - width * 0.5f + index * 25.0f;
+    *x1 = *x0 + (index == sections ? 69.0f : 22.0f);
+}
+
 static void Tb_BrPageView(PortLobbyView *page) {
     const PortLobbyView *full = &sTbLv;
     *page = *full;
@@ -4805,7 +4816,8 @@ static void Tb_BracketUpdate(s32 live) {
     if (!live) {
         return;
     }
-    if (v->tourSize > LOBBY_CLASSIC_SLOTS && (pad->gameRepeat & (PADG_UP | PADG_DOWN | PADG_UP2 | PADG_DOWN2))) {
+    if (v->tourSize > LOBBY_CLASSIC_SLOTS && ((pad->gamePressed & PADG_SQUARE) ||
+        (pad->gameRepeat & (PADG_UP | PADG_DOWN | PADG_UP2 | PADG_DOWN2)))) {
         const s32 step = (pad->gameRepeat & (PADG_UP | PADG_UP2)) ? -1 : 1;
         sTb->brPage = (Tb_BrPageIndex() + step + Tb_BrPageCount()) % Tb_BrPageCount();
         Snd_PlaySe(1,0);
@@ -4878,6 +4890,14 @@ static void Tb_DrawBracket(void) {
         return;
     }
     Ps_Panel(TBO_KIT_WINDOW, 12.0f, 52.0f, 500.0f, 316.0f, 0x80);
+    if (Tb_BrPageCount() > 1) {
+        const s32 active = Tb_BrPageIndex();
+        for (s32 index = 0; index < Tb_BrPageCount(); ++index) {
+            f32 x0, x1;
+            Tb_BrPageChip(index, &x0, &x1);
+            Ps_Pill(index == active ? TBO_KIT_SEL : TBO_KIT_BAR, x0, 71.0f, x1, 86.0f, 0x80);
+        }
+    }
     /* the lines: each match's two sides, from where they come to where they meet */
     for (m = 0; m < size - 1; m++) {
         f32 nx;
@@ -4961,14 +4981,18 @@ static void Tb_DrawBracketText(void) {
     sprintf(line, Tb_Fmt("%d ENTRANTS"), (int)v->tourCount);
     Ps_Text(26.0f, Ps_TextTop(66.0f, 0.46f), line, 0.46f, 160.0f, 2);
     Ps_Align(2);
-    Ps_Text(486.0f, Ps_TextTop(66.0f, 0.46f), v->tourOn >= 0 ? "A MATCH IS ON" : v->tour == 2 ? "TOURNAMENT OVER" : "TOURNAMENT ON", 0.46f, 160.0f, v->tour == 2 ? 4 : 5);
+    Ps_Text(486.0f, Ps_TextTop(64.0f, 0.46f), sTbLv.tourOn >= 0 ? "A MATCH IS ON" : v->tour == 2 ? "TOURNAMENT OVER" : "TOURNAMENT ON", 0.46f, 160.0f, v->tour == 2 ? 4 : 5);
     Ps_Align(0);
-    if (sTbLv.tourSize > LOBBY_CLASSIC_SLOTS) {
+    if (Tb_BrPageCount() > 1) {
+        const s32 active = Tb_BrPageIndex();
         Ps_Align(1);
-        if (section) {
-            sprintf(line, Tb_Fmt("Bracket %c"), 'A' + (int)Tb_BrPageIndex());
-            Ps_TextRaw(256.0f, Ps_TextTop(78.0f, .52f), line, .52f, 150.0f, 2);
-        } else Ps_Text(256.0f, Ps_TextTop(78.0f, .52f), "Final Rounds", .52f, 150.0f, 2);
+        for (s32 index = 0; index < Tb_BrPageCount(); ++index) {
+            f32 x0, x1;
+            Tb_BrPageChip(index, &x0, &x1);
+            sprintf(line, "%c", 'A' + (int)index);
+            Ps_Text((x0+x1)*0.5f, Ps_TextTop(78.5f, .42f), index == Tb_BrPageCount() - 1 ? "Final Rounds" : line,
+                    .42f, x1-x0-6.0f, index == active ? 1 : 0);
+        }
         Ps_Align(0);
     }
     for (l = 0; l < size; l++) {
@@ -4983,7 +5007,7 @@ static void Tb_DrawBracketText(void) {
 
         Ps_Align(half ? 2 : 0);
         if (e < 0) {
-            Ps_Text(half ? x1 - 12.0f : x0 + 12.0f, Ps_TextTop(y, 0.5f), e == -2 ? "BYE" : "?", 0.5f, x1 - x0 - 24.0f, 4);
+            Ps_Text(half ? x1 - 12.0f : x0 + 12.0f, Ps_TextTop(y, 0.5f), e == -2 ? "BYE" : "Pending", 0.5f, x1 - x0 - 24.0f, 4);
         } else if (v->tourDrop[e] > 0) { /* its game fell silent: the place is held, the time left under the name */
             static char away[48];
 
@@ -5006,7 +5030,7 @@ static void Tb_DrawBracketText(void) {
     if (v->tourChamp >= 0) {
         Ps_TextRaw(256.0f, Ps_TextTop((BR_CH_Y0 + BR_CH_Y1) * 0.5f, 0.7f), v->tourName[v->tourChamp], 0.7f, 124.0f, 0);
     } else {
-        Ps_Text(256.0f, Ps_TextTop((BR_CH_Y0 + BR_CH_Y1) * 0.5f, 0.6f), "?", 0.6f, 0.0f, 4);
+        Ps_Text(256.0f, Ps_TextTop((BR_CH_Y0 + BR_CH_Y1) * 0.5f, 0.50f), "Pending", 0.50f, 102.0f, 4);
     }
     Ps_Text(256.0f, Ps_TextTop(Tb_BrMid() + 15.0f, 0.42f), section ? "QUALIFIER" : "FINAL", 0.42f, 92.0f, focus == size - 2 && v->tour == 1 ? 1 : 4);
     if (sTbLv.tourChoose >= 0 && !sTbLv.phase) {
@@ -5180,6 +5204,12 @@ static char *Tb_Help(void) {
         }
         if (sTb->lbChat) {
             return "Type a line for everyone in the lobby, then Done! Start sends it too.";
+        }
+        if (sTbLv.mode) {
+            if (sTbLv.tour != 0) return "Open the bracket to see who's up next. Spectator slots can watch the match.";
+            if (!sTbLv.owner) return "Players in numbered slots enter the draw. The other slots are for spectators.";
+            return sTbLv.code[0] ? "Share the room code. Players in numbered slots enter the draw."
+                                : "Share your address and port. Players in numbered slots enter the draw.";
         }
         if (!sTbLv.owner) {
             return "Welcome to the lobby! Its owner picks who plays and starts the match. Chat while you wait!";
@@ -5870,6 +5900,12 @@ s32 PortTbo_Run(void) {
         extern void Port_LobbyReviewFixture(int);
         Port_LobbyReviewFixture(atoi(getenv("BT4_TOURNAMENT_PREVIEW")));Port_LobbyView(&sTbLv);Tb_BracketOpen();
         if (getenv("BT4_TOURNAMENT_BRACKET_PAGE")) sTb->brPage = atoi(getenv("BT4_TOURNAMENT_BRACKET_PAGE"));
+        if (getenv("BT4_TOURNAMENT_LOBBY_FIXTURE")) {
+            sTb->lbPlace = sTbLv.slots - 1;
+            sTb->lbTourSeen = sTbLv.tourGen;
+            sTb->lbHostPose = -1;
+            Tb_SetMode(TB_LOBBY);
+        }
         if(getenv("BT4_TOURNAMENT_SELFTEST"))exit(0);
     }
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_QUICK_TEST")){

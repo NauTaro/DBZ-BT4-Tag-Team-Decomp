@@ -1,3 +1,27 @@
+# BT4decomp 0.1.39.6 R1 1.6
+
+- Online tournaments now support 32 players and two additional spectators.
+- Browse a clearer tournament bracket with a separate view for the final rounds.
+- Smoother online camera movement and fixes for Tag Team clashes, stage transitions and revivals.
+
+Update from the game menu. Everyone in the room should use the same version.
+
+<!-- bt4-update:en
+- Online tournaments now support 32 players and two additional spectators.
+- Browse a clearer tournament bracket with a separate view for the final rounds.
+- Smoother online camera movement and fixes for Tag Team clashes, stage transitions and revivals.
+-->
+<!-- bt4-update:es
+- Los torneos online admiten 32 jugadores y dos espectadores adicionales.
+- El cuadro del torneo incluye una vista para las rondas finales.
+- Cámara online más fluida y mejoras en choques, cambios de escenario y reanimaciones de Tag Team.
+-->
+<!-- bt4-update:pt
+- Os torneios online aceitam 32 jogadores e mais dois espectadores.
+- A chave tem uma área própria para as fases finais.
+- Câmera online mais suave e correções nos choques, nas transições de cenário e nas revives de Tag Team.
+-->
+
 # BT4decomp 0.1.39.6 R1 1.5
 
 - The winner controls the Ranked results menu, regardless of who hosted.

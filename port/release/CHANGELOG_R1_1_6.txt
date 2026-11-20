@@ -1,0 +1,13 @@
+BT4decomp 0.1.39.6 R1 1.6
+
+- Online tournaments now support 32 players and two additional spectators.
+- Browse a clearer tournament bracket with a separate view for the final rounds.
+- Smoother online camera movement and fixes for Tag Team clashes, stage transitions and revivals.
+
+- Los torneos online admiten 32 jugadores y dos espectadores adicionales.
+- El cuadro del torneo incluye una vista para las rondas finales.
+- Cámara online más fluida y mejoras en choques, cambios de escenario y reanimaciones de Tag Team.
+
+- Os torneios online aceitam 32 jogadores e mais dois espectadores.
+- A chave tem uma área própria para as fases finais.
+- Câmera online mais suave e correções nos choques, nas transições de cenário e nas revives de Tag Team.

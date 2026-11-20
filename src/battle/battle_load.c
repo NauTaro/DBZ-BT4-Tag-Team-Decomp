@@ -720,6 +720,9 @@ s32 BtlLoad_RequestStageChange(s32 stage) {
         return 0;
     }
     job = BtlJob_Alloc();
+    if (job == NULL) {
+        return 0;
+    }
     memset(job, 0, sizeof(BtlJob));
     job->step = BtlLoad_StepStageChange;
     job->state = 0;

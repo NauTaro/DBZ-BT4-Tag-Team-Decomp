@@ -3,7 +3,7 @@
 #define NET_MATCH_H
 
 #define MATCH_ADDRS 4
-#define MATCH_WATCH_ADDRS 128 /* up to four candidates plus a seen address per lobby member */
+#define MATCH_WATCH_ADDRS 165 /* four candidates and a seen address for every guest */
 
 typedef struct MatchStatus {
     int state;                      /* 0 idle, 1 working, 2 the room is made (code), 3 the other player is known, -1 failed */

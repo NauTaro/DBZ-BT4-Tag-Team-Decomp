@@ -550,7 +550,19 @@ void BtlChar_OnStageLoaded(BtlMgrChr *chr) {
     chr->unk15D4[4] = 0;
     BtlChar_ResetLook(chr);
     BtlChar_PoseToObj(chr, 1);
-    if ((BtlAnim_GetFlags(BtlAnim_GetId(chr)) & 0x10) || chr->unkFB0 >= 3) {
+    if (TagBattle_Active()) {
+        extern s32 TagFusion_Absent(s32);
+        BtlChar_ClearFlag(chr, 0x139);
+        BtlChar_ClearFlag(chr, 0x13A);
+        BtlChar_ClearFlag(chr, 0x125);
+        BtlChar_ClearFlag(chr, 0x126);
+        if (BtlMember_GetActiveGauge(chr)->health > 0 && !TagFusion_Absent(chr->side)) {
+            BtlChar_ClearFlag(chr, 0xB);
+        }
+        chr->freeze = chr->freezeNext = chr->freezeDelay = 0;
+    }
+    if (TagBattle_Active() ? BtlMember_GetActiveGauge(chr)->health <= 0 :
+        ((BtlAnim_GetFlags(BtlAnim_GetId(chr)) & 0x10) || chr->unkFB0 >= 3)) {
         BtlChar_SetHeldFlag(chr, 0x13A);
     } else {
         BtlChar_SetHeldFlag(chr, 0x139);

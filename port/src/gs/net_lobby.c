@@ -107,12 +107,17 @@ enum { CLOSE_CLOSED = 1, CLOSE_KICKED = 2 };
 #define MATCH_CONNECT_NS (40 * SEC) /* the two players have not connected to each other in this long: back to the lobby */
 #define RESULT_WAIT_NS (20 * SEC)  /* a tournament's match: one player's result and not the other's this long: played again */
 #define STATE_BYTES 620            /* STATE: the lobby (372 bytes), then the mode and the bracket (tour_put) */
-#define STATE_EXT_BYTES (STATE_BYTES + 4 + (LOBBY_SLOTS - LOBBY_CLASSIC_SLOTS) * 28)
+#define STATE_SEAT_BYTES 28
+#define STATE_BYTES_FOR(slots) (STATE_BYTES + 4 + ((slots) - LOBBY_CLASSIC_SLOTS) * STATE_SEAT_BYTES)
+#define STATE_EXT_BYTES STATE_BYTES_FOR(LOBBY_SLOTS)
+_Static_assert(STATE_EXT_BYTES <= 1400, "lobby state must fit in one relayed IPv4 datagram");
+_Static_assert(MATCH_WATCH_ADDRS >= (LOBBY_SLOTS - 1) * 5, "allow five addresses for every guest");
 #define HOLD_NS (90 * SEC)         /* a tournament's entrant whose game fell silent keeps its place this long (a rejoin) */
 #define TOKEN 16                   /* a rejoin token's bytes */
 #define HELLO_BYTES (40 + NAMEB + 4 + TOKEN) /* (the token after the name, with its tournament's number) */
 #define HELLO_CLASH_MARK 0x31534c43u
 #define HELLO_TOUR_MARK 0x31525554u
+#define HELLO_TOUR32_MARK 0x32525554u
 #define TOUR LOBBY_TOUR
 #define LEAVES LOBBY_TOUR_LEAVES
 
@@ -137,6 +142,7 @@ typedef struct {
     int claimed;               /* (room codes: it is known to be one of the members the service told of) */
     int supportsLongBeamClash;
     int supportsExpandedTournament;
+    int supportsFullTournament;
     int tokFor;                /* the entrant whose token it was sent + 1 (0 none), */
     int forgetLeft;            /* ... and how many more times it is told to forget it */
     uint32_t resGen;           /* what it says: the match whose result it has, */
@@ -389,9 +395,11 @@ static int t_next(void) {
 
 static int long_beam_clash(void);
 
-static int tournament_slots(int entrants) {
+static int tournament_slots(int entrants, int limit) {
     const int withWatchers = entrants + LOBBY_TOUR_WATCHERS;
-    return withWatchers < LOBBY_SLOTS ? withWatchers : LOBBY_SLOTS;
+    const int capacity = limit == TOUR ? LOBBY_SLOTS : limit;
+    if (limit == LOBBY_CLASSIC_SLOTS) return capacity;
+    return withWatchers < capacity ? withWatchers : capacity;
 }
 
 static int expanded_tournament(void) {
@@ -400,8 +408,16 @@ static int expanded_tournament(void) {
     return 1;
 }
 
+static int tournament_limit(void) {
+    if (!expanded_tournament()) return LOBBY_CLASSIC_SLOTS;
+    for (int k = 1; k < LOBBY_SLOTS; ++k) {
+        if (sL.m[k].on && !sL.m[k].supportsFullTournament) return LOBBY_TOUR_LEGACY;
+    }
+    return TOUR;
+}
+
 static int owner_slots(void) {
-    return sL.mode && expanded_tournament() ? tournament_slots(sL.entrants) : LOBBY_CLASSIC_SLOTS;
+    return sL.mode ? tournament_slots(sL.entrants, tournament_limit()) : LOBBY_CLASSIC_SLOTS;
 }
 static void view_update(int force) {
     uint64_t now = now_ns();
@@ -704,9 +720,10 @@ static void tour_get(const uint8_t *p) {
    including TURN overhead. Both packets carry the same state revision. */
 #define BRACKET_HEADER 32
 #define BRACKET_ENTRY 26
-#define BRACKET_BYTES (BRACKET_HEADER + TOUR * BRACKET_ENTRY + LEAVES + 2 * (LEAVES - 1))
+#define BRACKET_BYTES_FOR(entrants) (BRACKET_HEADER + (entrants) * BRACKET_ENTRY + LEAVES + 2 * (LEAVES - 1))
+#define BRACKET_BYTES BRACKET_BYTES_FOR(TOUR)
 
-static void bracket_put(uint8_t *p) {
+static void bracket_put(uint8_t *p, int wireEntrants) {
     put(p, 0, MAGIC);
     put(p, 1, T_L_BRACKET);
     put(p, 2, sL.seq);
@@ -716,14 +733,14 @@ static void bracket_put(uint8_t *p) {
     put(p, 6, (uint32_t)(uint8_t)sL.t.cur | (uint32_t)(uint8_t)sL.t.champ << 8 |
               (uint32_t)(uint8_t)sL.t.playing << 16 | (uint32_t)(uint8_t)sL.t.choose << 24);
     put(p, 7, (uint32_t)sL.entrants);
-    for (int i = 0; i < TOUR; ++i) {
+    for (int i = 0; i < wireEntrants; ++i) {
         uint8_t *entry = p + BRACKET_HEADER + i * BRACKET_ENTRY;
         put(entry, 0, sL.t.id[i]);
         memcpy(entry + 4, sL.t.name[i], NAMEB);
         entry[24] = sL.t.gone[i] != 0;
         entry[25] = (uint8_t)sL.t.dropSecs[i];
     }
-    uint8_t *leaf = p + BRACKET_HEADER + TOUR * BRACKET_ENTRY;
+    uint8_t *leaf = p + BRACKET_HEADER + wireEntrants * BRACKET_ENTRY;
     for (int i = 0; i < LEAVES; ++i) leaf[i] = (uint8_t)sL.t.leaf[i];
     for (int i = 0; i < LEAVES - 1; ++i) {
         leaf[LEAVES + 2 * i] = (uint8_t)sL.t.win[i];
@@ -736,12 +753,14 @@ static int bracket_index(uint32_t word, int shift, int limit) {
     return index < (unsigned)limit ? (int)index : -1;
 }
 
-static void bracket_get(const uint8_t *p) {
+static void bracket_get(const uint8_t *p, int bytes) {
+    if (bytes != BRACKET_BYTES && bytes != BRACKET_BYTES_FOR(LOBBY_TOUR_LEGACY)) return;
+    const int wireEntrants = bytes == BRACKET_BYTES ? TOUR : LOBBY_TOUR_LEGACY;
     const uint32_t seq = get(p, 2), meta = get(p, 5), indices = get(p, 6), entrants = get(p, 7);
     const int size = (int)(meta >> 8 & 255u), count = (int)(meta >> 16 & 255u), state = (int)(meta & 255u);
     if (seq < sL.seqSeen || seq <= sL.bracketSeq || (size != 16 && size != 32) ||
-        count <= size / 2 || count > size || count > TOUR || state < 1 || state > 2 ||
-        entrants < (uint32_t)count || entrants > TOUR) return;
+        count <= size / 2 || count > size || count > wireEntrants || state < 1 || state > 2 ||
+        entrants < (uint32_t)count || entrants > (uint32_t)wireEntrants) return;
     sL.bracketSeq = seq;
     sL.mode = 1;
     sL.entrants = (int)entrants;
@@ -762,7 +781,7 @@ static void bracket_get(const uint8_t *p) {
         sL.t.gone[i] = entry[24] != 0;
         sL.t.dropSecs[i] = entry[25];
     }
-    const uint8_t *leaf = p + BRACKET_HEADER + TOUR * BRACKET_ENTRY;
+    const uint8_t *leaf = p + BRACKET_HEADER + wireEntrants * BRACKET_ENTRY;
     for (int i = 0; i < size; ++i) sL.t.leaf[i] = bracket_index(leaf[i], 0, count);
     for (int i = 0; i < size - 1; ++i) {
         const uint8_t how = leaf[LEAVES + 2 * i + 1];
@@ -778,11 +797,44 @@ static int long_beam_clash(void) {
     return 1;
 }
 
-static void state_send(int k) {
-    uint8_t p[STATE_EXT_BYTES];
-    const int extended = sL.m[k].supportsExpandedTournament && sL.mode;
+static int state_seats_get(const uint8_t *pkt, int bytes) {
+    const int wireSlots = bytes == STATE_EXT_BYTES ? LOBBY_SLOTS :
+                          bytes == STATE_BYTES_FOR(LOBBY_TOUR_LEGACY) ? LOBBY_TOUR_LEGACY : LOBBY_CLASSIC_SLOTS;
+    int changed = 0;
+    sL.remoteSlots = wireSlots;
+    if (wireSlots > LOBBY_CLASSIC_SLOTS) {
+        int capacity = (int)get(pkt, STATE_BYTES / 4);
+        if (capacity >= 2 && capacity <= wireSlots) sL.remoteSlots = capacity;
+    }
+    for (int seat = 0; seat < LOBBY_SLOTS; ++seat) {
+        uint32_t id = 0;
+        int ready = 0;
+        const uint8_t *name = NULL;
+        if (seat < LOBBY_CLASSIC_SLOTS) {
+            id = get(pkt, 10 + seat * 2);
+            ready = get(pkt, 11 + seat * 2) != 0;
+            name = pkt + 104 + seat * NAMEB;
+        } else if (seat < wireSlots) {
+            const uint8_t *entry = pkt + STATE_BYTES + 4 + (seat - LOBBY_CLASSIC_SLOTS) * STATE_SEAT_BYTES;
+            id = get(entry, 0);
+            ready = get(entry, 1) != 0;
+            name = entry + 8;
+        }
+        changed |= sL.ids[seat] != id || sL.ready[seat] != ready;
+        sL.ids[seat] = id;
+        sL.ready[seat] = ready;
+        if (name) memcpy(sL.names[seat], name, NAMEB);
+        else sL.names[seat][0] = '\0';
+        name_clean(sL.names[seat], NAMEB);
+    }
+    return changed;
+}
+
+static int state_put(uint8_t *p, int k, int wireSlots) {
+    const int extended = wireSlots > LOBBY_CLASSIC_SLOTS;
     int s;
-    memset(p, 0, sizeof(p));
+    const int bytes = extended ? STATE_BYTES_FOR(wireSlots) : STATE_BYTES;
+    memset(p, 0, bytes);
     put(p, 0, MAGIC);
     put(p, 1, T_L_STATE);
     put(p, 2, sL.seq);
@@ -808,18 +860,28 @@ static void state_send(int k) {
     tour_put(p);
     if (extended) {
         put(p, STATE_BYTES / 4, (uint32_t)owner_slots());
-        for (s = LOBBY_CLASSIC_SLOTS; s < LOBBY_SLOTS; ++s) {
-            uint8_t *entry = p + STATE_BYTES + 4 + (s - LOBBY_CLASSIC_SLOTS) * 28;
+        for (s = LOBBY_CLASSIC_SLOTS; s < wireSlots; ++s) {
+            uint8_t *entry = p + STATE_BYTES + 4 + (s - LOBBY_CLASSIC_SLOTS) * STATE_SEAT_BYTES;
             put(entry, 0, sL.ids[s]);
             put(entry, 1, (uint32_t)sL.ready[s]);
             memcpy(entry + 8, sL.names[s], NAMEB);
         }
     }
-    send_to(p, extended ? STATE_EXT_BYTES : STATE_BYTES, &sL.m[k].addr);
+    return bytes;
+}
+
+static void state_send(int k) {
+    uint8_t p[STATE_EXT_BYTES];
+    const int extended = sL.m[k].supportsExpandedTournament && sL.mode;
+    const int wireSlots = !extended ? LOBBY_CLASSIC_SLOTS :
+                          sL.m[k].supportsFullTournament ? LOBBY_SLOTS : LOBBY_TOUR_LEGACY;
+    const int bytes = state_put(p, k, wireSlots);
+    send_to(p, bytes, &sL.m[k].addr);
     if (extended && sL.t.size > LOBBY_CLASSIC_SLOTS && sL.t.state) {
         uint8_t bracket[BRACKET_BYTES];
-        bracket_put(bracket);
-        send_to(bracket, sizeof(bracket), &sL.m[k].addr);
+        const int wireEntrants = sL.m[k].supportsFullTournament ? TOUR : LOBBY_TOUR_LEGACY;
+        bracket_put(bracket, wireEntrants);
+        send_to(bracket, BRACKET_BYTES_FOR(wireEntrants), &sL.m[k].addr);
     }
 }
 
@@ -1244,10 +1306,12 @@ static void t_new(void) {
 static void review_entrants(int n) {
     memset(&sL, 0, sizeof(sL));
     sL.on = 1; sL.state = 2; sL.mode = 1; sL.entrants = n; sL.ownerId = sL.myId = 101;
+    sL.speed = 114; sL.roll = 4; sL.time = 3;
+    SDL_strlcpy(sL.code, "T32AB2", sizeof(sL.code));
     for (int i = 0; i < LOBBY_SLOTS; ++i) {
         sL.slot[i] = i < n ? i : -1;
         if (i >= n) continue;
-        sL.m[i].on = sL.m[i].supportsExpandedTournament = 1;
+        sL.m[i].on = sL.m[i].supportsExpandedTournament = sL.m[i].supportsFullTournament = 1;
         sL.m[i].id = sL.ids[i] = 101 + i;
         if (i == 0) SDL_strlcpy(sL.m[i].name, "NauTaro", NAMEB);
         else SDL_snprintf(sL.m[i].name, NAMEB, "Player %d", i + 1);
@@ -1259,6 +1323,19 @@ void Port_LobbyReviewFixture(int entrants){
     __typeof__(sL) saved;__typeof__(sTok) savedToken;int n,checks=0,games=0;
     if(!getenv("BT4_RENDER_TEST"))return;
     saved=sL;savedToken=sTok;
+    /* Exercise both encodings at their maximum, including the last viewer. */
+    review_entrants(TOUR);
+    for (int wire = LOBBY_SLOTS; wire >= LOBBY_TOUR_LEGACY; wire -= LOBBY_SLOTS - LOBBY_TOUR_LEGACY) {
+        uint8_t packet[STATE_EXT_BYTES];
+        sL.entrants = wire == LOBBY_SLOTS ? TOUR : LOBBY_TOUR_LEGACY;
+        sL.m[1].supportsFullTournament = wire == LOBBY_SLOTS;
+        sL.ids[wire - 1] = 777;
+        SDL_strlcpy(sL.names[wire - 1], "Last seat", NAMEB);
+        int bytes = state_put(packet, 1, wire);
+        sL.ids[wire - 1] = 0;
+        if (!state_seats_get(packet, bytes) || sL.remoteSlots != wire || sL.ids[wire - 1] != 777 ||
+            strcmp(sL.names[wire - 1], "Last seat")) exit(3);
+    }
     for(n=2;n<=TOUR;++n){
         int played=0;
         review_entrants(n);
@@ -1267,9 +1344,10 @@ void Port_LobbyReviewFixture(int entrants){
             uint8_t packet[BRACKET_BYTES];
             Tour expected = sL.t;
             sL.seq = 1;
-            bracket_put(packet);
+            const int wireEntrants = n <= LOBBY_TOUR_LEGACY ? LOBBY_TOUR_LEGACY : TOUR;
+            bracket_put(packet, wireEntrants);
             memset(&sL.t, 0, sizeof(sL.t));
-            bracket_get(packet);
+            bracket_get(packet, BRACKET_BYTES_FOR(wireEntrants));
             if (sL.t.count != expected.count || sL.t.size != expected.size ||
                 memcmp(sL.t.leaf, expected.leaf, (size_t)sL.t.size*sizeof(int)) ||
                 memcmp(sL.t.name, expected.name, sizeof(expected.name))) exit(3);
@@ -1285,6 +1363,14 @@ void Port_LobbyReviewFixture(int entrants){
     }
     n=entrants<2?2:entrants>TOUR?TOUR:entrants;
     review_entrants(n);
+    if (getenv("BT4_TOURNAMENT_LOBBY_FIXTURE")) {
+        for (int i = n; i < owner_slots(); ++i) {
+            sL.slot[i] = i;
+            sL.ids[i] = sL.m[i].id = 101 + i;
+            sL.m[i].on = sL.m[i].supportsExpandedTournament = sL.m[i].supportsFullTournament = 1;
+            SDL_snprintf(sL.names[i], NAMEB, "Spectator %d", i - n + 1);
+        }
+    }
     t_new();
     if (getenv("BT4_TOURNAMENT_RESULT_TEST")) {
         const int m = sL.t.cur;
@@ -1294,7 +1380,7 @@ void Port_LobbyReviewFixture(int entrants){
     }
     view_update(1);sReviewView=sView;sReviewActive=1;
     sL=saved;sTok=savedToken;
-    fprintf(stderr,"tournament review: entrant-counts=%d resolved-matches=%d champion-checks=passed fixture-entrants=%d network-sockets-opened=0\n",checks,games,n);
+    fprintf(stderr,"tournament review: entrant-counts=%d resolved-matches=%d champion-checks=passed fixture-entrants=%d wire-seats=22/34 network-sockets-opened=0\n",checks,games,n);
 }
 
 static int member_by_id(uint32_t id) {
@@ -1514,6 +1600,7 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
         return;
     }
     const int extended = n >= HELLO_BYTES + 8 && get(pkt, HELLO_BYTES / 4 + 1) == HELLO_TOUR_MARK;
+    const int full = extended && n >= HELLO_BYTES + 12 && get(pkt, HELLO_BYTES / 4 + 2) == HELLO_TOUR32_MARK;
     const int capacity = owner_slots();
     if (back >= 0 && sL.t.dropNs[back] == 0 && get(pkt, 2) == LOBBY_VERSION) {
         /* the entrant's game greets again from somewhere new (it was started again) while its old one is not yet
@@ -1525,7 +1612,8 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
         }
     }
     if (get(pkt, 2) != LOBBY_VERSION || get(pkt, 3) != (uint32_t)NetIo_Version() ||
-        (sL.mode && (sL.entrants > LOBBY_CLASSIC_SLOTS || capacity > LOBBY_CLASSIC_SLOTS) && !extended)) {
+        (sL.mode && ((capacity > LOBBY_TOUR_LEGACY && !full) ||
+                     (capacity > LOBBY_CLASSIC_SLOTS && !extended)))) {
         why = LNO_VERSION;
     } else if (get(pkt, 4) == FP_MARK && NetIo_Fingerprint(&mine) && ((unsigned long long)get(pkt, 5) | (unsigned long long)get(pkt, 6) << 32) != mine) {
         why = LNO_DATA; /* (the same data as the owner's, modified or not: a lobby is among friends) */
@@ -1570,6 +1658,7 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
     sL.m[free].nonce = nonce;
     sL.m[free].supportsLongBeamClash = n >= HELLO_BYTES+4 && get(pkt, HELLO_BYTES/4)==HELLO_CLASH_MARK;
     sL.m[free].supportsExpandedTournament = extended;
+    sL.m[free].supportsFullTournament = full;
     addr_get(pkt, 8, &sL.m[free].self);
     memcpy(sL.m[free].name, pkt + 40, NAMEB);
     name_clean(sL.m[free].name, NAMEB);
@@ -1792,9 +1881,9 @@ static void owner_do(int what, int a, int b) {
                     return; /* (a tournament's, and not while one is on) */
                 }
                 /* (fewer: who sat in the places that are no longer the players' is a spectator there now) */
-                const int max = expanded_tournament() ? TOUR : LOBBY_CLASSIC_SLOTS;
+                const int max = tournament_limit();
                 const int next = (sL.entrants - 2 + b + (max - 1)) % (max - 1) + 2;
-                const int slots = expanded_tournament() ? tournament_slots(next) : LOBBY_CLASSIC_SLOTS;
+                const int slots = tournament_slots(next, max);
                 for (int i = slots; i < LOBBY_SLOTS; ++i) if (sL.slot[i] >= 0) {
                     note_set("Free the extra tournament places before lowering the capacity.");
                     return;
@@ -1936,7 +2025,7 @@ static void tok_load(void) {
 }
 
 static void hello_send(const struct sockaddr_in *to) {
-    uint8_t p[HELLO_BYTES+8];
+    uint8_t p[HELLO_BYTES+12];
     unsigned long long fp = 0;
     struct sockaddr_in self;
     char text[64], *colon;
@@ -1973,6 +2062,7 @@ static void hello_send(const struct sockaddr_in *to) {
     }
     put(p, HELLO_BYTES/4, HELLO_CLASH_MARK);
     put(p, HELLO_BYTES/4 + 1, HELLO_TOUR_MARK);
+    put(p, HELLO_BYTES/4 + 2, HELLO_TOUR32_MARK);
     send_to(p, (int)sizeof(p), to);
 }
 
@@ -2089,20 +2179,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         sL.roll = (o & (1u << 17)) ? 10 : (int)(o & 0xFF);
         sL.delay = (int)(o >> 8 & 0xFF);
         sL.longBeamClash = (int)(o >> 16 & 1);
-        sL.remoteSlots = n >= STATE_EXT_BYTES ? (int)get(pkt, STATE_BYTES / 4) : LOBBY_CLASSIC_SLOTS;
-        if (sL.remoteSlots < 2 || sL.remoteSlots > LOBBY_SLOTS) sL.remoteSlots = LOBBY_CLASSIC_SLOTS;
-        for (s = 0; s < LOBBY_SLOTS; s++) {
-            const uint8_t *entry = s < LOBBY_CLASSIC_SLOTS ? NULL : pkt + STATE_BYTES + 4 + (s - LOBBY_CLASSIC_SLOTS) * 28;
-            const int extra = n >= STATE_EXT_BYTES && entry != NULL;
-            const uint32_t id = extra ? get(entry, 0) : entry ? 0 : get(pkt, 10 + s * 2);
-            const int ready = extra ? get(entry, 1) != 0 : entry ? 0 : get(pkt, 11 + s * 2) != 0;
-            changed |= id != sL.ids[s] || sL.ready[s] != ready;
-            sL.ids[s] = id;
-            sL.ready[s] = ready;
-            if (extra || !entry) memcpy(sL.names[s], extra ? entry + 8 : pkt + 104 + s * NAMEB, NAMEB);
-            else sL.names[s][0] = '\0';
-            name_clean(sL.names[s], NAMEB);
-        }
+        changed |= state_seats_get(pkt, n);
         if (noteSeq != sL.noteSeq) {
             sL.noteSeq = noteSeq;
             memcpy(sL.note, pkt + 264, NOTE);
@@ -2145,8 +2222,8 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
                 sL.wantReady = -1;
             }
         }
-    } else if (type == T_L_BRACKET && n >= BRACKET_BYTES) {
-        bracket_get(pkt);
+    } else if (type == T_L_BRACKET && n >= BRACKET_BYTES_FOR(LOBBY_TOUR_LEGACY)) {
+        bracket_get(pkt, n);
     } else if (type == T_L_GO && n >= 64) {
         uint32_t gen = get(pkt, 2);
         struct sockaddr_in t, alt, kn, kn2;

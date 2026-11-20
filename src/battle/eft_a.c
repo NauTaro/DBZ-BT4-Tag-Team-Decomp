@@ -362,10 +362,7 @@ s32 EftHit_RearmImpact(EftHitRec *rec) {
 }
 
 /* Clash of two technique records: 4 = head-on (beam struggle), 1 / 2 = which one is passed, 3 = no clash rule. */
-/* A head-on pair (a moves toward b's previous position and the two movements oppose) stops the technique timers of
- * fighters 0 and 1 by literal id (EftTechEvt_RequestStop), whoever owns the records; the caller does not gate this
- * by contact. The kind test is a range test on the signed byte (`kind >= 0 && kind <= 2`) in an `if` of its own:
- * that is what gives lbu / sltiu and the later sign extension. */
+/* The caller owns contact detection and technique timer changes. */
 s32 EftHit_ClashTech(EftHitRec *a, EftHitRec *b) {
     EftHitDef *defA = a->src->def;
     EftHitDef *defB = b->src->def;
@@ -381,6 +378,11 @@ s32 EftHit_ClashTech(EftHitRec *a, EftHitRec *b) {
     if (!((defA->kind >= 0 && defA->kind <= 2) || defA->kind == 8)) {
         return 3;
     }
+#ifdef PORT
+    if (!((defB->kind >= 0 && defB->kind <= 2) || defB->kind == 8)) {
+        return 3;
+    }
+#endif
     if ((defA->flags & 0x100) || (defB->flags & 0x100) || defA->unk9 >= 2 || defB->unk9 >= 2) {
         return 3;
     }
@@ -389,8 +391,10 @@ s32 EftHit_ClashTech(EftHitRec *a, EftHitRec *b) {
     Vec4_Sub(&d, &b->prevPos, &a->prevPos);
     if (Vec3_Dot(&moveA, &d) > 0.0f && Vec3_Dot(&moveA, &moveB) < 0.0f) {
         result = 4;
+#ifndef PORT
         EftTechEvt_RequestStop(0);
         EftTechEvt_RequestStop(1);
+#endif
     } else {
         Vec4_Sub(&d, &a->pos, &b->pos);
         result = 2;
