@@ -1,3 +1,19 @@
+# BT4decomp 0.1.39.6 R1 1.8
+
+- Restored the original arena boundaries.
+
+Update from the game menu. Everyone in the room should use the same version.
+
+<!-- bt4-update:en
+- Restored the original arena boundaries.
+-->
+<!-- bt4-update:es
+- Se restauraron los límites originales de los escenarios.
+-->
+<!-- bt4-update:pt
+- Os limites originais das arenas foram restaurados.
+-->
+
 # BT4decomp 0.1.39.6 R1 1.7
 
 - Browse open rooms for Duels, Tournaments and Tag Team. Room hosts can choose open access or invite players by code.

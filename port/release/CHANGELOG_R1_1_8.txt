@@ -1,0 +1,10 @@
+BT4decomp 0.1.39.6 R1 1.8
+
+English
+- Restored the original arena boundaries.
+
+Español
+- Se restauraron los límites originales de los escenarios.
+
+Português
+- Os limites originais das arenas foram restaurados.
