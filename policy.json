@@ -1,4 +1,4 @@
 {
-  "payload": "{\"active\":\"secondary\",\"capability\":1,\"epoch\":5,\"expires_at\":1795216586,\"issued_at\":1795130187,\"minimum\":\"0.1.39.5-R5.3\",\"require_update\":true,\"schema\":1}",
-  "signature": "648f30ce802d91a20a7f668beff484e6e09d3e87aaae120efef15d6f02a8027a3ae4f9aed5e86426139215daab72b91cd686d812fa6b0abc5a82dbd77e1abf03"
+  "payload": "{\"active\":\"secondary\",\"capability\":1,\"epoch\":5,\"expires_at\":1795233712,\"issued_at\":1795147313,\"minimum\":\"0.1.39.5-R5.3\",\"require_update\":true,\"schema\":1}",
+  "signature": "b708f0d525b2c7fc301a7d4cfdfe9bb9d54cc70f96747de1135e734152486f72cf4456b166f67c5a06cb2705fbbd2fd43ade78897bc8409defadc47a48baea04"
 }
