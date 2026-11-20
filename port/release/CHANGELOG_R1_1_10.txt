@@ -1,0 +1,13 @@
+BT4decomp 0.1.39.6 R1 1.10
+
+English
+- Restored the original arena boundaries.
+- Gamma 2’s first super takes longer to fire after release, and his homing super costs one more Ki bar.
+
+Español
+- Se restauraron los límites originales de los escenarios.
+- La primera técnica de Gamma 2 tarda más en salir al soltarla y su ataque perseguidor cuesta una barra de ki más.
+
+Português
+- Os limites originais das arenas foram restaurados.
+- O primeiro super de Gamma 2 demora mais para sair depois de soltar o botão, e o ataque teleguiado custa uma barra de ki a mais.

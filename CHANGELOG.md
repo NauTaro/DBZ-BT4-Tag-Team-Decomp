@@ -1,3 +1,23 @@
+# BT4decomp 0.1.39.6 R1 1.10
+
+- Restored the original arena boundaries.
+- Gamma 2’s first super takes longer to fire after release, and his homing super costs one more Ki bar.
+
+Update from the game menu. Everyone in the room should use the same version.
+
+<!-- bt4-update:en
+- Restored the original arena boundaries.
+- Gamma 2’s first super takes longer to fire after release, and his homing super costs one more Ki bar.
+-->
+<!-- bt4-update:es
+- Se restauraron los límites originales de los escenarios.
+- La primera técnica de Gamma 2 tarda más en salir al soltarla y su ataque perseguidor cuesta una barra de ki más.
+-->
+<!-- bt4-update:pt
+- Os limites originais das arenas foram restaurados.
+- O primeiro super de Gamma 2 demora mais para sair depois de soltar o botão, e o ataque teleguiado custa uma barra de ki a mais.
+-->
+
 # BT4decomp 0.1.39.6 R1 1.7
 
 - Browse open rooms for Duels, Tournaments and Tag Team. Room hosts can choose open access or invite players by code.

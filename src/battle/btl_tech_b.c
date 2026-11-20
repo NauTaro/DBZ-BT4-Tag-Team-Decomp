@@ -1168,10 +1168,26 @@ s32 BtlSuper_GetBaseGuardDamage(BtlTechBChr *chr, s32 slot, s32 total) {
     return damage;
 }
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+#define BTL_GAMMA_2 207
+
+/* A chargeable Blast 2 can hold its firing cue briefly after the release input. */
+s32 BtlSuper_GetReleaseDelayFrames(BtlTechBChr *chr, s32 slot) {
+    BtlTechBObj *obj = BtlChar_GetObj(chr);
+    return slot == 2 && obj->chara == BTL_GAMMA_2 && BtlSuper_GetId(chr, slot) == 334 ? 30 : 0;
+}
+#endif
+
 /* Ki the technique costs; halved with ability 0x2B. */
 s32 BtlSuper_GetKiCost(BtlTechBChr *chr, s32 slot) {
-    s32 ki = BtlChar_GetObj(chr)->super->ki[slot - 2];
+    BtlTechBObj *obj = BtlChar_GetObj(chr);
+    s32 ki = obj->super->ki[slot - 2];
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (slot == 3 && obj->chara == BTL_GAMMA_2 && BtlSuper_GetId(chr, slot) == 485) {
+        ki += 20000; /* One ki bar. */
+    }
+#endif
     if (BtlMember_HasAbility(chr, 0x2B)) {
         ki /= 2;
     }

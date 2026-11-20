@@ -1442,11 +1442,9 @@ void EftBound_Draw(EftTask *task) {
     if (gEftBound->enabled != 1) {
         return;
     }
-#ifndef BT4_TAG_TEAM_EXPANDED
     if (work->wall.active != 0) {
         EftBound_DrawMeshCulled(&work->wall);
     }
-#endif
     if (work->unk850.active != 0) {
         EftBound_DrawMesh(&work->unk850);
     }
