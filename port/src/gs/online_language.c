@@ -512,6 +512,7 @@ static const char *const kText[][3]={
 {"A ROOM CODE HAS SIX LETTERS AND NUMBERS","EL C\u00d3DIGO DEBE TENER SEIS LETRAS O N\u00daMEROS."},
 {"Delete","Borrar"},
 {"Type Name","Cambiar nombre"},
+{"Edit Card","Editar tarjeta","Editar cartão"},
 {"SAVED: YOUR RIVALS WILL SEE THIS NAME","NOMBRE GUARDADO. TUS RIVALES VER\u00c1N ESTE NOMBRE."},
 {"SOON","PR\u00d3XIMAMENTE"},
 {"Battle","Combate"},

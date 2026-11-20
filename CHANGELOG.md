@@ -1,3 +1,27 @@
+# BT4decomp 0.1.39.6 R1 1.7
+
+- Customize your online profile with a photo or a BT4 portrait, name colors, and a banner color.
+- Ranked now shows both players’ points before the fight and your updated total after it. Confirmed forfeits settle without being held for review.
+- Fixed missing combat sounds for Player 2 in local Tag Team split-screen. Thanks to @dantemustlive42-del for reporting this (#71).
+
+Update from the game menu to keep your saves and settings.
+
+<!-- bt4-update:en
+- Customize your online profile with a photo or a BT4 portrait, name colors, and a banner color.
+- Ranked now shows both players’ points before the fight and your updated total after it. Confirmed forfeits settle without being held for review.
+- Fixed missing combat sounds for Player 2 in local Tag Team split-screen. Thanks to @dantemustlive42-del for reporting this (#71).
+-->
+<!-- bt4-update:es
+- Personaliza tu perfil online con una foto o un retrato de BT4, color para tu nombre y color de banner.
+- Ranked muestra los puntos de ambos jugadores antes del combate y tu nuevo total al terminar. Los abandonos confirmados se liquidan sin revisión.
+- Corregido el audio del segundo jugador en Tag Team local con pantalla dividida. Gracias a @dantemustlive42-del por reportarlo (#71).
+-->
+<!-- bt4-update:pt
+- Personalize seu perfil online com uma foto ou retrato do BT4, cor do nome e cor do banner.
+- O Ranked mostra os pontos dos dois jogadores antes da luta e seu novo total no final. Desistências confirmadas são contabilizadas sem revisão.
+- Corrigido o áudio do segundo jogador no Tag Team local com tela dividida. Obrigado a @dantemustlive42-del pelo relato (#71).
+-->
+
 # BT4decomp 0.1.39.6 R1 1.6
 
 - Online tournaments now support 32 players and two additional spectators.

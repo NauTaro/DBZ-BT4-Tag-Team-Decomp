@@ -136,7 +136,7 @@ test('completed normal games and ties are never converted into abandonments',()=
         assert.deepEqual(f.history(m,m.a),before);
     }
 });
-test('reviewed repeated forfeits still penalize the quitter without farming winner rewards',()=>{
+test('confirmed repeated forfeits still penalize the quitter and credit the winner',()=>{
     const f=fixture(),a=f.user('Winner'),b=f.user('Quitter');
     let m;
     for(let i=0;i<3;i++){
@@ -144,8 +144,8 @@ test('reviewed repeated forfeits still penalize the quitter without farming winn
         f.call(b,'ranked_forfeit',{match:m.id,reason:'local_quit'});
         assert.equal(f.history(m,b).delta,-100);
         const result=f.call(a,'ranked_heartbeat',{match:m.id});
-        assert.equal(result.delta,i===2?0:13+2*i);
-        if(i===2)assert.equal(result.under_review,true);
+        assert.equal(result.delta,13+2*i);
+        assert.equal(result.under_review,false);
         f.call(m.a,'leave',{generation:m.id});f.tick(60000);
     }
     assert.equal(f.c.one("SELECT losses FROM ranked_players WHERE user_id=? AND ruleset='solo'",b).losses,3);

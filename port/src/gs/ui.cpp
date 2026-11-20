@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <mutex>
+#include <atomic>
 #include "imgui.h"
 #include "imgui_internal.h" // ImGuiTabBar: the settings window as wide as its tabs
 #include "imgui_impl_sdl3.h"
@@ -25,6 +27,9 @@ extern "C" void *GsDx9_StripTexture(const void *, int, int);
 extern "C" void GsDx9_StripTextureFree(void *);
 #endif
 #include "ui.h"
+#include "profile_cards.h"
+#include "tag_hud.h"
+#include "../../include/tag_team.h"
 #include "presentation.h"
 #include "namefont.h"
 #include "../port_release.h"
@@ -42,6 +47,7 @@ extern "C" int Port_SpecialMoveCameras(int change);
 #include "update_notes.h"
 
 static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
+static bool sProfileEditor;
 static bool meter_on(void);
 static int sGL; // 1: the OpenGL back end draws the window (ImGui's OpenGL3 backend, no SDL GPU device)
 static char sGpuName[256];
@@ -50,6 +56,7 @@ extern "C" {
 extern volatile int gPortNetMenuRequest;
 void Port_NetOptions(int rollback, int delay); // gs/net.c
 void Port_NetRulesSet(int type, int dp, int time); // gs/net.c: the host's battle type, DP limit row, time limit
+void Port_NetRules(int *type, int *dp, int *time);
 void Port_NetSpeedSet(int percent);                // ... and the match's speed, 100..200 (set before the rules)
 int Port_NetSpeedStandard(void);                   // what a quick match runs at
 void Port_NetNameSet(const char *name);         // gs/net.c: this player's name for the match
@@ -72,6 +79,7 @@ void Port_MenusWideSet(int on);
 int Port_HudLayout(void);                      // gs_draw.c: 2 = the HUD is about the middle of the screen
 int GsDraw_HudShown(void);                     // ... and 1 while the game is drawing the HUD's side panels
 const char *Port_NetName(int player);          // the name of the player of side 0 or 1 ("" outside a match)
+const char *Port_NetNameGet(void);
 int Port_HudSwap(void);                        // the two sides of the HUD are in each other's places on this copy
 int Port_NetActive(void);
 int Port_NetMe(void);                          // gs/net.c: this copy's side, 0 or 1
@@ -80,6 +88,8 @@ int Port_NetStats(int *out);                   // gs/net.c: the meter's numbers 
 void Port_NetAutomaticOptions(void);
 int Port_NetTimingStats(int *out);
 int Port_TagNetwork(void),Port_TagPing(void),Port_TagLocalBattle(void);
+int Port_TagPhase(void),Port_TagCount(void),Port_TagCPU(int seat),Port_TagTeam(int seat);
+const char *Port_TagPlayerName(int seat);
 int Port_LobbyOther(void);
 extern unsigned gPortLiveBlanks;               // plat_stub.c: vertical blanks the game has gone through
 int Port_RollCan(void);                        // gs/state.c
@@ -1361,6 +1371,19 @@ static void quick_status(int state, int &lastState, const char *name) {
         Port_SettingsWrite();
         lastState = 0;
         Port_LobbyStartQuick(sQueue);
+    }
+}
+
+#include "profile_cards_ui.inc"
+
+extern "C" void Port_UiOpenProfileCard(void) { gPortNetMenuRequest = 2; }
+
+static void build_profile_editor() {
+    bool open=true;
+    profile_card_editor_window(Port_NetNameGet(),open);
+    if (!open||pad_pressed(ImGuiKey_GamepadFaceRight)) {
+        Port_ProfileCheckout(-1,nullptr,0);
+        set_open(false);
     }
 }
 
@@ -3152,16 +3175,146 @@ extern "C" void Port_UiNotice(const char *text) {
 // wait is over; the line stays that long more, over the game's own pictures and without the dimming. NULL: gone.
 #include "dragon_ball_notice.inc"
 
-static char sBanner[256];
-static Uint64 sBannerUntil; // 0: while the game waits
+struct OnlineBanner {
+    char text[256]={}, local[32]={}, rival[32]={}, region[64]={};
+    int latency=-1;
+    Uint64 until=0, entrance=0;
+};
+static std::mutex sBannerLock;
+static OnlineBanner sBanner;
+struct RankedToast {Uint64 started=0;int rating=0,delta=0;};
+static RankedToast sRankedToast;
+extern "C" void Port_UiRankedSettlement(int rating,int delta) {
+    std::lock_guard<std::mutex> guard(sBannerLock);
+    sRankedToast={SDL_GetTicks()+1,rating,delta};
+}
+extern "C" void Port_UiEncounter(const char *localName,const char *rivalName,const char *region,int latency) {
+    std::lock_guard<std::mutex> guard(sBannerLock);
+    if (!sBanner.local[0] || (!sBanner.rival[0] && rivalName[0])) sBanner.entrance=SDL_GetTicks();
+    SDL_strlcpy(sBanner.local,localName,sizeof(sBanner.local));
+    SDL_strlcpy(sBanner.rival,rivalName,sizeof(sBanner.rival));
+    SDL_strlcpy(sBanner.region,region,sizeof(sBanner.region));
+    sBanner.latency=latency;
+    sBanner.text[0]='\0';
+    sBanner.until=0;
+}
 extern "C" void Port_UiBanner(const char *text, int ms) {
-    if (text != NULL) {
-        SDL_strlcpy(sBanner, PortOnline_Text(text), sizeof(sBanner));
+    std::lock_guard<std::mutex> guard(sBannerLock);
+    if (text != nullptr || ms <= 0) sBanner={};
+    if (text != nullptr) {
+        SDL_strlcpy(sBanner.text, PortOnline_Text(text), sizeof(sBanner.text));
     }
-    if (text == NULL && ms <= 0) {
-        sBanner[0] = '\0';
+    sBanner.until = ms > 0 ? SDL_GetTicks() + (Uint64)ms : 0;
+}
+
+static void encounter_draw(const OnlineBanner &encounter) {
+    const ImVec2 screen=ImGui::GetIO().DisplaySize;
+    ImDrawList *dl=ImGui::GetForegroundDrawList();
+    const float width=fminf(screen.x * 0.90f, screen.y * 1.10f);
+    const float unit=width / 720.0f;
+    const float motion=fmaxf(0.0f,1.0f-float(SDL_GetTicks()-encounter.entrance)/240.0f);
+    const ImVec2 origin((screen.x-width)*0.5f,screen.y*0.44f-106.0f*unit+motion*motion*27.0f*unit);
+    if (!encounter.until)
+        dl->AddRectFilledMultiColor(ImVec2(0,0),screen,IM_COL32(8,19,30,88),IM_COL32(8,19,30,88),
+                                    IM_COL32(4,16,23,140),IM_COL32(4,16,23,140));
+    const int ratings[]={Port_ProfileRankedRating(encounter.local),Port_ProfileRankedRating(encounter.rival)};
+    const bool ranked=ratings[0]>=0||ratings[1]>=0;
+    profile_tbo_panel(dl,origin,ImVec2(origin.x+width,origin.y+(ranked?244:212)*unit),unit);
+    const char *title=encounter.rival[0]?profile_label("Match found","Rival encontrado","Adversário encontrado"):
+        profile_label("Connecting to your rival…","Conectando con tu rival…","Conectando ao adversário…");
+    profile_heading(dl,ImVec2(origin.x+22*unit,origin.y+21*unit),676*unit,44*unit,title);
+    ImFont *font=ImGui::GetFont();
+    const float cardShift=motion*motion*14*unit;
+    profile_card_player(dl,ImVec2(origin.x+26*unit+cardShift,origin.y+86*unit),285*unit,70*unit,encounter.local);
+    const ImVec2 vs(origin.x+360*unit,origin.y+121*unit);
+    profile_frame(dl,ImVec2(vs.x-31*unit,vs.y-23*unit),ImVec2(vs.x+31*unit,vs.y+23*unit),10*unit,
+                  IM_COL32(225,136,24,255),IM_COL32(255,226,131,255),2*unit);
+    const float vsWidth=font->CalcTextSizeA(25*unit,FLT_MAX,0,"VS").x;
+    dl->AddText(font,25*unit,ImVec2(vs.x-vsWidth*0.5f,vs.y-12.5f*unit),IM_COL32(39,23,12,255),"VS");
+    const char *rival=encounter.rival[0]?encounter.rival:profile_label("Rival","Rival","Adversário");
+    profile_card_player(dl,ImVec2(origin.x+409*unit-cardShift,origin.y+86*unit),285*unit,70*unit,rival);
+    for(int i=0;i<2;++i)if(ratings[i]>=0){
+        char points[64];
+        SDL_snprintf(points,sizeof(points),profile_label("%d Ranked points","%d puntos de Ranked","%d pontos no Ranked"),ratings[i]);
+        const float size=17*unit,w=font->CalcTextSizeA(size,FLT_MAX,0,points).x;
+        const float center=origin.x+(i?551.5f:168.5f)*unit;
+        dl->AddText(font,size,ImVec2(center-w*0.5f,origin.y+165*unit),IM_COL32(255,224,148,255),points);
     }
-    sBannerUntil = ms > 0 ? SDL_GetTicks() + (Uint64)ms : 0;
+    char detail[96]={};
+    if (encounter.latency>=0)
+        SDL_snprintf(detail,sizeof(detail),"%s%s%d ms",encounter.region,encounter.region[0]?"  |  ":"",encounter.latency);
+    else SDL_strlcpy(detail,encounter.region,sizeof(detail));
+    if (detail[0]) {
+        const float size=17*unit;
+        const float measured=font->CalcTextSizeA(size,FLT_MAX,0,detail).x;
+        const float y=origin.y+(ranked?200:168)*unit;
+        dl->AddRectFilled(ImVec2((screen.x-measured)*0.5f-14*unit,y),
+                          ImVec2((screen.x+measured)*0.5f+14*unit,y+28*unit),IM_COL32(10,35,47,235),14*unit);
+        dl->AddText(font,size,ImVec2((screen.x-measured)*0.5f,y+6*unit),IM_COL32(197,234,231,255),detail);
+    }
+}
+
+static void ranked_toast_draw(const RankedToast &toast,Uint64 elapsed) {
+    auto *dl=ImGui::GetForegroundDrawList();
+    const ImVec2 screen=ImGui::GetIO().DisplaySize;
+    const float u=fminf(screen.x/760.0f,screen.y/620.0f),w=350*u,h=147*u;
+    const float motion=fmaxf(fmaxf(0.0f,1.0f-elapsed/240.0f),fmaxf(0.0f,(float(elapsed)-4400.0f)/400.0f));
+    const ImVec2 p(screen.x-w-26*u+motion*motion*(w+30*u),screen.y*0.59f);
+    profile_tbo_panel(dl,p,ImVec2(p.x+w,p.y+h),u);
+    profile_heading(dl,ImVec2(p.x+16*u,p.y+14*u),w-32*u,38*u,
+                    profile_label("Ranked result","Resultado de Ranked","Resultado do Ranked"));
+    ImFont *font=ImGui::GetFont();
+    char detail[112];
+    char variation[64];
+    SDL_snprintf(variation,sizeof(variation),profile_label("%+d points","%+d puntos","%+d pontos"),toast.delta);
+    const ImU32 color=toast.delta>0?IM_COL32(172,244,167,255):toast.delta<0?IM_COL32(255,168,145,255):IM_COL32(213,233,238,255);
+    dl->AddText(font,26*u,ImVec2(p.x+27*u,p.y+65*u),color,variation);
+    SDL_snprintf(detail,sizeof(detail),profile_label("Total: %d points","Total: %d puntos","Total: %d pontos"),toast.rating);
+    dl->AddText(font,17*u,ImVec2(p.x+27*u,p.y+106*u),IM_COL32(216,244,240,255),detail);
+}
+
+static void online_message_draw(const char *text,float position,bool blocking) {
+    const ImVec2 screen=ImGui::GetIO().DisplaySize;
+    ImDrawList *dl=ImGui::GetForegroundDrawList();
+    ImFont *font=ImGui::GetFont();
+    const float u=fminf(screen.x/760.0f,screen.y/620.0f),size=(blocking?21.0f:17.0f)*u;
+    const float wrap=fmaxf(100.0f,screen.x*0.66f);
+    const ImVec2 extent=font->CalcTextSizeA(size,FLT_MAX,wrap,text);
+    const ImVec2 p((screen.x-extent.x)*0.5f-23*u,screen.y*position-(extent.y+34*u)*0.5f);
+    if(blocking)dl->AddRectFilled(ImVec2(0,0),screen,IM_COL32(5,18,29,145));
+    profile_tbo_panel(dl,p,ImVec2(p.x+extent.x+46*u,p.y+extent.y+34*u),u*0.78f);
+    dl->AddText(font,size,ImVec2(p.x+23*u,p.y+16*u),IM_COL32(231,248,242,255),text,nullptr,wrap);
+}
+
+static void tag_encounter_draw() {
+    struct Fighter {char name[32];Bt4ProfileCard card;};
+    Fighter columns[2][10]={};
+    int count[2]={};
+    for (int seat=0;seat<Port_TagCount()&&seat<10;++seat) {
+        if (Port_TagCPU(seat)) continue;
+        const char *name=Port_TagPlayerName(seat);
+        if (!name||!*name) continue;
+        const int team=Port_TagTeam(seat);
+        const int side=team>=0&&team<2?team:(count[0]<=count[1]?0:1);
+        Fighter &entry=columns[side][count[side]++];
+        SDL_strlcpy(entry.name,name,sizeof(entry.name));
+        Port_ProfileCardForTagPlayer(entry.name,&entry.card);
+    }
+    if (count[0]+count[1]<2) return;
+    const ImVec2 screen=ImGui::GetIO().DisplaySize;
+    const float width=fminf(screen.x*0.90f,screen.y*1.10f),u=width/720.0f;
+    const float cardHeight=fminf(52.0f,278.0f/fmaxf(count[0],count[1])-8.0f);
+    const float height=(98.0f+(cardHeight+8.0f)*fmaxf(count[0],count[1]))*u;
+    const ImVec2 origin((screen.x-width)*0.5f,(screen.y-height)*0.5f);
+    ImDrawList *dl=ImGui::GetForegroundDrawList();
+    profile_tbo_panel(dl,origin,ImVec2(origin.x+width,origin.y+height),u);
+    profile_heading(dl,ImVec2(origin.x+22*u,origin.y+21*u),676*u,44*u,
+                    profile_label("Tag Team match","Combate Tag Team","Combate Tag Team"));
+    for (int side=0;side<2;++side)for (int i=0;i<count[side];++i) {
+        const Fighter &fighter=columns[side][i];
+        const ImVec2 p(origin.x+(side?372:23)*u,origin.y+(78+(cardHeight+8)*i)*u);
+        profile_card_draw(dl,p,325*u,cardHeight*u,fighter.name,fighter.card);
+    }
 }
 
 #include "tag_team_menu_ui.inc"
@@ -3597,8 +3750,13 @@ static bool frame_build(void) {
         gPortNetMenuRequest = 0;
         set_open(false);
     } else if (sReady && gPortNetMenuRequest) { // Dragon Net Battle was chosen in the game's main menu
+        sProfileEditor=gPortNetMenuRequest==2;
         gPortNetMenuRequest = 0;
         net_open();
+        if (sProfileEditor) {
+            Port_ProfileCheckout(-1,nullptr,0);
+            Port_ProfileCardRequest(nullptr);
+        }
     }
     { // BT3_SPEC_PAUSE_AT=<seconds>: testing, a spectator's own pause menu (the game's) opens that long into its match
         static Uint64 since;
@@ -3628,14 +3786,24 @@ static bool frame_build(void) {
     bool meter = sReady && meter_on();
     // the players' names under the gauges of an online fight
     bool names = sReady && Port_NetActive() && BtlChar_FindByObjId(0) != NULL && (Port_NetName(0)[0] != '\0' || Port_NetName(1)[0] != '\0');
+    TagHudState tagCards={};
+    const bool showTagCard=sReady&&!names&&Port_TagNetwork()&&!PortHud_Hidden()&&
+        PortPanels_TagRead(&tagCards)&&tagCards.count>0;
+    const int tagPhase=Port_TagNetwork()?Port_TagPhase():TT_CLOSED;
+    const bool showTagEncounter=sReady&&!sOpen&&(tagPhase==TT_LOADING||tagPhase==TT_ARMED);
     bool bars = sReady && bars_on();
     bool online = sReady && Port_NetActive() && PortChat_Enabled() && !Port_NetSpectating(); // (a spectator has no one to talk to)
     if (sChat && !online) { // (the match ended while a line was typed)
         chat_close();
     }
     bool chat = online && (sChat || chat_recent());
-    if (sBanner[0] != '\0' && sBannerUntil != 0 && SDL_GetTicks() >= sBannerUntil) {
-        sBanner[0] = '\0';
+    OnlineBanner bannerState;
+    RankedToast rankedToast;
+    {
+        std::lock_guard<std::mutex> guard(sBannerLock);
+        if (sBanner.until && SDL_GetTicks()>=sBanner.until) sBanner={};
+        bannerState=sBanner;
+        rankedToast=sRankedToast;
     }
     bool tagMenu = sReady && sTagMenuOpen;
     bool updateAvailable=updLine[0]!=0;
@@ -3644,8 +3812,10 @@ static bool frame_build(void) {
     PortVoiceOptions voiceOptions;PortVoice_Options(&voiceOptions);
     PortVoiceState voiceState;PortVoice_State(&voiceState);
     bool voice = sReady && voiceOptions.indicators && (voiceState.sessionMode!=0||(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_ICON_TEST")));
-    bool banner = sReady && sBanner[0] != '\0' && !tagMenu;
+    bool banner = sReady && (bannerState.local[0]||bannerState.text[0]) && !tagMenu;
     Uint64 now = SDL_GetTicks();
+    const Uint64 toastElapsed=rankedToast.started?now+1-rankedToast.started:4800;
+    const bool showRankedToast=sReady&&!sOpen&&toastElapsed<4800&&(gPortMenuMode||!PortHud_Hidden());
     DragonBallNotice ballNotice = dragon_ball_notice();
     Uint64 ballElapsed = now - ballNotice.started;
     bool ballNoticeOn = sReady && !gPortMenuMode && !sOpen && !PortHud_Hidden() &&
@@ -3667,7 +3837,7 @@ static bool frame_build(void) {
     meter_count();
     sBuilt = false;
     UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit);
-    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods)) {
+    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !showTagCard && !showTagEncounter && !showRankedToast && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -3717,7 +3887,9 @@ static bool frame_build(void) {
     }
     if(mods)ModsUi_Draw(); // The player's Hide HUD choice also hides script overlays.
     if (sOpen) {
-        if (sNet) {
+        if (sNet&&sProfileEditor) {
+            build_profile_editor();
+        } else if (sNet) {
             build_net();
         } else {
             build();
@@ -3736,59 +3908,36 @@ static bool frame_build(void) {
     if (names && GsDraw_HudShown() && gUiPresentW > 0 && gUiPresentH > 0) { // (with the HUD: not over an intro)
         // Under each side's health bar (the game's 512 x 448 page: the bars end at about y 50). The left place is
         // side 0's, or this player's own side when the HUD's sides are swapped.
-        ImDrawList *dl = ImGui::GetBackgroundDrawList();
-        float sx = (float)gUiPresentW / 512.0f, sy = (float)gUiPresentH / 448.0f;
-        float size = 15.0f * sy;
-        ImFont *font = ImGui::GetFont();
-        for (int place = 0; place < 2; place++) {
-            const char *text = Port_NetName(place ^ Port_HudSwap());
-            if (text[0] == '\0') {
-                continue;
-            }
-            ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
-            // 106 of the HUD's own pixels in from its outer edge: clear of the panel of a team's waiting fighters,
-            // which reaches to about 100 (the name sat on it at 62: reported). The HUD is narrowed in a wide
-            // picture and sits at the edges or about the middle (gs_draw.c), and the name goes with it.
-            float narrow = Port_IsWide() ? 1333.333f / (float)Port_AspectMilli() : 1.0f;
-            float in = Port_HudLayout() == 2 ? 256.0f + (106.0f - 256.0f) * narrow : 106.0f * narrow;
-            float x = place == 0 ? (float)gUiPresentX + in * sx : (float)gUiPresentX + (512.0f - in) * sx - ts.x;
-            float y = (float)gUiPresentY + 56.0f * sy;
-            for (int ox = -1; ox <= 1; ox++) {
-                for (int oy = -1; oy <= 1; oy++) {
-                    if (ox != 0 || oy != 0) {
-                        dl->AddText(font, size, ImVec2(x + (float)ox * 1.5f, y + (float)oy * 1.5f), IM_COL32(0, 0, 0, 220), text);
-                    }
-                }
-            }
-            dl->AddText(font, size, ImVec2(x, y), IM_COL32(255, 255, 255, 255), text);
+        int type,dp,timeLimit;
+        Port_NetRules(&type,&dp,&timeLimit);
+        const float narrow=Port_IsWide()?1333.333f/(float)Port_AspectMilli():1.0f;
+        const int swap=Port_HudSwap();
+        profile_duel_cards_draw(gUiPresentX,gUiPresentY,gUiPresentW,gUiPresentH,narrow,Port_HudLayout()==2,
+                                type!=0,Port_NetName(swap),Port_NetName(swap^1));
+    }
+    if (showTagCard&&GsDraw_HudShown()&&gUiPresentW>0&&gUiPresentH>0) {
+        const float sx=gUiPresentW/512.0f,sy=gUiPresentH/448.0f;
+        ImDrawList *dl=ImGui::GetBackgroundDrawList();
+        for (int pane=0;pane<(tagCards.split?2:1);++pane) {
+            const int actor=tagCards.split?tagCards.views[pane]:tagCards.view;
+            if (actor<0||actor>=tagCards.count||actor>=10||tagCards.actor[actor].cpu) continue;
+            const char *name=Port_TagPlayerName(actor);
+            if (!name||!*name) continue;
+            Bt4ProfileCard card={};
+            Port_ProfileCardForTagPlayer(name,&card);
+            const float x=gUiPresentX+(pane?278:58)*sx;
+            const float y=gUiPresentY+(tagCards.split?51:76)*sy;
+            profile_card_draw(dl,ImVec2(x,y),127*sx,21*sy,name,card);
         }
     }
     if (tagMenu)tag_menu_draw();
-    if (banner) { // the start of an online match (Port_UiBanner): in the middle, large, outlined
-        ImGuiIO &io = ImGui::GetIO();
-        ImDrawList *dl = ImGui::GetForegroundDrawList();
-        ImFont *font = ImGui::GetFont();
-        float size = ImGui::GetFontSize() * (io.DisplaySize.y >= 900.0f ? 2.0f : 1.6f);
-        float wrap = io.DisplaySize.x * 0.8f;
-        ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, wrap, sBanner);
-        float x = (io.DisplaySize.x - extent.x) * 0.5f, y = (io.DisplaySize.y - extent.y) * 0.5f;
-        if (sBannerUntil == 0) { // still waiting: the picture dimmed
-            dl->AddRectFilled(ImVec2(0.0f, 0.0f), io.DisplaySize, IM_COL32(0, 0, 0, 150));
-        }
-        dl->AddRectFilled(ImVec2(x - size, y - size * 0.6f), ImVec2(x + extent.x + size, y + extent.y + size * 0.6f), IM_COL32(10, 14, 40, 210),
-                          size * 0.4f);
-        for (int ox = -1; ox <= 1; ox++) {
-            for (int oy = -1; oy <= 1; oy++) {
-                if (ox != 0 || oy != 0) {
-                    dl->AddText(font, size, ImVec2(x + (float)ox * 2.0f, y + (float)oy * 2.0f), IM_COL32(0, 0, 0, 230), sBanner, NULL, wrap);
-                }
-            }
-        }
-        dl->AddText(font, size, ImVec2(x, y), IM_COL32(255, 236, 120, 255), sBanner, NULL, wrap);
-    }
+    if (showTagEncounter) tag_encounter_draw();
+    else if (banner && bannerState.local[0]) encounter_draw(bannerState);
+    else if (banner) online_message_draw(bannerState.text,0.46f,bannerState.until==0);
     if (ballNoticeOn) {
         dragon_ball_notice_draw(ballNotice, ballElapsed);
     }
+    if (showRankedToast) ranked_toast_draw(rankedToast,toastElapsed);
     if (saving) {
         save_icon_draw(now);
     }
@@ -3805,16 +3954,7 @@ static bool frame_build(void) {
         }
         ImGui::End();
     }
-    if (notice) { // a line over the picture for a few seconds (the end of an online match)
-        ImGuiIO &io = ImGui::GetIO();
-        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.12f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-        ImGui::SetNextWindowBgAlpha(0.85f);
-        if (ImGui::Begin("##notice", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
-                                               ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings)) {
-            ImGui::TextUnformatted(sNotice);
-        }
-        ImGui::End();
-    }
+    if (notice) online_message_draw(sNotice,0.12f,false);
     if (overlay && gUiPresentW > 0 && gUiPresentH > 0) {
         /* Each name's rectangle is in the game's 512x448 pixels: map it through the picture's rectangle in the
            window (the letterbox gs_gpu.c just blitted into). */

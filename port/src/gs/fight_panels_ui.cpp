@@ -237,6 +237,22 @@ static int portrait_rgba(const char *path, uint8_t *rgba, uint32_t *signature = 
     return ok;
 }
 
+extern "C" int Port_ProfilePortraitPath(int chara,char *out,int capacity);
+extern "C" int Port_ProfileRosterPortrait(int chara,unsigned char *rgba) {
+    char path[FP_PATH];
+    return Port_ProfilePortraitPath(chara,path,sizeof(path))&&portrait_rgba(path,rgba);
+}
+extern "C" int Port_CachedFighterName(int,char *,int);
+extern "C" int Port_ProfileRosterName(int chara,char *name,int capacity) {
+    char path[FP_PATH];
+    if(!Port_ProfilePortraitPath(chara,path,sizeof(path)))return 0;
+    if(Port_CachedFighterName(chara,name,capacity)&&name[0])return 1;
+    const char *fallback=chara_name(chara);
+    if(!fallback)return 0;
+    SDL_strlcpy(name,fallback,capacity);
+    return 1;
+}
+
 // ---------------------------------------------------------------------------------------------------- portraits
 struct Art {
     char path[FP_PATH];

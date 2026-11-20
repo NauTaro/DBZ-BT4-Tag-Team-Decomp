@@ -97,6 +97,7 @@ static int sGone; /* the other player said goodbye (2: because its check found t
 static char sGoneNote[160];
 extern void Port_UiNotice(const char *text); /* ui.cpp: a line over the picture for a few seconds */
 extern void Port_UiBanner(const char *text, int ms); /* ui.cpp: a line in the middle while the game waits */
+#include "profile_cards.h"
 extern void Gs_HoldFrame(void);                      /* gs_draw.c: the last picture again, with that line on it */
 extern const char *MenuTranslation_PortText(const char *id);
 extern const char *PortOnline_Text(const char *text);
@@ -2731,32 +2732,9 @@ const char *Port_LobbyRivalRegion(void) {
     return Port_LobbyRegionName(sRivalRegion);
 }
 
-/* Puts `line` into `text` with {name}, {region} and {ms} replaced. */
-static void banner_fill(char *text, size_t size, const char *line, const char *name, const char *region, int ms) {
-    size_t i, k, n;
-    char num[16];
-
-    snprintf(num, sizeof(num), "%d", ms);
-    for (i = n = 0; line[i] != '\0' && n + 1 < size; i++) {
-        const char *put = strncmp(line + i, "{name}", 6) == 0 ? name : strncmp(line + i, "{region}", 8) == 0 ? region : strncmp(line + i, "{ms}", 4) == 0 ? num : NULL;
-        if (put != NULL) {
-            for (k = 0; put[k] != '\0' && n + 1 < size; k++) {
-                text[n++] = put[k];
-            }
-            i += put == name ? 5 : put == region ? 7 : 3;
-        } else {
-            text[n++] = line[i];
-        }
-    }
-    text[n] = '\0';
-}
-
-/* What the screen says while a session starts (the picture stands still meanwhile: Gs_HoldFrame keeps showing it
-   with this line on it). Before the other player's name is known: that their game is being reached; then that they
-   are there, by name. The lines are the port catalog's (net/connecting, net/rival_here; {name} is replaced). */
 static void session_banner(void) {
-    const char *other = sNames[!sMe], *line, *region = Port_LobbyRivalRegion();
-    char text[256], said[sizeof(sBannerSaid)], name[NAME_LEN];
+    const char *other = sNames[!sMe], *region = Port_LobbyRivalRegion();
+    char said[sizeof(sBannerSaid)], name[NAME_LEN];
     size_t i, k;
     int ms = sPingMs >= 0 ? sPingMs : sSetupRtt;
 
@@ -2775,31 +2753,7 @@ static void session_banner(void) {
         return;
     }
     snprintf(sBannerSaid, sizeof(sBannerSaid), "%s", said);
-    if (k == 0) {
-        line = MenuTranslation_PortText("net/connecting");
-        Port_UiBanner(PortOnline_Text(line != NULL ? line : "Connecting to your rival..."), 0);
-        return;
-    }
-    if (region[0] != '\0') { /* a quick match: where the rival is */
-        line = MenuTranslation_PortText("net/rival_from");
-        if (line == NULL) {
-            line = "Your rival \"{name}\" from {region} is here! The match begins.";
-        }
-    } else {
-        line = MenuTranslation_PortText("net/rival_here");
-        if (line == NULL) {
-            line = "Your rival \"{name}\" is here! The match begins.";
-        }
-    }
-    banner_fill(text, sizeof(text), PortOnline_Text(line), name, region, ms);
-    if (ms >= 0) { /* the round trip, as measured once the two are connected */
-        char more[96];
-        line = MenuTranslation_PortText("net/round_trip");
-        banner_fill(more, sizeof(more), PortOnline_Text(line != NULL ? line : "Round trip: ~{ms} ms"), name, region, ms);
-        k = strlen(text);
-        snprintf(text + k, sizeof(text) - k, "\n%s", more);
-    }
-    Port_UiBanner(text, 0);
+    Port_UiEncounter(sNames[sMe][0] ? sNames[sMe] : sMyName, name, region, ms);
 }
 
 /* While the game's thread waits for the other side during a session's start: the line, and the picture. */
@@ -3065,10 +3019,9 @@ static void ranked_outcome(unsigned tick){
         if(!sResim&&!gPortResim){
             int rating=0,delta=0,result=Port_RankedResult(&rating,&delta);
             if(result!=2&&result!=3)notified=0;
-            else if(!notified){
-                char line[192];snprintf(line,sizeof(line),PortOnline_Text(result==3?
-                    "This result is held for review. No points changed.":"Ranked: %+d points (%d total)"),delta,rating);
-                Port_UiBanner(line,2000);notified=1;
+            else if(result==2&&!notified){
+                Port_UiRankedSettlement(rating,delta);
+                notified=1;
             }
         }
     }
@@ -3078,12 +3031,7 @@ void Port_NetBeginTick(unsigned tick) {
 
     if (!Port_NetActive()) {
         int rating,delta,result=Port_RankedTakeSettlement(&rating,&delta);
-        if(result){
-            char line[192];
-            snprintf(line,sizeof(line),PortOnline_Text(result==2?
-                "This result is held for review. No points changed.":"Ranked: %+d points (%d total)"),delta,rating);
-            Port_UiBanner(line,2000);
-        }
+        if(result==1)Port_UiRankedSettlement(rating,delta);
         return;
     }
     sTick = tick;
@@ -4371,7 +4319,6 @@ static void lobby_background(void) {
         sLobbyBg = 0;
     } else if (now == 2) {
         sLobbyBg = 0;
-        Port_UiNotice("Tenkaichi Budokai Online: your opponent is here! The match begins.");
         Port_LobbyLaunch();
     } else if (now <= 0) {
         sLobbyBg = 0;

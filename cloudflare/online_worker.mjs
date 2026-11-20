@@ -4,15 +4,18 @@ import {verifyAccess,legacyProof,legacyBootstrap,createSession,sha256} from './o
 import {roomTurn} from './online_turn.mjs';
 import {importRows} from './online_migration.mjs';
 import {launchRanked,resetRanked,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
+import {fulfillProfilePass} from './online_profile_cards.mjs';
+import {applyProfileWebhook,profileCheckout,profileCheckoutEnabled,verifyProfileWebhook} from './online_profile_checkout.mjs';
 
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
-async function readJson(request,limit=24576){
-    const reader=request.body?.getReader();if(!reader)return {};
+async function readText(request,limit){
+    const reader=request.body?.getReader();if(!reader)return '';
     let total=0;const chunks=[];
     while(true){const r=await reader.read();if(r.done)break;total+=r.value.length;if(total>limit){await reader.cancel();throw new Error('BAD_REQUEST');}chunks.push(r.value);}
     const body=new Uint8Array(total);let offset=0;for(const c of chunks){body.set(c,offset);offset+=c.length;}
-    return JSON.parse(new TextDecoder().decode(body));
+    return new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(body);
 }
+async function readJson(request,limit=24576){return JSON.parse(await readText(request,limit)||'{}');}
 const bearer=request=>(request.headers.get('Authorization')||'').replace(/^Bearer /,'');
 function safeEqual(a,b){if(typeof a!=='string'||typeof b!=='string'||a.length!==b.length)return false;let mismatch=0;for(let n=0;n<a.length;n++)mismatch|=a.charCodeAt(n)^b.charCodeAt(n);return !mismatch;}
 const ADMIT=new Set(['create','join','queue','ranked_queue']);
@@ -34,6 +37,13 @@ export class OnlineCoordinator {
     }
     async user(request){return verifyAccess(bearer(request),this.env.AUTH_SECRET);}
     async execute(user,op,args){
+        if(op==='profile_checkout'){
+            this.budget(user,op,3);
+            if(!this.core.name(user)||
+                this.core.one("SELECT 1 n FROM online_legacy WHERE table_name='banned_users' AND json_extract(body,'$.user_id')=? LIMIT 1",user))
+                throw new Error('ACCOUNT_UNAVAILABLE');
+            return profileCheckout(this.env,user);
+        }
         if(op!=='turn_credentials')return this.dispatch(user,op,args);
         const member=this.core.member(user);if(!member||member.generation!==args?.generation)throw new Error('NOT_A_MEMBER');
         const cached=this.core.one('SELECT body,expires FROM online_turn WHERE user_id=? AND generation=?',user,member.generation);
@@ -51,12 +61,15 @@ export class OnlineCoordinator {
     dispatch(user,op,args){
         if(ADMIT.has(op)&&disallowedClient(args?._client))throw new Error('CLIENT_NOT_ALLOWED');
         const committed=this.ctx.storage.transactionSync(()=>{
-            this.budget(user,op,op==='signal'?300:op==='lease'||op==='get'?120:60);
+            this.budget(user,op,op==='signal'?300:op==='lease'||op==='get'?120:op==='profile_media_save'?8:60);
             if(ADMIT.has(op)&&this.core.one("SELECT value FROM online_meta WHERE key='admission'")?.value!=='open')throw new Error('MIGRATION_IN_PROGRESS');
             const minimum=this.core.one("SELECT value FROM online_meta WHERE key='minimum_client'")?.value;
             if(ADMIT.has(op)&&minimum&&(!clientAtLeast(args?._client?.version,minimum)||args?._client?.capability!==2))throw new Error('UPDATE_REQUIRED');
             if(this.core.one("SELECT 1 n FROM online_legacy WHERE table_name='banned_users' AND json_extract(body,'$.user_id')=? LIMIT 1",user))throw new Error('ACCOUNT_UNAVAILABLE');
-            return {reply:this.core.command(user,op,args),events:this.core.events};
+            const reply=this.core.command(user,op,args);
+            if(op==='profile_card_get'||op==='profile_card_save'||op==='profile_media_save')
+                reply.checkout_available=profileCheckoutEnabled(this.env)&&!!this.env.STRIPE_PROFILE_RETURN_URL;
+            return {reply,events:this.core.events};
         });
     if (committed.events.length) {
       const byUser = /* @__PURE__ */ new Map();
@@ -128,11 +141,31 @@ export class OnlineCoordinator {
         if(disallowedRequest(request))return json({error:'CLIENT_NOT_ALLOWED'},403);
         const url=new URL(request.url),path=url.pathname;
         try{
+            if(path==='/v5/profile/payment-webhook'){
+                if(request.method!=='POST'||!profileCheckoutEnabled(this.env))return json({error:'NOT_FOUND'},404);
+                const raw=await readText(request,65536);
+                const event=await verifyProfileWebhook(this.env.STRIPE_PROFILE_WEBHOOK_SECRET,request.headers.get('Stripe-Signature'),raw,Date.now());
+                this.ctx.storage.transactionSync(()=>applyProfileWebhook(this.core,this.env,event));
+                return json({received:true});
+            }
             if(path==='/v5/health')return json({service:'BT4decomp Online',schema:5,admission:this.core.one("SELECT value FROM online_meta WHERE key='admission'")?.value||'closed'});
             if(path.startsWith('/v5/admin/')){
                 const releaseAdmin=this.env.RELEASE_ADMIN_SECRET&&safeEqual(bearer(request),this.env.RELEASE_ADMIN_SECRET);
                 if(!releaseAdmin&&(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET)))return json({error:'AUTH_REQUIRED'},401);
                 const body=await readJson(request,1048576);
+                if(path==='/v5/admin/profile-pass'&&request.method==='POST'){
+                    if(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET))
+                        return json({error:'AUTH_REQUIRED'},401);
+                    return json(this.ctx.storage.transactionSync(()=>fulfillProfilePass(this.core,body)));
+                }
+                if(path==='/v5/admin/profile-media-remove'&&request.method==='POST'){
+                    if(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET))
+                        return json({error:'AUTH_REQUIRED'},401);
+                    if(typeof body.id!=='string'||!/^[0-9a-f-]{36}$/.test(body.id))throw new Error('BAD_PROFILE_MEDIA');
+                    this.core.run('DELETE FROM online_profile_media WHERE id=?',body.id);
+                    this.core.run('DELETE FROM online_profile_banner_motion WHERE id=?',body.id);
+                    return json({removed:true});
+                }
                 if(path==='/v5/admin/ranked-audit')return json({
                     configuration:this.core.rows("SELECT key,value FROM online_meta WHERE key IN ('ranked_scoring','ranked_monthly_reset','ranked_weekly_reset','ranked_season','ranked_epoch_ms','ranked_paused','ranked_abandonment_v2','admission','minimum_client') ORDER BY key"),
                     users:this.core.one('SELECT count(*) n FROM online_users').n,

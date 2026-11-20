@@ -2161,6 +2161,7 @@ static void Tb_ProfileUpdate(s32 live) {
     Pad *pad = &gPad[0];
 
     Ps_Prompt(0, "Type Name");
+    Ps_Prompt(1, "Edit Card");
     Ps_Prompt(2, "Back");
     if (!live) {
         return;
@@ -2169,6 +2170,10 @@ static void Tb_ProfileUpdate(s32 live) {
     if ((pad->gamePressed & PADG_CROSS) && sTb->prCur == PR_NAME) {
         Snd_PlaySe(1, 1);
         Tb_OpenName(0);
+    } else if (pad->gamePressed & PADG_SQUARE) {
+        extern void Port_UiOpenProfileCard(void);
+        Port_UiOpenProfileCard();
+        Snd_PlaySe(1, 1);
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
         Tb_SaveChoices();

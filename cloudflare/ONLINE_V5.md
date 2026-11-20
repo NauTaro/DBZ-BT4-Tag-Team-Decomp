@@ -66,6 +66,26 @@ separate factors.
 
 ## Validation
 
+### Profile cards
+
+Profile cards use the existing account and coordinator. A normal card keeps a
+static avatar, name color and preset background. The pass enables a separate
+animated avatar, a banner and decorations. The game sends compact pixel strips.
+Room descriptors include asset IDs and members request the pixels as needed.
+
+To exercise Checkout in staging, configure `STRIPE_PROFILE_SECRET_KEY` and
+`STRIPE_PROFILE_WEBHOOK_SECRET` from the same Stripe test environment. Set
+`STRIPE_PROFILE_RETURN_URL` to the HTTPS page players should see after closing
+Checkout. Subscribe `/v5/profile/payment-webhook` to
+`checkout.session.completed`, `checkout.session.async_payment_succeeded`
+and `charge.refunded`. A verified USD 1 payment activates the pass for 30 days.
+Checkout uses a one-time payment. Full refunds revoke the associated purchase.
+
+The administrator can remove an uploaded asset with
+`POST /v5/admin/profile-media-remove` and a JSON body containing its `id`.
+
+### Online tests
+
 Run the Node 24 tests:
 
 ```

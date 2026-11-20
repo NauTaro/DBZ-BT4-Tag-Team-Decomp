@@ -5,6 +5,12 @@ CREATE TABLE IF NOT EXISTS online_aliases(source TEXT NOT NULL, subject TEXT NOT
 CREATE TABLE IF NOT EXISTS online_sessions(hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES online_users(id), expires INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS online_sessions_expiry ON online_sessions(expires);
 CREATE TABLE IF NOT EXISTS online_names(user_id TEXT PRIMARY KEY REFERENCES online_users(id), name TEXT NOT NULL, normalized TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS online_profile_cards(user_id TEXT PRIMARY KEY REFERENCES online_users(id),name_color INTEGER NOT NULL DEFAULT 0,background INTEGER NOT NULL DEFAULT 0,decoration INTEGER NOT NULL DEFAULT 0,premium_until INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS online_profile_payments(payment_id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES online_users(id),paid_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS online_profile_payments_user ON online_profile_payments(user_id);
+CREATE TABLE IF NOT EXISTS online_profile_refunds(payment_id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS online_profile_media(user_id TEXT NOT NULL REFERENCES online_users(id),kind TEXT NOT NULL CHECK(kind IN ('avatar','motion','banner')),id TEXT NOT NULL UNIQUE,body TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(user_id,kind));
+CREATE TABLE IF NOT EXISTS online_profile_banner_motion(user_id TEXT PRIMARY KEY REFERENCES online_users(id),id TEXT NOT NULL UNIQUE,body TEXT NOT NULL,updated INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS online_rooms(id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, generation TEXT NOT NULL UNIQUE, owner TEXT NOT NULL, mode TEXT NOT NULL, wire TEXT NOT NULL, content TEXT NOT NULL, rules TEXT NOT NULL, capacity INTEGER NOT NULL, listed INTEGER NOT NULL, joinable INTEGER NOT NULL, expires INTEGER NOT NULL, next_peer INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS online_rooms_expiry ON online_rooms(expires);
 CREATE TABLE IF NOT EXISTS online_members(user_id TEXT PRIMARY KEY, room TEXT NOT NULL REFERENCES online_rooms(id) ON DELETE CASCADE, peer INTEGER NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL, udp TEXT, UNIQUE(room,peer));

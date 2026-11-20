@@ -1,4 +1,5 @@
 import {ONLINE_SCHEMA} from './online_schema.mjs';
+import {getProfileMedia,ownProfileCard,profileCard,saveProfileMedia} from './online_profile_cards.mjs';
 import {migrateCharacters,characterSelection,saveRankedCharacters,mirrorRanked,reportOnlineMatch} from './online_characters.mjs';
 import {advanceRankedMonth,rankedCollection,rankedMonthAt,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
 import {claimRankedRock,claimQuickRock,RANKED_ROCK_WIRE,rollRankedRock,rollQuickRock} from './ranked_rocks.mjs';
@@ -34,7 +35,17 @@ export class OnlineCore {
     descriptor(user){
         const m=this.member(user);if(!m||m.expires<=this.now())return {version:1,state:'none'};
         const r=this.one('SELECT * FROM online_rooms WHERE id=?',m.room);
-        const members=this.rows('SELECT peer,name,role,udp FROM online_members WHERE room=? ORDER BY peer',r.id);
+        const ranked=r.wire.startsWith('ranked-v1:');
+        const members=this.rows(`SELECT m.peer,m.name,m.role,m.udp,c.name_color,c.background,c.decoration,c.premium_until
+            ,p.rating
+            ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='avatar') avatar
+            ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='motion') motion
+            ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='banner') banner
+            ,(SELECT id FROM online_profile_banner_motion WHERE user_id=m.user_id) banner_motion
+            FROM online_members m LEFT JOIN online_profile_cards c ON c.user_id=m.user_id
+            LEFT JOIN ranked_players p ON p.user_id=m.user_id AND p.ruleset='solo' AND ?=1
+            WHERE m.room=? ORDER BY m.peer`,ranked?1:0,r.id);
+        const now=this.now();
         const rock=r.wire.startsWith('ranked-v1:')&&r.wire.endsWith(RANKED_ROCK_WIRE)&&m.role==='player'
             ?this.one('SELECT seed FROM ranked_rock_rolls WHERE match_id=?',r.generation):null;
         const quick=m.role==='player'&&r.mode==='duel'&&!r.wire.startsWith('ranked-v1:')
@@ -43,7 +54,16 @@ export class OnlineCore {
             ...(rock?{ranked_rock_seed:rock.seed}:{}),
             ...(quick?{quick_rock_seed:quick.seed}:{}),
             rules:r.rules,host:1,self:m.peer,capacity:r.capacity,joinable:!!r.joinable,expires_at:new Date(r.expires).toISOString(),
-            members:members.map(({peer,name,role})=>({peer,name,role})),udp:members.filter(p=>p.udp).map(p=>({peer:p.peer,addresses:JSON.parse(p.udp)}))};
+            members:members.map(member=>{
+                const {peer,name,role,avatar,motion,banner,banner_motion,rating}=member;
+                const entry={peer,name,role,...(ranked&&role==='player'&&Number.isInteger(rating)?{rating}:{})};
+                if(member.name_color==null&&!avatar)return entry;
+                const card=profileCard(member,now);
+                card.media={...(avatar?{avatar}:{}),...(card.premium&&motion?{motion}:{}),...(card.premium&&banner?{banner}:{}),
+                    ...(card.premium&&banner_motion?{banner_motion}:{})};
+                return {...entry,card};
+            }),
+            udp:members.filter(p=>p.udp).map(p=>({peer:p.peer,addresses:JSON.parse(p.udp)}))};
     }
     changed(room){for(const p of this.rows('SELECT user_id FROM online_members WHERE room=?',room))this.events.push({user:p.user_id,event:'bt4.room',body:this.descriptor(p.user_id)});}
     close(room){
@@ -159,15 +179,6 @@ export class OnlineCore {
         this.run('INSERT INTO online_signals(room,generation,recipient,body,expires) VALUES(?,?,?,?,?)',m.room,m.generation,other.user_id,JSON.stringify(body),this.now()+60000);
         this.events.push({user:other.user_id,event:'bt4.signal',body});return {version:1,state:'sent'};
     }
-    streakReviewReason(m,winner,digest){
-        if(!winner)return null;
-        const recent=this.rows(`SELECT winner,digest FROM ranked_matches
-            WHERE ((a=? AND b=?) OR (a=? AND b=?)) AND completed>=? AND void=0
-            ORDER BY completed DESC LIMIT 4`,m.a,m.b,m.b,m.a,this.now()-3600000);
-        if(digest.startsWith('forfeit:')&&recent.filter(r=>r.winner===winner&&r.digest?.startsWith('forfeit:')).length>=2)
-            return 'repeated_forfeits';
-        return null;
-    }
     streakDelta(user,rating,winner,opponentRating){
         if(!winner)return 0;
         const current=this.one('SELECT wins,points FROM ranked_streaks WHERE user_id=?',user)||{wins:0,points:0};
@@ -183,27 +194,25 @@ export class OnlineCore {
         const b=this.one("SELECT rating FROM ranked_players WHERE user_id=? AND ruleset='solo'",m.b).rating;
         const streak=!!this.one('SELECT 1 FROM ranked_streak_matches WHERE match_id=?',m.id);
         const abandonment=confirmedAbandonment(this,m,winner,digest);
-        const review=streak?this.streakReviewReason(m,winner,digest):null;
-        if(review)this.run('INSERT INTO ranked_reviews VALUES(?,?,?)',m.id,this.now(),review);
         let deltas=[0,0];
         if(abandonment){
             const wi=winner===m.a?0:1,li=1-wi,ratings=[a,b];
-            if(!review)deltas[wi]=streak?this.streakDelta(winner,ratings[wi],winner,ratings[li]):eloForfeitReward(ratings[wi],ratings[li]);
+            deltas[wi]=streak?this.streakDelta(winner,ratings[wi],winner,ratings[li]):eloForfeitReward(ratings[wi],ratings[li]);
             deltas[li]=-Math.min(ratings[li],abandonment.penalty);
-            // A confirmed departure resets the quitter's streak, even if the reward is reviewed.
+            // A confirmed departure resets the quitter's streak.
             this.run('INSERT INTO ranked_streaks VALUES(?,0,0) ON CONFLICT(user_id) DO UPDATE SET wins=0,points=0',abandonment.quitter);
             this.run('UPDATE ranked_abandonments SET penalty_applied=?,reward_applied=? WHERE match_id=?',-deltas[li],deltas[wi],m.id);
-        }else if(streak&&!review)deltas=[this.streakDelta(m.a,a,winner,b),this.streakDelta(m.b,b,winner,a)];
+        }else if(streak)deltas=[this.streakDelta(m.a,a,winner,b),this.streakDelta(m.b,b,winner,a)];
         if(!streak&&!abandonment){
             const score=winner===m.a?1:winner===m.b?0:.5;
             const gain=Math.max(-a,b-100000,Math.min(b,100000-a,Math.round(32*(score-1/(1+10**((b-a)/400))))));
             deltas=[gain,-gain];
         }
         for(const [u,before,delta] of [[m.a,a,deltas[0]],[m.b,b,deltas[1]]]){
-            const win=!review&&winner===u?1:0,loss=(!review||abandonment)&&winner&&winner!==u?1:0;
+            const win=winner===u?1:0,loss=winner&&winner!==u?1:0;
             this.run("UPDATE ranked_players SET rating=rating+?,wins=wins+?,losses=losses+? WHERE user_id=? AND ruleset='solo'",delta,win,loss,u);
             this.run('INSERT INTO ranked_history VALUES(?,?,?,?,?)',m.id,u,before,before+delta,delta);
-            if(!review||(abandonment&&u===abandonment.quitter))this.run('INSERT INTO ranked_weekly VALUES(?,?,?,?) ON CONFLICT(season,user_id) DO UPDATE SET wins=wins+excluded.wins,losses=losses+excluded.losses',m.season,u,win,loss);
+            this.run('INSERT INTO ranked_weekly VALUES(?,?,?,?) ON CONFLICT(season,user_id) DO UPDATE SET wins=wins+excluded.wins,losses=losses+excluded.losses',m.season,u,win,loss);
         }
         this.run('DELETE FROM ranked_disconnect_claims WHERE match_id=?',m.id);
         this.run('UPDATE ranked_matches SET completed=?,winner=?,digest=? WHERE id=?',this.now(),winner,digest,m.id);
@@ -286,6 +295,14 @@ export class OnlineCore {
         this.events=[];
         if(!UUID.test(user)||!this.one('SELECT id FROM online_users WHERE id=?',user))error('AUTH_REQUIRED');
         if(!a||typeof a!=='object'||Array.isArray(a)||bytes(JSON.stringify(a))>18000)error('BAD_REQUEST');
+        if(op==='profile_card_get')return ownProfileCard(this,user);
+        if(op==='profile_media_get')return getProfileMedia(this,user,a);
+        if(op==='profile_card_save'||op==='profile_media_save'){
+            const card=op==='profile_card_save'?ownProfileCard(this,user,a.card ?? null):saveProfileMedia(this,user,a);
+            const member=this.member(user);
+            if(member)this.changed(member.room);
+            return card;
+        }
         if(op==='nickname_get')return this.name(user)?{state:'ready',name:this.name(user)}:{state:'required'};
         if(op==='nickname_set'){
             if(typeof a.name!=='string')error('INVALID_NICKNAME');const name=a.name.normalize('NFKC').trim();
