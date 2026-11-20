@@ -10,6 +10,7 @@
 #define TTW_OPTIONS_STATE 112
 #define TTW_OPTIONS_HASH 504
 #define TTW_OPEN_OPTIONS 72
+#define TTW_OPEN_LISTED 500
 void Ttw_PutOptions(unsigned char *p,const TtOptions *o);
 int Ttw_GetOptions(const unsigned char *p,TtOptions *o);
 void Ttw_OptionsSnapshot(unsigned char *p,const TtRoom *r);

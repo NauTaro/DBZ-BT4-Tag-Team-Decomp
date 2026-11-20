@@ -980,6 +980,41 @@ static const char *const kTagDevText[][3]={
     {"Watch two local CPU teams fight and switch between fighters.","Observa a dos equipos CPU y alterna entre sus luchadores.","Assista a duas equipes da CPU e alterne entre os lutadores."}
 };
 
+static const char *const kPracticeAndRoomsText[][3]={
+    {"Ranked points: %d","Puntos de clasificatoria: %d","Pontos de ranqueada: %d"},
+    {"Ranked result","Resultado de clasificatoria","Resultado da ranqueada"},
+    {"%+d points","%+d puntos","%+d pontos"},
+    {"Total: %d points","Total: %d puntos","Total: %d pontos"},
+    {"Public Rooms","Salas p\u00fablicas","Salas p\u00fablicas"},
+    {"Room Access","Acceso a la sala","Acesso \u00e0 sala"},
+    {"By Code","Por c\u00f3digo","Por c\u00f3digo"},
+    {"Open Room","Sala abierta","Sala aberta"},
+    {"Duel","Duelo","Duelo"},
+    {"Browse open duel, tournament and Tag Team rooms.","Busca salas abiertas de duelo, torneo o Tag Team.","Procure salas abertas de duelo, torneio e Tag Team."},
+    {"Select an open room to join it.","Elige una sala abierta para unirte.","Escolha uma sala aberta para entrar."},
+    {"Anyone can find and join this room.","Cualquiera puede encontrar y unirse a esta sala.","Qualquer pessoa pode encontrar esta sala e entrar."},
+    {"Share the room code with the people you invite.","Comparte el c\u00f3digo con las personas que invites.","Compartilhe o c\u00f3digo com quem voc\u00ea convidar."},
+    {"Looking for open rooms...","Buscando salas abiertas...","Procurando salas abertas..."},
+    {"Room list unavailable","Lista de salas no disponible","Lista de salas indispon\u00edvel"},
+    {"No open rooms right now","Ahora mismo no hay salas abiertas","Nenhuma sala aberta no momento"},
+    {"Training","Entrenamiento","Treinamento"},
+    {"1 vs 1","1 contra 1","1 contra 1"},
+    {"2 vs 2","2 contra 2","2 contra 2"},
+    {"Tag Team Tutorial","Tutorial de Tag Team","Tutorial de Tag Team"},
+    {"Camera and targets","C\u00e1mara y objetivos","C\u00e2mera e alvos"},
+    {"Reviving allies","Revivir aliados","Revivendo aliados"},
+    {"Practice 2 vs 2","Practicar 2 contra 2","Praticar 2 contra 2"},
+    {"Practice against the CPU and learn Tag Team mechanics.","Practica contra la CPU y aprende las mec\u00e1nicas de Tag Team.","Pratique contra a CPU e aprenda as mec\u00e2nicas de Tag Team."},
+    {"Open the native Training mode.","Abre el modo Entrenamiento del juego.","Abra o modo Treinamento do jogo."},
+    {"Practice Tag Team with CPU fighters and no time limit.","Practica Tag Team con luchadores controlados por la CPU, sin l\u00edmite de tiempo.","Pratique Tag Team com lutadores da CPU, sem limite de tempo."},
+    {"Learn Tag Team mechanics, then try them in battle.","Aprende las mec\u00e1nicas de Tag Team y pru\u00e9balas en combate.","Aprenda as mec\u00e2nicas de Tag Team e teste-as em combate."},
+    {"Press Select to switch between enemy, ally and free view. Change targets with the control chosen in Tag Team settings.","Pulsa Select para alternar entre enemigo, aliado y vista libre. Cambia de objetivo con el control asignado en Tag Team.","Pressione Select para alternar entre inimigo, aliado e c\u00e2mera livre. Troque de alvo com o controle escolhido nas op\u00e7\u00f5es de Tag Team."},
+    {"Get close to a downed ally. Hold the Ki Charge button when the rescue prompt appears.","Ac\u00e9rcate a un aliado ca\u00eddo. Mant\u00e9n el bot\u00f3n de cargar ki cuando aparezca el aviso de rescate.","Aproxime-se de um aliado ca\u00eddo. Segure o bot\u00e3o de carregar ki quando aparecer o aviso de resgate."},
+    {"Follow a launch when prompted. Chain three follow-ups to set up a joint beam attack.","Sigue al rival lanzado cuando aparezca el aviso. Encadena tres acometidas para preparar una onda conjunta.","Siga o rival arremessado quando aparecer o aviso. Encadeie tr\u00eas investidas para preparar uma rajada conjunta."},
+    {"Use compatible fighters. Follow the fusion prompts and press R3 to accept your ally's invitation.","Usa luchadores compatibles. Sigue los avisos de fusi\u00f3n y pulsa R3 para aceptar la invitaci\u00f3n de tu aliado.","Use lutadores compat\u00edveis. Siga os avisos de fus\u00e3o e pressione R3 para aceitar o convite do aliado."},
+    {"Pick four fighters and a stage to try these mechanics against the CPU.","Elige cuatro luchadores y un escenario para probar estas mec\u00e1nicas contra la CPU.","Escolha quatro lutadores e um cen\u00e1rio para testar essas mec\u00e2nicas contra a CPU."},
+};
+
 const char *PortOnline_Text(const char *text){
     unsigned i;int english=Port_GameProfileEnglish(),portuguese=Port_GameProfilePortuguese();
     /* Isolated render checks can exercise both UI catalogs with one test disc.
@@ -989,6 +1024,8 @@ const char *PortOnline_Text(const char *text){
         portuguese=!strcmp(getenv("BT4_UI_LANGUAGE_TEST"),"pt");
     }
     if(!text||sRaw||english)return text;
+    for(i=0;i<sizeof(kPracticeAndRoomsText)/sizeof(kPracticeAndRoomsText[0]);i++)
+        if(!strcmp(text,kPracticeAndRoomsText[i][0]))return kPracticeAndRoomsText[i][portuguese?2:1];
     for(i=0;i<sizeof(kRankedText)/sizeof(kRankedText[0]);i++)
         if(!strcmp(text,kRankedText[i][0]))return kRankedText[i][portuguese?2:1];
     for(i=0;i<sizeof(kTagDevText)/sizeof(kTagDevText[0]);i++)

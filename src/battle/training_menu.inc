@@ -36,7 +36,9 @@ static struct {
 } sTraining;
 
 s32 Training_Active(void){
-    return Battle_GetMode()==6&&!Port_NetActive()&&!TagBattle_Active()&&!BattleReplay_IsActive();
+    extern s32 Port_TagOfflineTraining(void);
+    return Battle_GetMode()==6&&!Port_NetActive()&&
+           (!TagBattle_Active()||Port_TagOfflineTraining())&&!BattleReplay_IsActive();
 }
 static void Training_ClearDelay(void){
     s32 i;

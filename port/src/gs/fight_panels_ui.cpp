@@ -7,8 +7,6 @@
 // What a fight is comes from port/src/fight_panels.c (read on the game's thread, once per blank); this file only
 // draws, on the render thread, into ImGui's background list (ui.cpp: bars_draw). The portraits are read from their
 // files here (portrait_rgba) and kept as textures: colour, grey and a white silhouette stacked in one.
-#include <ctype.h>
-#include <float.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -23,48 +21,10 @@
 extern "C" int Port_HudSwap(void);                         // gs/net.c: the HUD's sides are swapped on this copy
 SDL_GPUTexture *Ui_Texture(uint8_t *pix, uint32_t w, uint32_t h); // ui.cpp (takes pix)
 void Ui_TextureFree(SDL_GPUTexture *tex);
-ImFont *Ui_FontName(void);  // ui.cpp: the name's face, chosen in the settings from the game's fonts (fonts.tsv)
-ImFont *Ui_FontForm(void);  // the form's
-ImFont *Ui_FontBold(void);  // the first of the game's fonts, where one of those two cannot be had
 
 #define ART_W 256
 #define ART_H 512
 static const float kPi = 3.14159265f;
-
-// The characters' names by id, in English (the order of the character table).
-static const char *const kCharaNames[] = {
-    "Goku (Early)", "Goku (Med)", "Goku (Med) Super Saiyan", "Goku (End)", "Goku (End) Super Saiyan", "Goku (End) Super Saiyan 2",
-    "Goku (End) Super Saiyan 3", "Goku (GT)", "Goku (GT) Super Saiyan", "Goku (GT) Super Saiyan 3", "Goku (GT) Super Saiyan 4", "Kid Goku",
-    "Great Ape", "Kid Gohan", "Teen Gohan", "Teen Gohan Super Saiyan", "Teen Gohan Super Saiyan 2", "Gohan",
-    "Gohan Super Saiyan", "Gohan Super Saiyan 2", "Great Saiyaman", "Ultimate Gohan", "Piccolo (Early)", "Piccolo (End)",
-    "Nail", "Krillin", "Yamcha", "Tien", "Chiaotzu", "Vegeta (Scouter)",
-    "Vegeta (Scouter) Great Ape", "Vegeta", "Vegeta Super Saiyan", "Super Vegeta", "Vegeta (2nd Form)", "Vegeta (2nd Form) Super Saiyan",
-    "Vegeta (2nd Form) Super Saiyan 2", "Majin Vegeta", "Vegeta (2nd Form) Super Saiyan 4", "Trunks (Sword)", "Trunks (Sword) Super Saiyan", "Trunks",
-    "Trunks Super Saiyan", "Super Trunks", "Kid Trunks", "Kid Trunks Super Saiyan", "Goten", "Goten Super Saiyan",
-    "Gotenks", "Gotenks Super Saiyan", "Gotenks Super Saiyan 3", "Vegito", "Super Vegito", "Super Gogeta",
-    "Gogeta Super Saiyan 4", "Mr Satan", "Videl", "Great Saiyaman 2", "Supreme Kai", "Kibito Kai",
-    "Yajirobe", "Paikuhan", "Tapion", "Pan", "Uub", "Majuub",
-    "Master Roshi", "Master Roshi Full Power", "Grandpa Gohan", "Namu", "Hatchan", "King Vegeta",
-    "King Vegeta Great Ape", "Bardock", "Bardock Great Ape", "Celipa", "Celipa Great Ape", "Raditz",
-    "Raditz Great Ape", "Saibamen", "Nappa", "Nappa Great Ape", "Zarbon", "Zarbon Transformed",
-    "Dodoria", "Cui", "Ginyu", "Recoome", "Burter", "Jeice",
-    "Guldo", "Frieza 1st Form", "Frieza 2nd Form", "Frieza 3rd Form", "Frieza Final Form", "Frieza 100% Power",
-    "Mecha Frieza", "King Cold", "Appule", "Frieza Soldier", "Android 16", "Android 17",
-    "Android 18", "Android 19", "Android 2", "Cell 1st Form", "Cell 2nd Form", "Perfect Cell",
-    "Super Perfect Cell", "Cell Jr", "Babidi", "Dabura", "Majin Buu", "Evil Buu",
-    "Super Buu", "Super Buu Gotenks Absorbed", "Super Buu Gohan Absorbed", "Kid Buu", "Garlic Jr", "Super Garlic Jr",
-    "Wheelo", "Turles", "Turles Great Ape", "Slug", "Slug Giant", "Sauza",
-    "Cooler", "Cooler Final Form", "Metal Cooler", "Android 13", "Android 13 Fusion", "Broly",
-    "Broly Super Saiyan", "Broly Legendary Super Saiyan", "Zangya", "Bojack", "Bojack 100% Power", "Janemba",
-    "Super Janemba", "Hildegarn", "Baby Vegeta", "Super Baby 1", "Super Baby 2", "Super Baby Great Ape",
-    "Super 17", "Nuova Shenron", "Shin Shenron", "Omega Shenron", "Taopaipai", "Cyborg Tao",
-    "General Blue", "Akuman", "Pilaf Machine", "Pilaf Machine Fusion", "Tambourine", "Demon King Piccolo",
-    "Arale", "Chichi", "Spopovich", "Future Gohan", "Future Gohan Super Saiyan",
-};
-
-static const char *chara_name(int chara) {
-    return chara >= 0 && chara < (int)(sizeof(kCharaNames) / sizeof(kCharaNames[0])) ? kCharaNames[chara] : NULL;
-}
 
 // ---------------------------------------------------------------------------------------------------- portrait files
 // A large portrait file: byte-pair packed (the game's sys/bpe.c), a texture file with one 256 x 512 picture of 256
@@ -557,124 +517,6 @@ static ImU32 Cmix(ImVec4 c, ImVec4 d, float t, int a = 255) {
     return C((int)((c.x + (d.x - c.x) * t) * 255), (int)((c.y + (d.y - c.y) * t) * 255), (int)((c.z + (d.z - c.z) * t) * 255), a);
 }
 
-static ImFont *face(ImFont *f) {
-    f = f != NULL ? f : Ui_FontBold();
-    return f != NULL ? f : ImGui::GetFont();
-}
-
-// Text with an outline all round and its fill shaded from top to bottom.
-static void text_fx(ImDrawList *dl, ImFont *f, float size, ImVec2 p, const char *t, ImU32 top, ImU32 bot, ImU32 line, float th,
-                    float alpha = 1.0f) {
-    if (size < 1.0f) {
-        return;
-    }
-    if (th > 0.0f) {
-        int n = th > 2.5f ? 16 : 8;
-        for (int i = 0; i < n; i++) {
-            float a = i * 2.0f * kPi / n;
-            dl->AddText(f, size, ImVec2(p.x + cosf(a) * th, p.y + sinf(a) * th), line, t);
-        }
-    }
-    int v0 = dl->VtxBuffer.Size;
-    dl->AddText(f, size, p, C(255, 255, 255, (int)(255 * alpha)), t);
-    ImVec2 sz = f->CalcTextSizeA(size, FLT_MAX, 0.0f, t);
-    ImGui::ShadeVertsLinearColorGradientKeepAlpha(dl, v0, dl->VtxBuffer.Size, ImVec2(p.x, p.y + sz.y * 0.2f),
-                                                  ImVec2(p.x, p.y + sz.y * 0.85f), top, bot);
-}
-
-// The visible box of a string at `size` (from the glyphs, not the line height): offset from the pen and extent.
-static void ink_box(ImFont *f, float size, const char *t, float *ox, float *oy, float *w, float *h) {
-    ImFontBaked *bk = f->GetFontBaked(size);
-    float x = 0.0f, minx = FLT_MAX, maxx = -FLT_MAX, miny = FLT_MAX, maxy = -FLT_MAX;
-    for (const char *s = t; *s != '\0';) {
-        unsigned int c = 0;
-        s += ImTextCharFromUtf8(&c, s, NULL);
-        ImFontGlyph *g = bk->FindGlyph((ImWchar)c);
-        if (g == NULL) {
-            continue;
-        }
-        if (g->Visible) {
-            minx = fminf(minx, x + g->X0);
-            maxx = fmaxf(maxx, x + g->X1);
-            miny = fminf(miny, g->Y0);
-            maxy = fmaxf(maxy, g->Y1);
-        }
-        x += g->AdvanceX;
-    }
-    if (maxx < minx) {
-        *ox = *oy = *w = *h = 0.0f;
-        return;
-    }
-    *ox = minx;
-    *oy = miny;
-    *w = maxx - minx;
-    *h = maxy - miny;
-}
-
-// A string whose ink is centred on c.
-static void text_centre(ImDrawList *dl, ImFont *f, float size, ImVec2 c, const char *t, ImU32 top, ImU32 bot, ImU32 line, float th,
-                        float alpha = 1.0f) {
-    float ox, oy, w, h;
-    ink_box(f, size, t, &ox, &oy, &w, &h);
-    text_fx(dl, f, size, ImVec2(c.x - ox - w * 0.5f, c.y - oy - h * 0.5f), t, top, bot, line, th, alpha);
-}
-
-// The size at which the ink of t is at most w wide and h high.
-static float fit_size(ImFont *f, const char *t, float w, float h) {
-    float ox, oy, iw, ih;
-    ink_box(f, 100.0f, t, &ox, &oy, &iw, &ih);
-    if (iw <= 0.0f || ih <= 0.0f) {
-        return h;
-    }
-    return fminf(100.0f * w / iw, 100.0f * h / ih);
-}
-
-// "Goku (End) Super Saiyan" -> "GOKU" and "SUPER SAIYAN"; "Frieza Final Form" -> "FRIEZA", "FINAL FORM".
-static void split_name(const char *full, char *main, size_t mcap, char *sub, size_t scap) {
-    static const char *const kForms[] = {" Legendary Super Saiyan", " Super Saiyan", " Great Ape", " Transformed", " Fusion",
-                                         " Final Form", " 1st Form", " 2nd Form", " 3rd Form", " 100% Power", " Giant",
-                                         " Gotenks Absorbed", " Gohan Absorbed"};
-    const char *cut = NULL, *rest = NULL;
-    char paren[64] = "";
-    const char *p = strstr(full, " (");
-    if (p != NULL) {
-        const char *q = strchr(p, ')');
-        cut = p;
-        if (q != NULL) {
-            snprintf(paren, sizeof(paren), "%.*s", (int)(q - p - 2), p + 2);
-            rest = q + 1;
-            while (*rest == ' ') {
-                rest++;
-            }
-        }
-    } else {
-        for (const char *k : kForms) {
-            const char *f = strstr(full, k);
-            if (f != NULL && f > full && (cut == NULL || f < cut)) {
-                cut = f;
-            }
-        }
-        if (cut != NULL) {
-            rest = cut + 1;
-        }
-    }
-    size_t n = cut != NULL ? (size_t)(cut - full) : strlen(full);
-    if (n >= mcap) {
-        n = mcap - 1;
-    }
-    for (size_t i = 0; i < n; i++) {
-        main[i] = full[i]; // (as written, as the game shows names)
-    }
-    main[n] = '\0';
-    const char *s = rest != NULL && rest[0] != '\0' ? rest : paren;
-    size_t i = 0;
-    for (; s[i] != '\0' && i + 1 < scap; i++) {
-        sub[i] = s[i]; // (as written: the brush face reads better in mixed case)
-    }
-    sub[i] = '\0';
-}
-
-
 // ---------------------------------------------------------------------------------------------------- one panel
 struct Anim {
     int key;        // who is shown: member << 16 | character + 1
@@ -762,111 +604,6 @@ static void background(ImDrawList *dl, const Panel &p, ImVec4 th, ImVec2 focus, 
 // Text as the game draws its stylized names (gs/menu_text.c, the stage names' style from the disc): pale yellow at
 // the top of the capitals to orange red at the baseline, a dark outline a seventh of the capitals' height, and a
 // soft drop shadow down and to the right. c: where the ink's middle goes.
-static void game_text(ImDrawList *dl, ImFont *f, float size, ImVec2 c, const char *t, float alpha) {
-    float ox, oy, w, h;
-    ink_box(f, size, t, &ox, &oy, &w, &h);
-    if (h <= 0.0f) {
-        return;
-    }
-    ImVec2 pen(c.x - ox - w * 0.5f, c.y - oy - h * 0.5f);
-    float border = fmaxf(1.0f, h / 7.0f);
-    ImVec2 sh(h * 0.19f, h * 0.14f);
-    int A = (int)(255 * alpha);
-    for (int ring = 0; ring < 2; ring++) { // the shadow: the outlined letters, offset and softened
-        float r = border + ring * border * 0.6f;
-        ImU32 col = C(0, 0, 0, A * (ring == 0 ? 70 : 40) / 255);
-        for (int i = 0; i < 12; i++) {
-            float a = i * 2.0f * kPi / 12;
-            dl->AddText(f, size, ImVec2(pen.x + sh.x + cosf(a) * r, pen.y + sh.y + sinf(a) * r), col, t);
-        }
-    }
-    ImU32 line = C(0x2C, 0x15, 0x1B, A);
-    int n = border > 2.5f ? 16 : 10;
-    for (int i = 0; i < n; i++) {
-        float a = i * 2.0f * kPi / n;
-        dl->AddText(f, size, ImVec2(pen.x + cosf(a) * border, pen.y + sinf(a) * border), line, t);
-    }
-    int v0 = dl->VtxBuffer.Size;
-    dl->AddText(f, size, pen, C(255, 255, 255, A), t);
-    ImGui::ShadeVertsLinearColorGradientKeepAlpha(dl, v0, dl->VtxBuffer.Size, ImVec2(pen.x, pen.y + oy), ImVec2(pen.x, pen.y + oy + h),
-                                                  C(0xF4, 0xEF, 0x89), C(0xD2, 0x68, 0x4B));
-}
-
-// The name, one letter under the other down the inner edge, stamped in one by one, in the name's face: white into
-// the fighter's colour, a dark ink outline and a shadow (asked for: down the side, in a brush face).
-static void name_column(ImDrawList *dl, const Panel &p, const char *name, ImVec4 th, double start, double now) {
-    ImFont *f = face(Ui_FontName());
-    int n = (int)strlen(name);
-    if (n == 0) {
-        return;
-    }
-    float top = p.y0 + p.H * 0.035f, avail = p.H * 0.70f, colW = p.W * 0.34f, cx = p.X(p.W * 0.19f);
-    float tot = 0.0f, maxw = 0.0f, gap = 10.0f, space = 34.0f; // (at size 100)
-    for (int i = 0; i < n; i++) {
-        char c[2] = {name[i], 0};
-        float ox, oy, w, h;
-        if (name[i] == ' ') {
-            tot += space;
-            continue;
-        }
-        ink_box(f, 100.0f, c, &ox, &oy, &w, &h);
-        tot += h;
-        maxw = fmaxf(maxw, w);
-    }
-    tot += gap * (n - 1);
-    float size = fminf(100.0f * colW / fmaxf(maxw, 1.0f), 100.0f * avail / fmaxf(tot, 1.0f));
-    size = fminf(size, p.H * 0.11f);
-    float k = size / 100.0f, y = top;
-    ImU32 lite = Cmix(th, ImVec4(1, 1, 1, 1), 0.70f);
-    for (int i = 0; i < n; i++) {
-        char c[2] = {name[i], 0};
-        float ox, oy, w, h;
-        if (name[i] == ' ') {
-            y += (space + gap) * k;
-            continue;
-        }
-        ink_box(f, 100.0f, c, &ox, &oy, &w, &h);
-        float t = (float)(now - (start + 0.25 + i * 0.05)) / 0.16f;
-        if (t > 0.0f) {
-            float s = 1.0f + (1.0f - ease_out(t)) * 1.0f, al = clamp01(t * 1.5f);
-            ImVec2 c0(cx, y + h * k * 0.5f);
-            ImU32 ink = C(10, 4, 2, (int)(200 * al));
-            text_centre(dl, f, size * s, ImVec2(c0.x + size * 0.04f, c0.y + size * 0.05f), c, ink, ink, ink, 0.0f, al); // (shadow)
-            text_centre(dl, f, size * s, c0, c, C(255, 255, 255), lite, C(12, 6, 4, (int)(255 * al)), fmaxf(1.5f, size * 0.055f), al);
-        }
-        y += (h + gap) * k;
-    }
-}
-
-// A line of text across the panel at cy, at most h high, in the game's lettering; on two lines when one would be
-// too small for the panel's width.
-static void text_block(ImDrawList *dl, const Panel &p, const char *text, float cy, float h, float al) {
-    if (text[0] == '\0' || al <= 0.0f) {
-        return;
-    }
-    ImFont *f = face(Ui_FontForm());
-    char l1[64], l2[64];
-    float w = p.W * 0.88f, cx = p.X(p.W * 0.5f);
-    float size = fit_size(f, text, w, h);
-    const char *sp = strchr(text, ' ');
-    if (size < h * 0.62f && sp != NULL) { // split at the space nearest the middle
-        const char *best = sp;
-        long half = (long)strlen(text) / 2;
-        for (const char *q = sp; q != NULL; q = strchr(q + 1, ' ')) {
-            if (labs((long)(q - text) - half) < labs((long)(best - text) - half)) {
-                best = q;
-            }
-        }
-        snprintf(l1, sizeof(l1), "%.*s", (int)(best - text), text);
-        snprintf(l2, sizeof(l2), "%s", best + 1);
-        size = fminf(fit_size(f, l1, w, h * 0.78f), fit_size(f, l2, w, h * 0.78f));
-        game_text(dl, f, size, ImVec2(cx, cy - h * 0.48f), l1, al);
-        game_text(dl, f, size, ImVec2(cx, cy + h * 0.48f), l2, al);
-        return;
-    }
-    game_text(dl, f, size, ImVec2(cx, cy), text, al);
-}
-
 static void draw_panel(ImDrawList *dl, const Panel &p, const FpState &st, int side, Anim &an, double now) {
     const FpSide &s = st.side[side];
     const FpMember &m = s.m[s.active];
@@ -880,12 +617,12 @@ static void draw_panel(ImDrawList *dl, const Panel &p, const FpState &st, int si
     }
     bool ko = m.hpMax > 0 && m.hp <= 0;
 
-    // where the portrait goes: the head a little toward the screen's edge, clear of the name
+    // Keep the portrait's focal point centered in the artwork panel.
     float enter = ease_out((float)(now - an.enterAt - 0.05) / 0.55f);
     float swap = ease_out((float)(now - an.swapAt) / 0.35f);
     float sc = p.H * 0.78f / ART_H; // (large: the panel's height, the sides fading out)
     float out = (1.0f - enter) * (p.W + ART_W * sc * 0.5f) + (1.0f - swap) * p.W * 0.7f; // (comes in from the screen's edge)
-    ImVec2 head(p.X(p.W * 0.58f + out), p.y0 + p.H * 0.26f); // the face, beside the name (still: asked for)
+    ImVec2 head(p.X(p.W * 0.50f + out), p.y0 + p.H * 0.26f);
 
     background(dl, p, th, head, now);
     dl->PushClipRect(ImVec2(p.x0, p.y0), ImVec2(p.x1, p.y1), true);
@@ -902,14 +639,6 @@ static void draw_panel(ImDrawList *dl, const Panel &p, const FpState &st, int si
     if (swap < 1.0f) { // a new fighter: a white flash
         dl->AddRectFilled(ImVec2(p.x0, p.y0), ImVec2(p.x1, p.y1), C(255, 255, 255, (int)(170 * (1.0f - swap))));
     }
-    char full[96], name[64], form[64];
-    const char *nm = chara_name(m.chara);
-    snprintf(full, sizeof(full), "%s", nm != NULL ? nm : "???");
-    split_name(full, name, sizeof(name), form, sizeof(form));
-    double nameAt = an.swapAt > an.enterAt ? an.swapAt : an.enterAt;
-    // the name down the inner edge in its face, the form across the bottom in the game's lettering
-    name_column(dl, p, name, th, nameAt, now);
-    text_block(dl, p, form, p.y1 - p.H * 0.075f, p.H * 0.048f, clamp01((float)(now - nameAt - 0.45) / 0.3f));
     dl->PopClipRect();
     // a gold line along the screen's edge
     float ex = p.right ? p.x1 - 1.5f : p.x0 + 1.5f;

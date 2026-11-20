@@ -87,6 +87,7 @@
 #endif
 #include "net_lobby.h"
 #include "net_match.h"
+#include "match_supabase.h"
 #include "net_relay.h"
 
 #define MAGIC 0x4E335442u
@@ -541,7 +542,8 @@ void Port_LobbySay(const char *text) {
     queue_put(&c);
 }
 
-int Port_LobbyCreate(int byCode, int port, int battle, int time, int speed, int rollback, int delay) {
+int Port_LobbyCreateAccess(int byCode, int port, int battle, int time, int speed, int rollback, int delay,
+                           int listed, int tournament) {
     Cmd c;
     memset(&c, 0, sizeof(c));
     c.kind = CMD_CREATE;
@@ -552,6 +554,8 @@ int Port_LobbyCreate(int byCode, int port, int battle, int time, int speed, int 
     c.text[2] = (char)speed;
     c.text[3] = (char)rollback;
     c.text[4] = (char)delay;
+    c.text[5] = (char)(listed!=0);
+    c.text[6] = (char)(tournament!=0);
     SDL_LockSpinlock(&sLock); /* (shown as under way at once) */
     memset(&sView, 0, sizeof(sView));
     sView.state = 1;
@@ -560,6 +564,10 @@ int Port_LobbyCreate(int byCode, int port, int battle, int time, int speed, int 
     SDL_UnlockSpinlock(&sLock);
     queue_put(&c);
     return 1;
+}
+
+int Port_LobbyCreate(int byCode, int port, int battle, int time, int speed, int rollback, int delay) {
+    return Port_LobbyCreateAccess(byCode,port,battle,time,speed,rollback,delay,0,0);
 }
 
 int Port_LobbyJoin(const char *address, int port) {
@@ -2707,6 +2715,7 @@ static void owner_start(int byCode, int port, const char *r) {
     table_make();
     if (byCode) {
         Relay_Close(-1);
+        Bt4Discovery_CreatePrivacy(r[5]!=0,r[6]!=0);
         Match_Begin(5, NetIo_Sock(), local, "", NetIo_MyName(), NetIo_Version());
     }
     fprintf(stderr, "bt3: lobby: made%s, on port %d\n", byCode ? " (a room code is asked for)" : "", local);

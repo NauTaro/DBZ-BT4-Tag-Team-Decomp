@@ -748,6 +748,7 @@ s32 PortScreen_Main(void) {
         } while (result == 2 || result == PORT_TBO_OPEN_TAG);
         Adx_StopAll();
         if(result==3){gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;}
+        else if(result==PORT_TBO_NATIVE_TRAINING){gProgress->mode=44;result=0;}
         else gProgress->mode = result ? 45 : 4; /* training, or back to the main menu */
         break;
     default:

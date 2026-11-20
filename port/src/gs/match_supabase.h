@@ -12,6 +12,18 @@ typedef struct Bt4DiscoveryStatus {
 typedef struct Bt4RoomTurn {
     char server[272], username[129], password[129];
 } Bt4RoomTurn;
+#define BT4_PUBLIC_ROOM_LIMIT 40
+typedef struct Bt4PublicRoom {
+    char code[7], name[20];
+    int kind, occupancy, capacity;
+} Bt4PublicRoom;
+typedef struct Bt4PublicDirectory {
+    int state, count;
+    Bt4PublicRoom rooms[BT4_PUBLIC_ROOM_LIMIT];
+} Bt4PublicDirectory;
+void Bt4Discovery_CreatePrivacy(int listed,int tournament);
+void Bt4Discovery_Directory(int protocol,uint64_t content,uint64_t tagContent,Bt4PublicDirectory *out);
+void Port_LobbyDirectory(Bt4PublicDirectory *out);
 int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint64_t content,const char *name,const char *code,const char *addresses_json,const char *queue);
 int Bt4Discovery_Poll(unsigned generation,Bt4DiscoveryStatus *out);
 int Bt4Discovery_TakeTurn(unsigned generation,Bt4RoomTurn *out);
@@ -37,6 +49,7 @@ int Port_RankedTopTen(Bt4RankedEntry out[10]);
 void Port_RankedPage(int direction);
 void Port_RankedSearch(int selected);
 int Port_RankedActive(void);
+int Port_RankedRivalPoints(const char *name);
 unsigned Port_RankedRockSeed(void);
 void Port_RankedObserveRock(int state,unsigned event,unsigned tick,unsigned confirmed);
 void Port_OnlineDuelObserve(int state,int bits,unsigned tick,unsigned confirmed,int resim,unsigned seed,const char *nameA,const char *nameB);

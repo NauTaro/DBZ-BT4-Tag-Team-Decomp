@@ -4,8 +4,8 @@
  */
 #ifndef BT4_ONLINE_COMPAT_H
 #define BT4_ONLINE_COMPAT_H
-#define BT4_ONLINE_COMPAT_NAME "BT4-B14-Rev2-sim9"
-#define BT4_ONLINE_COMPAT_ID 0x5e7a7645e355b5caULL
+#define BT4_ONLINE_COMPAT_NAME "BT4-B14-Rev2-sim13"
+#define BT4_ONLINE_COMPAT_ID 0x3948d28d094f6843ULL
 typedef struct Bt4BaseFile {const char *path; unsigned size[2],crc[2];} Bt4BaseFile;
 static const Bt4BaseFile kBt4BaseFiles[]={
 {"disc/SLUS_219.78",{2115688,2115696},{0x1456d540u,0x9d2224c1u}},

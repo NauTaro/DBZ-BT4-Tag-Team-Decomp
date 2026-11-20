@@ -24,6 +24,37 @@ test('private rooms work in both hosting directions and isolate outsiders',()=>{
         f.invoke(host,'leave',{generation:r.generation});
     }
 });
+test('the public directory lists compatible vacant rooms and hides private or expired rooms',()=>{
+    const f=fixture(),reader=f.user('Browser');
+    const query={wire:'bt4-duel-1429484564',content:'aabbccdd11223344',tag_content:'9988776655443311'};
+    const duel={mode:'lobby',wire:query.wire,content:query.content,rules:'S',capacity:3};
+    const tag={mode:'tag',wire:'bt4-p2p-2',content:query.tag_content,rules:'tag-114',capacity:2};
+    const openHost=f.user('OpenDuels'),tagHost=f.user('OpenTags');
+    const openDuel=f.invoke(openHost,'create',{...duel,listed:true});
+    const openTag=f.invoke(tagHost,'create',{...tag,listed:true});
+    const tour=f.invoke(f.user('OpenTournament'),'create',{...duel,rules:'public-tournament',capacity:34,listed:true});
+    const privateRoom=f.invoke(f.user('CodeOnly'),'create',duel);
+    f.invoke(f.user('WrongVersion'),'create',{...tag,content:'0123456789abcdef',listed:true});
+    f.invoke(f.user('Busy'),'create',{...duel,listed:true});
+    f.c.run("UPDATE online_rooms SET joinable=0 WHERE owner=(SELECT user_id FROM online_names WHERE name='Busy')");
+    f.invoke(f.user('Expired'),'create',{...duel,listed:true});
+    f.c.run("UPDATE online_rooms SET expires=1 WHERE owner=(SELECT user_id FROM online_names WHERE name='Expired')");
+    f.invoke(f.user('NotABoolean'),'create',{...duel,listed:'false'});
+    const rooms=()=>f.invoke(reader,'public_rooms',query).rooms;
+    assert.deepEqual(rooms().map(r=>r.kind).sort(),[0,1,2]);
+    assert.equal(rooms().find(r=>r.code===openDuel.code).name,'OpenDuels');
+    assert.equal(rooms().find(r=>r.code===tour.code).capacity,34);
+    const guest=f.user('Guest');
+    f.invoke(guest,'join',{...tag,code:openTag.code});
+    assert(!rooms().some(r=>r.code===openTag.code));
+    f.invoke(guest,'leave',{generation:openTag.generation});
+    assert(rooms().some(r=>r.code===openTag.code));
+    f.invoke(tagHost,'lease',{joinable:false});
+    assert(!rooms().some(r=>r.code===openTag.code));
+    assert.throws(()=>f.invoke(guest,'join',{...tag,code:openTag.code}),/ROOM_BUSY/);
+    assert.equal(f.invoke(guest,'join',{...duel,code:privateRoom.code}).members.length,2);
+    assert.throws(()=>f.invoke(reader,'public_rooms',{...query,tag_content:'invalid'}),/BAD_PROFILE/);
+});
 test('300 players form 150 unique matches without losing their profiles',()=>{
     const f=fixture();const started=performance.now();
     for(let i=0;i<300;i++)f.invoke(f.user('Player'+i),'queue',profile);
@@ -68,6 +99,17 @@ function rankedPair(f){const a=f.user('First'),b=f.user('Second');const args={..
     f.invoke(a,'ranked_queue',args);const r=f.invoke(b,'ranked_queue',args);
     f.invoke(a,'ranked_heartbeat',{match:r.generation});f.invoke(b,'ranked_heartbeat',{match:r.generation});
     const admitted=f.c.one('SELECT a,b FROM ranked_matches WHERE id=?',r.generation);return {...admitted,id:r.generation};}
+test('ranked rooms return the rating of the two competitors only',()=>{
+    const f=fixture(),{a,b,id}=rankedPair(f);
+    f.c.run("UPDATE ranked_players SET rating=1499 WHERE user_id=?",a);
+    f.c.run("UPDATE ranked_players SET rating=0 WHERE user_id=?",b);
+    const room=f.invoke(a,'get');
+    assert.deepEqual(room.members.map(m=>m.rating).sort((x,y)=>x-y),[0,1499]);
+    const observer=f.user('Observer');
+    const casual=f.invoke(observer,'create',profile);
+    assert.equal(casual.members[0].rating,undefined);
+    assert.equal(room.generation,id);
+});
 test('a quitter loses points, the connected player gains, and repeated settlement is idempotent',()=>{
     const f=fixture(),{a,b,id}=rankedPair(f);
     assert.equal(f.invoke(a,'ranked_forfeit',{match:id,reason:'local_quit'}).delta,-16);
@@ -171,17 +213,18 @@ test('new streak players start at zero without resetting existing accounts',()=>
     assert.equal(f.invoke(b,'ranked_status').rating,0);
 });
 
-test('repeated forfeits are held without changing either rating or streak',()=>{
+test('repeat departures settle the winner points and record the result without a review',()=>{
     const f=fixture(),a=f.user('Stayer'),b=f.user('Leaver');
     f.c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");
     assert.equal(finishRanked(f,a,b,a,true).result.delta,13);
     assert.equal(finishRanked(f,b,a,a,true).result.delta,0);
     const before=f.invoke(a,'ranked_status');
     const {match,result}=finishRanked(f,a,b,a,true);
-    assert.equal(result.under_review,true);
-    assert.equal(result.delta,0);
-    assert.equal(f.c.one('SELECT reason FROM ranked_reviews WHERE match_id=?',match).reason,'repeated_forfeits');
-    assert.deepEqual(f.invoke(a,'ranked_status'),before);
+    assert.equal(result.under_review,false);
+    assert.equal(result.delta,17);
+    assert.equal(f.c.one('SELECT reason FROM ranked_reviews WHERE match_id=?',match),undefined);
+    assert.equal(f.invoke(a,'ranked_status').rating,before.rating+17);
+    assert.equal(f.invoke(a,'ranked_status').streak_wins,before.streak_wins+1);
     assert.equal(f.invoke(b,'ranked_heartbeat',{match}).delta,0);
     assert.equal(f.c.one('SELECT count(*) n FROM ranked_history WHERE match_id=?',match).n,2);
 });

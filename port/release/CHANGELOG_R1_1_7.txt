@@ -1,0 +1,19 @@
+BT4decomp 0.1.39.6 R1 1.7
+
+- Browse open rooms for Duels, Tournaments and Tag Team. Room hosts can choose open access or invite players by code.
+- Practice 1v1 and 2v2 against the CPU from the online menu, or learn Tag Team in its new tutorial.
+- Fight across more of each arena and enjoy cleaner 4:3 fighter artwork.
+- Ranked shows your opponent's points and a clearer result notification. Confirmed withdrawals award points to the player who stayed.
+- Fixed missing audio for the second player in split-screen Tag Team. Thanks to @dantemustlive42-del for the report.
+
+- Encuentra salas abiertas de Duelo, Torneo y Tag Team, o invita por código al crear una sala.
+- Practica 1 contra 1 y 2 contra 2 contra la CPU desde el menú online y aprende las mecánicas en el tutorial de Tag Team.
+- Las arenas tienen más espacio para combatir y los bordes 4:3 muestran solo las ilustraciones.
+- Clasificatorias muestra los puntos del rival y un aviso de resultados más claro. Si se confirma un abandono, el jugador que se quedó recibe sus puntos.
+- Corregido el audio del segundo jugador en la pantalla dividida de Tag Team. Gracias a @dantemustlive42-del por el reporte.
+
+- Encontre salas abertas de Duelo, Torneio e Tag Team ou convide jogadores pelo código da sala.
+- Pratique 1 contra 1 e 2 contra 2 contra a CPU pelo menu online e aprenda as mecânicas no tutorial de Tag Team.
+- As arenas têm mais espaço para lutar e as bordas 4:3 mostram apenas as ilustrações.
+- As ranqueadas mostram os pontos do adversário e um aviso de resultado mais claro. Em caso de abandono confirmado, quem ficou recebe seus pontos.
+- Corrigido o áudio do segundo jogador na tela dividida de Tag Team. Obrigado a @dantemustlive42-del pelo relato.

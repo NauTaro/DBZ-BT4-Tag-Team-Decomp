@@ -580,7 +580,8 @@ s32 TagBattle_ConfigureLocal(void) {
         }
     }
 #endif
-    BattleSetup_SetRule(offline==2,0,sTagBgm,timeLimit,referee,sTagStage,destruction);
+    extern int Port_TagOfflineTraining(void);
+    BattleSetup_SetRule(offline==2,Port_TagOfflineTraining()?6:0,sTagBgm,timeLimit,referee,sTagStage,destruction);
     for(i=0;i<count;++i){
         s32 d=Port_TagDifficulty(i);if(d<0||d>4)d=2;
         f32 health=100.0f;

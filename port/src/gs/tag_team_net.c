@@ -596,8 +596,8 @@ int Port_TagConnect(const char *server){
 
 }
 
-static int offline_mode;
-void Port_TagClose(void){tag_stats_epoch=tag_stats_seed=0;tag_stats_finished=0;tag_stats_descriptor[0]=0;memset(shared_options_packet,0,sizeof(shared_options_packet));shared_options_pending=0;offline_mode=0;if(peer_mode)TagPeer_Close();peer_mode=0;Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_feedback_seen=0;tag_delay_adjusted=0;tag_pending_coop=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
+static int offline_mode, offline_training;
+void Port_TagClose(void){tag_stats_epoch=tag_stats_seed=0;tag_stats_finished=0;tag_stats_descriptor[0]=0;memset(shared_options_packet,0,sizeof(shared_options_packet));shared_options_pending=0;offline_mode=offline_training=0;if(peer_mode)TagPeer_Close();peer_mode=0;Port_TagWaitResumed();TagDirect_Close();tag_direct_supported=tag_direct_ticket=tag_direct_route=0;tag_direct_ticket_at=0;PortVoice_Leave(2);voice_ticket=0;voice_ticket_at=0;Port_TagMenuSet(0,0);Port_TagWaitClear();TagWs_Close();ws_mode=ws_started=0;ws_endpoint[0]=0;channel_close(&client);memset(&state,0,sizeof(state));memset(&received,0,sizeof(received));member=0;configure_pending=chat_count=cancel_pending=0;room_code[0]=error[0]=0;connecting=0;local_room=0;tag_caps_sent=tag_paced=tag_input_sent=tag_sync_count=0;tag_ping=-1;tag_ping_ack=0;tag_ping_at=0;tag_delay_margin=1;tag_delay_clean_frames=0;tag_delay_feedback_seen=0;tag_delay_adjusted=0;tag_pending_coop=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;tag_ping_count=tag_ping_cursor=0;tag_received_valid=0;SDL_SetAtomicInt(&tag_catchup,0);}
 
 int Port_TagReselect(void){
 
@@ -616,6 +616,7 @@ int Port_TagReselect(void){
 /* Private settings for the in-process draft. Never serialized into an online room. */
 static int offline_custom, offline_beans;
 int Port_TagOfflineMode(void){return local_room?offline_mode:0;}
+int Port_TagOfflineTraining(void){return local_room&&offline_training;}
 int Port_TagOfflineCustom(void){return Port_TagNetwork()?Port_TagOption("tag_off_custom",0):!Port_TagOfflineMode()||offline_custom;}
 int Port_TagOfflineBeans(void){return Port_TagNetwork()?Port_TagOption("tag_off_senzu",0):Port_TagOfflineMode()?offline_beans:0;}
 
@@ -626,7 +627,7 @@ int Port_TagStartOffline(int mode,int left,int right,int time_limit,int difficul
        time_limit<0||time_limit>4||difficulty<0||difficulty>4||beans<0||beans>5)
         return 0;
     if(!Port_TagConnect(NULL))return 0;
-    offline_mode=0;
+    offline_mode=offline_training=0;
     offline_custom=custom!=0;
     offline_beans=beans;
     Tt_Open(&state,member,"Player 1",2,0);
@@ -680,7 +681,13 @@ static int ws_start(const char *code){
 
 }
 
-void Port_TagOpenWithRules(int size,int limit,int delay,const char *name,uint64_t content,unsigned rules){
+int Port_TagStartTraining(void){
+    if(!Port_TagStartOffline(1,2,2,4,1,0,0))return 0;
+    offline_training=1;
+    return 1;
+}
+
+void Port_TagOpenListedWithRules(int size,int limit,int delay,const char *name,uint64_t content,unsigned rules,int listed){
     delay=0; /* Tag Team no longer adds a user-configured simulation delay. */
     if(configured_ffa&&configured_quick)size=3;
 
@@ -714,6 +721,7 @@ void Port_TagOpenWithRules(int size,int limit,int delay,const char *name,uint64_
     Ttw_Write(b+52,cpu_fill);Ttw_Write(b+56,cpu_difficulty);
     Ttw_Write(b+60,configured_ffa);Ttw_Write(b+64,configured_quick);
     Ttw_Write(b+TTW_OPEN_BATTLE_RULES,rules);
+    Ttw_Write(b+TTW_OPEN_LISTED,listed!=0);
 #ifdef BT4_TAG_TEAM_EXPANDED
     {TtOptions options;extern int Port_Setting(const char*,int);Tt_OptionsDefault(&options);
         static const char *const keys[]={"tag_off_custom","tag_off_senzu","tag_off_joint","tag_off_fusion","tag_fusion_seconds",
@@ -737,6 +745,10 @@ void Port_TagOpenWithRules(int size,int limit,int delay,const char *name,uint64_
 #endif
     request(b);
 
+}
+
+void Port_TagOpenWithRules(int size,int limit,int delay,const char *name,uint64_t content,unsigned rules){
+    Port_TagOpenListedWithRules(size,limit,delay,name,content,rules,0);
 }
 
 void Port_TagOpen(int size,int limit,int delay,const char *name,uint64_t content){

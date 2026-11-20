@@ -514,15 +514,24 @@ void Port_Trace(unsigned vblanks) {
         extern void PortVoice_World(int,int,int,const float *);
         extern int BattleSide_GetObjId(int);
         extern void BtlCharApi_GetBasePos(int,float *);
-        extern void PortAudio_World(int,int,int,const float *,const int *);
-        float positions[40]={0};int alive[10]={0};int count=0,mode=0,listener=0,a;
+        extern void PortAudio_World(int,int,int,int,const float *,const int *);
+        float positions[40]={0};int alive[10]={0};int count=0,mode=0,listener=0,secondListener=-1,a;
         if(gBtlSeq&&gBtlSeq->state==3){
             if(TagBattle_Active()){mode=2;count=TagBattle_Count();listener=TagBattle_ViewActor();}
             else if(Port_NetActive()){mode=1;count=2;listener=Port_NetView();}
+#ifdef BT4_TAG_TEAM_EXPANDED
+            if(mode==2){
+                extern int Battle_IsSplitScreen(void),Port_TagOfflineMode(void),TagBattle_SplitViewActor(int);
+                if(Port_TagOfflineMode()==2&&Battle_IsSplitScreen()){
+                    listener=TagBattle_SplitViewActor(0);
+                    secondListener=TagBattle_SplitViewActor(1);
+                }
+            }
+#endif
             for(a=0;a<count;++a){int object=BattleSide_GetObjId(a);BtlCharApi_GetBasePos(object,positions+a*4);alive[a]=BtlCharApi_GetHp(object)>0;}
         }
         PortVoice_World(mode,listener,count,positions);
-        PortAudio_World(mode==2,listener,count,positions,alive);
+        PortAudio_World(mode==2,listener,secondListener,count,positions,alive);
     }
     if ((getenv("BT4_TAG_ACTOR_TEST") != NULL || getenv("BT4_TAG_LOCAL_TEST") != NULL) && gBtlSeq != NULL && gBtlSeq->state >= 2 && vblanks % 120 == 0) {
         extern int TagBattle_Count(void),TagBattle_Team(int),TagBattle_Target(int), BtlAiMgr_GetLevel(int side);

@@ -2792,6 +2792,14 @@ static void session_banner(void) {
         }
     }
     banner_fill(text, sizeof(text), PortOnline_Text(line), name, region, ms);
+    if(Port_RankedActive()){
+        int points=Port_RankedRivalPoints(name);
+        if(points>=0){
+            k=strlen(text);
+            if(k+1<sizeof(text))text[k++]='\n';
+            snprintf(text+k,sizeof(text)-k,PortOnline_Text("Ranked points: %d"),points);
+        }
+    }
     if (ms >= 0) { /* the round trip, as measured once the two are connected */
         char more[96];
         line = MenuTranslation_PortText("net/round_trip");
@@ -3048,6 +3056,7 @@ static void spec_tick(unsigned tick) {
     }
 }
 
+extern void Port_UiRankedSettlement(int rating,int delta);
 static void ranked_outcome(unsigned tick){
     extern int Port_BattleOutcome(int *);
     extern int Port_RankedPauseAbortPad(void);
@@ -3065,10 +3074,9 @@ static void ranked_outcome(unsigned tick){
         if(!sResim&&!gPortResim){
             int rating=0,delta=0,result=Port_RankedResult(&rating,&delta);
             if(result!=2&&result!=3)notified=0;
-            else if(!notified){
-                char line[192];snprintf(line,sizeof(line),PortOnline_Text(result==3?
-                    "This result is held for review. No points changed.":"Ranked: %+d points (%d total)"),delta,rating);
-                Port_UiBanner(line,2000);notified=1;
+            else if(result==2&&!notified){
+                Port_UiRankedSettlement(rating,delta);
+                notified=1;
             }
         }
     }
@@ -3078,12 +3086,7 @@ void Port_NetBeginTick(unsigned tick) {
 
     if (!Port_NetActive()) {
         int rating,delta,result=Port_RankedTakeSettlement(&rating,&delta);
-        if(result){
-            char line[192];
-            snprintf(line,sizeof(line),PortOnline_Text(result==2?
-                "This result is held for review. No points changed.":"Ranked: %+d points (%d total)"),delta,rating);
-            Port_UiBanner(line,2000);
-        }
+        if(result==1)Port_UiRankedSettlement(rating,delta);
         return;
     }
     sTick = tick;
@@ -3829,6 +3832,18 @@ int Port_LobbyWiden(void) {
     return st.widen;
 }
 
+void Port_LobbyDirectory(Bt4PublicDirectory *out) {
+    extern int Port_BuildIdentity(unsigned long long *);
+    extern int Port_TagDataFingerprint(unsigned long long *);
+    unsigned long long content,tag;
+    if(Port_BuildIdentity(&content)!=1||Port_TagDataFingerprint(&tag)!=1){
+        memset(out,0,sizeof(*out));out->state=-1;return;
+    }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    tag^=0x54434f3300000000ULL;
+#endif
+    Bt4Discovery_Directory(NET_VERSION,content,tag,out);
+}
 void Port_LobbyQueuesAsk(void) { Match_QueuesAsk(NET_VERSION); }
 void Port_LobbyHelloAsk(void) { Match_HelloAsk(); }
 int Port_LobbyRelease(int *min, int *latest) { return Match_Release(min, latest); }

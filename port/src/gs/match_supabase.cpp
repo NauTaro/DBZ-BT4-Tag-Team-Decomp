@@ -422,6 +422,12 @@ void pump(){
     }
 }
 }
+static bool nextListed=false,nextTournament=false;
+extern "C" void Bt4Discovery_CreatePrivacy(int listed,int tournament){
+    std::lock_guard<std::mutex> guard(lock);
+    nextListed=listed!=0;
+    nextTournament=tournament!=0;
+}
 extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint64_t content,const char *name,const char *code,const char *addresses,const char *queue){
     std::lock_guard<std::mutex> g(lock);if(generation<d.generation||!name||!addresses)return 0;
     Dj local=Dj::parse(addresses,nullptr,false);if(!local.is_array()||local.empty()||local.size()>4)return 0;
@@ -439,6 +445,11 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
         if(rankedRocksAvailable)d.wire+=":rock1";
     }
     d.profile={{"mode",role==5?"lobby":"duel"},{"wire",d.wire},{"content",d.content},{"rules",queue&&*queue?queue:"S"},{"name",std::string(name).substr(0,19)},{"capacity",role==5?LOBBY_SLOTS:LOBBY_CLASSIC_SLOTS}};
+    if(role==5){
+        d.profile["listed"]=nextListed;
+        if(nextTournament)d.profile["rules"]="public-tournament";
+        nextListed=nextTournament=false;
+    }
     if(d.ranked){d.profile["ruleset"]="solo";d.profile["rules"]="S";d.profile["abandonment_version"]=2;}
     if(d.quick)d.profile["rock_version"]=1;
     d.began=SDL_GetTicks();d.leaseAt=d.began+60000;
@@ -517,6 +528,20 @@ extern "C" int Bt4Discovery_TagCounts(uint64_t content,int out[3]){
 }
 extern "C" void Port_RankedSearch(int selected){std::lock_guard<std::mutex> g(lock);rankedNext=selected!=0;}
 extern "C" int Port_RankedActive(void){return rankedActive.load();}
+extern "C" int Port_RankedRivalPoints(const char *name){
+    if(!name||!*name)return -1;
+    std::lock_guard<std::mutex> guard(lock);
+    if(!d.on||!d.ranked)return -1;
+    const auto members=d.descriptor.find("members");
+    if(members==d.descriptor.end()||!members->is_array())return -1;
+    for(const auto &member:*members){
+        if(text(member,"name")!=name||text(member,"role")!="player")continue;
+        const auto rating=member.find("rating");
+        if(rating!=member.end()&&rating->is_number_unsigned())
+            return int(std::min(100000u,rating->get<unsigned>()));
+    }
+    return -1;
+}
 extern "C" unsigned Port_RankedRockSeed(void){return rankedRockSeed.load();}
 extern "C" void Port_RankedObserveRock(int state,unsigned event,unsigned tick,unsigned confirmed){
     if(!rankedRockSeed)return;
@@ -636,11 +661,15 @@ void rankedPage(){
     memset(rankedView.top,0,sizeof(rankedView.top));
     for(int i=0;i<rankedView.count;++i)rankedView.top[i]=rankedEntries[rankedView.page*5+i];
 }
+Bt4PublicDirectory directory={};
+unsigned directoryRequest=0;
+Uint64 directoryDeadline=0,nextDirectory=0;
 void profileRoute(){
     const char *project=Bt4Signal_Project();
     if(profileProject==project)return;
     profileProject=project;
-    rankedStatusRequest=rankedTopRequest=nicknameRequest=0;
+    rankedStatusRequest=rankedTopRequest=nicknameRequest=directoryRequest=0;
+    directory={};nextDirectory=0;
     nextRankedStatus=nextRankedTop=0;
     rankedView.state=0;rankedView.rating=rankedView.wins=rankedView.losses=0;
     rankedView.streakScoring=rankedView.streakWins=rankedView.streakPoints=0;
@@ -663,6 +692,23 @@ void profilePump(Uint64 now){
         auto project=text(event,"project");
         if(!id||(!project.empty()&&project!=profileProject))continue;
         auto body=event.find("body");if(body==event.end()||!body->is_object())continue;
+        if(id==directoryRequest){
+            directoryRequest=0;
+            directory={};
+            auto rows=body->find("rooms");
+            directory.state=rows!=body->end()&&rows->is_array()?1:-1;
+            if(directory.state==1)for(const auto &row:*rows){
+                if(!row.is_object()||directory.count>=BT4_PUBLIC_ROOM_LIMIT)continue;
+                auto code=text(row,"code"),name=text(row,"name");
+                unsigned capacity=number(row,"capacity"),occupancy=number(row,"occupancy"),kind=number(row,"kind");
+                if(code.size()!=6||name.empty()||capacity<2||capacity>40||occupancy==0||occupancy>=capacity||kind>2)continue;
+                auto &entry=directory.rooms[directory.count++];
+                snprintf(entry.code,sizeof(entry.code),"%s",code.c_str());
+                snprintf(entry.name,sizeof(entry.name),"%s",name.c_str());
+                entry.capacity=int(capacity);entry.occupancy=int(occupancy);entry.kind=int(kind);
+            }
+            continue;
+        }
         if(id==nicknameRequest){
             nicknameRequest=0;
             auto state=text(*body,"state"),error=text(*body,"error");
@@ -725,6 +771,7 @@ void profilePump(Uint64 now){
             rankedPage();
         }
     }
+    if(directoryRequest&&now>=directoryDeadline){directoryRequest=0;directory={};directory.state=-1;}
     if(rankedStatusRequest&&now>=rankedStatusDeadline){rankedStatusRequest=0;rankedView.state=-1;}
     if(rankedTopRequest&&now>=rankedTopDeadline){
         rankedTopRequest=0;nextRankedTop=now+15000;
@@ -732,6 +779,22 @@ void profilePump(Uint64 now){
     }
     if(nicknameRequest&&now>=nicknameDeadline){nicknameRequest=0;nicknameState=BT4_NICKNAME_UNAVAILABLE;nextNicknameCheck=now+15000;}
 }
+}
+extern "C" void Bt4Discovery_Directory(int protocol,uint64_t content,uint64_t tagContent,Bt4PublicDirectory *out){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    Uint64 now=SDL_GetTicks();
+    profileRoute();
+    profilePump(now);
+    if(!directoryRequest&&now>=nextDirectory){
+        char key[17],tag[17];
+        snprintf(key,sizeof(key),"%016llx",(unsigned long long)content);
+        snprintf(tag,sizeof(tag),"%016llx",(unsigned long long)tagContent);
+        Dj args={{"wire","bt4-duel-"+std::to_string(protocol)},{"content",key},{"tag_content",tag}};
+        directoryRequest=profileRequest("public_rooms",args.dump().c_str());
+        nextDirectory=now+12000;directoryDeadline=now+ProfileTimeout;
+        if(!directoryRequest){directory={};directory.state=-1;}
+    }
+    *out=directory;
 }
 extern "C" void Port_RankedPage(int direction){
     std::lock_guard<std::mutex> guard(rankedLock);

@@ -391,6 +391,7 @@ struct Session {
         if(creating){
             const char *rules=Ttw_Read(packet.data()+60)?"ffa6-114":Ttw_Read(packet.data()+12)==2?"2v2-114":"5v5-114";
             queueProfile={{"mode","tag"},{"wire","bt4-p2p-2"},{"content",content},{"rules",queued?rules:"tag-114"},{"name",name},{"capacity",Ttw_Read(packet.data()+12)*2}};
+            if(!queued)queueProfile["listed"]=Ttw_Read(packet.data()+TTW_OPEN_LISTED)==1;
             rpc(queued?"queue":"create",queueProfile,initSerial);
         }else{char joinCode[7];memcpy(joinCode,packet.data()+12,6);joinCode[6]=0;rpc("join",{{"code",joinCode},{"wire","bt4-p2p-2"},{"content",content},{"name",name}},initSerial);}
     }

@@ -389,10 +389,10 @@ extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,con
     if(consumer<0||consumer>5||!op||!args||strlen(args)>18000)return 0;
     if((consumer==3)!=(!strcmp(op,"presence")))return 0;
     bool lifecycle=!strcmp(op,"ranked_heartbeat")||!strcmp(op,"ranked_forfeit")||!strcmp(op,"ranked_rock")||!strcmp(op,"quick_rock")||!strcmp(op,"match_report");if((consumer==5)!=lifecycle)return 0;
-    bool profile=!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top")||!strcmp(op,"nickname_get")||!strcmp(op,"nickname_set");if((consumer==4)!=profile)return 0;
+    bool profile=!strcmp(op,"public_rooms")||!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top")||!strcmp(op,"nickname_get")||!strcmp(op,"nickname_set");if((consumer==4)!=profile)return 0;
     if((!strcmp(op,"ranked_queue")||!strcmp(op,"ranked_report"))&&consumer!=0)return 0;
     if(!strcmp(op,"turn_credentials")&&consumer!=0&&consumer!=1)return 0;
-    static const char *allowed[]={"create","join","get","get_signals","turn_credentials","lease","leave","list","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","ranked_rock","quick_rock","match_report","nickname_get","nickname_set"};bool found=false;
+    static const char *allowed[]={"create","join","get","get_signals","turn_credentials","lease","leave","list","public_rooms","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","ranked_rock","quick_rock","match_report","nickname_get","nickname_set"};bool found=false;
     for(auto kind:allowed)if(!strcmp(op,kind)){found=true;break;}if(!found)return 0;
     Sj body=Sj::parse(args,nullptr,false);if(!body.is_object())return 0;
     if(!Bt4Signal_Open())return 0;std::lock_guard<std::mutex> g(state.lock);if(state.jobs.size()>=64)return 0;state.consumers|=1u<<consumer;

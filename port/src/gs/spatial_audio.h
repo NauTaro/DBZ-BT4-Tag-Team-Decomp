@@ -10,7 +10,7 @@ static inline float Bt4_AudioFalloff(float distance,float innerRadius,float oute
 #ifdef __cplusplus
 extern "C" {
 #endif
-void PortAudio_World(int active,int listener,int count,const float *positions,const int *alive);
+void PortAudio_World(int active,int listener,int secondListener,int count,const float *positions,const int *alive);
 float PortAudio_Gain(int actor,int voice);
 int PortAudio_Alive(int actor);
 void Port_SeBind(int handle,int actor);

@@ -266,7 +266,7 @@ f32 BtlStage_GetRadius(void) {
     return b->radius;
 }
 
-/* The radius fighters are kept inside: the stage radius - 100 (not subtracted while the stage is not ready). */
+/* The radius fighters are kept inside. The port uses the authored outer extent. */
 f32 BtlStage_GetInnerRadius(void) {
     StgBounds *b;
 
@@ -275,7 +275,11 @@ f32 BtlStage_GetInnerRadius(void) {
     }
     b = gBtlStage->bounds;
     gStgLastRadius = b->radius;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    return b->radius;
+#else
     return b->radius - 100.0f;
+#endif
 }
 
 /* The stage's top limit (smallest y). */
