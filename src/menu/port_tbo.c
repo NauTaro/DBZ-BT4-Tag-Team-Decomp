@@ -2687,7 +2687,7 @@ static void Tb_DrawRanked(void) {
     Tb_Hosts(TBO_HOSTS_ARMS_CROSSED, 408.0f, 350.0f, 250.0f);
     if (!sTb->rankedPage) {
         s32 i;
-        Ps_Panel(TBO_KIT_WINDOW, 14, 62, 300, 164, 0x80);
+        Ps_Panel(TBO_KIT_WINDOW, 14, 62, 300, 174, 0x80);
         Ps_Panel(TBO_KIT_WINDOW, 14, 182, 300, 304, 0x80);
         for(i=0;i<3;++i){
             f32 y=196.0f+34.0f*i;
@@ -2747,14 +2747,14 @@ static void Tb_DrawRankedText(void) {
     Tb_RankedUiView(&ranked);
     if (!sTb->rankedPage) {
         Ps_Text(28, 76, "COMPETITIVE SEASON", .72f, 258, 2);
-        Ps_Text(28, 134, "Battle", .62f, 90, 0);
-        Ps_Align(2);Ps_Text(282,134,"One on One",.62f,160,3);Ps_Align(0);
+        Ps_Text(28, Ps_TextTop(132.0f, .62f), "Battle", .62f, 90, 0);
+        Ps_Align(2);Ps_Text(282,Ps_TextTop(132.0f, .62f),"One on One",.62f,160,3);Ps_Align(0);
         if(ranked.state==1){
             sprintf(line,Tb_Fmt("Rating: %d"),ranked.rating);
             Ps_Text(28,105,line,.62f,258,3);
             if(ranked.streakScoring){
                 sprintf(line,Tb_Fmt("Streak: %d wins (+%d pts)"),ranked.streakWins,ranked.streakPoints);
-                Ps_Text(28,160,line,.56f,258,3);
+                Ps_Text(28,Ps_TextTop(153.0f, .56f),line,.56f,258,3);
             }
         }else Ps_Text(28,105,ranked.state<0?"Ranked service unavailable":"Loading Ranked status...",.62f,258,3);
         for (i=0; i<3; ++i) {
