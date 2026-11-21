@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/bt4_balance.h"
 #include "battle/btl_tech_a.h"
 
 /*
@@ -1126,7 +1127,14 @@ u32 BtlAtk_GetFlags(BtlTechChr *chr) {
 
 /* Push speed on hit: record +0x12 in units of 10 km/h, per frame. */
 f32 BtlAtk_GetPushOnHit(BtlTechChr *chr) {
-    return BtlAtk_GetRecord(chr, NULL)->pushHit * 10.0f * BTL_KMH(1.0f);
+    f32 push = BtlAtk_GetRecord(chr, NULL)->pushHit * 10.0f * BTL_KMH(1.0f);
+
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (Bt4Balance_IsBroly(BtlChar_GetObj(chr)->chara)) {
+        push *= 1.2f;
+    }
+#endif
+    return push;
 }
 
 /* Push speed on guard: record +0x13 in units of 10 km/h, per frame. */
@@ -1326,7 +1334,16 @@ s32 BtlParam_ScaleKiCharge(BtlTechChr *chr, s32 val) {
 
 /* Parameter +0x10: flag word. */
 u32 BtlParam_GetFlags(BtlTechChr *chr) {
-    return BtlChar_GetObj(chr)->param->flags;
+    BtlTechObj *obj = BtlChar_GetObj(chr);
+    u32 flags = obj->param->flags;
+
+#ifdef BT4_TAG_TEAM_EXPANDED
+    /* The giant class still controls model and throw compatibility. */
+    if (obj->param->unk2 == 4 || Bt4Balance_IsBroly(obj->chara)) {
+        flags &= ~4u;
+    }
+#endif
+    return flags;
 }
 
 /* Parameter +0x14: skill bits. */
@@ -1643,8 +1660,14 @@ s32 BtlParam_GetUnk24(BtlTechChr *chr) {
 /* Ki level below which ki regenerates by itself: parameter +0x28 plus 60000 / 40000 / 20000 by ability 0x2E / 0x2D /
    0x2C, at most 100000. */
 s32 BtlParam_GetKiRegenLimit(BtlTechChr *chr) {
-    s32 v = BtlChar_GetObj(chr)->param->kiRegenLimit;
+    BtlTechObj *obj = BtlChar_GetObj(chr);
+    s32 v = obj->param->kiRegenLimit;
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (obj->chara == BT4_GOTENKS) {
+        v = 3 * 20000;
+    }
+#endif
     if (BtlMember_HasAbility(chr, 0x2E)) {
         v += 60000;
     } else if (BtlMember_HasAbility(chr, 0x2D)) {
@@ -1764,9 +1787,15 @@ s32 BtlParam_GetBlastGainRate(BtlTechChr *chr) {
 /* Max power gained per frame of charging at full ki: 30000 (the whole gauge) divided by the frames in
    (parameter +0x50 seconds / curve row 11). */
 s32 BtlParam_GetStepA(BtlTechChr *chr) {
-    f32 t = BtlChar_GetObj(chr)->param->maxPowerChargeTime;
+    BtlTechObj *obj = BtlChar_GetObj(chr);
+    f32 t = obj->param->maxPowerChargeTime;
 
     t /= BtlStat_GetMaxPowerChargeScale(chr);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (obj->chara == BT4_GOHAN_SSJ2) {
+        t += 7.0f;
+    }
+#endif
     return 30000 / (s32)(t * 30.0f);
 }
 

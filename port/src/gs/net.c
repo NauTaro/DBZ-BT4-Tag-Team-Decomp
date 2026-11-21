@@ -901,6 +901,7 @@ enum { T_SPEC_HELLO = 20, T_SPEC_WAIT = 21, T_SPEC_NO = 22, T_SPEC_SETUP = 23, T
 enum { SPEC_VERSION = 1, SPEC_MAX = 6, SPEC_HEAD = 32, SPEC_PAYLOAD = 1150, SPEC_BURST = 2, SPEC_BUFFER = 60, SPEC_MAX_BLANKS = 1000000 };
 enum { SPEC_NO_VERSION = 1, SPEC_NO_DATA = 2, SPEC_NO_FULL = 3, SPEC_NO_OFF = 4, SPEC_NO_PLAIN = 5, SPEC_NO_PLAYER = 6, SPEC_NO_LOBBY = 7 };
 #define SPEC_QUIET_NS 8000000000ull  /* silent this long: the spectator is gone / the host is gone */
+#define SPEC_STALL_NS 20000000000ull /* host answers, but no new usable input reaches this spectator */
 #define SPEC_ASK_NS 10000000000ull   /* no answer at all this long: nobody hosts there, or a release without spectators */
 #define SPEC_LAG_BLANKS (60u * 60u)   /* a spectator that has been there a minute and is still a minute behind is let go */
 
@@ -1457,12 +1458,14 @@ static void spec_compare(uint32_t at) {
         sSpecApartAt = at;
         fprintf(stderr, "bt3: net: spectating: this game differs from the host's at blank %u (this copy %016llx, the host %016llx)\n", (unsigned)at,
                 (unsigned long long)mine, (unsigned long long)theirs);
-        if (sSpecResyncs < 1 && Port_SessionCan() && getenv("BT3_SPEC_NORESYNC") == NULL) {
-            sSpecResyncs++;
-            sSpecRejoin = 1; /* followed again from the start (Port_LobbyAuto), once */
+        int mayRetry = Lobby_Active() ? Lobby_SpectatorMayRetry() : sSpecResyncs < 1;
+        if (mayRetry && Port_SessionCan() && getenv("BT3_SPEC_NORESYNC") == NULL) {
+            if (!Lobby_Active()) sSpecResyncs++;
+            sSpecRejoin = 1; /* Follow the same match from the start once. */
             Port_UiNotice("Spectating: this screen no longer shows the players' fight (desync). Following the match again from the start...");
         } else {
             Port_UiNotice("Spectating: this screen no longer shows the players' fight (desync). The players' match is not affected.");
+            if (Lobby_Active()) sSpecLeaveAsked = 1; /* Return to the room without another launch. */
         }
     }
 }
@@ -2996,7 +2999,8 @@ static void spec_tick(unsigned tick) {
     }
     sSpecNudge = 0;
     if (tick >= sLogN) { /* nothing to run this blank with: wait until it has its lead again, a longer one from now */
-        uint64_t t0 = now;
+        uint64_t t0 = now, lastProgress = now;
+        unsigned lastLog = sLogN;
         int said = 0;
         if (tick > 1800) { /* (not the first wait, at the character select: the host's blanks were only beginning) */
             sSpecLead = sSpecLead + SPEC_LEAD_STEP < SPEC_BUFFER ? sSpecLead + SPEC_LEAD_STEP : SPEC_BUFFER;
@@ -3014,6 +3018,17 @@ static void spec_tick(unsigned tick) {
             }
             if (at > sSpecHeardNs && at - sSpecHeardNs > SPEC_QUIET_NS) {
                 ended("The connection to the host was lost.", tick);
+            }
+            if (sSpecLeaveAsked) {
+                sSpecLeaveAsked = 0;
+                sSpecNoticed = 1;
+                Port_NetLeave();
+            }
+            if (sLogN != lastLog) {
+                lastLog = sLogN;
+                lastProgress = at;
+            } else if (at - lastProgress >= SPEC_STALL_NS) {
+                ended("Spectating could not catch up. You can watch the next match from the lobby.", tick);
             }
             if (at - t0 > 250000000ull) {
                 said = 1;
@@ -3444,9 +3459,14 @@ int Port_NetSessionsEnded(void) {
 }
 
 void Port_NetSessionEnd(void) {
+    int wasLobby = Lobby_Active();
+    int keepLobby;
+
     sSessionsEnded++;
     sRivalRegion[0] = '\0';
-    if (Lobby_SessionEnded()) { /* a lobby's match: the lobby goes on, with its socket, its relay and its room code */
+    keepLobby = Lobby_SessionEnded(sMode == 3 && sSpecRejoin);
+    if (wasLobby) sSpecRejoin = 0;
+    if (keepLobby) { /* the lobby keeps its socket, relay and room code */
         sMode = 0;
         sSession = 0;
         sConnected = 0;
@@ -4178,9 +4198,6 @@ void Port_LobbyAuto(void) {
     lobby_background();
     if (!Port_NetSession()) {
         Lobby_Pump(); /* (the eight-place lobby, outside its matches: net_lobby.c) */
-    }
-    if (sSpecRejoin && !Port_NetSession() && Lobby_Active()) {
-        sSpecRejoin = 0; /* (a lobby's spectator is sent to the match again by the owner) */
     }
     if (sSpecRejoin && !Port_NetSession()) { /* a spectator whose game came apart from the host's: from the start again */
         char addr[160], *colon;

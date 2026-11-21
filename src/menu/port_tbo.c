@@ -340,6 +340,7 @@ extern const char *Port_TagPlayerName(int seat), *Port_TagCode(void), *Port_TagE
 #define TB_TUTORIAL 22
 #define TB_OPEN_ROOMS 23
 #define TB_ROOM_PRIVACY 24
+#define TB_ROOM_MENU 25
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
@@ -347,13 +348,12 @@ extern const char *Port_TagPlayerName(int seat), *Port_TagCode(void), *Port_TagE
 #define HUB_QUICK 0
 #define HUB_RANKED 1
 #define HUB_CREATE 2
-#define HUB_JOIN 3
+#define HUB_ROOMS 3
 #define HUB_TAG 4
 #define HUB_TOURNAMENT 5
 #define HUB_PROFILE 6
 #define HUB_TRAINING 7
-#define HUB_OPEN_ROOMS 8
-#define HUB_COUNT 9
+#define HUB_COUNT 8
 
 /* Create Room's rows */
 #define CR_METHOD 0
@@ -488,9 +488,10 @@ typedef struct TboScreen {
 
 static TboScreen *sTb;
 static s32 sPracticeRow, sTutorialRow, sTutorialBack;
-static s32 sDirectoryRow, sDirectoryTop, sPrivacyRow, sPrivacyBack, sPrivacyTournament;
+static s32 sRoomMenuRow, sDirectoryRow, sDirectoryTop, sPrivacyRow, sPrivacyBack, sPrivacyTournament;
 static Bt4PublicDirectory sRooms;
 static char *sPrivacyActions[]={"By Code","Open Room"};
+static char *sRoomMenuActions[]={"Public Rooms","Private Rooms"};
 static char *sRoomKinds[]={"Duel","Tournament","Tag Team"};
 #define DIRECTORY_ROWS 8
 static PortLobbyView sTbLv; /* (the lobby's page: what it shows this frame) */
@@ -512,18 +513,17 @@ static char *Tb_Fmt(char *format) {
     return Port_TrLine(format, buf[k], 160) ? buf[k] : format;
 }
 
-static char *sTbHubName[HUB_COUNT]={"Quick Match","Ranked","Create Match","Join","Tag Team","Tournament","Profile","Training","Public Rooms"};
-static const s32 sTbHubReady[HUB_COUNT]={1,1,1,1,1,1,1,1,1};
+static char *sTbHubName[HUB_COUNT]={"Quick Match","Ranked","Create Match","Public Rooms","Tag Team","Tournament","Profile","Training"};
+static const s32 sTbHubReady[HUB_COUNT]={1,1,1,1,1,1,1,1};
 static char *sTbHubSay[HUB_COUNT]={
     "Search for an opponent in a public queue.",
     "View your competitive season, rating and the global leaderboard.",
     "Open a lobby, choose the rules and invite players or spectators.",
-    "Join a lobby with its code or the host address.",
+    "Browse public rooms or join a private room with its code.",
     "Build two teams for simultaneous battles with players and CPU fighters.",
     "Create an online tournament for up to 32 players. Follow the bracket and watch the matches.",
     "Set the name other players see.",
-    "Practice against the CPU and learn Tag Team mechanics.",
-    "Browse open duel, tournament and Tag Team rooms."
+    "Practice against the CPU and learn Tag Team mechanics."
 };
 static void Tb_LobbyOpen(void);
 static void Tb_LobbyCreate(s32 byCode,s32 listed);
@@ -1722,13 +1722,39 @@ static void Tb_PrivacyUpdate(s32 live){
         Tb_LobbyCreate(1,sPrivacyRow==1);
     }
 }
+static void Tb_RoomMenuUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+
+    Ps_Prompt(0, "Enter");
+    Ps_Prompt(2, "Back");
+    if (!live) return;
+    if (pad->gamePressed & PADG_TRIANGLE) {
+        Tb_SetMode(TB_HUB);
+        Snd_PlaySe(1, 2);
+        return;
+    }
+    Ps_Move(&sRoomMenuRow, 2);
+    if (!(pad->gamePressed & PADG_CROSS)) return;
+    Snd_PlaySe(1, 1);
+    if (sRoomMenuRow == 0) {
+        memset(&sRooms, 0, sizeof(sRooms));
+        sDirectoryRow = sDirectoryTop = 0;
+        Tb_SetMode(TB_OPEN_ROOMS);
+    } else {
+        sTb->tagJoin = 0;
+        sTb->code[0] = 0;
+        sTb->codeLen = sTb->keyCol = sTb->keyRow = 0;
+        Tb_SetMode(TB_JOIN);
+    }
+}
+
 static void Tb_PublicRoomsUpdate(s32 live){
     Pad *pad=&gPad[0];
     char selected[7]="";
     s32 i, stillListed=0;
     Ps_Prompt(2,"Back");
     if(!live)return;
-    if(pad->gamePressed&PADG_TRIANGLE){Tb_SetMode(TB_HUB);Snd_PlaySe(1,2);return;}
+    if(pad->gamePressed&PADG_TRIANGLE){Tb_SetMode(TB_ROOM_MENU);Snd_PlaySe(1,2);return;}
     if(sDirectoryRow<sRooms.count)Ps_Copy(selected,sRooms.rooms[sDirectoryRow].code,7);
     Port_LobbyDirectory(&sRooms);
     if(!sRooms.count){sDirectoryRow=sDirectoryTop=0;return;}
@@ -1955,14 +1981,10 @@ static void Tb_HubUpdate(s32 live) {
             if(!getenv("BT4_RENDER_TEST"))Port_RankedRefresh(1);
             Tb_SetMode(TB_RANKED);
             break;
-        case HUB_JOIN:
-            sTb->tagJoin = 0;
+        case HUB_ROOMS:
+            sRoomMenuRow = 0;
+            Tb_SetMode(TB_ROOM_MENU);
             Snd_PlaySe(1, 1);
-            sTb->code[0] = 0;
-            sTb->codeLen = 0;
-            sTb->keyCol = 0;
-            sTb->keyRow = 0;
-            Tb_SetMode(TB_JOIN);
             break;
         case HUB_TAG:
 #ifdef BT4_TAG_TEAM_EXPANDED
@@ -1977,9 +1999,6 @@ static void Tb_HubUpdate(s32 live) {
             break;
         case HUB_TOURNAMENT:
             Tb_OpenPrivacy(TB_HUB,1);break;
-        case HUB_OPEN_ROOMS:
-            memset(&sRooms,0,sizeof(sRooms));sDirectoryRow=sDirectoryTop=0;
-            Tb_SetMode(TB_OPEN_ROOMS);Snd_PlaySe(1,1);break;
         case HUB_TRAINING:
             sPracticeRow=0;
             Tb_SetMode(TB_TRAINING);
@@ -2262,7 +2281,7 @@ static void Tb_JoinUpdate(s32 live) {
             return;
         } else if (c == 27) { /* Esc: back, as triangle */
             Snd_PlaySe(1, 2);
-            if(sTb->tagJoin)Tb_TagOnlineBack(TAG_NET_JOIN);else Tb_SetMode(TB_HUB);
+            if(sTb->tagJoin)Tb_TagOnlineBack(TAG_NET_JOIN);else Tb_SetMode(TB_ROOM_MENU);
             return;
         } else if (c == 8) {
             Tb_CodeBack();
@@ -2296,7 +2315,7 @@ static void Tb_JoinUpdate(s32 live) {
         Tb_CodeBack();
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
-        if(sTb->tagJoin)Tb_TagOnlineBack(TAG_NET_JOIN);else Tb_SetMode(TB_HUB);
+        if(sTb->tagJoin)Tb_TagOnlineBack(TAG_NET_JOIN);else Tb_SetMode(TB_ROOM_MENU);
     }
 }
 
@@ -5259,6 +5278,8 @@ static char *Tb_Help(void) {
         return sPracticeHelp[sPracticeRow];
     case TB_TUTORIAL:
         return sTutorialHelp[sTutorialRow];
+    case TB_ROOM_MENU:
+        return sRoomMenuRow ? "Enter the code shared by the host." : "Browse open duel, tournament and Tag Team rooms.";
     case TB_OPEN_ROOMS:
         return "Select an open room to join it.";
     case TB_ROOM_PRIVACY:
@@ -5377,7 +5398,7 @@ static char *Tb_Help(void) {
 }
 
 /* Each page's title (by TB_ mode), as its heading shows it and the screen reader says it. */
-static char *sTbTitle[] = {"Tenkaichi Budokai Online","New Lobby","Join","Searching","Profile","Profile","Quick Match","Train While Waiting","Tenkaichi Budokai Online","Tag Team","Tag Team Room","Lobby","Join by Address","Tournament","Ranked","Tag Team Settings", [TB_TAG_HEALTH] = "Fighter settings", [TB_TAG_RECOVERY] = "Recovery settings", [TB_TAG_FUSION] = "Cooperative fusion", [TB_TAG_BATTLE_RULES] = "Battle rules", [TB_TAG_SHARED] = "Tag Team Settings", [TB_TRAINING] = "Training", [TB_TUTORIAL] = "Tag Team Tutorial", [TB_OPEN_ROOMS] = "Public Rooms", [TB_ROOM_PRIVACY] = "Room Access"};
+static char *sTbTitle[] = {"Tenkaichi Budokai Online","New Lobby","Join","Searching","Profile","Profile","Quick Match","Train While Waiting","Tenkaichi Budokai Online","Tag Team","Tag Team Room","Lobby","Join by Address","Tournament","Ranked","Tag Team Settings", [TB_TAG_HEALTH] = "Fighter settings", [TB_TAG_RECOVERY] = "Recovery settings", [TB_TAG_FUSION] = "Cooperative fusion", [TB_TAG_BATTLE_RULES] = "Battle rules", [TB_TAG_SHARED] = "Tag Team Settings", [TB_TRAINING] = "Training", [TB_TUTORIAL] = "Tag Team Tutorial", [TB_OPEN_ROOMS] = "Public Rooms", [TB_ROOM_PRIVACY] = "Room Access", [TB_ROOM_MENU] = "Public Rooms"};
 
 /* ---- the screen reader (port/src/gs/a11y.c; silent unless the player has it on). The game's own screens are read
    from their state by port/src/a11y_game.c; these pages say what they show themselves: the page's title as it opens,
@@ -5449,6 +5470,8 @@ static void Tb_Speak(void) {
         Ps_Copy(focus,sTutorialActions[sTutorialRow],160);break;
     case TB_ROOM_PRIVACY:
         Ps_Copy(focus,sPrivacyActions[sPrivacyRow],160);break;
+    case TB_ROOM_MENU:
+        Ps_Copy(focus,sRoomMenuActions[sRoomMenuRow],160);break;
     case TB_OPEN_ROOMS:
         if(sRooms.count)Ps_Copy(focus,sRooms.rooms[sDirectoryRow].name,160);
         break;
@@ -5749,6 +5772,8 @@ static void Tb_Draw(void) {
         Tb_TagOptionsPlate(sTutorialRow,TUTORIAL_ROWS);break;
     case TB_ROOM_PRIVACY:
         Tb_TagOptionsPlate(sPrivacyRow,2);break;
+    case TB_ROOM_MENU:
+        Tb_TagOptionsPlate(sRoomMenuRow,2);break;
     case TB_OPEN_ROOMS: {
         s32 rows=sRooms.count-sDirectoryTop;
         if(rows>DIRECTORY_ROWS)rows=DIRECTORY_ROWS;
@@ -5878,6 +5903,10 @@ static void Tb_DrawText(void) {
     case TB_ROOM_PRIVACY:
         Tb_TagOptionText(0,sPrivacyRow==0,sPrivacyActions[0],"");
         Tb_TagOptionText(1,sPrivacyRow==1,sPrivacyActions[1],"");
+        break;
+    case TB_ROOM_MENU:
+        Tb_TagOptionText(0,sRoomMenuRow==0,sRoomMenuActions[0],"");
+        Tb_TagOptionText(1,sRoomMenuRow==1,sRoomMenuActions[1],"");
         break;
     case TB_OPEN_ROOMS:
         Tb_DrawDirectoryText();break;
@@ -6244,6 +6273,8 @@ s32 PortTbo_Run(void) {
             Tb_PracticeUpdate(live);break;
         case TB_ROOM_PRIVACY:
             Tb_PrivacyUpdate(live);break;
+        case TB_ROOM_MENU:
+            Tb_RoomMenuUpdate(live);break;
         case TB_OPEN_ROOMS:
             Tb_PublicRoomsUpdate(live);break;
         case TB_TAG:
