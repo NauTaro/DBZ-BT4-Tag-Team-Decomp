@@ -74,7 +74,8 @@ typedef struct CharSelSide {
     /* 0x6C */ s32 chara;          /* character under the cursor: portrait file 0x71C + chara, name line */
     /* 0x70 */ s32 state;          /* step of this side's choice (CharSel_Input) */
     /* 0x74 */ s32 mask;           /* non-zero while the chips are hidden for a reel change */
-    /* 0x78 */ s32 unk78[30];
+    /* 0x78 */ s32 randomRevealFrames; /* Online pause before leaving a newly revealed random pick. */
+    /* 0x7C */ s32 unk7C[29];
 } CharSelSide; /* 0xF0 */
 
 #define CHARSEL_SIDE_FACE_CHANGE 1 /* the portrait must be reloaded */

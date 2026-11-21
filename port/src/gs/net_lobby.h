@@ -51,7 +51,8 @@ void Lobby_Packet(const uint8_t *pkt, int n, const struct sockaddr_in *from, uin
 void Lobby_Tick(void);                    /* in a session, with every look at the socket: its timers (cheap) */
 void Lobby_Pump(void);                    /* outside a session, every blank (game thread): the socket and the timers */
 void Lobby_SessionLeaving(void);          /* Port_NetLeave, before the goodbyes */
-int Lobby_SessionEnded(void);             /* Port_NetSessionEnd: 1 = the lobby goes on with the socket */
+int Lobby_SpectatorMayRetry(void);
+int Lobby_SessionEnded(int retrySpectator);             /* Port_NetSessionEnd: 1 = the lobby goes on with the socket */
 int Lobby_ServesSpectators(void);         /* this copy's session sends the match to the lobby's spectators (its owner) */
 int Lobby_IsMember(const struct sockaddr_in *from); /* (the owner: one of its members; a member: the owner) */
 int Lobby_MaySpectate(const struct sockaddr_in *from);

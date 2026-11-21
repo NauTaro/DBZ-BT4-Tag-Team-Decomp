@@ -734,6 +734,9 @@ void CharSel_Init(s32 section) {
     }
     gCharSel->faceState = CHARSEL_LOAD_IDLE;
     for (i = 0; i < CHARSEL_SIDES; i++) {
+#ifdef PORT
+        gCharSel->side[i]->randomRevealFrames = 0;
+#endif
         if (!ChrGrid_IsSelectable(gCharSel->cells[i], gCharSel->side[i]->col + gCharSel->side[i]->row * 7)) {
             memset(gCharSel->side[i], 0, 0x30);
             gCharSel->side[i]->col = i;
@@ -1312,11 +1315,14 @@ void CharSel_Update(void) {
    starts both arms with `move a1,a2`, while this compiles with `move a1,a2` in the delay slot and the `lui` at
    the start of each arm. Everything else, including every branch, is the original's code. */
 #ifdef PORT
+extern int Port_NetSession(void);
+
+enum { CHARSEL_RANDOM_REVEAL_FRAMES = 36 };
+
 /* A lobby's match (port/src/gs/net_lobby.c): going back from the character select is its owner's way back to the
    lobby (the session ends for everyone, as "Back to the Lobby" in a fight); the other player's triangle does
    nothing there. The owner's side travels with the rules, so every copy decides the same. */
 static s32 CharSel_PortLobbyHold(s32 pad) {
-    extern int Port_NetSession(void);
     extern int Port_NetLobbyOwnerSide(void);
     s32 owner;
 
@@ -1535,6 +1541,16 @@ void CharSel_Input(s32 *running) {
                         } else {
                             CharSel_ClipGoto(j + 1, j, CHARSEL_CLIP_CHIP, "fl_on_start");
                             gCharSel->side[j]->state = CHARSEL_ST_GRID;
+#ifdef PORT
+                            /* Returning from the map unconfirms the pick and shows the random tile again. */
+                            CharSelSide *side = gCharSel->side[j];
+                            if (Port_NetSession() &&
+                                gCharSel->cells[j][side->col + side->row * MCHR_COLS].id == MCHR_RANDOM &&
+                                side->chara != MCHR_RANDOM) {
+                                side->chara = MCHR_RANDOM;
+                                CharSel_RequestFace(j);
+                            }
+#endif
                         }
                     }
                 }
@@ -1905,6 +1921,13 @@ void CharSel_Input(s32 *running) {
                             chara = gCharSel->cells[CS_N][n].form[Rand_Range(gCharSel->cells[CS_N][n].formCount)];
                         }
                         CS_SIDE->picked = chara;
+#ifdef PORT
+                        if (Port_NetSession()) {
+                            CS_SIDE->chara = chara;
+                            CS_SIDE->randomRevealFrames = CHARSEL_RANDOM_REVEAL_FRAMES;
+                            CharSel_RequestFace(CS_N);
+                        }
+#endif
                     } else {
                         /* The reel can still contain the previous row or form. */
                         CS_SIDE->picked = CS_CELL.id;
@@ -2014,7 +2037,18 @@ void CharSel_Input(s32 *running) {
             if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
                 continue;
             }
+#ifdef PORT
+            if (CS_SIDE->randomRevealFrames > 0) {
+                --CS_SIDE->randomRevealFrames;
+            }
+#endif
             if (gCharSel->side[CS_N ^ 1]->state == CHARSEL_ST_DONE) {
+#ifdef PORT
+                /* Use input frames so both peers enter stage selection together. */
+                if (CS_SIDE->randomRevealFrames || gCharSel->side[CS_N ^ 1]->randomRevealFrames) {
+                    continue;
+                }
+#endif
                 /* both sides are done: on to the stage */
                 Flash_GotoLabel(&gCharSel->flash[0], "fl_map", 1);
                 IconWin_Open();
@@ -2028,6 +2062,9 @@ void CharSel_Input(s32 *running) {
                 CharSel_SetRowChips(CS_N);
                 CS_SIDE->chara = CS_SIDE->chip[CS_SIDE->col];
                 CharSel_RequestFace(CS_N);
+#ifdef PORT
+                CS_SIDE->randomRevealFrames = 0;
+#endif
                 CS_SIDE->state = CHARSEL_ST_GRID;
                 Snd_PlaySe(1, 2);
             }

@@ -241,7 +241,7 @@ static struct {
     int probe;                 /* a member joining a typed address: it also asks as a spectator would (probe_send) */
     uint64_t probeNs;
     uint64_t otherNs;          /* the owner: when someone of another version last tried to join (said once a minute) */
-    uint32_t nonce, seqSeen, goGen, inGen, backGen;
+    uint32_t nonce, seqSeen, goGen, inGen, backGen, spectatorRetryGen;
     char self[64];
     uint32_t routePeerId;
     int routeViaOwner;
@@ -594,6 +594,11 @@ int Port_LobbyWantsScreen(void) {
 
 int Lobby_Active(void) {
     return sL.on != 0;
+}
+
+int Lobby_SpectatorMayRetry(void) {
+    return sL.on == 2 && sL.inGen != 0 && sL.inGen > sL.backGen &&
+           sL.inGen != sL.spectatorRetryGen && !sL.leaving && !sL.closedBy;
 }
 
 int Lobby_InMatch(void) {
@@ -951,7 +956,7 @@ static uint32_t match_rules(void) {
 }
 
 static int opt_roll(void) {
-    return sL.roll == 10 ? (sL.delay == 0 && expanded_tournament() ? -2 : 4) : sL.roll;
+    return sL.roll == 10 ? (sL.delay == 0 ? -2 : 4) : sL.roll;
 }
 
 static int opt_delay(void) {
@@ -2236,7 +2241,8 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         uint32_t gen = get(pkt, 2);
         struct sockaddr_in t, alt, kn, kn2;
         int role = (int)get(pkt, 3);
-        if (gen <= sL.backGen || sL.inGen != 0 || NetIo_SessionMode() != 0 || NetIo_SessionStarting() || sL.leaving || role < 1 || role > 3) {
+        if (gen <= sL.backGen || sL.inGen != 0 || NetIo_SessionMode() != 0 || NetIo_SessionStarting() ||
+            sL.leaving || role < 1 || role > 3 || (role == 3 && gen == sL.goGen)) {
             return;
         }
         addr_get(pkt, 7, &t);
@@ -2537,9 +2543,6 @@ static void timers(void) {
                 }
                 if (m->goGen != sL.gen && now - m->goSentNs > 500000000ull && match_member(k)) {
                     go_send(k); /* (not taken yet: again) */
-                } else if (!player && m->goGen == sL.gen && m->inGen != sL.gen && now - m->goSentNs > 2 * SEC) {
-                    go_send(k); /* a spectator back in the lobby window while the match is on (its connection, a
-                                   desync): watching again */
                 }
             }
         }
@@ -3171,7 +3174,7 @@ void Lobby_SessionLeaving(void) {
     }
 }
 
-int Lobby_SessionEnded(void) {
+int Lobby_SessionEnded(int retrySpectator) {
     if (sL.on == 0) {
         return 0;
     }
@@ -3190,8 +3193,13 @@ int Lobby_SessionEnded(void) {
         }
         log_table();
     } else {
-        sL.inGen = 0;
         sL.phase = sL.backGen >= sL.goGen ? 0 : sL.phase;
+        if (retrySpectator && Lobby_SpectatorMayRetry()) {
+            sL.spectatorRetryGen = sL.inGen;
+            /* Acknowledge the original launch unless this spectator explicitly asks for one retry. */
+            sL.goGen = 0;
+        }
+        sL.inGen = 0;
         if (sL.leaving || sL.closedBy) {
             sL.on = 0;
             sL.state = sL.closedBy ? 3 : 0;

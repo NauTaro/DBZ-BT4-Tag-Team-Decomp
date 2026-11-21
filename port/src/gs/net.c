@@ -331,21 +331,12 @@ void Port_NetRules(int *type, int *dp, int *time) {
     *time = (int)(sRules >> 8 & 15) > 4 ? 3 : (int)(sRules >> 8 & 15);
 }
 
-/* The input delay for a line with this round trip. A blank is 16.7 ms; the other side's input for a blank is
-   entered `delay` blanks ahead and takes half the round trip plus up to a blank (it waits for the next look at
-   the socket) to arrive, so the game runs about ceil(trip / 2 / 16.7 + 1) - delay blanks on guesses. The delay
-   is what keeps that at 4 or under: 1 on a good line (up to about 130 ms), more beyond, 6 at most. */
-static int auto_delay(int rttMs) {
-    int ticks, delay;
-    if (rttMs < 0) {
-        return 2;
-    }
-    {
-        int blankUs = 16683 * 1000 / Port_NetSpeedMilli(); /* (a blank is shorter at 120%) */
-        ticks = (rttMs * 1000 / 2 + blankUs - 1) / blankUs + 1; /* ceil(one way in blanks) + 1 */
-    }
-    delay = ticks - 4;
-    return delay < 1 ? 1 : delay > 6 ? 6 : delay;
+/* With automatic delay, the lobby's rollback choice selects the delay profile. */
+static int auto_delay(int rttMs, int relayed) {
+    const NetTimingProfile profile = sOptRoll == -2 ? NET_TIMING_AUTO :
+                                     sRollMax > 0 ? NET_TIMING_ROLLBACK : NET_TIMING_DELAY;
+    if (rttMs < 0) rttMs = relayed ? 300 : 200;
+    return NetTiming_DelayFrames(rttMs, rules_speed(), profile);
 }
 
 /* Budget one blank for polling and two for relay jitter before using the
@@ -901,6 +892,7 @@ enum { T_SPEC_HELLO = 20, T_SPEC_WAIT = 21, T_SPEC_NO = 22, T_SPEC_SETUP = 23, T
 enum { SPEC_VERSION = 1, SPEC_MAX = 6, SPEC_HEAD = 32, SPEC_PAYLOAD = 1150, SPEC_BURST = 2, SPEC_BUFFER = 60, SPEC_MAX_BLANKS = 1000000 };
 enum { SPEC_NO_VERSION = 1, SPEC_NO_DATA = 2, SPEC_NO_FULL = 3, SPEC_NO_OFF = 4, SPEC_NO_PLAIN = 5, SPEC_NO_PLAYER = 6, SPEC_NO_LOBBY = 7 };
 #define SPEC_QUIET_NS 8000000000ull  /* silent this long: the spectator is gone / the host is gone */
+#define SPEC_STALL_NS 20000000000ull /* host answers, but no new usable input reaches this spectator */
 #define SPEC_ASK_NS 10000000000ull   /* no answer at all this long: nobody hosts there, or a release without spectators */
 #define SPEC_LAG_BLANKS (60u * 60u)   /* a spectator that has been there a minute and is still a minute behind is let go */
 
@@ -1457,12 +1449,14 @@ static void spec_compare(uint32_t at) {
         sSpecApartAt = at;
         fprintf(stderr, "bt3: net: spectating: this game differs from the host's at blank %u (this copy %016llx, the host %016llx)\n", (unsigned)at,
                 (unsigned long long)mine, (unsigned long long)theirs);
-        if (sSpecResyncs < 1 && Port_SessionCan() && getenv("BT3_SPEC_NORESYNC") == NULL) {
-            sSpecResyncs++;
-            sSpecRejoin = 1; /* followed again from the start (Port_LobbyAuto), once */
+        int mayRetry = Lobby_Active() ? Lobby_SpectatorMayRetry() : sSpecResyncs < 1;
+        if (mayRetry && Port_SessionCan() && getenv("BT3_SPEC_NORESYNC") == NULL) {
+            if (!Lobby_Active()) sSpecResyncs++;
+            sSpecRejoin = 1; /* Follow the same match from the start once. */
             Port_UiNotice("Spectating: this screen no longer shows the players' fight (desync). Following the match again from the start...");
         } else {
             Port_UiNotice("Spectating: this screen no longer shows the players' fight (desync). The players' match is not affected.");
+            if (Lobby_Active()) sSpecLeaveAsked = 1; /* Return to the room without another launch. */
         }
     }
 }
@@ -1736,7 +1730,7 @@ static int receive(void) {
             memcpy(v, pkt + 8, 8);
             if (sAdaptive) {
                 uint32_t timing[3], version;
-                if (n < (TIMING_CONFIG_WORD + 3) * 4 || v[0] < 1 || v[0] > NET_TIMING_DELAY_LIMIT ||
+                if (n < (TIMING_CONFIG_WORD + 3) * 4 || v[0] > NET_TIMING_DELAY_LIMIT ||
                     v[1] < 2 || v[1] > 8 || (v[1] & 1)) continue;
                 memcpy(&version, pkt + 16, 4);
                 if (version != NET_VERSION) continue;
@@ -2316,9 +2310,10 @@ static void net_start(int role, const char *host, const char *join) {
             sRollMax = settings.rollback;
             sSetupRtt = sTimingQuality.median;
         } else if (sAutoDelay) {
-            sDelay = auto_delay(sSetupRtt);
+            sSetupRtt = NetTiming_Summarize(&sTimingProbes).median;
+            sDelay = auto_delay(sSetupRtt, relayed);
         }
-        if (!sAdaptive && relayed && getenv("BT3_NET_DELAY") == NULL) {
+        if (!sAutoDelay && relayed && getenv("BT3_NET_DELAY") == NULL) {
             const int floor = relay_delay_floor(sSetupRtt, rules_speed(), sRollMax);
             if (sDelay < floor) sDelay = floor;
             fprintf(stderr, "bt4: relay timing: rtt_ms=%d speed=%d delay=%d rollback=%d\n",
@@ -2996,7 +2991,8 @@ static void spec_tick(unsigned tick) {
     }
     sSpecNudge = 0;
     if (tick >= sLogN) { /* nothing to run this blank with: wait until it has its lead again, a longer one from now */
-        uint64_t t0 = now;
+        uint64_t t0 = now, lastProgress = now;
+        unsigned lastLog = sLogN;
         int said = 0;
         if (tick > 1800) { /* (not the first wait, at the character select: the host's blanks were only beginning) */
             sSpecLead = sSpecLead + SPEC_LEAD_STEP < SPEC_BUFFER ? sSpecLead + SPEC_LEAD_STEP : SPEC_BUFFER;
@@ -3014,6 +3010,17 @@ static void spec_tick(unsigned tick) {
             }
             if (at > sSpecHeardNs && at - sSpecHeardNs > SPEC_QUIET_NS) {
                 ended("The connection to the host was lost.", tick);
+            }
+            if (sSpecLeaveAsked) {
+                sSpecLeaveAsked = 0;
+                sSpecNoticed = 1;
+                Port_NetLeave();
+            }
+            if (sLogN != lastLog) {
+                lastLog = sLogN;
+                lastProgress = at;
+            } else if (at - lastProgress >= SPEC_STALL_NS) {
+                ended("Spectating could not catch up. You can watch the next match from the lobby.", tick);
             }
             if (at - t0 > 250000000ull) {
                 said = 1;
@@ -3444,9 +3451,14 @@ int Port_NetSessionsEnded(void) {
 }
 
 void Port_NetSessionEnd(void) {
+    int wasLobby = Lobby_Active();
+    int keepLobby;
+
     sSessionsEnded++;
     sRivalRegion[0] = '\0';
-    if (Lobby_SessionEnded()) { /* a lobby's match: the lobby goes on, with its socket, its relay and its room code */
+    keepLobby = Lobby_SessionEnded(sMode == 3 && sSpecRejoin);
+    if (wasLobby) sSpecRejoin = 0;
+    if (keepLobby) { /* the lobby keeps its socket, relay and room code */
         sMode = 0;
         sSession = 0;
         sConnected = 0;
@@ -4178,9 +4190,6 @@ void Port_LobbyAuto(void) {
     lobby_background();
     if (!Port_NetSession()) {
         Lobby_Pump(); /* (the eight-place lobby, outside its matches: net_lobby.c) */
-    }
-    if (sSpecRejoin && !Port_NetSession() && Lobby_Active()) {
-        sSpecRejoin = 0; /* (a lobby's spectator is sent to the match again by the owner) */
     }
     if (sSpecRejoin && !Port_NetSession()) { /* a spectator whose game came apart from the host's: from the start again */
         char addr[160], *colon;
