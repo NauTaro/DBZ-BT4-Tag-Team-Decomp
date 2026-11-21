@@ -249,6 +249,14 @@ def take_windows_runtime(out):
     shutil.copy2(manifest, out / "tbo/setup/runtime-manifest.json")
 
 
+def take_jiren_voice(out):
+    target = out / "tbo" / "audio" / "jiren"
+    target.mkdir(parents=True, exist_ok=True)
+    for language in ("english", "japanese", "spanish"):
+        name = language + ".adx"
+        shutil.copy2(ROOT / "port" / "assets" / "jiren-voice" / name, target / name)
+
+
 def main_win():
     """BT3_CC=win64: bt3.exe (cross-built or built in MSYS2), BT4decomp-setup.exe (port/setup/build.sh win), SDL3.dll."""
     import toolchain
@@ -269,7 +277,6 @@ def main_win():
     take_translations(out)
     shutil.copy2(ROOT / "port/release/BT4_VERSION.txt", out / "BT4_VERSION.txt")
     shutil.copy2(ROOT / "recomplauncher.json", out / "recomplauncher.json")
-    shutil.copy2(ROOT / "port/release/CHANGELOG_R1_1_17.txt", out / "CHANGELOG-R1-1.17.txt")
     shutil.copy2(setup, out / "BT4decomp-setup.exe")
     shutil.copy2(dll, out / "SDL3.dll")
     (out / "README.txt").write_text(WIN_README.replace("\n", "\r\n"))
@@ -289,6 +296,7 @@ def main_win():
 
     take_fonts(out, lic)
     take_tbo_art(out, lic)
+    take_jiren_voice(out)
     (out / "textures").mkdir()
     (out / "textures/README.txt").write_text(TEXTURES_NOTE.replace("\n", "\r\n"))
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):

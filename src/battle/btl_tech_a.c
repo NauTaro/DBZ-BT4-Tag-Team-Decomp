@@ -1366,33 +1366,87 @@ s32 BtlParam_GetUnk2(BtlTechChr *chr) {
     return BtlChar_GetObj(chr)->param->unk2;
 }
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+/* The native transform picker has four slots. At low health, the two God
+   shortcuts become Ultra Instinct choices while the two Super Saiyan slots stay. */
+s32 Bt4_ExtraTransformTarget(BtlTechChr *chr, s32 slot) {
+    if (!Bt4_ExtraFormsAllowed()) return -1;
+    s32 fighter = BtlChar_GetObj(chr)->chara;
+    if (fighter == BT4_GOKU_END && (slot == 2 || slot == 3)) {
+        const BtlTechGauge *gauge = BtlMember_GetActiveGauge(chr);
+        if (gauge->health > 0 && (s64)gauge->health * 10 <= (s64)gauge->healthMax * 3) {
+            return slot == 2 ? BT4_GOKU_INSTINCT_SIGN : BT4_GOKU_MASTERED_INSTINCT;
+        }
+    }
+    if ((fighter == BT4_GOKU_MASTERED_INSTINCT && slot == 0) ||
+        (fighter == BT4_GOKU_INSTINCT_SIGN && slot == 3)) {
+        return BT4_GOKU_END;
+    }
+    if (slot == 0 && (fighter == BT4_JIREN || fighter == BT4_ZAMASU_FUSED)) {
+        const BtlTechMember *member = BtlMember_GetActive(chr);
+        if ((fighter == BT4_JIREN && member->costume < BT4_JIREN_FULL_POWER_OUTFIT) ||
+            (fighter == BT4_ZAMASU_FUSED && member->costume < BT4_ZAMASU_GIANT_OUTFIT)) {
+            return fighter;
+        }
+    }
+    return -1;
+}
+#endif
+
 /* Parameter +0xAC: the transformation slot a neutral input picks. */
 s32 BtlParam_GetUnkAC(BtlTechChr *chr) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (Bt4_ExtraTransformTarget(chr, 0) >= 0) return 0;
+#endif
     return BtlChar_GetObj(chr)->param->transDefault;
 }
 
 /* Parameter +0x98 + slot: transformation target, 0xFF = none. */
 s32 BtlParam_GetSlotId(BtlTechChr *chr, s32 slot) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    s32 target = Bt4_ExtraTransformTarget(chr, slot);
+    if (target >= 0) return target;
+#endif
     return BtlChar_GetObj(chr)->param->transTarget[slot];
 }
 
 /* Parameter +0x9C + slot, times 100000: blast gauge a transformation costs. */
 s32 BtlParam_GetSlotCost(BtlTechChr *chr, s32 slot) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    s32 target = Bt4_ExtraTransformTarget(chr, slot);
+    if (target >= 0) return target == BT4_GOKU_END ? 0 : 60000;
+#endif
     return BtlChar_GetObj(chr)->param->transCost[slot] * 20000;
 }
 
 /* Parameter +0xA0 + slot. */
 s32 BtlParam_GetSlotA0(BtlTechChr *chr, s32 slot) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    s32 target = Bt4_ExtraTransformTarget(chr, slot);
+    if (target >= 0) return 0;
+#endif
     return BtlChar_GetObj(chr)->param->transSeq[slot];
 }
 
 /* Parameter +0xA4 + slot. */
 s32 BtlParam_GetSlotA4(BtlTechChr *chr, s32 slot) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    s32 target = Bt4_ExtraTransformTarget(chr, slot);
+    if (target == BT4_JIREN) return 8;         /* Red transformation aura. */
+    if (target == BT4_ZAMASU_FUSED) return 10;  /* Purple transformation aura. */
+    if (target == BT4_GOKU_INSTINCT_SIGN || target == BT4_GOKU_MASTERED_INSTINCT) {
+        return 1; /* Native effect used by Ultra Instinct Sign to Mastered. */
+    }
+    if (target >= 0) return 0;
+#endif
     return BtlChar_GetObj(chr)->param->transKind[slot];
 }
 
 /* Parameter +0xA8 + slot. */
 s32 BtlParam_GetSlotA8(BtlTechChr *chr, s32 slot) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (Bt4_ExtraTransformTarget(chr, slot) >= 0) return 0;
+#endif
     return *(s16 *)((u8 *)BtlChar_GetObj(chr)->param + 0xCC + slot * 2);
 }
 
@@ -1403,12 +1457,11 @@ s32 BtlParam_GetUnkAD(BtlTechChr *chr) {
 
 /* How many of the four transformation targets at +0x98 are not 0xFF. */
 s32 BtlParam_CountSlots(BtlTechChr *chr) {
-    BtlParam *param = BtlChar_GetObj(chr)->param;
     s32 n = 0;
     s32 i;
 
     for (i = 0; i < 4; i++) {
-        if (param->transTarget[i] != 0xFF) {
+        if (BtlParam_GetSlotId(chr, i) != 0xFF) {
             n++;
         }
     }
@@ -1781,21 +1834,24 @@ s32 BtlParam_GetBlastGainRate(BtlTechChr *chr) {
     if (BtlMember_HasAbility(chr, 0x33)) {
         v = v * 8 / 10;
     }
-    return BtlUtil_Max(v, 20);
+    v = BtlUtil_Max(v, 20);
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (BtlChar_GetObj(chr)->chara == BT4_GOHAN_SSJ2) {
+        /* Add seven seconds at the 30 Hz battle rate to the time for one blast stock. */
+        const s32 stock = 100000;
+        const s64 denominator = stock + 210LL * v;
+        v = (s32)(((s64)stock * v + denominator / 2) / denominator);
+    }
+#endif
+    return v;
 }
 
 /* Max power gained per frame of charging at full ki: 30000 (the whole gauge) divided by the frames in
    (parameter +0x50 seconds / curve row 11). */
 s32 BtlParam_GetStepA(BtlTechChr *chr) {
-    BtlTechObj *obj = BtlChar_GetObj(chr);
-    f32 t = obj->param->maxPowerChargeTime;
+    f32 t = BtlChar_GetObj(chr)->param->maxPowerChargeTime;
 
     t /= BtlStat_GetMaxPowerChargeScale(chr);
-#ifdef BT4_TAG_TEAM_EXPANDED
-    if (obj->chara == BT4_GOHAN_SSJ2) {
-        t += 7.0f;
-    }
-#endif
     return 30000 / (s32)(t * 30.0f);
 }
 

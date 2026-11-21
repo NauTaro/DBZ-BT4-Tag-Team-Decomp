@@ -1,4 +1,28 @@
-# BT4decomp 0.1.39.6 R1 1.17
+# BT4decomp 0.1.39.6 R1 1.11
+
+- Gohan (Super Saiyan 2) charges Ki at his original speed. His Blast Stock takes about seven seconds longer to fill.
+- Goku (End), Jiren and Fused Zamasu gain new transformations in offline play and all online modes except Ranked.
+- Jiren and Zamasu have red and purple transformation auras. Jiren has a new shout in English, Japanese and Spanish.
+
+Update from the game menu. Everyone in the room should use the same version.
+
+<!-- bt4-update:en
+- Gohan (Super Saiyan 2) charges Ki at his original speed. His Blast Stock takes about seven seconds longer to fill.
+- Goku (End), Jiren and Fused Zamasu gain new transformations in offline play and all online modes except Ranked.
+- Jiren and Zamasu have red and purple transformation auras. Jiren has a new shout in English, Japanese and Spanish.
+-->
+<!-- bt4-update:es
+- Gohan Super Saiyan 2 recupera su velocidad de carga de ki. Cada reserva de Blast tarda unos siete segundos más en llenarse.
+- Goku (Fin), Jiren y Zamasu Fusionado tienen nuevas transformaciones en el modo local y en todos los modos online excepto Rankeds.
+- Jiren y Zamasu tienen auras roja y morada. Jiren tiene un grito nuevo en inglés, japonés y español.
+-->
+<!-- bt4-update:pt
+- Gohan Super Saiyajin 2 recupera a velocidade original de carga de Ki. Cada reserva de Blast demora cerca de sete segundos a mais para encher.
+- Goku (Fim), Jiren e Zamasu Fundido têm novas transformações no modo local e em todos os modos online, exceto nas ranqueadas.
+- Jiren e Zamasu têm auras vermelha e roxa. Jiren ganhou um novo grito em inglês, japonês e espanhol.
+-->
+
+# BT4decomp 0.1.39.6 R1 1.10
 
 - Corrected Cell’s balance adjustment. Perfect Cell’s Ki blasts deal 70% less damage. Super Perfect Cell’s original Ki blast damage has been restored.
 
@@ -14,7 +38,7 @@ Update from the game menu. Everyone in the room should use the same version.
 - Corrigimos o balanceamento de Cell. As rajadas de ki de Cell Perfeito causam 70% menos dano. Super Cell Perfeito recupera seu dano original.
 -->
 
-# BT4decomp 0.1.39.6 R1 1.16
+# BT4decomp 0.1.39.6 R1 1.9
 
 - Adjusted damage, Ki costs, and defensive abilities for several fighters. Gamma 2’s first super takes longer to fire, and Broly and giant fighters lose their innate armor.
 - Random picks now reveal your fighter before stage selection in online solo battles.

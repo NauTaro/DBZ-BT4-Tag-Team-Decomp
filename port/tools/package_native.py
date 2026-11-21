@@ -82,7 +82,6 @@ def main(p,mac=False):
         shutil.rmtree(out)
     p.take_program(exe,out);p.take_lang(out);p.take_translations(out)
     shutil.copy2(setup,out/'BT4decomp-setup');shutil.copy2(root/'port/release/BT4_VERSION.txt',out/'BT4_VERSION.txt');shutil.copy2(root/'recomplauncher.json',out/'recomplauncher.json')
-    shutil.copy2(root/'port/release/CHANGELOG_R1_1_17.txt',out/'CHANGELOG-R1-1.17.txt')
     for name in ('lib','licenses','textures','stages','songs','mods'):(out/name).mkdir()
     licenses=out/'licenses'
     for source,target in [('LICENSE','bt4decomp-agpl.txt'),('LICENSE-MIT','bt4decomp-mit.txt'),
@@ -93,6 +92,7 @@ def main(p,mac=False):
     (licenses/'sdl3.txt').write_text('SDL3: zlib license. https://www.libsdl.org/license.php\n')
     (licenses/'curl.txt').write_text('curl license: https://curl.se/docs/copyright.html\n')
     p.take_fonts(out,licenses);p.take_tbo_art(out,licenses)
+    p.take_jiren_voice(out)
     p.take_example_mods(out)
     for name,note in [('textures',p.TEXTURES_NOTE),('stages',p.STAGES_NOTE),('songs',p.SONGS_NOTE),('mods',p.MODS_NOTE)]:
         (out/name/'README.txt').write_text(note,encoding='utf8')

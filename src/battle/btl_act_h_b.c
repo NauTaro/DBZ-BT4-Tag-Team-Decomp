@@ -3,6 +3,10 @@ extern s32 TagBattle_IsActorLoading(s32 actor);
 extern void Bt4_SpendTransformKi(void *chr, s32 amount);
 extern s32 Bt4_HasRecoveryVariant(void *chr);
 #include "battle/btl_act_h.h"
+#include "battle/bt4_balance.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "bt4_jiren_voice.h"
+#endif
 extern void Bt4_ClearThrowRecoveryFlag(void *chr, s32 flag) __asm__("BtlChar_ClearFlag");
 #ifdef PORT
 #include "bt3_zcounter2.h"
@@ -656,6 +660,11 @@ void BtlActChange_Finish(BtlActHChr *chr) {
 s32 BtlAct_TransformA(BtlActHChr *chr, s32 phase) {
     BtlActHPose *pose;
     s32 waiting;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern void BtlCharSnd_PlayVoice(BtlActHChr *chr, s32 line);
+    const s32 jirenPowerUp = Bt4_ExtraFormsAllowed() && chr->form.chara == BT4_JIREN &&
+                            chr->form.costume == BT4_JIREN_FULL_POWER_OUTFIT;
+#endif
 
     if (phase == 0) {
         pose = BtlChar_GetPos(chr);
@@ -675,7 +684,14 @@ s32 BtlAct_TransformA(BtlActHChr *chr, s32 phase) {
         waiting = 0;
         if (chr->actionFrame == 1) {
             BtlCharSnd_PlayCommon(chr, 0x54);
-            BtlChar_PlayVoice(chr, 0xE);
+#ifdef BT4_TAG_TEAM_EXPANDED
+            if (jirenPowerUp) {
+                BtlCharSnd_PlayVoice(chr, BT4_JIREN_SCREAM_LINE);
+            } else
+#endif
+            {
+                BtlChar_PlayVoice(chr, 0xE);
+            }
             BtlChar_SetFxBit(chr, 0);
             BtlChange_RequestChara(chr->player, chr->form.chara, chr->form.costume, chr->form.variant,
                                    chr->form.animChara, chr->form.unk1C, chr->form.voiceChara);
@@ -704,7 +720,15 @@ s32 BtlAct_TransformA(BtlActHChr *chr, s32 phase) {
                 BtlChar_SetFlag(chr, 0xF5);
                 BtlChar_SetFlag(chr, 0x55);
                 BtlChar_SetFxBit(chr, 1);
-                BtlChar_PlayVoice(chr, 0x22);
+#ifdef BT4_TAG_TEAM_EXPANDED
+                if (jirenPowerUp) {
+                    /* Jiren's transformation slot is silent. Use his native Max Power voice. */
+                    BtlCharSnd_PlayVoice(chr, 47);
+                } else
+#endif
+                {
+                    BtlChar_PlayVoice(chr, 0x22);
+                }
                 ChrCam_RequestCut(chr, 0, 6);
                 if (BtlParam_GetFlags(chr) & 0x40000) {
                     BtlCharSnd_PlayCommon(chr, 0x4C);

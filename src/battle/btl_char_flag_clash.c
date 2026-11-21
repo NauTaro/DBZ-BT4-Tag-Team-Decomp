@@ -458,6 +458,12 @@ s32 BtlClash_UpdateA(s32 state) {
                 }
 #endif
                 BtlMember_Damage(loser, damage, flags);
+#ifdef BT4_TAG_TEAM_EXPANDED
+                {
+                    extern void Bt4_MarkBeamClashLoss(s32 side);
+                    Bt4_MarkBeamClashLoss(loser->player);
+                }
+#endif
                 BtlChar_PlayVoice(loser, 0x16);
                 BtlCharSnd_PlayStream(loser, 0x8D31);
                 EftStruggle_End(-1);

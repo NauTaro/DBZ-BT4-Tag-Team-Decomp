@@ -29,6 +29,9 @@
 #include "adx_loop.h"
 #include "spatial_audio.h"
 #include "game_profile.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "../../include/bt4_jiren_voice.h"
+#endif
 
 enum { ADXT_STAT_STOP = 0, ADXT_STAT_PLAYING = 3, ADXT_STAT_PLAYEND = 5 };
 #define MAX_PLAYERS 40
@@ -745,11 +748,42 @@ void *ADXT_Create(int maxnch, void *work, int worksize) {
 void ADXT_SetReloadSct(void *adxt, int nsct) { (void)adxt; (void)nsct; }
 void ADXT_SetSvrFreq(void *adxt, int freq) { (void)adxt; (void)freq; }
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+static int jiren_scream_path(int partition, int *file, char *path, size_t size) {
+    /* BT4 archive 0 contains the two sets of 100 streamed lines per fighter. */
+    enum { jirenDefault = 40102, jirenJapanese = 15102 };
+    extern int Port_NetVoiceAlt(void);
+    const int alt = Port_NetVoiceAlt();
+    const char *base, *language;
+    FILE *clip;
+
+    if (partition != 0 || (*file != jirenDefault + BT4_JIREN_SCREAM_LINE &&
+                           *file != jirenJapanese + BT4_JIREN_SCREAM_LINE)) return 0;
+    language = alt || *file == jirenJapanese + BT4_JIREN_SCREAM_LINE ? "japanese" :
+               Port_GameProfileEnglish() ? "english" : "spanish";
+    *file += BT4_JIREN_NATIVE_LEAD_LINE - BT4_JIREN_SCREAM_LINE;
+    base = SDL_GetBasePath();
+    if (!base || SDL_snprintf(path, size, "%stbo/audio/jiren/%s.adx", base, language) >= (int)size) return 0;
+    clip = fopen(path, "rb");
+    if (!clip) return 0;
+    fclose(clip);
+    return 1;
+}
+#endif
+
 void ADXT_StartAfs(void *adxt, int patid, int fid) {
     char path[512];
 
     if (adxt != NULL) {
-        int found = Port_FilePath(patid, fid, NULL, path, sizeof(path));
+        int found;
+#ifdef BT4_TAG_TEAM_EXPANDED
+        if (jiren_scream_path(patid, &fid, path, sizeof(path))) {
+            start(adxt, path);
+            view_start(adxt, path, 1);
+            return;
+        }
+#endif
+        found = Port_FilePath(patid, fid, NULL, path, sizeof(path));
         if (found) {
             extern void PortA11y_StreamStart(const char *path); /* a11y_game.c: a voice with its line shown as text */
             char soundtrack[1800];

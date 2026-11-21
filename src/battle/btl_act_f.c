@@ -2,6 +2,8 @@ extern int TagBattle_Active(void);
 #include "common.h"
 extern s32 Bt4_HasRecoveryVariant(void *chr);
 #include "battle/btl_act_f.h"
+#include "battle/bt4_balance.h"
+#include "battle/btl_char_mgr.h"
 
 /*
  * Blast 2 / Ultimate Blast actions: 0x1F5460..0x1FC2B0, in two parts (to 0x1F8C00, and from there the rush
@@ -3125,7 +3127,20 @@ void BtlAct_ClashLostHandler(ActGChr *chr, s32 phase) {
     if (phase == 0) {
         BtlAnim_Play(chr, 0x172, 0.0f);
         ChrCam_RequestCut(chr, 1, chr->player + 0x21);
-        if (!Bt4_HasRecoveryVariant(chr)) {
+#ifdef BT4_TAG_TEAM_EXPANDED
+        {
+            extern BtlMgrMember *BtlMember_GetActive(void *chr);
+            const BtlMgrMember *member = BtlMember_GetActive(chr);
+            if (Bt4_ExtraFormsAllowed() && member->chara == BT4_ZAMASU_FUSED &&
+                member->clashCorruption == BT4_CLASH_CORRUPTION_PENDING) {
+                BtlAct_SetFormCurrent(chr);
+                chr->form.costume = BT4_ZAMASU_CORRUPTED_OUTFIT;
+                chr->form.unk14 = 0;
+                chr->work[0] |= 1;
+            }
+        }
+#endif
+        if (!(chr->work[0] & 1) && !Bt4_HasRecoveryVariant(chr)) {
             chr->work[0] |= 1;
             BtlAct_SetFormCurrent(chr);
         }

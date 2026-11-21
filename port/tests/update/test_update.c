@@ -57,6 +57,18 @@ int main(void) {
       check(!strcmp(shown,"0.1.39.6 R1 1.1"),"Intermediate R1 hotfix display");
       UpdateVer_Display("v0.1.39.6-R1.3",shown,sizeof(shown));
       check(!strcmp(shown,"0.1.39.6 R1 1.2"),"R1 1.2 public update display"); }
+    {
+        char shown[80];
+        UpdateVer_Display("v0.1.39.6-R1.9", shown, sizeof(shown));
+        check(!strcmp(shown, "0.1.39.6 R1 1.7"), "Public release after internal build 8");
+        UpdateVer_Display("v0.1.39.6-R1.10", shown, sizeof(shown));
+        check(!strcmp(shown, "0.1.39.6 R1 1.8"), "Last release before skipped internal builds");
+        UpdateVer_Display("v0.1.39.6-R1.17", shown, sizeof(shown));
+        check(!strcmp(shown, "0.1.39.6 R1 1.9"), "Roster balance public release");
+        UpdateVer_Display("v0.1.39.6-R1.18", shown, sizeof(shown));
+        check(!strcmp(shown, "0.1.39.6 R1 1.10"), "Cell hotfix public release");
+        check(UpdateVer_Compare("v0.1.39.6-R1.17", "v0.1.39.6-R1.18") < 0, "Published tags remain ordered");
+    }
     /* SHA-256 (FIPS 180-4 examples) */
     {
         char hex[65];

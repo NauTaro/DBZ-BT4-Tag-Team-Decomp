@@ -54,9 +54,11 @@ int UpdateVer_Compare(const char *a,const char *b) {
 void UpdateVer_Display(const char *text,char *out,size_t size) {
     int base[4],revision,revision_patch;
     if(!version_parts(text,base,&revision,&revision_patch)){SDL_snprintf(out,size,"%s",text?text:"");return;}
-    if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==6 && revision==1 && revision_patch>=1)
-        SDL_snprintf(out,size,"0.1.39.6 R1 1.%d",revision_patch-1);
-    else if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==2 && revision==7 && revision_patch==1)
+    if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==6 && revision==1 && revision_patch>=1) {
+        /* The public releases skipped internal build 8 and builds 11 through 16. */
+        int skipped = revision_patch >= 17 ? 8 : revision_patch >= 9 ? 2 : 1;
+        SDL_snprintf(out,size,"0.1.39.6 R1 1.%d",revision_patch - skipped);
+    } else if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==2 && revision==7 && revision_patch==1)
         SDL_snprintf(out,size,"0.1.39.2 R7 Hotfix");
     else if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==2 && revision==8 && revision_patch==1)
         SDL_snprintf(out,size,"0.1.39.2 R8 Hotfix");

@@ -56,6 +56,9 @@ extern f32 BtlSuper_GetShotTurnRate(BtlMemberChr *chr, s32 kind);
 extern void EftShot_Request(BtlMemberAuraReq *req);
 extern void EftTransform_Start(BtlMemberFx0Req *req);
 extern void EftTransform_Flash(void);
+#ifdef BT4_TAG_TEAM_EXPANDED
+extern s32 EftTransform_OwnedBy(s32 objId);
+#endif
 extern void EftTransform_End(void);
 extern s32 BtlAtk_GetHitFxKind(BtlMemberChr *chr);
 extern s32 BtlAtk_GetHitSoundLevel(BtlMemberChr *chr);
@@ -246,6 +249,9 @@ void BtlChar_SpawnFxBits0(BtlMemberChr *chr) {
             EftTransform_Start(&req);
         }
     }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (!EftTransform_OwnedBy(chr->objId)) return;
+#endif
     if (BtlChar_TestFxBit(chr, 1) && chr->unk12DC != 0) {
         EftTransform_Flash();
     }

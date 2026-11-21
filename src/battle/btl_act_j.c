@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/bt4_balance.h"
 #include "battle/btl_act_j.h"
 #ifdef BT4_TAG_TEAM_EXPANDED
 #include "battle/tag_team_native.h"
@@ -280,6 +281,9 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
     s32 kind = BtlParam_GetSlotA4(chr, index);
     s32 unk24 = BtlParam_GetSlotA8(chr, index);
     s32 action;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    s32 customOutfit = 0;
+#endif
 
     chr->form.index = index;
     chr->form.chara = chara;
@@ -293,7 +297,46 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
     chr->form.animChara = chara;
     chr->form.unk1C = chara;
     chr->form.voiceChara = chara;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    {
+        extern s32 Bt4_ExtraTransformTarget(void *chr, s32 slot);
+        extern s32 BattleSide_GetMemberChara(s32 side, s32 member);
+        extern s32 BattleSide_GetMemberCostume(s32 side, s32 member);
+        extern s32 BtlSide_GetActiveMember(s32 side);
+        extern s32 ChrTbl_WrapCostume(s32 chara, s32 *costume);
+        const s32 source = BtlMember_GetActive(chr)->chara;
+        const s32 extra = Bt4_ExtraTransformTarget(chr, index);
+
+        if (extra == BT4_GOKU_END) {
+            const s32 member = BtlSide_GetActiveMember(chr->player);
+            if (BattleSide_GetMemberChara(chr->player, member) == BT4_GOKU_END) {
+                chr->form.costume = BattleSide_GetMemberCostume(chr->player, member);
+            } else {
+                /* The base roster has a DB Super gi and no Capsule Corp. gi. */
+                chr->form.costume = chr->form.costume == 2 ? 3 : 0;
+            }
+        } else if (extra == BT4_GOKU_MASTERED_INSTINCT || extra == BT4_GOKU_INSTINCT_SIGN) {
+            static const u8 gi[] = {1, 1, 2, 2, 2, 1};
+            const s32 outfit = chr->form.costume;
+            chr->form.costume = (u32)outfit < sizeof(gi) ? gi[outfit] : 1;
+        } else if (extra == BT4_JIREN) {
+            chr->form.costume = BT4_JIREN_FULL_POWER_OUTFIT;
+        } else if (extra == BT4_ZAMASU_FUSED) {
+            chr->form.costume = BT4_ZAMASU_GIANT_OUTFIT;
+        }
+        if (extra >= 0 || (Bt4_ExtraFormsAllowed() && source == BT4_GOKU_INSTINCT_SIGN &&
+                           chara == BT4_GOKU_MASTERED_INSTINCT)) {
+            ChrTbl_WrapCostume(chara, &chr->form.costume);
+            chr->form.variant = 0;
+            chr->form.unk28 = chr->form.costume;
+            customOutfit = 1;
+        }
+    }
+#endif
     /* BT4 0x3BF0B4: per-source-costume target costume, four bytes per slot. */
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (!customOutfit)
+#endif
     {
         extern void *BtlChar_GetObj(BtlActJChr *chr);
         u8 *param = *(u8 **)((u8 *)BtlChar_GetObj(chr) + 0x91C);

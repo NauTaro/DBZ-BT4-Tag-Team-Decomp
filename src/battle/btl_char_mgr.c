@@ -8,6 +8,7 @@ extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/battle.h"
 #include "battle/battle_setup.h"
 #include "battle/btl_char_mgr.h"
+#include "battle/bt4_balance.h"
 #ifdef BT4_TAG_TEAM_EXPANDED
 #include "battle/tag_team_fusion.h"
 #endif
@@ -378,6 +379,17 @@ void BtlChar_Reset(BtlMgrChr *chr) {
 }
 
 /* Applies the form change of the current action once the new model is loaded. */
+#ifdef BT4_TAG_TEAM_EXPANDED
+void Bt4_MarkBeamClashLoss(s32 side) {
+    if (!Bt4_ExtraFormsAllowed()) return;
+    BtlMgrMember *member = BtlMember_GetActive(BtlChar_Get(side));
+    if (member->chara == BT4_ZAMASU_FUSED && member->costume == BT4_ZAMASU_NORMAL_OUTFIT &&
+        member->gauge.health > 0) {
+        member->clashCorruption = BT4_CLASH_CORRUPTION_PENDING;
+    }
+}
+#endif
+
 void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
     BtlMgrObj *obj;
     BtlMgrMember *m;
@@ -386,6 +398,9 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
     BtlMgrGauge *og;
     f32 ratio;
     s32 i;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    s32 healthBoost = 0;
+#endif
     const TagHealthRule *healthRule = TagBattle_HealthRule(chr->side);
 
 #ifdef BT4_TAG_TEAM_EXPANDED
@@ -413,6 +428,13 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
     case 0xF0:
         /* transformation: keep the health ratio */
         m = BtlMember_GetActive(chr);
+#ifdef BT4_TAG_TEAM_EXPANDED
+        if (Bt4_ExtraFormsAllowed() && m->chara == chr->newChara && m->costume != chr->newCostume &&
+            ((m->chara == BT4_JIREN && chr->newCostume == BT4_JIREN_FULL_POWER_OUTFIT) ||
+             (m->chara == BT4_ZAMASU_FUSED && chr->newCostume == BT4_ZAMASU_GIANT_OUTFIT))) {
+            healthBoost = 10000;
+        }
+#endif
         m->chara = chr->newChara;
         g = &m->gauge;
         m->costume = chr->newCostume;
@@ -427,6 +449,10 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
         if (BtlParam_GetUnkAD(chr) & 4) {
             g->ki = g->kiMax;
         }
+#ifdef BT4_TAG_TEAM_EXPANDED
+        g->healthMax += healthBoost;
+        g->health += healthBoost;
+#endif
         g->health = BtlUtil_Clamp(g->health, healthRule ? 0 : 1, g->healthMax);
         g->blast = BtlUtil_Clamp(g->blast, 0, g->blastMax);
         break;
@@ -512,6 +538,13 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
     case 0x13A:
     case 0x13B:
         m = BtlMember_GetActive(chr);
+#ifdef BT4_TAG_TEAM_EXPANDED
+        if (BtlAct_GetCurrent(chr) == 0x104 && m->clashCorruption == BT4_CLASH_CORRUPTION_PENDING &&
+            m->chara == BT4_ZAMASU_FUSED && m->costume == BT4_ZAMASU_NORMAL_OUTFIT &&
+            chr->newCostume == BT4_ZAMASU_CORRUPTED_OUTFIT) {
+            m->clashCorruption = 0;
+        }
+#endif
         m->chara = chr->newChara;
         g = &m->gauge;
         m->costume = chr->newCostume;

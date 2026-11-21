@@ -175,7 +175,9 @@ typedef struct BtlTechMember {
 
 /* Gauge block of the active member (BtlMember_GetActiveGauge). */
 typedef struct BtlTechGauge {
-    /* 0x00 */ u8 unk0[0x20];
+    /* 0x00 */ s32 health;
+    /* 0x04 */ s32 healthMax;
+    /* 0x08 */ u8 unk8[0x18];
     /* 0x20 */ s32 variant;         /* non-zero: BtlParam_GetType turns types 2..4 into 7 / 8 */
 } BtlTechGauge;
 

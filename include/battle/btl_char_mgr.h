@@ -58,7 +58,8 @@ typedef struct BtlMgrMember {
     /* 0x38 */ s32 cpuLevel;   /* BattleMember.cpuLevel */
     /* 0x3C */ s32 aiType;     /* BattleMember.aiType */
     /* 0x40 */ BtlMgrGauge gauge;
-    /* 0x78 */ u8 unk78[0xA4 - 0x78];
+    /* 0x78 */ s32 clashCorruption; /* Fused Zamasu has a pending damaged model after a beam clash. */
+    /* 0x7C */ u8 unk7C[0xA4 - 0x7C];
 } BtlMgrMember; /* 0xA4 */
 
 /* The pose block at fighter + 0x10 (BtlChar_GetPos); copied whole to fighter + 0x100 at the start of a frame. */

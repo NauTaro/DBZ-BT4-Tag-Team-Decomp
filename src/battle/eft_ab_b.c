@@ -425,6 +425,14 @@ s32 EftTransform_Start(EftTransformArg *req) {
     return 1;
 }
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+s32 EftTransform_OwnedBy(s32 objId) {
+    EftAbTask *task = gEftTransform ? gEftTransform->task : NULL;
+    EftTransform *work = task ? task->work : NULL;
+    return work != NULL && work->arg.objId == objId;
+}
+#endif
+
 /* Fighter effect request 1: tells the running effect that the model changes now. */
 s32 EftTransform_Flash(void) {
     EftAbTask *task = gEftTransform->task;

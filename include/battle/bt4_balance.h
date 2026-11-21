@@ -17,6 +17,26 @@ enum {
     BT4_TRUNKS_SUPER = 225
 };
 
+enum {
+    BT4_GOKU_END = 3,
+    BT4_GOKU_MASTERED_INSTINCT = 64,
+    BT4_ZAMASU_FUSED = 76,
+    BT4_JIREN = 151,
+    BT4_GOKU_INSTINCT_SIGN = 220,
+    BT4_ZAMASU_NORMAL_OUTFIT = 0,
+    BT4_ZAMASU_CORRUPTED_OUTFIT = 1,
+    BT4_ZAMASU_GIANT_OUTFIT = 2,
+    BT4_JIREN_FULL_POWER_OUTFIT = 2,
+    BT4_CLASH_CORRUPTION_PENDING = 1
+};
+
+#ifdef BT4_TAG_TEAM_EXPANDED
+static inline s32 Bt4_ExtraFormsAllowed(void) {
+    extern int Port_RankedActive(void);
+    return !Port_RankedActive();
+}
+#endif
+
 static inline s32 Bt4Balance_IsBroly(s32 fighter) {
     return (fighter >= 131 && fighter <= 133) ||
            (fighter >= 188 && fighter <= 190) || fighter == 209;
