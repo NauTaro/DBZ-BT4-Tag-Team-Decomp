@@ -1,3 +1,19 @@
+# BT4decomp 0.1.39.6 R1 1.17
+
+- Corrected Cell’s balance adjustment. Perfect Cell’s Ki blasts deal 70% less damage. Super Perfect Cell’s original Ki blast damage has been restored.
+
+Update from the game menu. Everyone in the room should use the same version.
+
+<!-- bt4-update:en
+- Corrected Cell’s balance adjustment. Perfect Cell’s Ki blasts deal 70% less damage. Super Perfect Cell’s original Ki blast damage has been restored.
+-->
+<!-- bt4-update:es
+- Corregimos el balance de Cell. Las ráfagas de ki de Cell Perfecto hacen un 70 % menos de daño. Cell Súper Perfecto recupera su daño original.
+-->
+<!-- bt4-update:pt
+- Corrigimos o balanceamento de Cell. As rajadas de ki de Cell Perfeito causam 70% menos dano. Super Cell Perfeito recupera seu dano original.
+-->
+
 # BT4decomp 0.1.39.6 R1 1.16
 
 - Adjusted damage, Ki costs, and defensive abilities for several fighters. Gamma 2’s first super takes longer to fire, and Broly and giant fighters lose their innate armor.

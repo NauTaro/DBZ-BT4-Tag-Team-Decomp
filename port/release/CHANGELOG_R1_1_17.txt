@@ -1,0 +1,10 @@
+BT4decomp 0.1.39.6 R1 1.17
+
+English
+- Corrected Cell’s balance adjustment. Perfect Cell’s Ki blasts deal 70% less damage. Super Perfect Cell’s original Ki blast damage has been restored.
+
+Español
+- Corregimos el balance de Cell. Las ráfagas de ki de Cell Perfecto hacen un 70 % menos de daño. Cell Súper Perfecto recupera su daño original.
+
+Português
+- Corrigimos o balanceamento de Cell. As rajadas de ki de Cell Perfeito causam 70% menos dano. Super Cell Perfeito recupera seu dano original.
