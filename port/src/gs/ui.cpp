@@ -25,6 +25,7 @@ extern "C" void *GsDx9_StripTexture(const void *, int, int);
 extern "C" void GsDx9_StripTextureFree(void *);
 #endif
 #include "ui.h"
+#include "../../../include/battle/emotes.h"
 #include "presentation.h"
 #include "namefont.h"
 #include "../port_release.h"
@@ -192,6 +193,9 @@ static const char *f1_text(const char *english) {
         {"UI", "Interfaz", "Interface"},
         {"Controls", "Controles", "Controles"},
         {"Cheats", "Trucos", "Trapaças"},
+        {"Emote", "Emote", "Emote"},
+        {"Original taunt", "Burla original", "Provocação original"},
+        {"Hold L1 and press Circle while idle. Move to cancel.", "Mantén L1 y pulsa Círculo en reposo. Muévete para cancelar.", "Segure L1 e aperte Círculo parado. Mova-se para cancelar."},
         {"Misc", "Varios", "Outros"},
         {"Online", "En línea", "Online"},
         {"Spectator", "Espectador", "Espectador"},
@@ -2649,6 +2653,27 @@ static void tech_tab(void) {
 }
 
 static void cheats_tab(void) {
+    {
+        const char *const emotes[] = {
+            f1_text("Original taunt"),
+            "01  Fortnite Dance", "02  Gamna Style", "03  Pose 1", "04  Dance 01", "05  Celebración",
+            "06  Dance 02", "07  Twerk", "08  Twerk 2", "09  Habilidad 1", "10  Habilidad 2",
+            "11  Pose 2", "12  Pose 3", "13  Pose 4", "14  Burla", "15  Dance 03",
+            "16  Dance 04", "17  Dance 05", "18  Pose 5", "19  Habilidad 3", "20  Muerte",
+            "21  Bingo 01", "22  Bingo 02", "23  Female Standing Pose",
+            "24  Dancing", "25  Step Hip Hop Dance", "26  Silly Dancing", "27  Rumba Dancing"
+        };
+        static_assert(IM_ARRAYSIZE(emotes) == BTL_EMOTE_COUNT + 1, "One label per emote");
+        int selected = Port_Setting(BTL_EMOTE_SETTING, 0);
+        if (selected < 0 || selected > BTL_EMOTE_COUNT) selected = 0;
+        ImGui::SetNextItemWidth(U(250.0f));
+        if (ImGui::Combo(f1_text("Emote"), &selected, emotes, IM_ARRAYSIZE(emotes), 10)) {
+            Port_SettingSave(BTL_EMOTE_SETTING, selected);
+            Port_SettingsWrite();
+        }
+        ImGui::TextWrapped("%s", f1_text("Hold L1 and press Circle while idle. Move to cancel."));
+        ImGui::Separator();
+    }
     {
         int speed = Port_GameSpeed();
         if (ImGui::SliderInt(f1_text("Game speed"), &speed, 50, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {

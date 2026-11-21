@@ -17,6 +17,7 @@
 #include "sys/list.h"
 #include "battle/btl_obj.h"
 #include "battle/btl_cam.h"
+#include "battle/emotes.h"
 
 void BtlObjDraw_DrawModel(BtlObj *obj);
 void BtlObjDraw_DrawModelFade(BtlObj *obj);
@@ -38,6 +39,19 @@ static void ObjDraw_PortIdentity(BtlObj *obj) {
 #endif
 
 #define FLAG_BITS(p) ((BtlObjFlagBits *)&(p)->flags)
+
+static void DrawBattleModel(BtlObj *obj, void (*draw)(BtlObj *)) {
+#ifdef PORT
+    f32 frame;
+    const int selected = obj->type == BTL_OBJ_TYPE_CHARA ? BtlEmote_Pose(obj->id, &frame) : 0;
+    if (selected) {
+        extern void BtlObjEmote_Draw(BtlObj *, void (*)(BtlObj *), int, f32);
+        BtlObjEmote_Draw(obj, draw, selected, frame);
+        return;
+    }
+#endif
+    draw(obj);
+}
 
 /* In split screen (two or more views) makes view `view` the current one, with its scissor. */
 void BtlObjDraw_ApplyView(s32 view, s32 count) {
@@ -61,7 +75,7 @@ void BtlObjDraw_DrawLists(s32 count) {
 
             state->view = &state->views[v];
             ObjDraw_PortIdentity(obj);
-            BtlObjDraw_DrawModel(obj);
+            DrawBattleModel(obj, BtlObjDraw_DrawModel);
             ObjDraw_PortIdentity(NULL);
         }
     }
@@ -83,7 +97,7 @@ void BtlObjDraw_DrawFadeLists(s32 count) {
             state->view = &state->views[v];
             if (state->view->flags & BTL_OBJ_FLAG_FADE) {
                 ObjDraw_PortIdentity(obj);
-                BtlObjDraw_DrawModelFade(obj);
+                DrawBattleModel(obj, BtlObjDraw_DrawModelFade);
                 ObjDraw_PortIdentity(NULL);
             }
         }

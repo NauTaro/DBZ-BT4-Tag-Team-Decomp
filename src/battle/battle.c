@@ -1,5 +1,6 @@
 extern int TagBattle_Active(void);
 #include "common.h"
+#include "battle/emotes.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include "battle/battle.h"
@@ -219,6 +220,7 @@ s32 Battle_Restart(void) {
     /* The preceding frame can still reference models and effect buffers that
        the reload/reset below is about to release. */
     sceGsSyncPath(0, 0);
+    BtlEmote_Reset();
 #endif
     Snd_StopBankAndResume(0x3C);
 #ifdef BT4_TAG_TEAM_EXPANDED

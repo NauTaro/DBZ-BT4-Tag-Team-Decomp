@@ -1,3 +1,4 @@
+#include "../../../include/battle/emotes.h"
 /*
  * Controller input for the windowed PC build: fills the game's pad buffer (the libpad2 layout the game reads in
  * src/sys/pad.c) from the keyboard and from SDL gamepads, through bindings the settings window (ui.cpp) edits and
@@ -1295,6 +1296,13 @@ int Port_PadRead(int socket, unsigned char *data) {
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);
     data[2] = rx; data[3] = ry; data[4] = lx; data[5] = ly;
+    {
+        /* This byte travels in rollback histories and in spectator recordings. */
+        extern int Port_Setting(const char *, int);
+        extern int PortMods_InBattle(void);
+        const int emote = PortMods_InBattle() ? Port_Setting(BTL_EMOTE_SETTING, 0) : 0;
+        if (emote > 0 && emote <= BTL_EMOTE_COUNT) data[BTL_EMOTE_PAD_BYTE] = (unsigned char)emote;
+    }
     {
         extern int PortMods_InBattle(void), Port_TagBattleRenderActive(void);
         const int tag = Port_TagBattleRenderActive() && PortMods_InBattle() && !PortSpectator_ConsumesInput();

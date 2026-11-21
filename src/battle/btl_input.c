@@ -1,5 +1,6 @@
 extern int TagBattle_Active(void);
 #include "common.h"
+#include "battle/emotes.h"
 extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/btl_input.h"
 #include "battle/tag_team_native.h"
@@ -446,14 +447,29 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
         if (BattleReplay_IsActive()) {
             BtlReplay_Play(chr, &buttons, stick);
             commands = BtlInput_BuildCommands(chr, buttons, prevButtons);
-        } else {
-            BtlReplay_Record(chr, buttons, commands, stick);
         }
     } else {
         buttons = 0;
         stick[1] = stick[0] = BTL_STICK_CENTER;
         commands = 0;
     }
+#ifdef PORT
+    {
+        extern s32 BattleSide_GetObjId(s32);
+        extern s32 BtlAct_GetCurrent(BtlInputChr *);
+        extern s32 BtlSeq_GetState(void);
+        const s32 live = active && !chr->injectOn && !BattleReplay_IsActive() && BtlSeq_GetState() == 3;
+        const s32 selected = live ? (TagBattle_Network() ? TagBattle_NetPad(chr->player)[BTL_EMOTE_PAD_BYTE] :
+                                     BtlChar_GetPad(chr)->data[BTL_EMOTE_PAD_BYTE]) : 0;
+        const s32 idle = live && BtlAct_GetCurrent(chr) == 0x0B;
+        if (BtlEmote_Input(BattleSide_GetObjId(chr->player), buttons, idle, selected)) {
+            /* The emote chord replaces only the manual taunt when an emote is equipped. */
+            buttons &= ~(BTLB_GUARD | BTLB_CIRCLE | BTLB_ANY_FACE);
+            commands = BtlInput_BuildCommands(chr, buttons, prevButtons);
+        }
+    }
+#endif
+    if (active && !BattleReplay_IsActive()) BtlReplay_Record(chr, buttons, commands, stick);
     chr->input.rec.tag[0] = 'O';
     chr->input.rec.tag[1] = 'P';
     chr->input.rec.tag[2] = 'R';

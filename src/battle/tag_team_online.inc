@@ -1,6 +1,7 @@
 /* Fixed simulation frames. Waiting renders the last completed state and polls
  * transport; it does not advance physics, AI, timers or action scripts. */
 #include "battle/btl_input.h"
+#include "battle/emotes.h"
 #include "battle/btl_char_ctl.h"
 extern int Port_TagPhase(void),Port_TagNetwork(void),Port_TagHost(void),Port_TagSeat(void),Port_TagDelay(void);
 extern int Port_TagAllLoaded(void),Port_TagAllArmed(void),Port_TagTakeFrame(u8 out[10][18]);
@@ -142,6 +143,7 @@ static s32 TagOnline_Tick(void){
         packet[6]|=pad->data[17]&0x30;
         packet[7]=pad->status==0||pad->status==1?pad->status:2;
         packet[8]=sequence!=3 && (sTagOnlinePressed&PAD_START)?1:0;
+        packet[BTL_EMOTE_PAD_BYTE]=pad->data[BTL_EMOTE_PAD_BYTE];
         {u32 raw=pad->held|sTagOnlinePressed;
             packet[17]=(raw&PAD_R3?1:0)|(raw&PAD_L2?2:0)|(raw&PAD_SELECT?4:0)|(raw&PAD_CROSS?8:0)|(raw&PAD_L3?16:0);}
         if(sTagOnlinePausePending||(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)){memset(packet,0,sizeof(packet));packet[4]=packet[5]=127;}

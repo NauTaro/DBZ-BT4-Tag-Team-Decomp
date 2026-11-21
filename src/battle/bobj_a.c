@@ -14,6 +14,10 @@
  */
 #include "common.h"
 #include "battle/bobj_a.h"
+#include "battle/emotes.h"
+#ifdef PORT
+#include "battle_emote_motions.inc"
+#endif
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern s32 memcmp(const void *a, const void *b, u32 n);
@@ -618,6 +622,101 @@ void BtlObjAnim_SamplePose(BobjObj *obj) {
         }
     }
 }
+
+
+#ifdef PORT
+/* These matrices are copied into the draw packets. The fighter, including its
+ * collision volumes and live animation pose, is restored before simulation. */
+typedef struct BtlEmoteDrawNode {
+    BobjPart *part;
+    Mtx44 matrix;
+    Mtx44 parent;
+} BtlEmoteDrawNode;
+
+static void BtlObjEmote_Sample(BobjAnim *motion, BobjBone *bone, const BobjPart *part,
+                              f32 frame, f32 hipScale, Vec4 *pos, Quat *rot) {
+    u16 cursor = 0;
+    BobjTrack *track;
+
+    if (bone->id >= BOBJ_NODE_MAX || !motion->track[bone->id]) {
+        *pos = part->pos;
+        *rot = part->rot;
+        return;
+    }
+    track = TRACK_AT(motion, motion->track[bone->id]);
+    if (BOBJ_TRACK_ROT_ONLY(track)) {
+        *pos = bone->rest;
+        BtlObjAnim_SampleRot(track, rot, &cursor, frame);
+    } else {
+        BtlObjAnim_SamplePosRot(track, pos, rot, &cursor, frame);
+        if (bone->id == 2) {
+            pos->x += bone->rest.x;
+            pos->y = bone->rest.y + pos->y * hipScale;
+            pos->z += bone->rest.z;
+        }
+    }
+}
+
+void BtlObjEmote_Draw(BobjObj *obj, void (*draw)(BobjObj *), int selected, f32 elapsed) {
+    enum { MAX_MODEL_NODES = 128, MAX_MODEL_DEPTH = 64 };
+    extern f32 fmodf(f32, f32);
+    BtlEmoteDrawNode saved[MAX_MODEL_NODES];
+    Mtx44 transforms[MAX_MODEL_DEPTH];
+    BobjBone *bone;
+    BobjAnim *motion = (BobjAnim *)kBattleEmotes[selected - 1].data;
+    const f32 frame = fmodf(elapsed, (f32)motion->length);
+    const f32 t = frame / 6.0f;
+    const f32 mix = t < 1.0f ? t * t * (3.0f - 2.0f * t) : 1.0f;
+    const BobjBone *hip = obj->mdl.nodes ? BtlObj_FindBound(obj, 2) : NULL;
+    s32 count = 0;
+    s32 depth = 0;
+    s32 valid = obj->mdl.nodes != NULL && hip != NULL;
+    f32 hipScale = valid ? hip->rest.y / -10.09f : 1.0f;
+
+    if (hipScale < 0.3f || hipScale > 4.0f) hipScale = 1.0f;
+    transforms[0] = obj->xf.mtx;
+    for (bone = obj->mdl.nodes; valid; bone = (BobjBone *)((u8 *)bone + bone->next)) {
+        BobjPart *part = BtlObj_GetNode(obj, bone->id);
+        Vec4 pos;
+        Quat rot;
+        Mtx44 local;
+
+        if (!part || count == MAX_MODEL_NODES || depth + 1 == MAX_MODEL_DEPTH) {
+            valid = 0;
+            break;
+        }
+        saved[count++] = (BtlEmoteDrawNode){part, part->mtx, part->parent};
+        BtlObjEmote_Sample(motion, bone, part, frame, hipScale, &pos, &rot);
+        if (mix < 1.0f) {
+            Vec4 fromPos = part->pos;
+            Quat fromRot = part->rot;
+            if (elapsed >= motion->length) {
+                BtlObjEmote_Sample(motion, bone, part, (f32)motion->length, hipScale, &fromPos, &fromRot);
+            }
+            Vec4_Lerp(&pos, &pos, &fromPos, mix);
+            Quat_Slerp(&rot, &fromRot, &rot, mix);
+        }
+        Quat_ToMtx(&local, &rot);
+        Vec3_Copy((Vec4 *)local.m[3], &pos);
+        part->parent = transforms[depth];
+        Mtx_Mul(&part->mtx, &part->parent, &local);
+        transforms[++depth] = part->mtx;
+        if (bone->last) break;
+        if (!bone->next || bone->pop > depth) {
+            valid = 0;
+            break;
+        }
+        depth -= bone->pop;
+    }
+    if (valid) draw(obj);
+    while (count) {
+        const BtlEmoteDrawNode *node = &saved[--count];
+        node->part->mtx = node->matrix;
+        node->part->parent = node->parent;
+    }
+    if (!valid) draw(obj);
+}
+#endif
 
 /* Reads the events of layer 0 for this frame: the hit window that is open (its volume and nodes), the number of
    hit windows, and up to eight distinct events whose frame lies in (previous frame, frame]. */
