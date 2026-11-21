@@ -1,0 +1,25 @@
+BT4decomp 0.1.39.6 R1 1.16
+
+English
+- Restored the original arena boundaries.
+- Adjusted damage, Ki costs, and defensive abilities for several fighters. Gamma 2’s first super takes longer to fire, and Broly and giant fighters lose their innate armor.
+- Random picks now reveal your fighter before stage selection in online solo battles.
+- Browse public rooms and join private rooms by code from the same menu.
+- Fixed a loop that could send spectators back and forth between the lobby and an ongoing match.
+- Automatic input delay now adapts to ping and the room’s rollback setting.
+
+Español
+- Se restauraron los límites originales de los escenarios.
+- Ajustamos el daño, los costes de ki y las habilidades defensivas de varios luchadores. La primera técnica de Gamma 2 tarda más en salir, y los Broly y los gigantes pierden su armadura innata.
+- En los duelos online, la selección aleatoria muestra qué luchador te tocó antes de elegir el escenario.
+- Consulta las salas públicas y entra a salas privadas por código desde el mismo menú.
+- Corregimos el bucle que podía hacer rebotar a los espectadores entre la sala y un combate en curso.
+- El retraso automático se ajusta al ping y al rollback de la sala.
+
+Português
+- Os limites originais das arenas foram restaurados.
+- Ajustamos o dano, os custos de ki e as habilidades defensivas de vários lutadores. O primeiro super de Gamma 2 demora mais para sair, e Broly e os gigantes perdem a armadura inata.
+- Nos duelos online, a seleção aleatória revela seu lutador antes da escolha da arena.
+- Veja as salas públicas e entre em salas privadas por código pelo mesmo menu.
+- Corrigimos o retorno repetido entre a sala e a luta ao entrar como espectador.
+- O atraso automático é ajustado ao ping e ao rollback da sala.

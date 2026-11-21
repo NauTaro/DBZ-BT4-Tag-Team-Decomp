@@ -48,9 +48,28 @@ int main(){
     const auto distant=NetTiming_Choose(measured,114,0), local=NetTiming_Choose({20,24,0,16},114,0);
     const auto relay=NetTiming_Choose({266,310,3,16},114,1), severe=NetTiming_Choose({1200,1600,7,16},114,1);
     assert(local.delay==1&&local.rollback==2);
-    assert(distant.delay==2&&distant.rollback==8);
-    assert(relay.delay>local.delay&&relay.rollback==8);
-    assert(severe.delay==NET_TIMING_DELAY_LIMIT&&severe.rollback==8);
+    assert(distant.delay==7&&distant.rollback==4);
+    assert(relay.delay==10&&relay.rollback==6);
+    assert(severe.delay==14&&severe.rollback==8);
+    const int maxima[] = {16,33,50,66,83,100,116,133,150,166,183,200,216,233,250,266,283,300,316,333,5000};
+    const int delays[][3] = {
+        {0,0,8},{0,8,17},{8,17,25},{8,25,33},{17,33,42},{17,42,50},{25,50,58},
+        {25,58,67},{33,67,75},{33,75,83},{42,83,100},{50,100,117},{58,108,125},
+        {67,125,142},{75,142,158},{83,150,175},{92,167,183},{100,175,200},
+        {108,183,208},{117,192,225},{125,200,233}
+    };
+    int first = 0;
+    for (unsigned i = 0; i < sizeof(maxima) / sizeof(maxima[0]); ++i) {
+        for (int j = 0; j < 3; ++j) {
+            const auto profile = static_cast<NetTimingProfile>(j);
+            assert(NetTiming_DelayMs(first,profile)==delays[i][j]);
+            assert(NetTiming_DelayMs(maxima[i],profile)==delays[i][j]);
+        }
+        first = maxima[i] + 1;
+    }
+    assert(NetTiming_Choose({0,0,0,16},114,0).delay==0);
+    assert(NetTiming_DelayFrames(16,100,NET_TIMING_DELAY)==1);
+    assert(NetTiming_DelayFrames(334,200,NET_TIMING_DELAY)==28);
     watchQuit=true; // run the liveness state machine deterministically below
     Bt4Signal_Listen(4,1);profileRoute();rankedStatusRequest=1;rankedTopRequest=2;
     emit(4,{{"event","reply"},{"serial",1u},{"body",{{"enabled",true},{"season","2026-11-01"},{"rating",1234u},{"wins",3u},{"losses",1u}}}});
