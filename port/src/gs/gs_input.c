@@ -621,6 +621,20 @@ static SDL_Gamepad *pad_of(int player) {
     return NULL;
 }
 
+static SDL_AtomicInt sXboxGlyphs[2];
+
+int PortInput_XboxGlyphs(int player) {
+    extern int Port_Setting(const char *, int);
+    const int style = Port_Setting("pad_glyph_style", 0);
+    if (style == 1) return 0;
+    if (style == 2) return 1;
+    return player >= 0 && player < 2 && SDL_GetAtomicInt(&sXboxGlyphs[player]);
+}
+
+static int xbox_type(SDL_GamepadType type) {
+    return type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE;
+}
+
 /* BT3_PAD="frame:button,frame:button,...": scripted presses for player 1, each held for 4 frames from that frame
    (frame = the renderer's frame counter). Buttons: start select up down left right cross circle square triangle
    l1 r1 l2 r2. For tests without a person at the keyboard. */
@@ -1211,7 +1225,10 @@ int Port_PadRead(int socket, unsigned char *data) {
         sSwallow = held;
     }
     /* (the settings window is worked with the controller too while it is open: nothing of it for the game) */
-    g = gPortInputCapture || gPortOverlayOpen || sSwallow ? NULL : pad_of(socket);
+    g = pad_of(socket);
+    SDL_SetAtomicInt(&sXboxGlyphs[socket], g &&
+        (xbox_type(SDL_GetRealGamepadType(g)) || xbox_type(SDL_GetGamepadType(g))));
+    if (gPortInputCapture || gPortOverlayOpen || sSwallow) g = NULL;
     if (g != NULL) {
         for (a = 0; a < PORT_PAD_BUTTONS; a++) {
             int src = sPadBtn[socket][a];

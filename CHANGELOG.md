@@ -1,26 +1,30 @@
 # BT4decomp 0.1.39.6 R1 1.12
 
 - All fighters can use emotes in local and online battles, including Tag Team.
-- Choose an emote in **F1 → Cheats → Emote**. While standing still in battle, hold **L1** and press **Circle**. Move to stop the emote.
+- Choose an emote in **F1 → Cheats → Emote**. While standing still in battle, hold **L1** and press **Circle** (**LB + B** on Xbox). Move to stop the emote.
 
 - Fixed the winning streak text spilling outside the Ranked panel.
+- Xbox button icons are detected automatically. Choose a different icon style under F1 → Controls → Button icons.
 
 Update from the game menu so everyone in the room is on the same version.
 
 <!-- bt4-update:en
 - All fighters can use emotes in local and online battles, including Tag Team.
-- Choose an emote in F1 → Cheats → Emote. While standing still, hold L1 and press Circle. Move to stop the emote.
+- Choose an emote in F1 → Cheats → Emote. While standing still, hold L1 and press Circle (LB + B on Xbox). Move to stop the emote.
 - Fixed the winning streak text spilling outside the Ranked panel.
+- Xbox button icons are detected automatically. Choose a different icon style under F1 → Controls → Button icons.
 -->
 <!-- bt4-update:es
 - Todo el plantel puede usar emotes en combates locales y online, incluido Tag Team.
-- Elegí un emote en F1 → Trucos → Emote. Cuando estés quieto, mantené L1 y pulsá Círculo. Movete para cancelar.
+- Elegí un emote en F1 → Trucos → Emote. Cuando estés quieto, mantené L1 y pulsá Círculo (LB + B en Xbox). Movete para cancelar.
 - Corregimos la posición del texto de la racha en el cuadro de Rankeds.
+- El juego detecta los iconos de Xbox automáticamente. Podés elegir otro estilo en F1 → Controles → Iconos del mando.
 -->
 <!-- bt4-update:pt
 - Todo o elenco pode usar emotes em batalhas locais e online, incluindo Tag Team.
-- Escolha um emote em F1 → Trapaças → Emote. Enquanto estiver parado, segure L1 e aperte Círculo. Mova-se para cancelar.
+- Escolha um emote em F1 → Trapaças → Emote. Enquanto estiver parado, segure L1 e aperte Círculo (LB + B no Xbox). Mova-se para cancelar.
 - Corrigimos a posição do texto da sequência no painel das ranqueadas.
+- O jogo detecta os ícones do Xbox automaticamente. Escolha outro estilo em F1 → Controles → Ícones do controle.
 -->
 
 # BT4decomp 0.1.39.6 R1 1.11

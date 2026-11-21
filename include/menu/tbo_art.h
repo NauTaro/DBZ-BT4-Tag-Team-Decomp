@@ -38,7 +38,12 @@
     X(TBO_TAG_BUTTONS_ES, "tag_team_buttons_es") \
     X(TBO_TAG_BUTTONS_PT, "tag_team_buttons_pt") \
     X(TBO_TAG_LOGO_OFF, "tag_team_logo") \
-    X(TBO_DISCORD, "discord")
+    X(TBO_DISCORD, "discord") \
+    X(TBO_BTN_XBOX_A, "btn_xbox_a") \
+    X(TBO_BTN_XBOX_B, "btn_xbox_b") \
+    X(TBO_BTN_XBOX_X, "btn_xbox_x") \
+    X(TBO_BTN_XBOX_Y, "btn_xbox_y") \
+    X(TBO_BTN_XBOX_MENU, "btn_xbox_menu")
 
 #define TBO_MAIN_TAG_OFF (TBO_ART_COUNT + 18)
 #define TBO_MAIN_TAG_ON (TBO_ART_COUNT + 19)

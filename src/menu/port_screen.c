@@ -556,6 +556,18 @@ void Ps_MsgLiteral(f32 x,f32 y,char *str,f32 scale,s32 alpha){Ps_MsgDraw(x,y,str
 /* ---- the pad's buttons ---- */
 /* kind: 0 cross, 1 square, 2 triangle, 3 left / right, 4 circle, 7 START */
 s32 Ps_ButtonPic(s32 kind) {
+#ifdef PORT
+    extern int PortInput_XboxGlyphs(int player);
+    if (PortInput_XboxGlyphs(0)) {
+        switch (kind) {
+        case 0: return TBO_BTN_XBOX_A;
+        case 1: return TBO_BTN_XBOX_X;
+        case 2: return TBO_BTN_XBOX_Y;
+        case 4: return TBO_BTN_XBOX_B;
+        case 7: return TBO_BTN_XBOX_MENU;
+        }
+    }
+#endif
     switch (kind) {
     case 1:
         return TBO_BTN_SQUARE;

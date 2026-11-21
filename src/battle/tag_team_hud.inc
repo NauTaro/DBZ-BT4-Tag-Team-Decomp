@@ -75,6 +75,13 @@ static void TagHud_Fill(f32 x,f32 y,f32 width,f32 height,f32 value,u32 color){
 /* Small controller glyphs belong to the cue, rather than a literal command
  * embedded in the sentence. Stick and shoulder caps share the native outline. */
 static void TagHud_Key(f32 x,f32 y,const char *key,s32 stick,u32 color){
+#ifdef PORT
+    extern int PortInput_XboxGlyphs(int player);
+    if (PortInput_XboxGlyphs(0) && key[0] && key[1] && !key[2]) {
+        if (key[0]=='L') key=key[1]=='1'?"LB":key[1]=='2'?"LT":key[1]=='3'?"LS":key;
+        if (key[0]=='R') key=key[1]=='1'?"RB":key[1]=='2'?"RT":key[1]=='3'?"RS":key;
+    }
+#endif
     u32 ink=Ps_Rgba(8,19,28,0x78);
     if(stick){
         for(s32 i=0;i<16;++i){

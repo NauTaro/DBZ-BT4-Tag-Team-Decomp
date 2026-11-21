@@ -196,6 +196,7 @@ static const char *f1_text(const char *english) {
         {"Emote", "Emote", "Emote"},
         {"Original taunt", "Burla original", "Provocação original"},
         {"Hold L1 and press Circle while idle. Move to cancel.", "Mantén L1 y pulsa Círculo en reposo. Muévete para cancelar.", "Segure L1 e aperte Círculo parado. Mova-se para cancelar."},
+        {"Hold LB and press B while idle. Move to cancel.", "Mantén LB y pulsa B en reposo. Muévete para cancelar.", "Segure LB e aperte B parado. Mova-se para cancelar."},
         {"Misc", "Varios", "Outros"},
         {"Online", "En línea", "Online"},
         {"Spectator", "Espectador", "Espectador"},
@@ -402,6 +403,8 @@ static const char *f1_text(const char *english) {
         {"press a button...", "pulsa un botón...", "pressione um botão..."},
         {"START + SELECT", "START + SELECT", "START + SELECT"},
         {"Controller %d (not connected)", "Mando %d (no conectado)", "Controle %d (desconectado)"},
+        {"Button icons", "Iconos del mando", "Ícones do controle"},
+        {"Select the button labels shown in menus and prompts.", "Elige los botones que se muestran en los menús y avisos.", "Escolha os botões exibidos nos menus e avisos."},
         {"Lobby%s%s", "Sala%s%s", "Sala%s%s"},
         {"Back to the lobby", "Volver a la sala", "Voltar à sala"},
         {"Ends the match for everyone: all go back to the lobby window, where the rules can be changed.", "Finaliza la partida para todos y vuelve a la sala, donde se pueden cambiar las reglas.", "Encerra a partida para todos e volta à sala, onde as regras podem ser alteradas."},
@@ -1785,16 +1788,20 @@ int Ui_Event(const SDL_Event *ev) {
            ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP || ev->type == SDL_EVENT_MOUSE_WHEEL;
 }
 
-static const char *pad_source_name(int src) {
-    static const char *names[] = {"A / Cross", "B / Circle", "X / Square", "Y / Triangle", "Back / Select", "Guide", "Start",
-                                  "Left stick click", "Right stick click", "Left shoulder", "Right shoulder", "D-pad up",
-                                  "D-pad down", "D-pad left", "D-pad right", "Misc 1", "Right paddle 1", "Left paddle 1",
-                                  "Right paddle 2", "Left paddle 2", "Touchpad"};
+extern "C" int PortInput_XboxGlyphs(int player);
+
+static const char *pad_source_name(int src, int player) {
+    static const char *const xbox[] = {"A", "B", "X", "Y", "View", "Xbox", "Menu", "LS", "RS", "LB", "RB"};
+    static const char *const playstation[] = {"Cross", "Circle", "Square", "Triangle", "Select", "PS", "Start", "L3", "R3", "L1", "R1"};
+    const bool useXbox = PortInput_XboxGlyphs(player) != 0;
+    if (src == PORT_PAD_LT) return useXbox ? "LT" : "L2";
+    if (src == PORT_PAD_RT) return useXbox ? "RT" : "R2";
+    if (src >= 0 && src < IM_ARRAYSIZE(xbox)) return f1_text(useXbox ? xbox[src] : playstation[src]);
+    static const char *names[] = {"D-pad up", "D-pad down", "D-pad left", "D-pad right", "Misc 1", "Right paddle 1",
+                                  "Left paddle 1", "Right paddle 2", "Left paddle 2", "Touchpad"};
     static char other[24];
-    if (src == PORT_PAD_LT) { return f1_text("Left trigger"); }
-    if (src == PORT_PAD_RT) { return f1_text("Right trigger"); }
     if (src < 0) { return "-"; }
-    if (src < (int)(sizeof(names) / sizeof(names[0]))) { return f1_text(names[src]); }
+    if (src - IM_ARRAYSIZE(xbox) < IM_ARRAYSIZE(names)) { return f1_text(names[src - IM_ARRAYSIZE(xbox)]); }
     snprintf(other, sizeof(other), f1_text("Button %d"), src);
     return other;
 }
@@ -2671,7 +2678,8 @@ static void cheats_tab(void) {
             Port_SettingSave(BTL_EMOTE_SETTING, selected);
             Port_SettingsWrite();
         }
-        ImGui::TextWrapped("%s", f1_text("Hold L1 and press Circle while idle. Move to cancel."));
+        ImGui::TextWrapped("%s", f1_text(PortInput_XboxGlyphs(0) ?
+            "Hold LB and press B while idle. Move to cancel." : "Hold L1 and press Circle while idle. Move to cancel."));
         ImGui::Separator();
     }
     {
@@ -2864,6 +2872,17 @@ static void controls_tab(void) {
         ImGui::EndCombo();
     }
     SDL_free(ids);
+    {
+        const char *styles[] = {f1_text("Automatic"), "PlayStation", "Xbox"};
+        int style = Port_Setting("pad_glyph_style", 0);
+        if (style < 0 || style > 2) style = 0;
+        ImGui::SetNextItemWidth(U(180.0f));
+        if (ImGui::Combo(f1_text("Button icons"), &style, styles, IM_ARRAYSIZE(styles))) {
+            Port_SettingSave("pad_glyph_style", style);
+            Port_SettingsWrite();
+        }
+        ImGui::SetItemTooltip("%s", f1_text("Select the button labels shown in menus and prompts."));
+    }
     ImGui::SameLine();
     if (ImGui::Button(f1_text("Reset to defaults"))) {
         PortInput_ResetDefaults(player);
@@ -2904,7 +2923,7 @@ static void controls_tab(void) {
                 capture(1, player, a);
             }
             ImGui::TableNextColumn();
-            snprintf(label, sizeof(label), "%s##p%d", waitPad ? f1_text("press a button...") : pad >= 0 ? pad_source_name(pad) : f1_text("START + SELECT"), a);
+            snprintf(label, sizeof(label), "%s##p%d", waitPad ? f1_text("press a button...") : pad >= 0 ? pad_source_name(pad, player) : f1_text("START + SELECT"), a);
             if (ImGui::Button(label, ImVec2(-FLT_MIN, 0.0f))) {
                 capture(2, player, a);
             }
@@ -2939,7 +2958,7 @@ static void controls_tab(void) {
             }
             ImGui::TableNextColumn();
             if (a < PORT_PAD_BUTTONS) {
-                snprintf(label, sizeof(label), "%s##p%d", waitPad ? f1_text("press a button...") : pad_source_name(pads[a]), a);
+                snprintf(label, sizeof(label), "%s##p%d", waitPad ? f1_text("press a button...") : pad_source_name(pads[a], player), a);
                 if (ImGui::Button(label, ImVec2(-FLT_MIN, 0.0f))) {
                     capture(2, player, a);
                 }

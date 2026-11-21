@@ -37,6 +37,11 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {512, 128, 0}, /* tag_team_buttons_pt */
     {2168, 725, 0}, /* same logo with the native unselected text material */
     {512, 512, 0}, /* discord */
+    {64, 64, 0}, /* btn_xbox_a */
+    {64, 64, 0}, /* btn_xbox_b */
+    {64, 64, 0}, /* btn_xbox_x */
+    {64, 64, 0}, /* btn_xbox_y */
+    {64, 64, 0}, /* btn_xbox_menu */
 };
 
 #endif
