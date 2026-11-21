@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/bt4_balance.h"
 #include "battle/btl_char_member.h"
 #ifdef PORT
 #include "battle/tag_health_rule.h"
@@ -129,6 +130,11 @@ void BtlColl_NextPoolMember(BtlMemberChr *chr) {
 static s32 BtlMember_BaseMaximum(BtlMemberChr *chr,s32 member) {
     BtlMember *m=BtlMember_Get(chr,member);
     s32 maximum=gBtlChars->paramTbl[m->chara].healthMax;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (m->chara == BT4_HIRUDEGARN) {
+        maximum -= 10000;
+    }
+#endif
     if(BtlMember_HasAbilityOf(chr,member,100))maximum+=30000;
     else if(BtlMember_HasAbilityOf(chr,member,99))maximum+=20000;
     else if(BtlMember_HasAbilityOf(chr,member,98))maximum+=10000;

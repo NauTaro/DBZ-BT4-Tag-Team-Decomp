@@ -1,3 +1,27 @@
+# BT4decomp 0.1.39.6 R1 1.13
+
+- Adjusted damage, Ki costs, and defensive abilities for several fighters. Gamma 2’s first super takes longer to fire, and Broly and giant fighters lose their innate armor.
+- Random picks now reveal your fighter before stage selection in online solo battles.
+- Browse public rooms and join private rooms by code from the same menu.
+
+Update from the game menu. Everyone in the room should use the same version.
+
+<!-- bt4-update:en
+- Adjusted damage, Ki costs, and defensive abilities for several fighters. Gamma 2’s first super takes longer to fire, and Broly and giant fighters lose their innate armor.
+- Random picks now reveal your fighter before stage selection in online solo battles.
+- Browse public rooms and join private rooms by code from the same menu.
+-->
+<!-- bt4-update:es
+- Ajustamos el daño, los costes de ki y las habilidades defensivas de varios luchadores. La primera técnica de Gamma 2 tarda más en salir, y los Broly y los gigantes pierden su armadura innata.
+- En los duelos online, la selección aleatoria muestra qué luchador te tocó antes de elegir el escenario.
+- Consulta las salas públicas y entra a salas privadas por código desde el mismo menú.
+-->
+<!-- bt4-update:pt
+- Ajustamos o dano, os custos de ki e as habilidades defensivas de vários lutadores. O primeiro super de Gamma 2 demora mais para sair, e Broly e os gigantes perdem a armadura inata.
+- Nos duelos online, a seleção aleatória revela seu lutador antes da escolha da arena.
+- Veja as salas públicas e entre em salas privadas por código pelo mesmo menu.
+-->
+
 # BT4decomp 0.1.39.6 R1 1.8
 
 - Restored the original arena boundaries.
