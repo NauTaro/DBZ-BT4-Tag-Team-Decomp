@@ -168,7 +168,8 @@ void Adx_Stop(s32 ch) {
 int Adx_PlayTitleVoice(s32 asset) {
     extern int Port_TitleEventPlay(void *adxt, int asset, int japanese);
     s32 ch = ADX_CH_VOICE0;
-    s32 japanese = (gSaveData->flags & SAVE_FLAG_ALT_VOICE) != 0;
+    /* The menu's first choice sets the bit. Japanese is its second choice. */
+    s32 japanese = (gSaveData->flags & SAVE_FLAG_ALT_VOICE) == 0;
     char path[512];
     if (!Port_TitleEventPath(asset, japanese, path, sizeof(path))) return 0;
     Adx_SetPan(ch, 0, 0);
