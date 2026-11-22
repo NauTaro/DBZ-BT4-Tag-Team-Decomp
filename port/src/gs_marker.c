@@ -263,6 +263,9 @@ static int clip_part(const char *name, int x, int top) {
             starts(name, "mc_dragonball") || starts(name, "mc_menu_yajirusi") || starts(name, "mc_chara_db")) {
             return PORT_MENU_LEFT;
         }
+        if (top && strcmp(name, "mc_window_up_02") == 0) {
+            return PORT_MENU_RIGHT_ALL;
+        }
         if (starts(name, "mc_guide_") || starts(name, "mc_uide_")) { /* ("mc_uide_ghn_bdl_hair": so named in the movie) */
             return PORT_MENU_RIGHT;
         }

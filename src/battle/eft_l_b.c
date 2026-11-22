@@ -328,6 +328,7 @@ void EftRingShot_Fire(s32 objId, EftTask *task, s32 node, s32 arg3, s32 volley) 
                     s32 three;
 
                     h = BtlScene_RandF() * 0.35f + 0.15f;
+                    if (def->id == 0x156) h *= 0.25f;
                     BtlCharApi_GetNodePos(BtlCharApi_GetOpponentObjId(arg->objId), 0x11, &shot->dir);
                     Vec3_Sub(&shot->dir, &shot->dir, &shot->pos);
                     Vec3_Normalize(&shot->dir, &shot->dir);
@@ -549,6 +550,15 @@ void EftRingShot_UpdatePath(s32 objId, EftTask *task) {
             volley = 1;
         }
         if (node >= 0) {
+            if (arg->def->id == 0x156) {
+                s32 opp = BtlCharApi_GetOpponentObjId(objId);
+                if (opp >= 0) {
+                    Vec4 target;
+                    BtlCharApi_GetNodePos(opp, 0x11, &target);
+                    w->pos.x = target.x;
+                    w->pos.z = target.z;
+                }
+            }
             EftRingShot_Fire(objId, task, node, arg3, volley);
             EftTechEvt_RequestRestart(arg->objId);
         }

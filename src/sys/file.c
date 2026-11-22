@@ -2,9 +2,6 @@ extern int TagBattle_Active(void);
 #include "common.h"
 #include "sys/file.h"
 #include "sys/heap.h"
-#ifdef PORT
-#include "menu/bt4_title_event.h"
-#endif
 
 /* libc */
 extern void *memset(void *dst, s32 value, u32 size);
@@ -514,10 +511,6 @@ ADXF File_OpenById(s32 id) {
 /* Starts streaming file `id` on an ADXT player, with the same id translation as File_OpenById. */
 void File_StartAdxById(ADXT_HN adxt, s32 id) {
 #ifdef PORT
-    if (id == BT4_TITLE_OST) {
-        ADXT_StartAfs(adxt, -1, id);
-        return;
-    }
     if (gPortVariant != 0) {
         s32 pt = Bt4_PartitionOf(id);
         ADXT_StartAfs(adxt, pt, Bt4_IndexOf(pt, id));

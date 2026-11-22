@@ -257,20 +257,6 @@ def take_jiren_voice(out):
         shutil.copy2(ROOT / "port" / "assets" / "jiren-voice" / name, target / name)
 
 
-def take_title_event(out):
-    source = ROOT / "port/tbo/audio/fukkatsu"
-    target = out / "tbo/audio/fukkatsu"
-    tracks = ["ost.mp3"] + [f"{language}-{cue}.wav"
-                            for language in ("english", "spanish", "japanese")
-                            for cue in ("greeting", "confirm")]
-    for asset in [out / "tbo/ui/fukkatsu_title.png", *(source / track for track in tracks)]:
-        if not asset.is_file():
-            raise FileNotFoundError(f"Missing title event asset: {asset}")
-    target.mkdir(parents=True, exist_ok=True)
-    for track in tracks:
-        shutil.copy2(source / track, target / track)
-
-
 def main_win():
     """BT3_CC=win64: bt3.exe (cross-built or built in MSYS2), BT4decomp-setup.exe (port/setup/build.sh win), SDL3.dll."""
     import toolchain
@@ -311,7 +297,6 @@ def main_win():
     take_fonts(out, lic)
     take_tbo_art(out, lic)
     take_jiren_voice(out)
-    take_title_event(out)
     (out / "textures").mkdir()
     (out / "textures/README.txt").write_text(TEXTURES_NOTE.replace("\n", "\r\n"))
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):

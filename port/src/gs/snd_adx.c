@@ -19,6 +19,41 @@
  * runs (replay validation) must not depend on a sound device.
  */
 #include <SDL3/SDL.h>
+#include "../../include/plat_songs.h"
+
+/* Keep the selector's music independent of the battle and online RNGs. The
+   caller supplies the normalized music list without its final Random entry. */
+int PortSongs_SelectorTrack(const int *ids, int count) {
+    static const int battleTracks[] = {8, 9, 10, 11, 12, 13, 14, 15, 16};
+    static Uint64 randomState;
+    static int previous = -1;
+    int previousIndex = -1;
+    int index;
+
+    if (count <= 0) {
+        ids = battleTracks;
+        count = SDL_arraysize(battleTracks);
+    }
+    if (!randomState)
+        randomState = SDL_GetPerformanceCounter();
+    for (int i = 0; i < count; ++i) {
+        if (ids[i] == previous) {
+            previousIndex = i;
+            break;
+        }
+    }
+    if (count > 1 && previousIndex >= 0) {
+        index = SDL_rand_r(&randomState, count - 1);
+        if (index >= previousIndex)
+            ++index;
+    } else {
+        index = SDL_rand_r(&randomState, count);
+    }
+    previous = ids[index];
+    if (SDL_getenv("BT3_BGM_DEBUG"))
+        SDL_Log("Selector soundtrack: %d", previous);
+    return previous;
+}
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -29,7 +64,6 @@
 #include "adx_loop.h"
 #include "spatial_audio.h"
 #include "game_profile.h"
-#include "../../../include/menu/bt4_title_event.h"
 #ifdef BT4_TAG_TEAM_EXPANDED
 #include "../../include/bt4_jiren_voice.h"
 #endif
@@ -772,58 +806,11 @@ static int jiren_scream_path(int partition, int *file, char *path, size_t size) 
 }
 #endif
 
-int Port_TitleEventPath(int asset, int japanese, char *path, int size) {
-    const char *base = SDL_GetBasePath();
-    const char *language = japanese ? "japanese" : Port_GameProfileEnglish() ? "english" : "spanish";
-    char relative[96];
-    FILE *fp;
-    int location;
-
-    switch (asset) {
-    case BT4_TITLE_ART:
-        SDL_strlcpy(relative, "tbo/ui/fukkatsu_title.png", sizeof(relative));
-        break;
-    case BT4_TITLE_OST:
-        SDL_strlcpy(relative, "tbo/audio/fukkatsu/ost.mp3", sizeof(relative));
-        break;
-    case BT4_TITLE_GREETING:
-    case BT4_TITLE_CONFIRM:
-        SDL_snprintf(relative, sizeof(relative), "tbo/audio/fukkatsu/%s-%s.wav", language,
-                     asset == BT4_TITLE_GREETING ? "greeting" : "confirm");
-        break;
-    default:
-        return 0;
-    }
-    for (location = 0; location < 3; ++location) {
-        const char *prefix = location == 0 ? base : location == 1 ? "" : "port/";
-        if (!prefix || SDL_snprintf(path, (size_t)size, "%s%s", prefix, relative) >= size) continue;
-        fp = fopen(path, "rb");
-        if (fp) {
-            fclose(fp);
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/* Start the title event's assets on the normal BGM and voice buses. */
-int Port_TitleEventPlay(void *adxt, int asset, int japanese) {
-    char path[512];
-    if (!adxt || !Port_TitleEventPath(asset, japanese, path, sizeof(path))) return 0;
-    start(adxt, path);
-    view_start(adxt, path, 1);
-    return 1;
-}
-
 void ADXT_StartAfs(void *adxt, int patid, int fid) {
     char path[512];
 
     if (adxt != NULL) {
         int found;
-        if (patid == -1 && fid == BT4_TITLE_OST) {
-            Port_TitleEventPlay(adxt, fid, 0);
-            return;
-        }
 #ifdef BT4_TAG_TEAM_EXPANDED
         if (jiren_scream_path(patid, &fid, path, sizeof(path))) {
             start(adxt, path);

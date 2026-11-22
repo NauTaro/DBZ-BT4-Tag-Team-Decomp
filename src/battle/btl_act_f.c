@@ -123,6 +123,7 @@ extern s32 BtlSuper_GetRecoilDamage(BtlSuperChr *chr, s32 cls);  /* health cost 
 extern s32 BtlSuper_GetHitDirKind(BtlSuperChr *chr, s32 cls);  /* kind 0..9 (s8) */
 extern s32 BtlSuper_GetStepCount(BtlSuperChr *chr, s32 cls);  /* number of rush steps, at least 1 */
 extern s32 BtlSuper_GetDrain(BtlSuperChr *chr, s32 cls);  /* health drained */
+extern s32 Bt4Balance_FasterRecovery(void *chr);
 extern s32 BtlSuper_GetCooldownFrames(BtlSuperChr *chr, s32 cls);  /* cooldown: seconds * 30 */
 extern s32 BtlSuper_GetChargeLimitFrames(BtlSuperChr *chr, s32 cls);  /* charge time: seconds * 30 */
 #ifdef BT4_TAG_TEAM_EXPANDED
@@ -700,6 +701,7 @@ void BtlAct_SuperBeamHandler(BtlSuperChr *chr, s32 phase) {
         case 0x10B:
         case 0x12D:
         case 0x14F:
+            if (cls == 3 && Bt4Balance_FasterRecovery(chr)) BtlAnim_SetStep(chr, 3.0f);
             if (BtlAnim_Advance(chr, 0)) {
                 chr->work[1] = 1;
             }
@@ -894,6 +896,7 @@ void BtlAct_SuperWarpBeamHandler(BtlSuperChr *chr, s32 phase) {
         case 0x10B:
         case 0x12D:
         case 0x14F:
+            if (cls == 3 && Bt4Balance_FasterRecovery(chr)) BtlAnim_SetStep(chr, 3.0f);
             if (BtlAnim_Advance(chr, 0)) {
                 chr->work[1] = 1;
             }
@@ -1034,6 +1037,7 @@ void BtlAct_SuperLongBeamHandler(BtlSuperChr *chr, s32 phase) {
         case 0x10B:
         case 0x12D:
         case 0x14F:
+            if (cls == 3 && Bt4Balance_FasterRecovery(chr)) BtlAnim_SetStep(chr, 3.0f);
             if (BtlAnim_Advance(chr, 0)) {
                 chr->work[1] = 1;
             }
@@ -1184,6 +1188,7 @@ void BtlAct_SuperChargeHandler(BtlSuperChr *chr, s32 phase) {
         case 0x10B:
         case 0x12D:
         case 0x14F:
+            if (cls == 3 && Bt4Balance_FasterRecovery(chr)) BtlAnim_SetStep(chr, 3.0f);
             if (BtlAnim_Advance(chr, 0)) {
                 chr->work[1] = 1;
             }
@@ -1360,6 +1365,7 @@ void BtlAct_SuperRepeatHandler(BtlSuperChr *chr, s32 phase) {
         case 0x10B:
         case 0x12D:
         case 0x14F:
+            if (cls == 3 && Bt4Balance_FasterRecovery(chr)) BtlAnim_SetStep(chr, 3.0f);
             if (BtlAnim_Advance(chr, 0)) {
                 chr->work[1] = 1;
             }
@@ -1500,6 +1506,7 @@ void BtlAct_SuperQuickBeamHandler(BtlSuperChr *chr, s32 phase) {
         case 0x10B:
         case 0x12D:
         case 0x14F:
+            if (cls == 3 && Bt4Balance_FasterRecovery(chr)) BtlAnim_SetStep(chr, 3.0f);
             if (BtlAnim_Advance(chr, 0)) {
                 chr->work[1] = 1;
             }
@@ -1593,6 +1600,7 @@ void BtlAct_SuperQuickLongBeamHandler(BtlSuperChr *chr, s32 phase) {
         case 0x10B:
         case 0x12D:
         case 0x14F:
+            if (cls == 3 && Bt4Balance_FasterRecovery(chr)) BtlAnim_SetStep(chr, 3.0f);
             if (BtlAnim_Advance(chr, 0)) {
                 chr->work[1] = 1;
             }

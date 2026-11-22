@@ -4,39 +4,8 @@
 #ifdef PORT
 #include <stdio.h>
 #include <stdlib.h>
-#include "menu/bt4_title_event.h"
-#include "menu/port_screen.h"
-#include "menu/tbo_art.h"
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
-extern int Port_PageAspectMilli(void);
-extern int Port_NetFixedStart(void);
-extern int Adx_PlayTitleVoice(s32 asset);
-extern s32 Voice_IsStopped(s32 voice);
-extern void Bgm_SetVolume(s32 volume);
-
-static s32 sTitleEvent, sTitleMusicVolume;
-
-static void Title_EventDraw(void) {
-    const f32 picture = 16.0f / 9.0f;
-    f32 aspect = Port_PageAspectMilli() / 1000.0f;
-    f32 height = aspect < picture ? 448.0f * aspect / picture : 448.0f;
-    f32 visible = aspect > picture ? picture / aspect : 1.0f;
-    f32 top = (448.0f - height) * 0.5f;
-    Ps_SpriteScreen(TBO_FUKKATSU_TITLE, 0, top, 512, top + height,
-                    0, (1 - visible) * 0.5f, 1, (1 + visible) * 0.5f, PS_PLAIN, 0x80);
-}
-
-static int Title_EventVoice(s32 asset) {
-    return sTitleEvent && Adx_PlayTitleVoice(asset);
-}
-
-static void Title_EventMix(void) {
-    s32 target = Voice_IsStopped(0) ? 0x40 : 0x30;
-    if (sTitleMusicVolume == target) return;
-    sTitleMusicVolume += target < sTitleMusicVolume - 1 ? -2 : target < sTitleMusicVolume ? -1 : 1;
-    Bgm_SetVolume(sTitleMusicVolume);
-}
 #endif
 
 /* The screen's work (overlay .data, 0x3B0EB8). */
@@ -133,14 +102,6 @@ void Title_Init(s32 section) {
     gTitle->tex[1] = MTEX(res, 1);
     gTitle->tex[2] = MTEX(res, 2);
     Flash_Create(&gTitle->flash[0], MPACK_AT(gTitle->res, 11), gTitle->tex);
-#ifdef PORT
-    if (sTitleEvent) {
-        s32 texture;
-        /* The title movie uses these slots for its Dragon Balls and fighter sprites.
-           Slot 23 is the original logo. The input plates use their own slots. */
-        for (texture = 10; texture <= 22; ++texture) gTitle->tex[texture] = NULL;
-    }
-#endif
     Flash_Play(&gTitle->flash[0], 1);
     Dialog_Init(MPACK_AT(gTitle->res, 12), NULL, 0);
     McFlow_Init(1);
@@ -184,8 +145,7 @@ void Title_Draw(void) {
 #ifdef PORT
     Port_MenuPage(1); /* widescreen menus: this screen's page (PORT_MENU_SCREEN in port/src/gs_marker.c), its backdrop filling the width */
     Port_MenuFill(1);
-    if (sTitleEvent) Title_EventDraw();
-    else Sprite_DrawPicture(gTitle->bg, 0, 0, 0x80);
+    Sprite_DrawPicture(gTitle->bg, 0, 0, 0x80);
     Port_MenuFill(0);
 #else
     Sprite_DrawPicture(gTitle->bg, 0, 0, 0x80);
@@ -198,9 +158,6 @@ void Title_Draw(void) {
         uv.x1 = 0x200;
         sprintf(name, "mc_kumo_%d", i + 1);
         Flash_FindLabel(flash, NULL, name, &ref);
-#ifdef PORT
-        if (sTitleEvent) Flash_ClipSetAlpha(flash, &ref, 0.0f);
-#endif
         FlashAnim_Scroll(flash, &ref, &uv, &gTitle->cloud[i], NULL, i ? -1.0666667f : -0.71111111f, 0.0f);
     }
     for (i = 0; i < 2; i++) {
@@ -299,12 +256,10 @@ void Title_Input(s32 *result) {
         Title_ClipGoto(0, 1, "fl_on_start");
         gTitle->state = 1;
         gTitle->flags |= TITLE_STARTED;
-        s32 line = Rand_Range(7) != 0 ? gTitle->voice : 0x40;
-#ifdef PORT
-        if (!Title_EventVoice(BT4_TITLE_GREETING) && !sTitleEvent)
-#endif
-        {
-            Voice_PlayWithSubtitle(NULL, TITLE_VOICE_BASE, line);
+        if (Rand_Range(7) != 0) {
+            Voice_PlayWithSubtitle(NULL, TITLE_VOICE_BASE, gTitle->voice);
+        } else {
+            Voice_PlayWithSubtitle(NULL, TITLE_VOICE_BASE, 0x40);
         }
     }
     switch (gTitle->state) {
@@ -315,10 +270,6 @@ void Title_Input(s32 *result) {
             Title_ClipGoto(0, 1, "fl_ok");
             Title_ClipGoto(0, 2, "fl_on_start");
             gTitle->state = 2;
-#ifdef PORT
-            if (sTitleEvent) Title_EventVoice(BT4_TITLE_CONFIRM);
-            else
-#endif
             Voice_PlayWithSubtitle(NULL, TITLE_VOICE_BASE, gTitle->voice + 6);
             Snd_PlaySe(2, 0x38);
         } else {
@@ -379,6 +330,7 @@ void Title_Input(s32 *result) {
 
 #ifdef PORT
 extern int Port_Setting(const char *name, int def);
+extern int Port_NetFixedStart(void); /* port/src/gs/net.c */
 #endif
 
 /* The title screen's own frame loops. Returns 0 to go on to the main menu, 1 when the attract demo was set up
@@ -386,11 +338,6 @@ extern int Port_Setting(const char *name, int def);
 s32 Title_Run(s32 section) {
     s32 result = 1;
     s32 wait = 0;
-#ifdef PORT
-    char eventPath[512];
-
-    sTitleEvent = !Port_NetFixedStart() && Port_TitleEventPath(BT4_TITLE_ART, 0, eventPath, sizeof(eventPath));
-#endif
 
     Title_Init(section);
     ColorFade_StartIn(0, 0, 0, 0x14);
@@ -436,10 +383,6 @@ s32 Title_Run(s32 section) {
             }
         }
     }
-#ifdef PORT
-    if (sTitleEvent && Port_TitleEventPath(BT4_TITLE_OST, 0, eventPath, sizeof(eventPath))) Bgm_Play(BT4_TITLE_OST);
-    sTitleMusicVolume = 0x40;
-#endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     for (;;) {
         Gfx_BeginFrame();
@@ -473,17 +416,11 @@ s32 Title_Run(s32 section) {
         } else if (gTitle->mcState == 0) {
             Title_Input(&result);
         }
-#ifdef PORT
-        if (sTitleEvent) Title_EventMix();
-#endif
     }
     if (result == 0) {
         gProgress->flags |= MPROG_SAVE_LOADED;
     }
     sceGsSyncPath(0, 0);
-#ifdef PORT
-    sTitleEvent = 0;
-#endif
     Title_Term();
     Dma_ResetBuffers();
     return result;

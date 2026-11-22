@@ -1620,7 +1620,6 @@ void BtlMove_UpdateHoverOffset(BtlMoveChr *chr) {
 /* Per frame: the seven defence windows at chr+0x1068: each counts down to a floor and is re-opened by its input. */
 void BtlMove_UpdateDefenseTimers(BtlMoveChr *chr) {
     s32 on = BtlInput_TestAction(chr, 0x27, 1);
-    f32 hp = BtlMember_GetHealthRatio(chr);
 
     if (!BtlChar_TestFlag(chr, 5)) {
         on = 0;
@@ -1634,13 +1633,7 @@ void BtlMove_UpdateDefenseTimers(BtlMoveChr *chr) {
     if (chr->unk1068 < -30) {
         chr->unk1068 = -30;
         if (on) {
-            if (hp < 0.3f) {
-                chr->unk1068 = 2;
-            } else if (hp < 0.7f) {
-                chr->unk1068 = 3;
-            } else {
-                chr->unk1068 = 4;
-            }
+            chr->unk1068 = 3;
         }
     } else {
         if (on) {

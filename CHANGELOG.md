@@ -1,3 +1,28 @@
+# BT4decomp 0.1.39.6 R3
+
+- Character select now plays a random track each time you open it, across offline and online modes.
+- Rebalanced fighters across the roster, with adjustments to Ki blasts, special moves, defensive skills, and combo damage.
+- Updated several move animations and improved how they connect in combos.
+- Restored the original menu presentation and corrected the cloud decoration in widescreen.
+
+Update from the game menu before playing online.
+
+<!-- bt4-update:en
+- Character select now plays a random track each time you open it.
+- Rebalanced fighters across the roster and corrected several move animations and combos.
+- Restored the original menu presentation and corrected the cloud decoration in widescreen.
+-->
+<!-- bt4-update:es
+- El selector de personajes elige una canción al azar cada vez que lo abres.
+- Ajustamos el balance del plantel y corregimos varias animaciones y combos.
+- Restauramos la presentación original del menú y alineamos la nube en pantalla panorámica.
+-->
+<!-- bt4-update:pt
+- A seleção de personagens toca uma música aleatória sempre que você a abre.
+- Ajustamos o equilíbrio do elenco e corrigimos várias animações e combos.
+- Restauramos a apresentação original do menu e alinhamos a nuvem em tela widescreen.
+-->
+
 # BT4decomp 0.1.39.6 R2
 
 - The Fukkatsu no F event brings new artwork and music to the title screen, with a greeting from Frieza in your selected voice language.

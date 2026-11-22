@@ -788,6 +788,16 @@ s32 BtlHit_CheckThrowBreak(HitChr *atk, HitChr *def) {
     if (BtlAtk_GetId(atk) != 0x55) {
         return 0;
     }
+    if (BtlChar_TestFlag(def, 0xBE)) {
+        extern s32 BtlAtk_GetThrowParamC(HitChr *);
+        extern s32 BtlAtk_GetThrowParamE(HitChr *);
+        extern s32 BtlCharApi_GetChara(s32 objId);
+        const s32 fighter = BtlCharApi_GetChara(atk->objId);
+        if (fighter == 106 || fighter == 193 || BtlAtk_GetThrowParamC(atk) > 0 || BtlAtk_GetThrowParamE(atk) > 0) {
+            BtlChar_SetFlag(atk, 0x7A);
+            return 1;
+        }
+    }
     if (BtlParam_GetUnk2(def) == 4) {
         BtlChar_SetFlag(atk, 0x7A);
         BtlCharSnd_PlayCommon(def, 0x44);
@@ -1420,7 +1430,7 @@ void BtlHit_ApplyHit(HitChr *atk) {
         case 0x76:
         case 0x77:
         case 0x78:
-            dmg += dmg * BtlUtil_Clamp(atk->unkD88 + def->unkD88 - 1, 0, 16) / 2;
+            dmg += dmg * BtlUtil_Clamp(atk->unkD88 + def->unkD88 - 1, 0, 16) / 4;
             break;
         default:
             if (def->react.back) {

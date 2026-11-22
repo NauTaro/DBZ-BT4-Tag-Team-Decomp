@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/bt4_balance.h"
+#include "battle/bt4_private_balance.h"
 #include "battle/btl_char_member.h"
 #ifdef PORT
 #include "battle/tag_health_rule.h"
@@ -130,6 +131,8 @@ void BtlColl_NextPoolMember(BtlMemberChr *chr) {
 static s32 BtlMember_BaseMaximum(BtlMemberChr *chr,s32 member) {
     BtlMember *m=BtlMember_Get(chr,member);
     s32 maximum=gBtlChars->paramTbl[m->chara].healthMax;
+    const Bt4BalanceRule *balance = Bt4Balance_Rule(m->chara);
+    maximum += balance->health * 10000;
 #ifdef BT4_TAG_TEAM_EXPANDED
     if (m->chara == BT4_HIRUDEGARN) {
         maximum -= 10000;
@@ -179,7 +182,8 @@ void BtlMember_LoadParams(BtlMemberChr *chr, s32 member, s32 init, f32 healthPct
 #endif
     }
     g->kiMax = 100000;
-    g->blastMax = gBtlChars->paramTbl[m->chara].blastStocks * 100000;
+    s32 stocks = Bt4Balance_Rule(m->chara)->stocks;
+    g->blastMax = (stocks ? stocks : gBtlChars->paramTbl[m->chara].blastStocks) * 100000;
     if (init) {
         g->health = g->healthMax * healthPct / 100.0f;
 #ifdef PORT
@@ -190,7 +194,8 @@ void BtlMember_LoadParams(BtlMemberChr *chr, s32 member, s32 init, f32 healthPct
 #endif
         g->health = BtlUtil_Max(g->health, 1);
         g->healthMax = BtlUtil_Max(g->healthMax, g->health);
-        g->ki = gBtlChars->paramTbl[m->chara].kiStart;
+        s32 bars = Bt4Balance_Rule(m->chara)->start;
+        g->ki = bars ? bars * 20000 : gBtlChars->paramTbl[m->chara].kiStart;
         if (BtlMember_HasAbilityOf(chr, member, 0x18)) {
             g->ki = 0;
         } else if (BtlMember_HasAbilityOf(chr, member, 0x19)) {

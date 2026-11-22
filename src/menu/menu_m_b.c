@@ -1,6 +1,10 @@
 #include "common.h"
 #include "menu/menu_m.h"
 #include "sys/pad.h"
+#ifdef PORT
+#include "plat_songs.h"
+extern void Bgm_Play(s32 id);
+#endif
 #include "sys/save.h"
 #ifdef PORT
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
@@ -1137,6 +1141,10 @@ s32 UbTeamSel_Run(s32 section) {
     s32 result = 1;
 
     UbTeamSel_Init(section);
+#ifdef PORT
+    s32 track = PortSongs_SelectorTrack(NULL, 0);
+    Bgm_Play(PORT_BGM_FILE(track));
+#endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         Gfx_BeginFrame();

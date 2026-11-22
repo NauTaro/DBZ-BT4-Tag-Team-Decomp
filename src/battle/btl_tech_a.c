@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/bt4_balance.h"
+#include "battle/bt4_private_balance.h"
 #include "battle/btl_tech_a.h"
 
 /*
@@ -986,7 +987,16 @@ s32 BtlAtk_GetDamage(BtlTechChr *chr) {
     s32 hits;
 
     val = val * BtlStat_GetMeleeDamageScale(chr);
+    val = val * (100 + Bt4Balance_Rule(BtlChar_GetObj(chr)->chara)->melee) / 100;
     val = BtlAtk_ApplyAbilities(chr, val, id);
+    switch (BtlAct_GetCurrent(chr)) {
+        case 0x93:
+        case 0x94:
+        case 0xA3:
+        case 0xA4:
+            val = val * 70 / 100; /* Mighty Pressure and its two launch-angle branches. */
+            break;
+    }
     hits = BtlObjAnim_QueryEvent(obj, 1, 0, 3);
     if (hits >= 2) {
         val /= hits;
@@ -1002,6 +1012,7 @@ s32 BtlAtk_GetGuardDamage(BtlTechChr *chr) {
     s32 hits;
 
     val = val * BtlStat_GetMeleeDamageScale(chr);
+    val = val * (100 + Bt4Balance_Rule(BtlChar_GetObj(chr)->chara)->melee) / 100;
     if (BtlAct_TestPoweredSkill(chr, 0x10)) {
         if ((u32)id < 0xB) {
             val -= val * 3 / 10;
@@ -1339,7 +1350,7 @@ u32 BtlParam_GetFlags(BtlTechChr *chr) {
 
 #ifdef BT4_TAG_TEAM_EXPANDED
     /* The giant class still controls model and throw compatibility. */
-    if (obj->param->unk2 == 4 || Bt4Balance_IsBroly(obj->chara)) {
+    if (obj->param->unk2 == 4 || Bt4Balance_IsBroly(obj->chara) || Bt4Balance_Rule(obj->chara)->noArmor) {
         flags &= ~4u;
     }
 #endif
@@ -1643,7 +1654,8 @@ s32 BtlParam_IsTypeSetB(BtlTechChr *chr) {
    at least 1 when the raw value is positive. */
 s32 BtlParam_GetCount80(BtlTechChr *chr) {
     BtlParam *param = BtlChar_GetObj(chr)->param;
-    s32 v = param->blastLimitA;
+    s32 shots = Bt4Balance_Rule(BtlChar_GetObj(chr)->chara)->shots;
+    s32 v = shots ? shots : param->blastLimitA;
 
     if (BtlMember_HasAbility(chr, 0x11)) {
         v -= 3;
@@ -1652,7 +1664,7 @@ s32 BtlParam_GetCount80(BtlTechChr *chr) {
     } else if (BtlMember_HasAbility(chr, 0xF)) {
         v -= 1;
     }
-    if (param->blastLimitA > 0) {
+    if (shots || param->blastLimitA > 0) {
         if (v <= 0) {
             v = 1;
         }
@@ -1662,7 +1674,9 @@ s32 BtlParam_GetCount80(BtlTechChr *chr) {
 
 /* Parameter +0x82: the same limit for class-1 blasts. */
 s32 BtlParam_GetUnk82(BtlTechChr *chr) {
-    return BtlChar_GetObj(chr)->param->blastLimitB;
+    BtlTechObj *obj = BtlChar_GetObj(chr);
+    s32 shots = Bt4Balance_Rule(obj->chara)->guardShots;
+    return shots ? shots : obj->param->blastLimitB;
 }
 
 /* Parameter +0x84 + n (n above 3 reads entry 0). */
@@ -1692,7 +1706,8 @@ s32 BtlParam_GetUnk8A(BtlTechChr *chr, u32 n) {
     if (n >= 5) {
         n = 0;
     }
-    return param->unk8A[n];
+    /* Combo entry shares the same animation pair as neutral entry. Odd variants prepend a retreat. */
+    return n == 3 ? param->unk8A[n] & ~1 : param->unk8A[n];
 }
 
 /* Parameter +0x1C. */
@@ -1714,7 +1729,8 @@ s32 BtlParam_GetUnk24(BtlTechChr *chr) {
    0x2C, at most 100000. */
 s32 BtlParam_GetKiRegenLimit(BtlTechChr *chr) {
     BtlTechObj *obj = BtlChar_GetObj(chr);
-    s32 v = obj->param->kiRegenLimit;
+    s32 bars = Bt4Balance_Rule(obj->chara)->passive;
+    s32 v = bars ? bars * 20000 : obj->param->kiRegenLimit;
 
 #ifdef BT4_TAG_TEAM_EXPANDED
     if (obj->chara == BT4_GOTENKS) {
@@ -1763,7 +1779,11 @@ s32 BtlParam_GetRateB(BtlTechChr *chr) {
 
 /* Ki regenerated per frame below BtlParam_GetKiRegenLimit: (parameter +0x38) / 30 + curve row 1, at least 0. */
 s32 BtlParam_GetKiRegenRate(BtlTechChr *chr) {
-    s32 v = BtlChar_GetObj(chr)->param->kiRegen / 30;
+    BtlTechObj *obj = BtlChar_GetObj(chr);
+    const Bt4BalanceRule *rule = Bt4Balance_Rule(obj->chara);
+    s32 v = obj->param->kiRegen / 30;
+    if (obj->chara == 80) v = 85; /* Nappa: slow passive refill. */
+    else if (rule->passive && v <= 0) v = 125;
 
     return BtlUtil_Max(v + BtlStat_GetKiRegenBonus(chr), 0);
 }
@@ -1836,11 +1856,15 @@ s32 BtlParam_GetBlastGainRate(BtlTechChr *chr) {
     }
     v = BtlUtil_Max(v, 20);
 #ifdef BT4_TAG_TEAM_EXPANDED
-    if (BtlChar_GetObj(chr)->chara == BT4_GOHAN_SSJ2) {
-        /* Add seven seconds at the 30 Hz battle rate to the time for one blast stock. */
+    {
+        s32 fighter = BtlChar_GetObj(chr)->chara;
+        s32 seconds = Bt4Balance_Rule(fighter)->blastSeconds;
+        if (fighter == BT4_GOHAN_SSJ2 && !seconds) seconds = 7;
+        if (seconds) {
         const s32 stock = 100000;
-        const s64 denominator = stock + 210LL * v;
+        const s64 denominator = stock + 30LL * seconds * v;
         v = (s32)(((s64)stock * v + denominator / 2) / denominator);
+        }
     }
 #endif
     return v;

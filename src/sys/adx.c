@@ -1,8 +1,5 @@
 #include "common.h"
 #include "sys/adx.h"
-#ifdef PORT
-#include "menu/bt4_title_event.h"
-#endif
 
 /* CRI ADX */
 extern void ADXM_ExecMain(void);
@@ -163,21 +160,6 @@ void Adx_Play(s32 ch, s32 id, s32 vol, s32 pan) {
 void Adx_Stop(s32 ch) {
     ADXT_Stop(gAdxPlayerTbl[ch].adxt);
 }
-
-#ifdef PORT
-int Adx_PlayTitleVoice(s32 asset) {
-    extern int Port_TitleEventPlay(void *adxt, int asset, int japanese);
-    s32 ch = ADX_CH_VOICE0;
-    /* The menu's first choice sets the bit. Japanese is its second choice. */
-    s32 japanese = (gSaveData->flags & SAVE_FLAG_ALT_VOICE) == 0;
-    char path[512];
-    if (!Port_TitleEventPath(asset, japanese, path, sizeof(path))) return 0;
-    Adx_SetPan(ch, 0, 0);
-    Adx_SetVolume(ch, 0x60);
-    ADXT_Pause(gAdxPlayerTbl[ch].adxt, 0);
-    return Port_TitleEventPlay(gAdxPlayerTbl[ch].adxt, asset, japanese);
-}
-#endif
 
 /* Starts file `id` on a player in the paused state (Adx_Resume lets it out). */
 void Adx_PlayPaused(s32 ch, s32 id, s32 vol, s32 pan) {

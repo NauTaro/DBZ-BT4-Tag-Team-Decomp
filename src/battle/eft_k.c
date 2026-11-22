@@ -246,7 +246,7 @@ void EftShotTech_StartCam(EftKTask *task) {
     EftShotTech *w = task->work;
     EftKSrc *src = w->src;
 
-    if (w->flags & 0x800) {
+    if ((w->flags & 0x800) && w->camPack != NULL) {
         arg.pack = w->camPack;
         arg.objId = src->objId;
         arg.id = src->def->id;
@@ -443,7 +443,7 @@ void EftShotTech_Init(EftKTask *task, EftKSrc *src) {
         w->flags |= 0x20000;
     }
     if (src->slot >= 2) {
-        s32 *pack = mgr->unk318[src->slot];
+        s32 *pack = mgr->packs[src->slot - 2];
         if (pack != NULL) {
             w->camPack = pack;
         }
@@ -625,8 +625,11 @@ void EftShotTechMgr_Init(EftKTask *task, EftKSrc *src) {
     EftEmit_LoadSet(src, mgr, 0, src->pack, 0, 4);
     BtlTask_CreateChildList(task, 2, sizeof(EftShotTech));
     for (i = 0; i < 3; i++) {
+        extern void *Bt4Balance_TechCamera(s32 chara, s32 slot);
+        extern s32 BtlCharApi_GetChara(s32 objId);
         s32 *pack = BtlScene_GetCharPackEntry(src->chr, 8);
-        if (pack[i + 2] != pack[i + 1]) {
+        mgr->packs[i] = Bt4Balance_TechCamera(BtlCharApi_GetChara(src->objId), i);
+        if (mgr->packs[i] == NULL && pack != NULL && pack[i + 2] != pack[i + 1]) {
             mgr->packs[i] = BtlScene_GetPackEntry(pack, i + 1);
         }
     }
@@ -2486,9 +2489,11 @@ void EftRushShotMgr_Init(EftTask *task, EftTechArg *arg) {
     /* The original addresses sub[i + 1] as "(mgr + 4)->sub[i]": a base pointer one word into the work. */
     next = (EftRushShotMgrWork *)((u8 *)mgr + 4);
     for (i = 0; i < 3; i++) {
+        extern void *Bt4Balance_TechCamera(s32 chara, s32 slot);
+        extern s32 BtlCharApi_GetChara(s32 objId);
         s32 *pack = BtlScene_GetCharPackEntry(arg->side, 8);
-
-        if (pack[i + 2] != pack[i + 1]) {
+        next->sub[i] = Bt4Balance_TechCamera(BtlCharApi_GetChara(arg->objId), i);
+        if (next->sub[i] == NULL && pack != NULL && pack[i + 2] != pack[i + 1]) {
             next->sub[i] = BtlScene_GetPackEntry(pack, i + 1);
         }
     }

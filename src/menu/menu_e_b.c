@@ -896,15 +896,16 @@ void TeamSel_Init(s32 section) {
     gTeamSel->bgAlpha[0] = 0x80;
     gTeamSel->bgAlpha[1] = 0;
     gTeamSel->stageBuf = 1;
-    if (gTeamSel->bgmIds[gTeamSel->stage->bgm] == TS_BGM_RANDOM) {
-        Bgm_Play(PORT_BGM_FILE(Bt4_BgmRandom(gTeamSel->bgmCount,gTeamSel->bgmIds)));
-    } else {
-#ifdef PORT /* (a song added from outside the disc has a file id of its own) */
-        Bgm_Play(PORT_BGM_FILE(gTeamSel->bgmIds[gTeamSel->stage->bgm]));
+#ifdef PORT
+    s32 track = PortSongs_SelectorTrack(gTeamSel->bgmIds, gTeamSel->bgmCount - 1);
+    Bgm_Play(PORT_BGM_FILE(track));
 #else
+    if (gTeamSel->bgmIds[gTeamSel->stage->bgm] == TS_BGM_RANDOM) {
+        Bgm_Play(Bt4_BgmRandom(gTeamSel->bgmCount,gTeamSel->bgmIds) + 0x816);
+    } else {
         Bgm_Play(gTeamSel->bgmIds[gTeamSel->stage->bgm] + 0x816);
-#endif
     }
+#endif
     for (i = 0; i < TEAMSEL_SIDES; i++) {
         TextBox_Init(&gTeamSel->nameBox[i], gTeamSel->nameText, i + 1);
         TextBox_SetUnk80(&gTeamSel->nameBox[i], 1);

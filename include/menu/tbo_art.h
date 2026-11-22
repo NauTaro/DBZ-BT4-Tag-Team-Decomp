@@ -43,8 +43,7 @@
     X(TBO_BTN_XBOX_B, "btn_xbox_b") \
     X(TBO_BTN_XBOX_X, "btn_xbox_x") \
     X(TBO_BTN_XBOX_Y, "btn_xbox_y") \
-    X(TBO_BTN_XBOX_MENU, "btn_xbox_menu") \
-    X(TBO_FUKKATSU_TITLE, "fukkatsu_title")
+    X(TBO_BTN_XBOX_MENU, "btn_xbox_menu")
 
 #define TBO_MAIN_TAG_OFF (TBO_ART_COUNT + 18)
 #define TBO_MAIN_TAG_ON (TBO_ART_COUNT + 19)

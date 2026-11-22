@@ -427,6 +427,10 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
     case 0xEF:
     case 0xF0:
         /* transformation: keep the health ratio */
+        {
+        s32 oldChara = BtlMember_GetActive(chr)->chara;
+        s32 oldHealth = BtlMember_GetActive(chr)->gauge.health;
+        s32 oldKi = BtlMember_GetActive(chr)->gauge.ki;
         m = BtlMember_GetActive(chr);
 #ifdef BT4_TAG_TEAM_EXPANDED
         if (Bt4_ExtraFormsAllowed() && m->chara == chr->newChara && m->costume != chr->newCostume &&
@@ -443,11 +447,17 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
         BtlMember_LoadParams(chr, BtlMember_GetActiveIndex(chr), 0, 0.0f, 0);
         if (!healthRule) {
             g->health = (f32)g->healthMax * ratio + 0.5f;
+            if (oldChara != m->chara && (oldChara == 43 || oldChara == 67 || m->chara == 43 || m->chara == 67)) {
+                g->health = oldHealth + ((m->chara == 43 || m->chara == 67) ? 10000 : -10000);
+            }
             if (BtlParam_GetUnkAD(chr) & 1) g->health += 5000;
             if (BtlParam_GetUnkAD(chr) & 2) g->health += 10000;
         }
         if (BtlParam_GetUnkAD(chr) & 4) {
             g->ki = g->kiMax;
+        } else if ((oldChara == 94 && m->chara == 70) || (oldChara == 126 && m->chara == 127) ||
+                   (oldChara == 199 && m->chara == 200) || (oldChara == 197 && m->chara == 147)) {
+            g->ki = BtlUtil_Clamp(oldKi, 0, g->kiMax);
         }
 #ifdef BT4_TAG_TEAM_EXPANDED
         g->healthMax += healthBoost;
@@ -455,6 +465,7 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
 #endif
         g->health = BtlUtil_Clamp(g->health, healthRule ? 0 : 1, g->healthMax);
         g->blast = BtlUtil_Clamp(g->blast, 0, g->blastMax);
+        }
         break;
     case 0xF3:
     case 0xF4:

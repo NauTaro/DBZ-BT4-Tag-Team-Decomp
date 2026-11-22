@@ -10,8 +10,6 @@ packages.
   their backgrounds, resizing them and combining the left and right arrows
   into `btn_leftright.png`.
 - **Dragon Radar** (`radar.png`): fan art by **chestergreen**. Adapted into a scaled animation sheet for the port.
-- **Fukkatsu no F title artwork** (`fukkatsu_title.png`): the reference poster is signed **Zanclan Thunder**. The title screen uses the project's widescreen restoration.
-- **Fukkatsu no F title music** (`tbo/audio/fukkatsu/ost.mp3`): **“F” by Maximum the Hormone**.
 
 After replacing an image with one of a different size, run:
 

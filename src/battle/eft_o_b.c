@@ -363,6 +363,10 @@ void EftBlastObj_Init(EftOTask *task, EftBlastObjArg *arg) {
     w->count = arg->count;
     w->life = arg->life;
     w->scaleArg = arg->scale;
+    if (src->def && src->def->id == 338) {
+        extern s32 BtlCharApi_GetChara(s32 objId);
+        if (BtlCharApi_GetChara(src->objId) == 101) w->scaleArg *= 2.0f;
+    }
     w->speed = arg->speed;
     w->sel[0].kind = arg->kind;
     w->sel[0].node = arg->evtIdx;

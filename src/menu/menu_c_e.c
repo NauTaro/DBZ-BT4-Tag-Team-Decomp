@@ -780,11 +780,16 @@ void CharSel_Init(s32 section) {
     gCharSel->bgAlpha[1] = 0;
     gCharSel->stageBuf = 1;
 
+#ifdef PORT
+    s32 track = PortSongs_SelectorTrack(gCharSel->bgmIds, gCharSel->bgmCount - 1);
+    Bgm_Play(PORT_BGM_FILE(track));
+#else
     if (gCharSel->bgmIds[gCharSel->stage->bgmPlaying] == CHARSEL_BGM_RANDOM) {
         Bgm_Play(CHARSEL_BGM_FILE(Bt4_BgmRandom(gCharSel->bgmCount,gCharSel->bgmIds)));
     } else {
         Bgm_Play(CHARSEL_BGM_FILE(gCharSel->bgmIds[gCharSel->stage->bgmPlaying]));
     }
+#endif
     for (i = 0; i < CHARSEL_SIDES; i++) {
         TextBox_Init(&gCharSel->nameBox[i], gCharSel->nameText, i + 1);
         TextBox_SetUnk80(&gCharSel->nameBox[i], 1);
