@@ -10,8 +10,6 @@
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
 extern int Port_PageAspectMilli(void);
-extern int Port_GameProfileLanguage(void);
-extern int Port_GameProfileEnglish(void);
 extern int Port_NetFixedStart(void);
 extern int Adx_PlayTitleVoice(s32 asset);
 extern s32 Voice_IsStopped(s32 voice);
@@ -25,36 +23,8 @@ static void Title_EventDraw(void) {
     f32 height = aspect < picture ? 448.0f * aspect / picture : 448.0f;
     f32 visible = aspect > picture ? picture / aspect : 1.0f;
     f32 top = (448.0f - height) * 0.5f;
-    f32 left, y;
-    s32 language = Port_GameProfileLanguage();
-    char *start = language == 2 ? "Pressione START" : Port_GameProfileEnglish() ? "Press START" : "Pulsa START";
-    char *newGame = language == 2 ? "Novo jogo" : Port_GameProfileEnglish() ? "New Game" : "Nueva partida";
-    char *resume = language == 2 || !Port_GameProfileEnglish() ? "Continuar" : "Continue";
-
-    Ps_PageSet();
-    Ps_SetShift(0);
     Ps_SpriteScreen(TBO_FUKKATSU_TITLE, 0, top, 512, top + height,
                     0, (1 - visible) * 0.5f, 1, (1 + visible) * 0.5f, PS_PLAIN, 0x80);
-    left = Ps_Left() + 23.0f;
-    y = top + height * 0.31f;
-    Ps_Align(0);
-    Ps_TextRaw(left, y, "DRAGON BALL Z", 0.81f, 172.0f, 2);
-    Ps_TextRaw(left, y + 20, "BUDOKAI TENKAICHI 4", 1.22f, 188.0f, 2);
-    Ps_TextRaw(left, y + 43, "TAG TEAM DECOMP", 0.74f, 150.0f, 2);
-    Ps_TextEx(left, y + 64, "FUKKATSU NO F", 0.92f, 150.0f,
-              Ps_Rgba(255, 234, 153, 255), Ps_Rgba(244, 139, 65, 255), Ps_Rgba(32, 13, 25, 255));
-    if (gTitle->state == 2) {
-        s32 i;
-        for (i = 0; i < gTitle->itemCount; ++i) {
-            f32 row = y + 100 + i * 28.0f;
-            Ps_Pill(i == gTitle->cursor ? TBO_KIT_SEL : TBO_KIT_BAR,
-                    left, row, left + 138.0f, row + 23.0f, 0x80);
-            Ps_TextRaw(left + 12, row + 2, i == 0 ? newGame : resume, 0.86f, 114.0f, 2);
-        }
-    } else {
-        Ps_Button(7, left + 9, y + 112, 15);
-        Ps_TextRaw(left + 25, y + 103, start, 0.86f, 135.0f, 2);
-    }
 }
 
 static int Title_EventVoice(s32 asset) {
@@ -163,6 +133,14 @@ void Title_Init(s32 section) {
     gTitle->tex[1] = MTEX(res, 1);
     gTitle->tex[2] = MTEX(res, 2);
     Flash_Create(&gTitle->flash[0], MPACK_AT(gTitle->res, 11), gTitle->tex);
+#ifdef PORT
+    if (sTitleEvent) {
+        s32 texture;
+        /* The title movie uses these slots for its Dragon Balls and fighter sprites.
+           Slot 23 is the original logo. The input plates use their own slots. */
+        for (texture = 10; texture <= 22; ++texture) gTitle->tex[texture] = NULL;
+    }
+#endif
     Flash_Play(&gTitle->flash[0], 1);
     Dialog_Init(MPACK_AT(gTitle->res, 12), NULL, 0);
     McFlow_Init(1);
@@ -204,15 +182,10 @@ void Title_Draw(void) {
     MFlash *flash;
 
 #ifdef PORT
-    if (sTitleEvent) {
-        Port_MenuPage(1);
-        Title_EventDraw();
-        Port_MenuPage(0);
-        return;
-    }
     Port_MenuPage(1); /* widescreen menus: this screen's page (PORT_MENU_SCREEN in port/src/gs_marker.c), its backdrop filling the width */
     Port_MenuFill(1);
-    Sprite_DrawPicture(gTitle->bg, 0, 0, 0x80);
+    if (sTitleEvent) Title_EventDraw();
+    else Sprite_DrawPicture(gTitle->bg, 0, 0, 0x80);
     Port_MenuFill(0);
 #else
     Sprite_DrawPicture(gTitle->bg, 0, 0, 0x80);
@@ -225,6 +198,9 @@ void Title_Draw(void) {
         uv.x1 = 0x200;
         sprintf(name, "mc_kumo_%d", i + 1);
         Flash_FindLabel(flash, NULL, name, &ref);
+#ifdef PORT
+        if (sTitleEvent) Flash_ClipSetAlpha(flash, &ref, 0.0f);
+#endif
         FlashAnim_Scroll(flash, &ref, &uv, &gTitle->cloud[i], NULL, i ? -1.0666667f : -0.71111111f, 0.0f);
     }
     for (i = 0; i < 2; i++) {
@@ -410,6 +386,11 @@ extern int Port_Setting(const char *name, int def);
 s32 Title_Run(s32 section) {
     s32 result = 1;
     s32 wait = 0;
+#ifdef PORT
+    char eventPath[512];
+
+    sTitleEvent = !Port_NetFixedStart() && Port_TitleEventPath(BT4_TITLE_ART, 0, eventPath, sizeof(eventPath));
+#endif
 
     Title_Init(section);
     ColorFade_StartIn(0, 0, 0, 0x14);
@@ -456,12 +437,8 @@ s32 Title_Run(s32 section) {
         }
     }
 #ifdef PORT
-    {
-        char path[512];
-        sTitleEvent = !Port_NetFixedStart() && Port_TitleEventPath(BT4_TITLE_ART, 0, path, sizeof(path));
-        if (sTitleEvent && Port_TitleEventPath(BT4_TITLE_OST, 0, path, sizeof(path))) Bgm_Play(BT4_TITLE_OST);
-        sTitleMusicVolume = 0x40;
-    }
+    if (sTitleEvent && Port_TitleEventPath(BT4_TITLE_OST, 0, eventPath, sizeof(eventPath))) Bgm_Play(BT4_TITLE_OST);
+    sTitleMusicVolume = 0x40;
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     for (;;) {
