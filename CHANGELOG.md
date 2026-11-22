@@ -1,3 +1,19 @@
+# BT4decomp 0.1.39.6 R2
+
+- The Fukkatsu no F event brings new artwork and music to the title screen, with a greeting from Frieza in your selected voice language.
+
+Update from the game menu.
+
+<!-- bt4-update:en
+- The Fukkatsu no F event brings new artwork, music and Frieza dialogue to the title screen.
+-->
+<!-- bt4-update:es
+- El evento de Fukkatsu no F trae una pantalla de inicio con nueva ilustración, música y frases de Freezer.
+-->
+<!-- bt4-update:pt
+- O evento de Fukkatsu no F traz nova arte, música e falas de Freeza à tela de título.
+-->
+
 # BT4decomp 0.1.39.6 R1 1.12
 
 - All fighters can use emotes in local and online battles, including Tag Team.
