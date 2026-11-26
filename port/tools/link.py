@@ -144,6 +144,8 @@ def main():
         if d.returncode:
             sys.exit(1)
     if r.returncode:
+        if MAC:
+            print(r.stderr.strip()[-12000:])
         sys.exit(1)
 
 main()
