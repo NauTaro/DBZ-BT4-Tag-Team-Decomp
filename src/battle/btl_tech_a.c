@@ -1005,6 +1005,13 @@ s32 BtlAtk_GetDamage(BtlTechChr *chr) {
     if (hits >= 2) {
         val /= hits;
     }
+    if ((id < 10 || (id >= 0x4E && id <= 0x52 && BtlAct_GetCurrent(chr) == 0x46)) &&
+        obj->chara != BT4_CELL_MAX && obj->chara != BT4_GREAT_APE_BABY && obj->chara != BT4_HIRUDEGARN &&
+        Bt4Balance_UsesOnlineRules() &&
+        (obj->param->unk2 == 4 || (balance->classFlags & BT4_BALANCE_GIANT) ||
+         (obj->chara == BT4_ZAMASU_FUSED && BtlMember_GetActive(chr)->costume == BT4_ZAMASU_GIANT_OUTFIT))) {
+        val = val * 90 / 100;
+    }
     return val;
 }
 

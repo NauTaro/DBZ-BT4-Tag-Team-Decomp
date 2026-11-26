@@ -12,6 +12,7 @@
 - Fixed a battle lockup after Ginyu's Body Change. His Tagoma outfit is now selectable as his third costume.
 - Goku (End) now carries his selected outfit into Ultra Instinct and back when he reverts.
 - Updated fighter balance in Online and Training, including Ki recovery, Blast recharge, move costs, and giant follow-ups.
+- Reduced normal melee damage by 10% for giants in Online and Training. Great Ape Baby, Hirudegarn, and Cell Max keep their current damage.
 - Improved Smooth Motion during fast camera movement.
 
 Update from the game menu before playing online. Everyone in the room needs the same version.
