@@ -1,31 +1,36 @@
 # BT4decomp 0.1.39.6 R3 1.1
 
 - Click the left stick (L3) to cycle through enemies and allies in Tag Team.
-- Added a minimum input delay setting for Tag Team rooms and fixed several issues with fusion timers and recovering the original fighters after separation.
+- Added optional rollback and a minimum input delay setting for online Tag Team. Fixed issues with fusion timers and restoring fighters after separation.
 - Tournament players have 60 seconds to confirm they are ready when called for their match.
 - Improved joining public matches as a spectator and returning to the lobby afterward.
 - Voice chat now starts in listening mode with the microphone muted.
+- Added customizable player profiles and a Ko-fi pass for animated avatars and banners. Player cards now show connection latency during online battles.
 - Updated the random fighter selection and the default battle soundtrack in Duel.
 - Added four configurable emote slots and Xbox button prompts to the native controller options.
 - Added Time Nest autosave, restored the opening beam clash against Toppo, and widened Corrupted Zamasu's victory shot.
 - Fixed a battle lockup after Ginyu's Body Change. His Tagoma outfit is now selectable as his third costume.
 - Goku (End) now carries his selected outfit into Ultra Instinct and back when he reverts.
 - Updated fighter balance in Online and Training, including Ki recovery, Blast recharge, move costs, and giant follow-ups.
+- Improved Smooth Motion during fast camera movement.
 
-Update both clients before joining a Tag Team match.
+Update from the game menu before playing online. Everyone in the room needs the same version.
 
 <!-- bt4-update:en
-- Press L3 to cycle through enemies and allies in Tag Team. Online rooms can also set a minimum input delay.
+- Press L3 to switch targets in Tag Team. Online Tag Team now supports optional rollback and minimum input delay.
+- Customize your online player card and see connection latency during battles.
 - Tournament players now have 60 seconds to confirm they are ready.
 - Updated random fighter and music selection. Added four emote slots and Time Nest autosave.
 -->
 <!-- bt4-update:es
-- Pulsa L3 para recorrer los objetivos enemigos y aliados en Tag Team. Las salas en línea también pueden elegir un retraso mínimo de entrada.
+- Pulsa L3 para cambiar de objetivo en Tag Team. El modo online ahora admite rollback opcional y retraso mínimo de entrada.
+- Personaliza tu tarjeta de jugador y consulta la latencia durante los combates en línea.
 - En torneos, los jugadores tienen 60 segundos para confirmar que están listos.
 - Mejoramos la selección aleatoria de luchador y música. Añadimos cuatro espacios para gestos y autoguardado en el Nido del Tiempo.
 -->
 <!-- bt4-update:pt
-- Pressione L3 para percorrer os alvos inimigos e aliados no Tag Team. As salas online também podem definir um atraso mínimo de entrada.
+- Pressione L3 para trocar de alvo no Tag Team. O modo online agora oferece rollback opcional e atraso mínimo de entrada.
+- Personalize seu cartão de jogador e veja a latência durante as partidas online.
 - Nos torneios, os jogadores têm 60 segundos para confirmar que estão prontos.
 - Atualizamos a seleção aleatória de lutadores e músicas. Adicionamos quatro espaços para gestos e salvamento automático no Ninho do Tempo.
 -->
