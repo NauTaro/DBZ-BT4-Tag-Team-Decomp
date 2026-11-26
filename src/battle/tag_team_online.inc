@@ -51,6 +51,8 @@ static void TagOnline_CommandPads(void){
     }
 }
 static u32 sTagOnlineFrame;
+static s32 sTagReplayAudit;
+extern void Port_TagReplayAuditReset(void);
 static u32 sTagOnlinePressed;
 static u32 sTagOnlinePausePressed,sTagOnlinePauseRepeat;
 static s32 sTagOnlinePausePending;
@@ -88,11 +90,51 @@ static void TagOnline_Reset(void){
     memset(sTagCommandPads,0,sizeof(sTagCommandPads));memset(sTagCommandHeld,0,sizeof(sTagCommandHeld));memset(sTagConsumed,0,sizeof(sTagConsumed));
     memset(sTagOnlinePads,0,sizeof(sTagOnlinePads));for(i=0;i<10;++i)sTagOnlinePads[i][4]=sTagOnlinePads[i][5]=127;
     Port_TagMenuSet(0,0);
+    sTagReplayAudit=0;
     if(!TagBattle_Network())return;
+    sTagReplayAudit=getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_LOCAL_TEST") && getenv("BT4_TAG_REPLAY_AUDIT");
+    if (sTagReplayAudit) Port_TagReplayAuditReset();
     Port_Srand(Port_TagSeed());for(i=0;i<4;++i)key[i]=Port_Rand();Rand_SeedByArray(key,4);
 }
+extern s32 Port_TagReplayAuditActive(void),Port_TagReplayAuditAtCheck(u32 frame);
+extern s32 Port_TagReplayAuditInput(u32 frame, u8 out[10][18]);
+extern void Port_TagReplayAuditRecord(u32 frame, const u8 pad[10][18]);
+extern void Port_TagReplayAuditCheck(u32 frame, u32 checksum);
+
+static s32 TagOnline_ReplayActive(void) {
+    return sTagReplayAudit && Port_TagReplayAuditActive();
+}
+
+static u32 TagOnline_ReplayChecksum(void) {
+    u32 hash = 2166136261u;
+    s32 actor, i;
+    extern s32 BtlAct_GetCurrent(void *);
+    for (actor = 0; actor < TagBattle_Count(); ++actor) {
+        f32 position[4];
+        u32 bits[4];
+        BtlCharApi_GetPos(actor, position);
+        memcpy(bits, position, sizeof(bits));
+        for (i = 0; i < 3; ++i) hash = (hash ^ bits[i]) * 16777619u;
+        hash = (hash ^ BtlCharApi_GetHp(actor)) * 16777619u;
+        hash = (hash ^ BtlSide_GetKi(actor)) * 16777619u;
+        hash = (hash ^ BtlAct_GetCurrent(BtlChar_Get(actor))) * 16777619u;
+        hash = (hash ^ TagBattle_Target(actor)) * 16777619u;
+    }
+    return hash;
+}
+
 static s32 TagOnline_Tick(void){
-    s32 phase,sequence;extern s32 BtlSeq_GetState(void);Port_TagPoll();phase=Port_TagPhase();sequence=BtlSeq_GetState();
+    s32 phase,sequence;
+    extern s32 BtlSeq_GetState(void);
+    if (sTagReplayAudit) {
+        if (Port_TagReplayAuditAtCheck(sTagOnlineFrame)) Port_TagReplayAuditCheck(sTagOnlineFrame, TagOnline_ReplayChecksum());
+        if (Port_TagReplayAuditInput(sTagOnlineFrame + 1, sTagOnlinePads)) {
+            TagOnline_CommandPads();
+            ++sTagOnlineFrame;
+            return 1;
+        }
+    }
+    Port_TagPoll();phase=Port_TagPhase();sequence=BtlSeq_GetState();
     sTagOnlinePressed|=gPad[0].pressed;
     if(sTagResultActive||sTagOnlineEnding){sTagOnlinePausePressed=sTagOnlinePauseRepeat=0;sTagOnlinePausePending=0;Port_TagMenuSet(0,0);return 1;}
     if(phase==6||phase==0)return -1;
@@ -249,6 +291,7 @@ static s32 TagOnline_Tick(void){
         gauge[3]=gauge[4];BtlAct_Request(chr,BtlAct_GetTechniqueAction(chr,3));
         fprintf(stderr,"tag net cut fixture: native technique requested at shared frame=650\n");
     }
+    if (sTagReplayAudit) Port_TagReplayAuditRecord(sTagOnlineFrame, sTagOnlinePads);
     sTagOnlineWaitStarted=0;
     {extern void Port_TagWaitResumed(void),Port_TagWaitClear(void);Port_TagWaitResumed();Port_TagWaitClear();}
     return 1;

@@ -469,7 +469,8 @@ void Battle_Loop(void) {
         }
         if(!TagBattle_Network())Job_Run();
         if(TagBattle_Network()){
-            s32 ready,dir;Pad_Update();
+            s32 ready,dir;
+            if (!TagOnline_ReplayActive()) Pad_Update();
             dir=(gPad[0].gamePressed&(PADG_R1|PADG_RIGHT))?1:(gPad[0].gamePressed&(PADG_L1|PADG_LEFT))?-1:0;
             TagBattle_UpdateSpectator(dir);ready=TagOnline_Tick();
             if(ready<0){

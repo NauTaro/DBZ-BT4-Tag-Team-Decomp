@@ -1368,6 +1368,61 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
 
 }
 
+/* Loopback regression fixture. Keep replay controls outside the game snapshot. */
+enum { TAG_REPLAY_FIRST = 800, TAG_REPLAY_DEPTH = 3 };
+static struct {
+    unsigned char pad[TAG_REPLAY_DEPTH][TT_MAX_PLAYERS][TT_PAD_BYTES];
+    unsigned checksum;
+    int phase;
+} tag_replay_audit;
+
+void Port_TagReplayAuditReset(void) {
+    tag_replay_audit.phase = 0;
+}
+
+int Port_TagReplayAuditAtCheck(unsigned frame) {
+    return frame == TAG_REPLAY_FIRST + TAG_REPLAY_DEPTH - 1 && tag_replay_audit.phase < 2;
+}
+
+int Port_TagReplayAuditActive(void) {
+    return tag_replay_audit.phase == 1;
+}
+
+int Port_TagReplayAuditInput(unsigned frame, unsigned char out[TT_MAX_PLAYERS][TT_PAD_BYTES]) {
+    if (!Port_TagReplayAuditActive() || frame <= TAG_REPLAY_FIRST || frame >= TAG_REPLAY_FIRST + TAG_REPLAY_DEPTH) return 0;
+    memcpy(out, tag_replay_audit.pad[frame - TAG_REPLAY_FIRST], sizeof(tag_replay_audit.pad[0]));
+    return 1;
+}
+
+void Port_TagReplayAuditRecord(unsigned frame, const unsigned char pad[TT_MAX_PLAYERS][TT_PAD_BYTES]) {
+    extern int Port_RollCan(void), Port_RollSave(void), gPortResim;
+    if (tag_replay_audit.phase || frame < TAG_REPLAY_FIRST || frame >= TAG_REPLAY_FIRST + TAG_REPLAY_DEPTH) return;
+    if (!Port_RollCan()) {
+        fprintf(stderr, "tag replay test failed: missing executable snapshots\n");
+        exit(3);
+    }
+    memcpy(tag_replay_audit.pad[frame - TAG_REPLAY_FIRST], pad, sizeof(tag_replay_audit.pad[0]));
+    if (Port_RollSave()) gPortResim = 1;
+}
+
+void Port_TagReplayAuditCheck(unsigned frame, unsigned checksum) {
+    extern void Port_RollBack(int depth);
+    extern int gPortResim;
+    if (!Port_TagReplayAuditAtCheck(frame)) return;
+    if (!tag_replay_audit.phase) {
+        tag_replay_audit.phase = 1;
+        tag_replay_audit.checksum = checksum;
+        gPortResim = 1;
+        Port_RollBack(TAG_REPLAY_DEPTH);
+        abort();
+    }
+    tag_replay_audit.phase = 2;
+    gPortResim = 0;
+    fprintf(stderr, "tag replay test: frames=%d original=%08x replay=%08x\n",
+        TAG_REPLAY_DEPTH, tag_replay_audit.checksum, checksum);
+    if (tag_replay_audit.checksum != checksum) exit(3);
+}
+
 int Port_TagTakeFrame(unsigned char out[TT_MAX_PLAYERS][TT_PAD_BYTES]){
     int ok=state.phase==TT_FIGHT&&received.epoch==state.epoch&&Tt_InputTake(&received,out)==TT_OK;
     tag_update_catchup();return ok;
