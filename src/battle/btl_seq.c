@@ -1,6 +1,9 @@
 extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
 extern int TagBattle_Active(void);
 #include "common.h"
+#ifdef PORT
+#include "battle/bt4_balance.h"
+#endif
 #include "battle/btl_seq.h"
 #include "battle/battle_setup.h"
 #include "battle/battle_work.h"
@@ -1071,7 +1074,17 @@ s32 BtlSeqWinTalk_PreUpdate(BtlSeqTalkCtx *ctx) {
         if (BattleResult_IsPlayerWin()) {
             BtlCtrl_StartWinPose(ctx->side[0]);
             DemoCam_PlayObjAnim(ctx->side[0], 1);
+#ifdef PORT
+            {
+                extern s32 BtlCharApi_GetChara(s32), BtlCharApi_GetCostume(s32);
+                s32 actor = BattleSide_GetObjId(ctx->side[0]);
+                s32 giantZamasu = BtlCharApi_GetChara(actor) == BT4_ZAMASU_FUSED &&
+                                 BtlCharApi_GetCostume(actor) == BT4_ZAMASU_GIANT_OUTFIT;
+                DemoCam_SetScaleHeight(giantZamasu ? 2 : 1);
+            }
+#else
             DemoCam_SetScaleHeight(1);
+#endif
         } else {
             BtlCtrl_StartLosePose(ctx->side[0]);
             DemoCam_PlayObjAnim(ctx->side[0], 2);

@@ -261,6 +261,17 @@ s32 DemoCam_Update(void) {
             gDemoCam->view.world2view2.m[3][1] = pose->f.pos[1] + shakePos.y;
             gDemoCam->view.world2view2.m[3][2] = pose->f.pos[2] + shakePos.z;
         }
+#ifdef PORT
+        if (gDemoCam->scaleHeight == 2) {
+            /* Dolly back along the shot axis. The authored close-up ends only
+             * eight units from the fighter, so multiplying that offset still
+             * leaves the camera inside the giant model's victory pose. */
+            Mtx44 *camera = &gDemoCam->view.world2view2;
+            for (i = 0; i < 3; ++i) {
+                camera->m[3][i] -= camera->m[2][i] * 52.0f;
+            }
+        }
+#endif
         Mtx_Mul(&gDemoCam->view.world2view2, &gDemoCam->base, &gDemoCam->view.world2view2);
         Mtx_InverseRT(&gDemoCam->view.world2view2, &gDemoCam->view.world2view2);
         Vu0View_LoadMtx(&gDemoCam->view.world2view2);

@@ -162,3 +162,31 @@ s32 Bt4_RunRulesRegression(void) {
     printf("bt4-rule: RESULT checks=%d failures=%d\n",checks,failures);
     return failures;
 }
+
+/* Samples the actual runtime values selected by the loaded battle. */
+s32 Bt4_RunBalanceAudit(void) {
+    extern s32 Bt4Balance_UsesOnlineRules(void), Battle_GetMode(void);
+    extern s32 BtlParam_GetKiRegenRate(void *), BtlParam_GetKiRegenLimit(void *);
+    extern s32 BtlParam_GetBlastGainRate(void *), BtlParam_GetRateA(void *);
+    extern s32 BtlParam_GetCount80(void *), BtlParam_GetUnk82(void *);
+    extern s32 BtlParam_GetUnk8A(void *, u32), BtlSuper_GetKiCost(void *, s32);
+    extern s32 BtlSuper_GetBaseDamage(void *, s32, s32);
+    extern u32 BtlParam_GetFlags2(void *), BtlSuper_GetFlags(void *, s32);
+    extern s32 BtlKiBlast_ScaleDamageByAbility(void *, s32, s32);
+    void *chr = BtlChar_Get(0);
+    s32 *gauge = BtlMember_GetActiveGauge(chr);
+    printf("balance audit: mode=%d enabled=%d fighter=%d hp=%d maxBlast=%d startKi=%d"
+           " passive=%d regen=%d blast=%d charge=%d normal=%d rise=%d"
+           " step=%d pursuit=%d costOne=%d costTwo=%d damageOne=%d damageTwo=%d"
+           " unblockable=%d kiBlast=%d charged=%d", Battle_GetMode(), Bt4Balance_UsesOnlineRules(),
+           *(s32 *)BtlMember_GetActive(chr), gauge[1], gauge[6], gauge[3],
+           BtlParam_GetKiRegenLimit(chr), BtlParam_GetKiRegenRate(chr), BtlParam_GetBlastGainRate(chr),
+           BtlParam_GetRateA(chr), BtlParam_GetCount80(chr), BtlParam_GetUnk82(chr),
+           BtlParam_GetUnk8A(chr, 0), !!(BtlParam_GetFlags2(chr) & 0x2000),
+           BtlSuper_GetKiCost(chr, 2), BtlSuper_GetKiCost(chr, 3),
+           BtlSuper_GetBaseDamage(chr, 2, 1), BtlSuper_GetBaseDamage(chr, 3, 1),
+           !!(BtlSuper_GetFlags(chr, 4) & 1), BtlKiBlast_ScaleDamageByAbility(chr, 1000, 0),
+           BtlKiBlast_ScaleDamageByAbility(chr, 1000, 3));
+    putchar('\n');
+    return 0;
+}

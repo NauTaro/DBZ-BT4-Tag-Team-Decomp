@@ -200,6 +200,12 @@ s32 BtlAct_GetPrev(BtlActChr *chr) {
 }
 
 /* Returns the first queued action (-1 = none). */
+#ifdef BT4_TAG_TEAM_EXPANDED
+s32 BtlAct_GetSwitchMember(BtlActChr *chr) {
+    return chr->switchMember;
+}
+#endif
+
 s32 BtlAct_GetQueued(BtlActChr *chr) {
     return chr->act.queue[0];
 }
@@ -745,6 +751,12 @@ void BtlAct_CheckForced(BtlActChr *chr) {
         BtlAct_Request(chr, 0x39);
     }
     if (BtlChar_TestFlag(chr, 0x6B)) {
+#ifdef BT4_DEV_BEAM_PARRY
+        extern s32 BtlInput_BeamParryPending(BtlActChr *);
+        if (BtlInput_BeamParryPending(chr)) {
+            BtlAct_Request(chr, 0x3B);
+        } else
+#endif
         if (BtlParam_GetFlags(chr) & 2) {
             BtlAct_Request(chr, 0x3D);
         } else {

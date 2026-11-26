@@ -856,6 +856,14 @@ s32 BtlScriptCmd_Battle(u32 phase, void *taskWork) {
             BtlFacade_ForceActions(2, 3);
             break;
         case 10:
+#ifdef PORT
+            /* In Surpass a God the original slot now fires a volley.
+             * Use Toppo's beam for this scripted clash only. */
+            if (BtlScript_GetStory() == 33 && Gsc_GetCurrentTask()->action == 10014) {
+                BtlFacade_ForceActions(3, 4);
+                break;
+            }
+#endif
             BtlFacade_ForceActions(3, 2);
             break;
         case 11:

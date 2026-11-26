@@ -163,10 +163,13 @@ static s32 TagOnline_Tick(void){
                 if(n>=1000&&n<1004)held=BTLB_RUSH|BTLB_BLAST|BTLB_CIRCLE;
                 if(n>=1050&&n<1054){packet[17]=17;held=BTLB_R3|BTLB_L3R3;}}
             if(mode==5&&actor==0){
-                if(n==600||n==620||n==655){packet[17]=4;held=BTLB_SELECT;}
-                if(n==640)packet[6]=8;
-                if(n==675)packet[6]=0x21; /* L3 held while the D-pad is selected */
-                if(n==690)packet[6]=0x11; /* L3 held while the right stick is selected */
+                if(n==600){packet[17]=4;held=BTLB_SELECT;}
+                if(n==620){packet[6]=1;packet[17]=16;}
+                if(n==640){packet[6]=1;packet[17]=18;held=BTLB_CHARGE;}
+                if(n==655){packet[6]=1;packet[17]=16;held=BTLB_LOCKON;}
+                if(n==675){packet[6]=0x21;packet[17]=16;} /* L3 and D-pad configuration */
+                if(n==690){packet[6]=0x11;packet[17]=16;} /* L3 and right stick configuration */
+                if(n==705){packet[6]=1;packet[17]=17;held=BTLB_R3|BTLB_L3R3;}
             }
             memcpy(packet,&held,4);
         }

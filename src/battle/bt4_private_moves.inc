@@ -55,6 +55,22 @@ static const Bt4BalanceMoveEdits sBalanceMoves[250] = {
     [228] = {.combo={1, 3, 4, 6}},
 };
 
+static Bt4BalanceMoveEdits Bt4Balance_MoveEdits(s32 fighter) {
+    Bt4BalanceMoveEdits edit = sBalanceMoves[fighter];
+    if (!Bt4Balance_UsesOnlineRules()) return edit;
+    switch (fighter) {
+        case 3: edit.combo[3] = 3; break;
+        case 69: edit.skillDonor = 191; break;
+        case 73:
+        case 77: edit.combo[3] = 4; break;
+        case 103: edit.blastAnimDonor = 195; break;
+        case 154:
+        case 199: edit.skillDonor = 201; break;
+        case 184: edit.blastAnimDonor = 45; break;
+    }
+    return edit;
+}
+
 static void *sBalanceText[250];
 static void *sBalanceTables[250];
 static void Bt4Balance_FreeMoves(void);
@@ -187,6 +203,7 @@ static const u16 *Bt4Balance_ReplacementRow(s32 chara, const Bt4BalanceMoveEdits
         switch (edit->combo[row - 5] - 1) {
             case 0: return Bt4Balance_ListRow(3, 5);  /* Heavy Finish */
             case 1: return Bt4Balance_ListRow(3, 6);  /* Ki Cannon */
+            case 2: return Bt4Balance_ListRow(31, 8); /* Ki Blast Cannon */
             case 3: return Bt4Balance_ListRow(54, 5); /* Flying Kicks */
             case 5: return Bt4Balance_ListRow(36, 6); /* Rolling Hammer */
         }
@@ -194,16 +211,53 @@ static const u16 *Bt4Balance_ReplacementRow(s32 chara, const Bt4BalanceMoveEdits
     return NULL;
 }
 
+/* Native move-list entries contain their own controls, description and language markers. */
+static s32 Bt4Balance_TitleMatches(const u16 *line, const u16 *title) {
+    const u16 *end = Bt4Balance_LineEnd(line);
+    if (end - line < 6 || line[0] != '!' || line[2] != '*') return 0;
+    line += 6;
+    while (line < end && *title && *line == *title) {
+        ++line;
+        ++title;
+    }
+    return line == end && *title == 0;
+}
+
+static u16 *Bt4Balance_AppendControl(u16 *out, s32 donor, const u16 *es, const u16 *en, s32 down) {
+    const u16 *line = Bt4_CharaPackById(donor, 1);
+    if (line == NULL || *line != 0xFEFF) return out;
+    for (++line; *line; line = Bt4Balance_NextLine(line)) {
+        if (!Bt4Balance_TitleMatches(line, es) && !Bt4Balance_TitleMatches(line, en)) continue;
+        do {
+            const u16 *end = Bt4Balance_LineEnd(line);
+            while (line < end) {
+                const u16 ch = *line++;
+                *out++ = down && ch == 0x2191 ? 0x2193 : ch;
+            }
+            *out++ = '\n';
+            line = Bt4Balance_NextLine(line);
+        } while (*line && (Bt4Balance_LineEnd(line) - line < 3 || (line[2] != '*' && line[2] != '$')));
+        break;
+    }
+    return out;
+}
+
 static u16 *Bt4Balance_ListText(s32 chara, u16 *text) {
-    const Bt4BalanceMoveEdits *edit = &sBalanceMoves[chara];
+    const Bt4BalanceMoveEdits editData = Bt4Balance_MoveEdits(chara);
+    const Bt4BalanceMoveEdits *edit = &editData;
     const Bt4BalanceRule *rule = Bt4Balance_Rule(chara);
+    const s32 online = Bt4Balance_UsesOnlineRules();
+    const s32 groundThrow = online && (chara == 18 || chara == 19);
+    const u8 *fighter = online && (rule->classFlags & BT4_BALANCE_GIANT) ? Bt4Balance_Parameters(chara) : NULL;
+    const s32 expulsion = fighter != NULL && !(fighter[0x15] & 0x20);
     const u16 *line, *end, *donor = NULL;
     u16 *data, *out;
     s32 row = -1, chars = 0, held, title, override;
     if (text == NULL || text[0] != 0xFEFF) return text;
     if (!edit->skillDonor && !edit->superDonor && !edit->combo[0] && !edit->combo[1] &&
         !edit->combo[2] && !edit->combo[3] && !rule->blast[0] && !rule->blast[1] &&
-        !rule->ki[0] && !rule->ki[1] && !rule->damage[0] && !rule->damage[1]) return text;
+        !rule->ki[0] && !rule->ki[1] && !groundThrow && !expulsion &&
+        (online || (!rule->damage[0] && !rule->damage[1]))) return text;
     if (sBalanceText[chara] != NULL) return sBalanceText[chara];
     while (chars < 32768 && text[chars] != 0) chars++;
     if (chars == 32768) return text;
@@ -230,7 +284,7 @@ static u16 *Bt4Balance_ListText(s32 chara, u16 *text) {
             while (*label != 0 && *label != '\n' && *label != '\r') *out++ = *label++;
             *out++ = '\n';
             held = donor != NULL || (chara == 150 && row == 2); /* Hakai is now blockable. */
-            if (row >= 2 && row <= 3 && rule->damage[row - 2]) {
+            if (!Bt4Balance_UsesOnlineRules() && row >= 2 && row <= 3 && rule->damage[row - 2]) {
                 s32 value = rule->damage[row - 2];
                 extern s32 Port_GameProfileEnglish(void);
                 static const u16 descEs[] = {'!', 'F', '%', '0', 'D', 'a', 0x00F1, 'o', ' ', 'b', 'a', 's', 'e', ':', ' ', 0};
@@ -250,6 +304,16 @@ static u16 *Bt4Balance_ListText(s32 chara, u16 *text) {
         while (line < end) *out++ = *line++;
         *out++ = '\n';
     }
+    if (groundThrow) {
+        static const u16 es[] = {'L','a','n','z','a','m','i','e','n','t','o',' ','G','i','g','a','n','t','e',0};
+        static const u16 en[] = {'G','i','a','n','t',' ','T','h','r','o','w',0};
+        out = Bt4Balance_AppendControl(out, 3, es, en, 1);
+    }
+    if (expulsion) {
+        static const u16 es[] = {'A','t','a','q','u','e',' ','d','e',' ','E','x','p','u','l','s','i',0xF3,'n',0};
+        static const u16 en[] = {'V','a','n','i','s','h','i','n','g',' ','A','t','t','a','c','k',0};
+        out = Bt4Balance_AppendControl(out, 108, es, en, 0);
+    }
     *out = 0;
     sBalanceText[chara] = data;
     return data;
@@ -257,27 +321,32 @@ static u16 *Bt4Balance_ListText(s32 chara, u16 *text) {
 
 /* The rush camera tracks live in entry 8 of the movement effects pack. */
 void *Bt4Balance_TechCamera(s32 chara, s32 slot) {
-    const Bt4BalanceMoveEdits *edit;
+    Bt4BalanceMoveEdits edit;
     void *pack;
     if (chara < 0 || chara >= 250 || slot < 0 || slot >= 3) return NULL;
-    edit = &sBalanceMoves[chara];
-    if (!edit->superDonor || edit->superSlot != slot) return NULL;
-    pack = Bt4_PackEntry(Bt4_CharaPackById(edit->superDonor - 1, 4), 6);
+    edit = Bt4Balance_MoveEdits(chara);
+    if (!edit.superDonor || edit.superSlot != slot) return NULL;
+    pack = Bt4_PackEntry(Bt4_CharaPackById(edit.superDonor - 1, 4), 6);
     pack = Bt4_PackEntry(pack, 8);
     return Bt4_PackEntry(pack, slot + 1);
 }
 
 static void Bt4Balance_BindMoves(BObjMdl *mdl, s32 chara, u8 *tables) {
 
-    const Bt4BalanceMoveEdits *edit;
+    Bt4BalanceMoveEdits editData;
+    const Bt4BalanceMoveEdits *edit = &editData;
     const Bt4BalanceRule *rule;
     u8 *dst, *src, *pack;
     s32 i, donation, slot;
     if (chara < 0 || chara >= 250) return;
-    edit = &sBalanceMoves[chara];
+    editData = Bt4Balance_MoveEdits(chara);
     rule = Bt4Balance_Rule(chara);
     mdl->unkA4 = Bt4Balance_ListText(chara, mdl->unkA4);
-    if (edit->skillDonor || edit->superDonor || edit->throwDonor || edit->step || rule->speed ||
+    const s32 online = Bt4Balance_UsesOnlineRules();
+    s32 activeCharge;
+    memcpy(&activeCharge, tables + 0x30, sizeof(activeCharge));
+    const s32 gohanGroundThrow = online && (chara == 18 || chara == 19);
+    if ((online && activeCharge > 0) || gohanGroundThrow || edit->skillDonor || edit->superDonor || edit->throwDonor || edit->step || rule->speed ||
         edit->combo[0] || edit->combo[1] || edit->combo[2] || edit->combo[3] ||
         chara == 4 || chara == 25 || chara == 167 || chara == 1) {
         dst = sBalanceTables[chara];
@@ -285,6 +354,12 @@ static void Bt4Balance_BindMoves(BObjMdl *mdl, s32 chara, u8 *tables) {
             dst = (void *)Port_GameBigAlloc(0x2D50);
             if (dst == NULL) return;
             memcpy(dst, tables, 0x2D50);
+            /* Use the native charge columns of the comparison fighter, including underwater charge. */
+            if (online && activeCharge > 0) {
+                const s32 reference = rule->classFlags & (BT4_BALANCE_GIANT | BT4_BALANCE_TANK) ? 209 : 0;
+                src = Bt4Balance_Parameters(reference);
+                if (src != NULL) memcpy(dst + 0x30, src + 0x30, 2 * sizeof(s32));
+            }
             if (rule->speed) Bt4Balance_Movement((void *)(dst + 0x2500), rule->speed);
             if (edit->step == 1) dst[0x8A] &= ~1;
             else if (edit->step > 1) dst[0x8A] = edit->step - 2;
@@ -300,6 +375,10 @@ static void Bt4Balance_BindMoves(BObjMdl *mdl, s32 chara, u8 *tables) {
             if (edit->superDonor) {
                 src = Bt4Balance_Parameters(edit->superDonor - 1);
                 if (src != NULL) Bt4Balance_Super(dst + 0x29D0, edit->superSlot, src + 0x29D0);
+            }
+            if (gohanGroundThrow) {
+                src = Bt4Balance_Parameters(3);
+                if (src != NULL) memcpy(dst + 0x100 + 0x56 * 0x30, src + 0x100 + 0x56 * 0x30, 0x30);
             }
             if (chara == 25) ((f32 *)(dst + 0x29D0 + 0x60))[1] = 100.0f;
             if (chara == 70) {
@@ -347,8 +426,22 @@ static void Bt4Balance_BindMoves(BObjMdl *mdl, s32 chara, u8 *tables) {
         Bt4Balance_Animation(mdl, edit->throwDonor - 1, 0x96, 3);
     }
     if (chara == 4) Bt4Balance_Animation(mdl, 2, 0x37, 1);
+    if (gohanGroundThrow) {
+        Bt4Balance_Animation(mdl, 3, 0x186, 3);
+        Bt4Balance_Animation(mdl, 3, 0x18A, 1);
+    }
     /* Rolling Hammer uses its own wind-up, hold, release and follow-through motions. */
-    if (chara == 35) Bt4Balance_Animation(mdl, 36, 0x199, 4);
+    if (chara == 35) Bt4Balance_Animation(mdl, online ? 38 : 36, 0x199, 4);
+    if (online) {
+        if (chara == 3) Bt4Balance_Animation(mdl, 31, 0x90, 3);
+        if (chara == 203) Bt4Balance_Animation(mdl, 3, 0x90, 3);
+        if (chara == 73) Bt4Balance_Animation(mdl, 59, 0x93, 1);
+        if (chara == 77 || chara == 151) Bt4Balance_Animation(mdl, 29, 0x93, 1);
+        if (chara == 126 || chara == 230) Bt4Balance_Animation(mdl, 94, 0x93, 1);
+        if (chara == 124 || chara == 201 || chara == 202 || chara == 204 || chara == 216) {
+            Bt4Balance_Animation(mdl, 108, 0x47, 3);
+        }
+    }
     if (chara == 68) Bt4Balance_Animation(mdl, 36, 0x56, 6);
     if (chara == 134) Bt4Balance_Animation(mdl, 15, 0x93, 1);
     if (chara == 158) Bt4Balance_Animation(mdl, 54, 0x93, 1);

@@ -120,6 +120,7 @@ typedef struct PortLobbyView {
     int tourOn;                 /* the match being played now, -1 none */
     int tourChamp;              /* the champion (an entrant), -1 none yet */
     int tourChoose;             /* the match whose winner the owner chooses (its two games disagreed twice), -1 none */
+    int tourReadySides, tourReadySeconds;
     int readyCount;             /* places marked ready */
     int entrants;               /* the player places: 2 in versus, up to LOBBY_TOUR in tournament */
     int entrantCount;           /* of them taken (a tournament started now has these) */

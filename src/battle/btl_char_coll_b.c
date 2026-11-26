@@ -1,4 +1,9 @@
 #include "common.h"
+#include "battle/bt4_beam_parry.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 extern s32 Bt4_HasRecoveryVariant(void *chr);
 #include "battle/btl_char_coll.h"
 
@@ -1112,6 +1117,56 @@ s32 BtlColl_HitByRush(BtlCollChr *chr, BtlCollHit *hit) {
     }
     return 1;
 }
+
+#ifdef BT4_DEV_BEAM_PARRY
+s32 BtlColl_TryBeamParry(s32 objId, s32 actor, BtlCollHit *hit) {
+    extern s32 BtlInput_BeamParryDirection(BtlCollChr *);
+    extern void BtlInput_CommitBeamParry(BtlCollChr *);
+    extern s32 BtlInput_BeamParryPending(BtlCollChr *);
+    extern s32 BtlMember_HasBlast(BtlCollChr *, s32);
+    extern void BtlMember_SubBlast(BtlCollChr *, s32);
+    extern u32 *EftDet_BeamParryTaskTag(BtlCollHit *);
+    extern s32 BtlSeq_GetState(void);
+    BtlCollChr *chr;
+    u32 *tag;
+    s32 dir;
+    extern int Port_NetActive(void), TagBattle_Network(void);
+
+    if (Port_NetActive() || TagBattle_Network()) return 0;
+    if (!(hit->flags & BT4_HIT_BEAM_CAPSULE) || hit->type != BTL_HIT_TECH ||
+            hit->owner == NULL || (hit->owner->slot != 2 && hit->owner->slot != 3) ||
+            actor < 0 || actor >= BT4_BEAM_PARRY_ACTORS) {
+        return 0;
+    }
+    tag = EftDet_BeamParryTaskTag(hit);
+    if (tag == NULL) return 0;
+    if (*tag & BT4_BEAM_PARRY_ACTOR_MASK) return 1;
+
+    chr = BtlChar_FindByObjId(objId);
+    if (chr == NULL || BtlSeq_GetState() != 3 || BtlChar_IsFrozen(chr) ||
+            BtlChar_TestFlag(chr, 0xAA) || BtlChar_TestFlag(chr, 0x5A) ||
+            BtlChar_TestFlag(chr, 0x46) || !BtlChar_IsFree(chr) || BtlInput_BeamParryPending(chr) ||
+            (BtlAct_GetCurrent(chr) != 0x38 && !(BtlAnim_GetFlags(BtlAnim_GetId(chr)) & 0xB1))) {
+        return 0;
+    }
+    dir = BtlInput_BeamParryDirection(chr);
+    if (dir == 0 || !BtlMember_HasBlast(chr, BT4_BEAM_PARRY_COST)) return 0;
+
+    BtlInput_CommitBeamParry(chr);
+    BtlMember_SubBlast(chr, BT4_BEAM_PARRY_COST);
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_BEAM_DEFENSE")) {
+        extern unsigned gPortVBlanks;
+        const s32 after = BtlMember_GetActiveGauge(chr)->blast;
+        fprintf(stderr, "beam fixture: paid actor=%d vb=%u slot=%d blast=%d->%d dir=%d\n",
+                actor, gPortVBlanks, hit->owner->slot, after + BT4_BEAM_PARRY_COST, after, dir);
+    }
+    *tag |= (u32)(actor + 1) << BT4_BEAM_PARRY_TAG_SHIFT;
+    BtlChar_SetFlag(chr, 0x6B);
+    BtlCharSnd_PlayCommon(chr, 0x13);
+    BtlChar_PlayVoice(chr, 0xB);
+    return 1;
+}
+#endif
 
 /* Asks the fighter whether a hit about to land is avoided: invulnerability, or an automatic dodge. */
 s32 BtlColl_TryDodge(s32 objId, BtlCollHit *hit) {

@@ -515,8 +515,8 @@ int Port_TagDataFingerprint(unsigned long long *out){
     extern int Port_BuildIdentity(unsigned long long *);
     const int status=Port_BuildIdentity(out);
 #ifdef BT4_TAG_TEAM_EXPANDED
-    /* Directional targeting uses the camera during the shared simulation. */
-    if(status==1&&out)*out^=0x54414743414D3033ull;
+    /* Target switching is synchronized gameplay. Keep older clients out of these rooms. */
+    if(status==1&&out)*out^=0x54414743414D3034ull;
 #endif
     return status;
 }
@@ -688,7 +688,7 @@ int Port_TagStartTraining(void){
 }
 
 void Port_TagOpenListedWithRules(int size,int limit,int delay,const char *name,uint64_t content,unsigned rules,int listed){
-    delay=0; /* Tag Team no longer adds a user-configured simulation delay. */
+    if(configured_quick || delay<0 || delay>12)delay=0;
     if(configured_ffa&&configured_quick)size=3;
 
     if(local_room){
@@ -1111,10 +1111,15 @@ int Port_TagAttacks(void){return 1;}
 
 unsigned Port_TagSeed(void){return state.seed;}
 
+int Port_TagRoomDelay(void){return state.delay;}
+
 int Port_TagDelay(void){
     int lead=1,full=1,margin=0,total,ping=Port_TagPing();
     if(local_room||solo_cpu_fight()||!tag_paced)return state.delay;
-    if((tag_direct_route||peer_mode)&&member==state.host)return tag_backlog();
+    if((tag_direct_route||peer_mode)&&member==state.host){
+        total=state.delay+tag_backlog();
+        return total>120?120:total;
+    }
     /* Use estimated one-way relay time, not the full RTT. The Worker reports
      * late seats in each authoritative frame; that feedback raises this margin
      * only when this player's input actually misses a deadline. */
@@ -1127,7 +1132,9 @@ int Port_TagDelay(void){
     }
     /* New input belongs to the live server timeline even while this client
      * consumes old authoritative history after a local stall. */
-    total=lead+margin+tag_backlog();
+    total=lead+margin;
+    if(total<state.delay)total=state.delay;
+    total+=tag_backlog();
     return total>120?120:total;
 }
 
@@ -1291,6 +1298,14 @@ const char *Port_TagCode(void){return room_code;}
 
 const char *Port_TagError(void){return error;}
 
+/* A direction is an enum. Preserve the newest direction across a delay
+ * change, and keep a left-stick click pending independently of that choice. */
+static unsigned tag_merge_target_input(unsigned previous, unsigned current){
+    unsigned direction=current&0x0e;
+    if(direction==0||direction>8)direction=previous&0x0e;
+    return (current&0x30)|direction|((previous|current)&1u);
+}
+
 int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
     /* The original camera distance affects native targeting angles. Carry the
      * owner's choice with the shared input, never read a local preference on
@@ -1325,7 +1340,9 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
         if(tag_input_sent&&frame<=tag_input_latest){
             /* A shrinking lead cannot replace an immutable submitted frame.
              * Retain short taps for the next writable frame instead. */
-            tag_pending_buttons|=Ttw_Read(pad);tag_pending_l3|=pad[6]&15;tag_pending_skip|=pad[8];tag_pending_coop|=pad[17]&13;return 1;
+            tag_pending_buttons|=Ttw_Read(pad);
+            tag_pending_l3=tag_merge_target_input(tag_pending_l3,pad[6]);
+            tag_pending_skip|=pad[8];tag_pending_coop|=pad[17]&13;return 1;
         }
         next=tag_input_sent?tag_input_latest+1:frame;
         if(!tag_input_sent)tag_input_first=frame;
@@ -1336,7 +1353,8 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
             if(next<frame){memcpy(packet+16,tag_input_pad,TT_PAD_BYTES);packet[22]&=0x30;packet[24]=0;}
             else{
                 memcpy(packet+16,pad,TT_PAD_BYTES);Ttw_Write(packet+16,Ttw_Read(pad)|tag_pending_buttons);
-                packet[22]|=tag_pending_l3;packet[24]|=tag_pending_skip;packet[33]|=tag_pending_coop;
+                packet[22]=tag_merge_target_input(tag_pending_l3,pad[6]);
+                packet[24]|=tag_pending_skip;packet[33]|=tag_pending_coop;
             }
             request(packet);if(state.phase!=TT_FIGHT)return 0;
         }

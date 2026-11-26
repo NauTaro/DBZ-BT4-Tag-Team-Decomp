@@ -1,6 +1,7 @@
 extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
 extern int TagBattle_Active(void);
 #include "common.h"
+#include "battle/bt4_private_balance.h"
 #ifdef PORT
 #include "battle/bt4_body_change.h"
 #endif
@@ -431,6 +432,7 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
         s32 oldChara = BtlMember_GetActive(chr)->chara;
         s32 oldHealth = BtlMember_GetActive(chr)->gauge.health;
         s32 oldKi = BtlMember_GetActive(chr)->gauge.ki;
+        const s32 onlineBalance = Bt4Balance_UsesOnlineRules();
         m = BtlMember_GetActive(chr);
 #ifdef BT4_TAG_TEAM_EXPANDED
         if (Bt4_ExtraFormsAllowed() && m->chara == chr->newChara && m->costume != chr->newCostume &&
@@ -452,11 +454,15 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
             }
             if (BtlParam_GetUnkAD(chr) & 1) g->health += 5000;
             if (BtlParam_GetUnkAD(chr) & 2) g->health += 10000;
+            if (onlineBalance && ((oldChara == 166 && m->chara == 136) || (oldChara == 197 && m->chara == 147))) {
+                g->health = oldHealth + 10000;
+            }
         }
-        if (BtlParam_GetUnkAD(chr) & 4) {
+        if ((BtlParam_GetUnkAD(chr) & 4) || (onlineBalance && oldChara == 197 && m->chara == 147)) {
             g->ki = g->kiMax;
-        } else if ((oldChara == 94 && m->chara == 70) || (oldChara == 126 && m->chara == 127) ||
-                   (oldChara == 199 && m->chara == 200) || (oldChara == 197 && m->chara == 147)) {
+        } else if ((m->chara == 70 && (oldChara == 94 || (onlineBalance && oldChara >= 91 && oldChara <= 95))) ||
+                   (oldChara == 126 && m->chara == 127) || (oldChara == 199 && m->chara == 200) ||
+                   (!onlineBalance && oldChara == 197 && m->chara == 147)) {
             g->ki = BtlUtil_Clamp(oldKi, 0, g->kiMax);
         }
 #ifdef BT4_TAG_TEAM_EXPANDED

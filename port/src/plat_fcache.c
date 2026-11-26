@@ -10,6 +10,7 @@
  * (Its variables must NOT be part of the saved state: port/tools/make_state.py leaves this file out.)
  */
 #include <stdint.h>
+#include "bt4_goku_costumes.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -31,6 +32,11 @@ FILE *Port_FileOpenHost(const char *rel, char *path, size_t n) {
     extern int PortSongs_Alias(const char *rel, char *out, unsigned n);  /* plat_songs.c: the same for a song */
     char target[256];
     FILE *fp = NULL;
+
+    if (strncmp(rel, BT4_GOKU_COSTUME_PATH, sizeof(BT4_GOKU_COSTUME_PATH) - 1) == 0) {
+        snprintf(path, n, "%s", rel);
+        return fopen(path, "rb");
+    }
 
     /* a stage added from outside the disc: the game asks for a file id past the disc's own, and the file is
        the one the stage list names (plat_stages.c), under the data folder */

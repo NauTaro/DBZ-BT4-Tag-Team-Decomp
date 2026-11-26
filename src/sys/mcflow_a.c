@@ -244,7 +244,7 @@ extern int Port_NetActive(void);                    /* gs/net.c: online play */
 extern s32 gMcCardCmd, gMcCardStep;                 /* src/battle/stgm_a_b.c: the card operation running, its step */
 #define MCCARD_CMD_INFO 10                          /* (include/battle/stgm_a_b.h) */
 extern void Port_UiSaving(int state);               /* gs/ui.cpp: the save icon (1 saving, 0 saved, -1 the window took over) */
-static s32 sMcQuick;
+static s32 sMcQuick, sMcAutomatic;
 static s32 sMcQuickState, sMcQuickPolled; /* the state of the frame before; its card check has answered */
 
 /* The step's minimum time: a step that asks the card for its state first (MCF_POLL) is over once the card has
@@ -411,6 +411,14 @@ static s32 McFlow_QuickStep(void) {
     default:
     shown: /* the player has to see this one */
         sMcQuick = 0;
+        if (sMcAutomatic) {
+            extern void Port_UiNotice(const char *);
+            Port_UiSaving(-1);
+            Port_UiNotice("Time Nest progress could not be saved. Check your memory card.");
+            gMcFlow->state = 0;
+            McCard_ResetStep();
+            return 1;
+        }
         if (!boot) {
             Port_UiSaving(-1);
         }
@@ -427,6 +435,14 @@ static s32 McFlow_QuickStep(void) {
 #endif
 
 /* Flows 0 and 4: save the system data. `next` is the question state (0xC: message 0xD, 0x20: message 0x20). */
+#ifdef PORT
+#define MCF_SAVE_DIALOG (!sMcAutomatic)
+#else
+#define MCF_SAVE_DIALOG 1
+#endif
+#define MCF_SAVE_CHOICES(n) do { if (MCF_SAVE_DIALOG) Dialog_SetChoices(n); } while (0)
+#define MCF_SAVE_CURSOR(n) do { if (MCF_SAVE_DIALOG) Dialog_SetCursor(n); } while (0)
+
 void McFlow_UpdateSave(void) {
     if (gMcFlow->state == 0) {
         return;
@@ -434,14 +450,14 @@ void McFlow_UpdateSave(void) {
     switch (gMcFlow->state) {
     case 0x23:
         Dialog_SetLayout(1);
-        Dialog_SetCursor(1);
+        MCF_SAVE_CURSOR(1);
         Dialog_SetTitle(0);
         Dialog_Start(0);
         gMcFlow->choice = 0;
         gMcFlow->state = gMcFlow->next;
         break;
     case 0x20:
-        Dialog_SetChoices(1);
+        MCF_SAVE_CHOICES(1);
         gMcFlow->msg = 0x20;
         if (gMcFlow->choice > 0) {
             if (--gMcFlow->timer >= 0) {
@@ -454,13 +470,13 @@ void McFlow_UpdateSave(void) {
         } else if (gMcFlow->choice < 0) {
             gMcFlow->state = 0x12;
             gMcFlow->choice = 0;
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
         } else {
             MCF_INPUT();
         }
         break;
     case 0xC:
-        Dialog_SetChoices(1);
+        MCF_SAVE_CHOICES(1);
         gMcFlow->msg = 0xD;
         if (gMcFlow->choice > 0) {
             if (--gMcFlow->timer >= 0) {
@@ -473,13 +489,13 @@ void McFlow_UpdateSave(void) {
         } else if (gMcFlow->choice < 0) {
             gMcFlow->state = 0x12;
             gMcFlow->choice = 0;
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
         } else {
             MCF_INPUT();
         }
         break;
     case 3:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 5;
         if (--gMcFlow->timer >= 0) {
             MCF_POLL();
@@ -502,12 +518,12 @@ void McFlow_UpdateSave(void) {
                     break;
                 }
                 gMcFlow->state = 0xE;
-                Dialog_SetCursor(1);
+                MCF_SAVE_CURSOR(1);
                 break;
             }
             if (MCF_CARD.formatted == 0) {
                 gMcFlow->state = 0x17;
-                Dialog_SetCursor(1);
+                MCF_SAVE_CURSOR(1);
             }
             break;
         }
@@ -518,7 +534,7 @@ void McFlow_UpdateSave(void) {
             }
             if (MCF_CARD.formatted == 0) {
                 gMcFlow->state = 0x17;
-                Dialog_SetCursor(1);
+                MCF_SAVE_CURSOR(1);
                 break;
             }
             if (McCard_IsFatalError(MCF_CARD.result)) {
@@ -539,7 +555,7 @@ void McFlow_UpdateSave(void) {
         }
         break;
     case 0xE:
-        Dialog_SetChoices(1);
+        MCF_SAVE_CHOICES(1);
         gMcFlow->msg = 0xF;
         if (gMcFlow->choice > 0) {
             if (--gMcFlow->timer >= 0) {
@@ -552,17 +568,17 @@ void McFlow_UpdateSave(void) {
         } else if (gMcFlow->choice < -1) {
             gMcFlow->state = 0x12;
             gMcFlow->choice = 0;
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
         } else {
             MCF_INPUT();
         }
         break;
     case 0x17:
-        Dialog_SetChoices(1);
+        MCF_SAVE_CHOICES(1);
         gMcFlow->msg = 0x18;
         McCard_Probe(0);
         if (McCard_IsFatalError(MCF_CARD.result)) {
-            Dialog_SetChoices(0);
+            MCF_SAVE_CHOICES(0);
             gMcFlow->msg = 0x1C;
             gMcFlow->state = 0x1B;
             gMcFlow->timer = 0x78;
@@ -579,13 +595,13 @@ void McFlow_UpdateSave(void) {
         } else if (gMcFlow->choice < 0) {
             gMcFlow->state = 0x12;
             gMcFlow->choice = 0;
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
         } else {
             MCF_INPUT();
         }
         break;
     case 0x18:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x19;
         if (--gMcFlow->timer >= 0) {
             MCF_POLL();
@@ -603,7 +619,7 @@ void McFlow_UpdateSave(void) {
         }
         break;
     case 0xD:
-        Dialog_SetChoices(1);
+        MCF_SAVE_CHOICES(1);
         gMcFlow->msg = 0xE;
         McCard_Probe(0);
         if (McCard_IsFatalError(MCF_CARD.result)) {
@@ -622,13 +638,13 @@ void McFlow_UpdateSave(void) {
         } else if (gMcFlow->choice < 0) {
             gMcFlow->state = 0x12;
             gMcFlow->choice = 0;
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
         } else {
             MCF_INPUT();
         }
         break;
     case 0xB:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0xA;
         if (--gMcFlow->timer >= 0) {
             MCF_POLL();
@@ -646,7 +662,7 @@ void McFlow_UpdateSave(void) {
         }
         break;
     case 0xF:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x10;
         if (--gMcFlow->timer >= 0) {
             MCF_POLL();
@@ -664,7 +680,7 @@ void McFlow_UpdateSave(void) {
         }
         break;
     case 6:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 5;
         if (McCard_FindSystemSave(0) == 0) {
             if (McCard_IsFatalError(MCF_CARD.result)) {
@@ -679,21 +695,21 @@ void McFlow_UpdateSave(void) {
         }
         break;
     case 0x1E:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x1F;
         if (MCF_OK_PRESSED()) {
             if (Dialog_IsOpen()) {
                 Snd_PlaySe(1, 1);
                 gMcFlow->state = 0x12;
                 gMcFlow->choice = 0;
-                Dialog_SetCursor(1);
+                MCF_SAVE_CURSOR(1);
             }
         }
         break;
     case 0x10:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x11;
-        if (MCF_OK_PRESSED()) {
+        if (MCF_SAVE_DIALOG && MCF_OK_PRESSED()) {
             if (Dialog_IsOpen()) {
                 Snd_PlaySe(1, 1);
                 gMcFlow->flags |= 8;
@@ -708,19 +724,19 @@ void McFlow_UpdateSave(void) {
         gMcFlow->state = 0x25;
         break;
     case 0x11:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x12;
         if (MCF_OK_PRESSED()) {
             if (Dialog_IsOpen()) {
                 Snd_PlaySe(1, 1);
                 gMcFlow->state = 0x12;
                 gMcFlow->choice = 0;
-                Dialog_SetCursor(1);
+                MCF_SAVE_CURSOR(1);
             }
         }
         break;
     case 0x19:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x1A;
         McCard_Probe(0);
         if (McCard_IsFatalError(MCF_CARD.result)) {
@@ -735,31 +751,31 @@ void McFlow_UpdateSave(void) {
         MCF_GO(0xB);
         break;
     case 0x1A:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x1B;
         if (MCF_OK_PRESSED()) {
             if (Dialog_IsOpen()) {
                 Snd_PlaySe(1, 1);
                 gMcFlow->state = 0x12;
                 gMcFlow->choice = 0;
-                Dialog_SetCursor(1);
+                MCF_SAVE_CURSOR(1);
             }
         }
         break;
     case 0x1B:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x1C;
         if (MCF_OK_PRESSED()) {
             if (Dialog_IsOpen()) {
                 Snd_PlaySe(1, 1);
                 gMcFlow->state = 0x12;
                 gMcFlow->choice = 0;
-                Dialog_SetCursor(1);
+                MCF_SAVE_CURSOR(1);
             }
         }
         break;
     case 0x12:
-        Dialog_SetChoices(1);
+        MCF_SAVE_CHOICES(1);
         gMcFlow->msg = 0x13;
         if (gMcFlow->choice > 0) {
             if (--gMcFlow->timer >= 0) {
@@ -771,14 +787,14 @@ void McFlow_UpdateSave(void) {
             gMcFlow->state = gMcFlow->next;
             gMcFlow->timer = 0x78;
             gMcFlow->choice = 0;
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
             McCard_ResetStep();
         } else {
             MCF_INPUT();
         }
         break;
     case 0x1F:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 5;
         if (McCard_CalcNeed(0, &gMcFlow->req, 0) == 0) {
             if (MCF_CARD.type != 2) {
@@ -787,7 +803,7 @@ void McFlow_UpdateSave(void) {
             }
             if (MCF_CARD.formatted == 0) {
                 gMcFlow->state = 0x17;
-                Dialog_SetCursor(1);
+                MCF_SAVE_CURSOR(1);
                 break;
             }
             if (McCard_IsFatalError(MCF_CARD.result)) {
@@ -801,14 +817,14 @@ void McFlow_UpdateSave(void) {
                 break;
             }
             MCF_GO(0x21);
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
         } else {
             MCF_GO(0xD);
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
         }
         break;
     case 0x21:
-        Dialog_SetChoices(1);
+        MCF_SAVE_CHOICES(1);
         gMcFlow->msg = 0xE;
         McCard_Probe(0);
         if (McCard_IsFatalError(MCF_CARD.result)) {
@@ -827,13 +843,13 @@ void McFlow_UpdateSave(void) {
         } else if (gMcFlow->choice < 0) {
             gMcFlow->state = 0x12;
             gMcFlow->choice = 0;
-            Dialog_SetCursor(1);
+            MCF_SAVE_CURSOR(1);
         } else {
             MCF_INPUT();
         }
         break;
     case 0x22:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         gMcFlow->msg = 0x10;
         if (--gMcFlow->timer >= 0) {
             MCF_POLL();
@@ -851,7 +867,7 @@ void McFlow_UpdateSave(void) {
         }
         break;
     case 0x25:
-        Dialog_SetChoices(0);
+        MCF_SAVE_CHOICES(0);
         Dialog_Start(1);
         gMcFlow->state = 0x26;
         /* fallthrough */
@@ -863,7 +879,7 @@ void McFlow_UpdateSave(void) {
         }
         break;
     }
-    Dialog_SetMsg(gMcFlow->msg);
+    if (MCF_SAVE_DIALOG) Dialog_SetMsg(gMcFlow->msg);
 #ifdef PORT
     if (sMcQuick) {
         return;
@@ -871,6 +887,10 @@ void McFlow_UpdateSave(void) {
 #endif
     Dialog_Draw(1);
 }
+
+#undef MCF_SAVE_CURSOR
+#undef MCF_SAVE_CHOICES
+#undef MCF_SAVE_DIALOG
 
 /* Flow 1: load the system data after asking. */
 void McFlow_UpdateLoad(void) {
@@ -2890,6 +2910,7 @@ void McFlow_Start(s32 mode) {
     gMcFlow->mode = mode;
 #ifdef PORT
     /* 1: without the window, 2: the window with its questions, without the waits */
+    sMcAutomatic = 0;
     sMcQuick = (mode == MCFLOW_MODE_SAVE || mode == MCFLOW_MODE_SAVE_ALT || mode == MCFLOW_MODE_LOAD ||
                 mode == MCFLOW_MODE_BOOT_LOAD || mode == MCFLOW_MODE_NEW_SAVE) && !Port_NetActive() &&
                Port_Setting("save_quick", 1) != 0;
@@ -2963,6 +2984,17 @@ void McFlow_Start(s32 mode) {
         break;
     }
 }
+
+#ifdef PORT
+void McFlow_StartAutoSave(void) {
+    McFlow_Start(MCFLOW_MODE_SAVE);
+    if (!sMcQuick) {
+        sMcQuick = 1;
+        Port_UiSaving(1);
+    }
+    sMcAutomatic = 1;
+}
+#endif
 
 /* Registers the "finished" callback and argument of result `idx`. */
 void McFlow_SetDoneCb(s32 idx, McFlowCb cb, s32 arg) {

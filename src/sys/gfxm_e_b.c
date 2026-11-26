@@ -148,12 +148,22 @@ void BtlObjMdl_InitAlphaSlots(void *res, ObjMdl *mdl, s32 row) {
             s32 alpha = e->unk28[5];
             s32 slot = e->unk28[4];
 
+#ifdef PORT
+            if ((u32)slot >= sizeof(model->alpha)) {
+                continue;
+            }
+#endif
             if (alpha > 0x80) {
                 alpha = 0x7F;
             }
             if (skip == i) {
                 alpha = 0;
-            } else {
+            }
+#ifdef PORT
+            else if (e->clut != NULL) {
+#else
+            else {
+#endif
                 u8 *p = (u8 *)e->clut;
 
                 for (j = 15; j >= 0; j--) {

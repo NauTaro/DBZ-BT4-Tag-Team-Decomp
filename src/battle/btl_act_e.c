@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/bt4_private_balance.h"
 #include "battle/btl_act_e.h"
 
 /*
@@ -1664,7 +1665,15 @@ s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
         if (BtlAct_GetRequested(chr) != 0xFC) {
             chr->clashCountB = 0;
             /* A cancelled QTE must not retain its vanished/placement state. */
-            BtlChar_ClearFlag(chr,0xB);BtlChar_ClearFlag(chr,0xE);
+            BtlChar_ClearFlag(chr, 0xB);
+            extern s32 BtlParam_CanFly(BtlActEChr *);
+            if (Bt4Balance_UsesOnlineRules() && BtlAnim_GetId(chr) == 0x175 &&
+                BtlParam_CanFly(chr) && BtlAct_GetRequested(chr) == 0xB) {
+                BtlChar_GetPos(chr)->unk9C = 0.0f;
+                BtlChar_SetHeldFlag(chr, 0xE);
+            } else {
+                BtlChar_ClearFlag(chr, 0xE);
+            }
             BtlChar_ClearFlagRange(chr,0xC4,0xC8);
             ChrCam_EndCut(chr);
         }

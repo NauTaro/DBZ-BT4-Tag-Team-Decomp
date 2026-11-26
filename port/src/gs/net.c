@@ -49,7 +49,8 @@ enum { PAD = 18, RING = 4096, REDUNDANT = 16, MAGIC = 0x4E335442 /* "BT3N" */ };
 enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4, T_PING = 5, T_PONG = 6, T_CONFIG = 7, T_CONFIG_ACK = 8,
        T_CHAT = 10 /* a line of text between the players (net_chat.c): its number, its length, its bytes. Not part of
                       the game: a copy without the chat ignores it, so NET_VERSION stays */,
-       T_FPRINT = 12 /* the sender's gameplay fingerprint (fprint_send, below); a copy without it ignores it */ };
+       T_FPRINT = 12 /* the sender's gameplay fingerprint (fprint_send, below); a copy without it ignores it */,
+       T_HUD_LATENCY = 13 /* optional display telemetry; older clients ignore it */ };
 /* The version of what goes over the line. The greeting and its answer carry it, and two copies that differ do not
    start a match (the input packets changed with version 2: times for the ping were added; a copy that read them
    the old way took them for input). 1 was releases 0.1.8 and 0.1.9, which said no version. */
@@ -79,6 +80,13 @@ static int sLobbyOther;
    how often and for how long it waited for the other player. */
 static uint32_t sEchoTs, sEchoAtMs;     /* the other side's last send time and when it arrived here */
 static int sPingMs = -1;
+/* Packed in player order so the render thread reads a consistent pair. */
+static SDL_AtomicInt sHudLatency;
+static unsigned sHudLatencySent;
+static unsigned sHudLatencyHeard;
+static unsigned sHudLatencySequence;
+static unsigned sHudLatencyPeerSequence;
+static int sHudLatencyPeer = -1;
 static unsigned sSecRoll, sSecRollTicks, sSecWaits, sSecWaitMs, sSecTicks;
 static int sShown[6] = {0, 0, 0, 0, 0, 0}; /* ping, rollbacks, depth x 10, waits, ms waited, why (wait_why): of the last second */
 
@@ -97,6 +105,7 @@ static int sGone; /* the other player said goodbye (2: because its check found t
 static char sGoneNote[160];
 extern void Port_UiNotice(const char *text); /* ui.cpp: a line over the picture for a few seconds */
 extern void Port_UiBanner(const char *text, int ms); /* ui.cpp: a line in the middle while the game waits */
+#include "profile_cards.h"
 extern void Gs_HoldFrame(void);                      /* gs_draw.c: the last picture again, with that line on it */
 extern const char *MenuTranslation_PortText(const char *id);
 extern const char *PortOnline_Text(const char *text);
@@ -806,6 +815,20 @@ static uint32_t sMyArrival, sTheirArrival; /* (0: not yet) */
 static int sMet;
 static char sBannerSaid[NAME_LEN + 8]; /* what session_banner last put up (empty: nothing yet in this session) */
 
+static void send_hud_latency(unsigned now) {
+    /* A client measures its own view of the round trip and reports it to its
+       opponent. This packet is independent of rollback and input histories. */
+    const int ping = sPingMs >= 0 ? sPingMs : sSetupRtt;
+    const int own = ping >= 0 && ping < 5000 ? ping + 1 : 0;
+    const int peer = now - sHudLatencyHeard < 4000 && sHudLatencyPeer >= 0 ? sHudLatencyPeer + 1 : 0;
+    SDL_SetAtomicInt(&sHudLatency, sMe ? peer | (own << 13) : own | (peer << 13));
+    if (sConnected && own && (!sHudLatencySequence || now - sHudLatencySent >= 1000)) {
+        uint32_t packet[] = {MAGIC, T_HUD_LATENCY, sSeed, ++sHudLatencySequence, (uint32_t)ping};
+        sHudLatencySent = now;
+        send_to_peer(packet, sizeof(packet));
+    }
+}
+
 static void send_inputs(void) {
     uint8_t pkt[IN_HEAD + REDUNDANT * PAD];
     uint32_t tsend = now_ms(), techo = sEchoTs, thold = sEchoTs != 0 ? tsend - sEchoAtMs : 0;
@@ -827,6 +850,7 @@ static void send_inputs(void) {
         memcpy(pkt + IN_HEAD + i * PAD, sIn[sMe][(base + i) % RING], PAD);
     }
     send_to_peer(pkt, (int)(IN_HEAD + n * PAD));
+    send_hud_latency(tsend);
 }
 
 /* The lines of text that are due to go to the other player (net_chat.c: each is sent a few times). */
@@ -1867,6 +1891,16 @@ static int receive(void) {
                 sCfgGot = 1;
                 sConnected = 1;
             }
+        } else if (type == T_HUD_LATENCY && sConnected && n == 20) {
+            uint32_t report[3];
+            memcpy(report, pkt + 8, sizeof(report));
+            if (report[0] == sSeed && report[1] > sHudLatencyPeerSequence && report[2] < 5000) {
+                sHudLatencyPeerSequence = report[1];
+                sHudLatencyPeer = (int)report[2];
+                sHudLatencyHeard = now_ms();
+                if (report[1] == 1 && getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_HUD_LATENCY"))
+                    fprintf(stderr, "hud latency: player=%d peer=%u ms\n", !sMe, (unsigned)report[2]);
+            }
         } else if (type == T_FPRINT) {
             sDataBad |= fprint_differs(pkt, n);
         } else if (type == T_ARRIVED && sConnected && n >= 16) {
@@ -2092,6 +2126,10 @@ static void net_start(int role, const char *host, const char *join) {
     sFpHeard = 0;
     sEchoTs = 0;
     sPingMs = -1;
+    sHudLatencyPeer = -1;
+    sHudLatencySequence = sHudLatencyPeerSequence = 0;
+    sHudLatencySent = sHudLatencyHeard = 0;
+    SDL_SetAtomicInt(&sHudLatency, 0);
     sSecRoll = sSecRollTicks = sSecWaits = sSecWaitMs = sSecTicks = 0;
     memset(sShown, 0, sizeof(sShown));
     sApartAt = 0;
@@ -2137,7 +2175,7 @@ static void net_start(int role, const char *host, const char *join) {
     }
     memset(&local, 0, sizeof(local));
     local.sin_family = AF_INET;
-    local.sin_addr.s_addr = htonl(INADDR_ANY);
+    local.sin_addr.s_addr = htonl(getenv("BT4_RENDER_TEST") && getenv("BT4_NET_TEST_LOOPBACK") ? INADDR_LOOPBACK : INADDR_ANY);
     memset(&sPeer, 0, sizeof(sPeer));
     sPeer.sin_family = AF_INET;
     sSeed = 0;
@@ -2726,32 +2764,9 @@ const char *Port_LobbyRivalRegion(void) {
     return Port_LobbyRegionName(sRivalRegion);
 }
 
-/* Puts `line` into `text` with {name}, {region} and {ms} replaced. */
-static void banner_fill(char *text, size_t size, const char *line, const char *name, const char *region, int ms) {
-    size_t i, k, n;
-    char num[16];
-
-    snprintf(num, sizeof(num), "%d", ms);
-    for (i = n = 0; line[i] != '\0' && n + 1 < size; i++) {
-        const char *put = strncmp(line + i, "{name}", 6) == 0 ? name : strncmp(line + i, "{region}", 8) == 0 ? region : strncmp(line + i, "{ms}", 4) == 0 ? num : NULL;
-        if (put != NULL) {
-            for (k = 0; put[k] != '\0' && n + 1 < size; k++) {
-                text[n++] = put[k];
-            }
-            i += put == name ? 5 : put == region ? 7 : 3;
-        } else {
-            text[n++] = line[i];
-        }
-    }
-    text[n] = '\0';
-}
-
-/* What the screen says while a session starts (the picture stands still meanwhile: Gs_HoldFrame keeps showing it
-   with this line on it). Before the other player's name is known: that their game is being reached; then that they
-   are there, by name. The lines are the port catalog's (net/connecting, net/rival_here; {name} is replaced). */
 static void session_banner(void) {
-    const char *other = sNames[!sMe], *line, *region = Port_LobbyRivalRegion();
-    char text[256], said[sizeof(sBannerSaid)], name[NAME_LEN];
+    const char *other = sNames[!sMe], *region = Port_LobbyRivalRegion();
+    char said[sizeof(sBannerSaid)], name[NAME_LEN];
     size_t i, k;
     int ms = sPingMs >= 0 ? sPingMs : sSetupRtt;
 
@@ -2770,39 +2785,7 @@ static void session_banner(void) {
         return;
     }
     snprintf(sBannerSaid, sizeof(sBannerSaid), "%s", said);
-    if (k == 0) {
-        line = MenuTranslation_PortText("net/connecting");
-        Port_UiBanner(PortOnline_Text(line != NULL ? line : "Connecting to your rival..."), 0);
-        return;
-    }
-    if (region[0] != '\0') { /* a quick match: where the rival is */
-        line = MenuTranslation_PortText("net/rival_from");
-        if (line == NULL) {
-            line = "Your rival \"{name}\" from {region} is here! The match begins.";
-        }
-    } else {
-        line = MenuTranslation_PortText("net/rival_here");
-        if (line == NULL) {
-            line = "Your rival \"{name}\" is here! The match begins.";
-        }
-    }
-    banner_fill(text, sizeof(text), PortOnline_Text(line), name, region, ms);
-    if(Port_RankedActive()){
-        int points=Port_RankedRivalPoints(name);
-        if(points>=0){
-            k=strlen(text);
-            if(k+1<sizeof(text))text[k++]='\n';
-            snprintf(text+k,sizeof(text)-k,PortOnline_Text("Ranked points: %d"),points);
-        }
-    }
-    if (ms >= 0) { /* the round trip, as measured once the two are connected */
-        char more[96];
-        line = MenuTranslation_PortText("net/round_trip");
-        banner_fill(more, sizeof(more), PortOnline_Text(line != NULL ? line : "Round trip: ~{ms} ms"), name, region, ms);
-        k = strlen(text);
-        snprintf(text + k, sizeof(text) - k, "\n%s", more);
-    }
-    Port_UiBanner(text, 0);
+    Port_UiEncounter(sNames[sMe][0] ? sNames[sMe] : sMyName, name, region, ms);
 }
 
 /* While the game's thread waits for the other side during a session's start: the line, and the picture. */
@@ -3668,7 +3651,7 @@ int Port_LobbyStart(int host, const char *address, int port) {
     if (host) {
         memset(&local, 0, sizeof(local));
         local.sin_family = AF_INET;
-        local.sin_addr.s_addr = htonl(INADDR_ANY);
+        local.sin_addr.s_addr = htonl(getenv("BT4_RENDER_TEST") && getenv("BT4_NET_TEST_LOOPBACK") ? INADDR_LOOPBACK : INADDR_ANY);
         local.sin_port = htons((uint16_t)port);
         if (bind(sSock, (struct sockaddr *)&local, sizeof(local)) != 0) {
             sLobby = -1;
@@ -4293,6 +4276,12 @@ void Port_LobbyLaunch(void) {
    blanks per going back x 10, waits per second, ms waited per second, the rollback limit (0: waiting for each
    other), the input delay, whether it is chosen from the ping, why the waits of the last second were (1: the other
    game behind, 2: nothing came), the blank the two games came apart at (0: they agree). */
+void Port_NetHudLatency(int *out) {
+    const int packed = SDL_GetAtomicInt(&sHudLatency);
+    out[0] = (packed & 8191) - 1;
+    out[1] = (packed >> 13) - 1;
+}
+
 int Port_NetStats(int *out) {
     if (sMode <= 0 || sMode == 3 || !sConnected) {
         return 0;
@@ -4395,7 +4384,6 @@ static void lobby_background(void) {
         sLobbyBg = 0;
     } else if (now == 2) {
         sLobbyBg = 0;
-        Port_UiNotice("Tenkaichi Budokai Online: your opponent is here! The match begins.");
         Port_LobbyLaunch();
     } else if (now <= 0) {
         sLobbyBg = 0;
@@ -4438,7 +4426,7 @@ int NetIo_Open(int port) {
 #endif
     memset(&local, 0, sizeof(local));
     local.sin_family = AF_INET;
-    local.sin_addr.s_addr = htonl(INADDR_ANY);
+    local.sin_addr.s_addr = htonl(getenv("BT4_RENDER_TEST") && getenv("BT4_NET_TEST_LOOPBACK") ? INADDR_LOOPBACK : INADDR_ANY);
     local.sin_port = htons((uint16_t)port);
     if (sSock < 0 || bind(sSock, (struct sockaddr *)&local, sizeof(local)) != 0 || getsockname(sSock, (struct sockaddr *)&local, &len) != 0) {
         if (sSock >= 0) {

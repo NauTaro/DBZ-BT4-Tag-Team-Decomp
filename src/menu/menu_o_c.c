@@ -2,6 +2,29 @@
 #include "port_variant.h"
 #include "menu/menu_o.h"
 
+#ifdef PORT
+extern void McFlow_StartAutoSave(void);
+
+static void Ub_AutoSave(void) {
+    extern int Port_NetActive(void);
+    if (Port_NetActive())
+        return;
+
+    McFlow_Init(1);
+    McFlow_StartAutoSave();
+    s32 saving;
+    do {
+        Gfx_BeginFrame();
+        Snd_Update();
+        saving = McFlow_Update();
+        Gfx_EndFrame(1);
+        Dma_Flush();
+        File_Stub264D90();
+    } while (saving);
+    McFlow_Term();
+}
+#endif
+
 /*
  * Ub_Main, 0x379908..0x379F58: the handler of gProgress->mode 13..30 (main-menu item 1; archive gMenuArc3 = file
  * baseFile + 3) and the three functions that finish the battle setup once the player's fighters are chosen.
@@ -132,6 +155,9 @@ s32 Ub_Main(void) {
         case 16:
             Bgm_Play(PORT_V(UB_BGM, 0x841));
             MisResult_Run(3);
+#ifdef PORT
+            Ub_AutoSave();
+#endif
             UO_PROG->mode = 14;
             Adx_StopAll();
             break;
@@ -158,6 +184,9 @@ s32 Ub_Main(void) {
         case 19:
             Bgm_Play(PORT_V(UB_BGM, 0x841));
             SurvResult_Run(3);
+#ifdef PORT
+            Ub_AutoSave();
+#endif
             UO_PROG->mode = 17;
             Adx_StopAll();
             break;
@@ -195,6 +224,9 @@ s32 Ub_Main(void) {
                 UO_PROG->mode = 22;
                 UO_PROG->unk674++;
             }
+#ifdef PORT
+            Ub_AutoSave();
+#endif
             Adx_StopAll();
             break;
         case 24:
@@ -234,6 +266,9 @@ s32 Ub_Main(void) {
         case 27:
             Bgm_Play(PORT_V(UB_BGM, 0x841));
             UbResult_Run(3);
+#ifdef PORT
+            Ub_AutoSave();
+#endif
             UO_PROG->mode = 26;
             Adx_StopAll();
             break;
@@ -260,6 +295,9 @@ s32 Ub_Main(void) {
         case 30:
             Bgm_Play(PORT_V(UB_BGM, 0x841));
             UbResult_Run(3);
+#ifdef PORT
+            Ub_AutoSave();
+#endif
             UO_PROG->mode = 28;
             Adx_StopAll();
             break;

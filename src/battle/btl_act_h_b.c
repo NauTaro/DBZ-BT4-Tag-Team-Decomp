@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/bt4_private_balance.h"
 extern s32 TagBattle_IsActorLoading(s32 actor);
 extern void Bt4_SpendTransformKi(void *chr, s32 amount);
 extern s32 Bt4_HasRecoveryVariant(void *chr);
@@ -2406,6 +2407,16 @@ s32 BtlDecide_Main(BtlActIChr *chr, s32 mask) {
 s32 BtlDecide_Attack(BtlActIChr *chr, s32 mask) {
     if (!BtlChar_IsFree(chr)) {
         return 0;
+    }
+    if (Bt4Balance_UsesOnlineRules() && (mask & 0x300) && (BtlChar_TestFlag(chr, 0x13) || (mask & 0x200))) {
+        extern s32 BtlCharApi_GetChara(s32 objId), BattleSide_GetObjId(s32 side);
+        const s32 fighter = BtlCharApi_GetChara(BattleSide_GetObjId(chr->player));
+        if ((fighter == 18 || fighter == 19) &&
+            BtlOpp_GetSeenAction(chr) == 0xD8 && TEST(78)) {
+            BtlColl_AddActionBit(chr, 0xB6);
+            BtlAct_SetQueue(chr, 0, 0xB6);
+            return 1;
+        }
     }
     if (mask & 1) {
         BtlColl_AddActionBit(chr, 0x44);

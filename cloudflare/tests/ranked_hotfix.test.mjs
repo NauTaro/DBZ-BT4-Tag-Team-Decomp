@@ -10,7 +10,20 @@ function fixture(){
  c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");c.run("INSERT INTO online_meta VALUES('ranked_abandonment_v2','1')");
  function user(name,rating=1000){const u=crypto.randomUUID();c.run('INSERT INTO online_users VALUES(?,?)',u,now);c.command(u,'nickname_set',{name});c.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo',?,?)",u,name,rating);return u;}
  function call(u,op,args={}){db.exec('BEGIN');try{let r=c.command(u,op,args);db.exec('COMMIT');return r;}catch(e){db.exec('ROLLBACK');throw e;}}
- function pair(a,b){call(a,'ranked_queue',profile);const r=call(b,'ranked_queue',profile);const m=c.one('SELECT * FROM ranked_matches WHERE id=?',r.generation);assert.ok(m);for(const u of [a,b])call(u,'ranked_heartbeat',{match:m.id});return m;}
+ function pair(a,b){
+  let match;
+  // Keep both tickets alive while the rating range widens.
+  for(let elapsed=0;elapsed<=210000&&!match;elapsed+=5000){
+   for(const u of [a,b]){
+    const queued=call(u,'ranked_queue',profile);
+    if(queued.generation){match=c.one('SELECT * FROM ranked_matches WHERE id=?',queued.generation);break;}
+   }
+   if(!match)now+=5000;
+  }
+  assert.ok(match,'both players should match once their rating ranges overlap');
+  for(const u of [a,b])call(u,'ranked_heartbeat',{match:match.id});
+  return match;
+ }
  function finish(m,winner){const outcome=winner===m.a?0:winner===m.b?1:2,digest='e'.repeat(64);for(const u of [m.a,m.b])call(u,'ranked_report',{match:m.id,outcome,digest});}
  return {c,user,call,pair,finish,tick:n=>now+=n};
 }

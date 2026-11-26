@@ -3,6 +3,10 @@ import './online_characters.test.mjs';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {OnlineCore,seasonAt,clientAtLeast} from '../online_core.mjs';
+import {fulfillProfilePass,passDurationMs} from '../online_profile_cards.mjs';
+import {applyProfileWebhook,profileCheckout,verifyProfileWebhook} from '../online_profile_checkout.mjs';
+import {createHmac} from 'node:crypto';
+import {OnlineCoordinator} from '../online_worker.mjs';
 
 function fixture(){
     const db=new DatabaseSync(':memory:');let now=Date.parse('2026-11-11T15:00:00Z');
@@ -13,6 +17,133 @@ function fixture(){
     return {c,db,user,invoke,tick:n=>now+=n,ids};
 }
 const profile={mode:'duel',wire:'test-v1',content:'abcd',rules:'S'};
+test('card customizations follow the account and expose cosmetics without payment data',()=>{
+    const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo');
+    assert.throws(()=>f.invoke(a,'profile_card_save',{card:{premium_until:99999}}),/BAD_PROFILE_CARD/);
+    assert.throws(()=>f.invoke(a,'profile_card_save',{card:{background:8}}),/BAD_PROFILE_CARD/);
+    assert.throws(()=>f.invoke(a,'profile_card_save',{card:{decoration:1}}),/PROFILE_PASS_REQUIRED/);
+    f.invoke(a,'profile_card_save',{card:{name_color:4,background:2}});
+    const room=f.invoke(a,'create',profile);
+    const guest=f.invoke(b,'join',{...profile,code:room.code});
+    assert.deepEqual(guest.members[0].card,{name_color:4,background:2,decoration:0,premium:false,media:{}});
+    assert.equal(guest.members[1].card,undefined);
+    f.invoke(a,'profile_card_save',{card:{background:3}});
+    assert.equal(f.c.events.find(event=>event.user===b).body.members[0].card.background,3);
+});
+test('a verified one-dollar receipt grants exactly thirty days and retries do not extend it',()=>{
+    const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo');
+    const paidAt=f.c.now();
+    const receipt={user_id:a,payment_id:'payment_123',amount_minor:100,currency:'usd',paid_at:paidAt};
+    assert.throws(()=>fulfillProfilePass(f.c,{...receipt,amount_minor:99}),/BAD_PROFILE_PAYMENT/);
+    assert.equal(fulfillProfilePass(f.c,receipt).premium_until,paidAt+passDurationMs);
+    assert.equal(fulfillProfilePass(f.c,receipt).premium_until,paidAt+passDurationMs);
+    assert.throws(()=>fulfillProfilePass(f.c,{...receipt,user_id:b}),/BAD_PROFILE_PAYMENT/);
+    f.invoke(a,'profile_card_save',{card:{name_color:5,background:2,decoration:1}});
+    f.tick(passDurationMs-1);
+    assert.equal(f.invoke(a,'profile_card_get').decoration,1);
+    f.tick(1);
+    assert.deepEqual(f.invoke(a,'profile_card_get'),{
+        name_color:5,background:2,decoration:0,premium:false,media:{},premium_until:paidAt+passDurationMs
+    });
+    assert.equal(f.invoke(b,'profile_card_get').premium,false);
+    assert.equal(fulfillProfilePass(f.c,{...receipt,payment_id:'payment_456',paid_at:f.c.now()}).decoration,1);
+});
+test('profile media is fetched on demand, scoped to a room, and follows pass expiration',()=>{
+    const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo'),outside=f.user('Charlie');
+    const avatar=Buffer.alloc(2048,19).toString('base64');
+    const banner=Buffer.alloc(8192,7).toString('base64');
+    const motion={kind:'motion',frames:Array(6).fill(avatar),delays:Array(6).fill(125)};
+    assert.throws(()=>f.invoke(a,'profile_media_save',motion),/PROFILE_PASS_REQUIRED/);
+    assert.throws(()=>f.invoke(a,'profile_media_save',{kind:'avatar',frames:[avatar+'='],delays:[100]}),/BAD_PROFILE_MEDIA/);
+    const common=f.invoke(a,'profile_media_save',{kind:'avatar',frames:[avatar],delays:[100]}).media.avatar;
+    assert.throws(()=>f.invoke(b,'profile_media_get',{id:common}),/PROFILE_MEDIA_UNAVAILABLE/);
+    const room=f.invoke(a,'create',profile);
+    const guest=f.invoke(b,'join',{...profile,code:room.code});
+    assert.deepEqual(guest.members[0].card.media,{avatar:common});
+    assert.equal(f.invoke(b,'profile_media_get',{id:common}).frames[0],avatar);
+    fulfillProfilePass(f.c,{user_id:a,payment_id:'motion_123',amount_minor:100,currency:'usd',paid_at:f.c.now()});
+    const animated=f.invoke(a,'profile_media_save',motion).media.motion;
+    const cover=f.invoke(a,'profile_media_save',{kind:'banner',frames:[banner],delays:[100]}).media.banner;
+    const animatedCover=f.invoke(a,'profile_media_save',{...motion,kind:'banner_motion'}).media.banner_motion;
+    assert.equal(f.invoke(b,'profile_media_get',{id:animated}).frames.length,6);
+    assert.equal(f.invoke(b,'profile_media_get',{id:cover}).frames[0],banner);
+    assert.equal(f.invoke(b,'profile_media_get',{id:animatedCover}).kind,'banner_motion');
+    assert.throws(()=>f.invoke(outside,'profile_media_get',{id:animated}),/PROFILE_MEDIA_UNAVAILABLE/);
+    f.tick(passDurationMs);
+    assert.deepEqual(f.invoke(a,'profile_card_get').media,{avatar:common});
+    assert.throws(()=>f.invoke(a,'profile_media_get',{id:cover}),/PROFILE_MEDIA_UNAVAILABLE/);
+    assert.throws(()=>f.invoke(a,'profile_media_get',{id:animatedCover}),/PROFILE_MEDIA_UNAVAILABLE/);
+    assert.deepEqual(f.invoke(a,'profile_media_save',{kind:'avatar',remove:true}).media,{});
+});
+test('the shared avatar slot switches between GIF and static images and removal clears both',()=>{
+    const f=fixture(),user=f.user('Avatar');
+    const frame=Buffer.alloc(2048,23).toString('base64');
+    const gif={kind:'motion',frames:[frame],delays:[125]};
+    assert.throws(()=>f.invoke(user,'profile_media_save',gif),/PROFILE_PASS_REQUIRED/);
+    fulfillProfilePass(f.c,{user_id:user,payment_id:'avatar_receipt',amount_minor:100,currency:'usd',paid_at:f.c.now()});
+    const gifId=f.invoke(user,'profile_media_save',gif).media.motion;
+    const photo=f.invoke(user,'profile_media_save',{...gif,kind:'avatar'}).media;
+    assert.ok(photo.avatar);
+    assert.equal(photo.motion,undefined);
+    assert.throws(()=>f.invoke(user,'profile_media_get',{id:gifId}),/PROFILE_MEDIA_UNAVAILABLE/);
+    f.invoke(user,'profile_media_save',gif);
+    assert.deepEqual(f.invoke(user,'profile_media_save',{kind:'avatar',remove:true}).media,{});
+});
+test('checkout uses the authenticated account and the webhook requires signed paid USD 1 events',async()=>{
+    const f=fixture(),a=f.user('Alpha');
+    const env={STRIPE_PROFILE_SECRET_KEY:'sk_test_example',STRIPE_PROFILE_WEBHOOK_SECRET:'whsec_example',
+        STRIPE_PROFILE_RETURN_URL:'https://example.com/profile'};
+    const link=await profileCheckout(env,a,async (url,{body})=>{
+        assert.equal(url,'https://api.stripe.com/v1/checkout/sessions');
+        assert.equal(body.get('client_reference_id'),a);
+        assert.equal(body.get('line_items[0][price_data][unit_amount]'),'100');
+        assert.equal(body.get('mode'),'payment');
+        return Response.json({url:'https://checkout.stripe.com/c/pay/test'});
+    });
+    assert.equal(link.url,'https://checkout.stripe.com/c/pay/test');
+    const ts=Math.floor(f.c.now()/1000);
+    const payment={object:'checkout.session',livemode:false,mode:'payment',client_reference_id:a,
+        metadata:{product:'bt4_profile_30_days'},payment_status:'paid',amount_total:100,currency:'usd',payment_intent:'pi_example'};
+    const original={type:'checkout.session.completed',livemode:false,created:ts,data:{object:payment}};
+    const raw=JSON.stringify(original);
+    const header='t='+ts+',v1='+createHmac('sha256',env.STRIPE_PROFILE_WEBHOOK_SECRET).update(ts+'.'+raw).digest('hex');
+    await assert.rejects(verifyProfileWebhook(env.STRIPE_PROFILE_WEBHOOK_SECRET,header,raw+' ',f.c.now()),/BAD_PROFILE_SIGNATURE/);
+    await assert.rejects(verifyProfileWebhook(env.STRIPE_PROFILE_WEBHOOK_SECRET,header,raw,f.c.now()+301000),/BAD_PROFILE_SIGNATURE/);
+    const verified=await verifyProfileWebhook(env.STRIPE_PROFILE_WEBHOOK_SECRET,header,raw,f.c.now());
+    const event=(edit)=>({...original,data:{object:{...payment,...edit}}});
+    assert.equal(applyProfileWebhook(f.c,env,event({payment_status:'unpaid'})),false);
+    assert.equal(applyProfileWebhook(f.c,env,event({amount_total:95})),false);
+    assert.equal(f.invoke(a,'profile_card_get').premium,false);
+    assert.equal(applyProfileWebhook(f.c,env,verified),true);
+    assert.equal(applyProfileWebhook(f.c,env,verified),true);
+    assert.equal(f.invoke(a,'profile_card_get').premium_until,ts*1000+passDurationMs);
+    assert.equal(applyProfileWebhook(f.c,env,{...event({refunded:true}),type:'charge.refunded'}),true);
+    assert.equal(f.invoke(a,'profile_card_get').premium,false);
+    assert.equal(applyProfileWebhook(f.c,env,verified),true);
+    assert.equal(f.invoke(a,'profile_card_get').premium,false);
+});
+test('the coordinator webhook uses the raw signed request and records payment without a player session',async()=>{
+    const f=fixture(),user=f.user('Alpha');
+    f.tick(Date.now()-f.c.now());
+    const env={STRIPE_PROFILE_SECRET_KEY:'sk_test_example',STRIPE_PROFILE_WEBHOOK_SECRET:'whsec_example'};
+    const coordinator=Object.assign(Object.create(OnlineCoordinator.prototype),{
+        env,core:f.c,ctx:{storage:{transactionSync:fn=>fn()}}
+    });
+    const ts=Math.floor(f.c.now()/1000),raw=JSON.stringify({
+        type:'checkout.session.completed',livemode:false,created:ts,data:{object:{
+            object:'checkout.session',livemode:false,mode:'payment',client_reference_id:user,
+            metadata:{product:'bt4_profile_30_days'},payment_status:'paid',amount_total:100,currency:'usd',payment_intent:'pi_webhook'
+        }}
+    });
+    const signature='t='+ts+',v1='+createHmac('sha256',env.STRIPE_PROFILE_WEBHOOK_SECRET).update(ts+'.'+raw).digest('hex');
+    const request=body=>new Request('https://example.com/v5/profile/payment-webhook',{
+        method:'POST',body,headers:{'Stripe-Signature':signature}
+    });
+    assert.equal((await coordinator.fetch(request(raw+' '))).status,400);
+    assert.equal(f.invoke(user,'profile_card_get').premium,false);
+    assert.equal((await coordinator.fetch(request(raw))).status,200);
+    assert.equal(f.invoke(user,'profile_card_get').premium,true);
+});
 test('private rooms work in both hosting directions and isolate outsiders',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo'),outside=f.user('Charlie');
     for(const [host,guest] of [[a,b],[b,a]]){
@@ -99,6 +230,27 @@ function rankedPair(f){const a=f.user('First'),b=f.user('Second');const args={..
     f.invoke(a,'ranked_queue',args);const r=f.invoke(b,'ranked_queue',args);
     f.invoke(a,'ranked_heartbeat',{match:r.generation});f.invoke(b,'ranked_heartbeat',{match:r.generation});
     const admitted=f.c.one('SELECT a,b FROM ranked_matches WHERE id=?',r.generation);return {...admitted,id:r.generation};}
+test('ranked matchmaking leaves a veteran waiting and matches the closest rating first',()=>{
+    const f=fixture(),veteran=f.user('Veteran'),eligible=f.user('Eligible'),closest=f.user('Closest'),newcomer=f.user('Newcomer');
+    const args={...profile,ruleset:'solo'};
+    for(const [id,points] of [[veteran,1700],[eligible,1095],[closest,980]])
+        f.c.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo',?,?)",id,'Test',points);
+    for(const u of [veteran,eligible,closest])assert.equal(f.invoke(u,'ranked_queue',args).state,'waiting');
+    const room=f.invoke(newcomer,'ranked_queue',args);
+    assert.deepEqual(room.members.map(m=>m.name).sort(),['Closest','Newcomer']);
+    assert.equal(f.invoke(veteran,'ranked_queue',args).state,'waiting');
+});
+
+test('ranked rating tolerance increases gradually after both players have waited',()=>{
+    const f=fixture(),a=f.user('WaitingOne'),b=f.user('WaitingTwo');
+    const args={...profile,ruleset:'solo'};
+    f.c.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo',?,?)",b,'WaitingTwo',1150);
+    assert.equal(f.invoke(a,'ranked_queue',args).state,'waiting');
+    assert.equal(f.invoke(b,'ranked_queue',args).state,'waiting');
+    f.tick(20000);
+    assert.equal(f.invoke(b,'ranked_queue',args).members.length,2);
+});
+
 test('ranked rooms return the rating of the two competitors only',()=>{
     const f=fixture(),{a,b,id}=rankedPair(f);
     f.c.run("UPDATE ranked_players SET rating=1499 WHERE user_id=?",a);
@@ -163,10 +315,12 @@ test('private lobbies, duels and Tag hold a one hour lease and tournament discov
     }
 });
 
-function finishRanked(f, first, second, winner, forfeit=false){
+function finishRanked(f, first, second, winner, forfeit=false, afterAdmission){
     const args={...profile,ruleset:'solo'};
     f.invoke(first,'ranked_queue',args);
     const {generation:match}=f.invoke(second,'ranked_queue',args);
+    assert.ok(match);
+    afterAdmission?.();
     const {a,b}=f.c.one('SELECT a,b FROM ranked_matches WHERE id=?',match);
     f.invoke(a,'ranked_heartbeat',{match});
     f.invoke(b,'ranked_heartbeat',{match});
@@ -188,20 +342,24 @@ test('streaks preserve win rewards but losses depend on opponent rating',()=>{
     f.c.run("INSERT INTO online_meta VALUES('ranked_scoring','streak')");
     for(let i=0;i<20;i++){
         const opponent=f.user('Opponent'+i);
-        assert.equal(finishRanked(f,a,opponent,a).result.delta,13+2*i);
+        f.c.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo','Opponent',?)",opponent,f.invoke(a,'ranked_status').rating);
+        assert.equal(finishRanked(f,a,opponent,a,false,()=>f.c.run("UPDATE ranked_players SET rating=0 WHERE user_id=?",opponent)).result.delta,13+2*i);
     }
     let status=f.invoke(a,'ranked_status');
     assert.equal(status.rating,1640);
     assert.equal(status.streak_wins,20);
     assert.equal(status.streak_points,640);
     const victor=f.user('Rival');
-    const result=finishRanked(f,a,victor,victor).result;
+    f.c.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo','Rival',?)",victor,status.rating);
+    const result=finishRanked(f,a,victor,victor,false,()=>f.c.run("UPDATE ranked_players SET rating=0 WHERE user_id=?",victor)).result;
     assert.equal(result.delta,-32);
     assert.equal(result.rating,1608);
     status=f.invoke(a,'ranked_status');
     assert.equal(status.streak_wins,0);
     assert.equal(status.streak_points,0);
-    assert.equal(finishRanked(f,a,f.user('Fresh'),a).result.delta,13);
+    const fresh=f.user('Fresh');
+    f.c.run("INSERT INTO ranked_players(user_id,ruleset,name,rating) VALUES(?,'solo','Fresh',?)",fresh,status.rating);
+    assert.equal(finishRanked(f,a,fresh,a).result.delta,13);
 });
 
 test('new streak players start at zero without resetting existing accounts',()=>{

@@ -14,6 +14,10 @@
 #include "sys/save.h"
 #ifdef PORT
 #include "battle/bt4_potara.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "battle/bt4_balance.h"
+#include "bt4_goku_costumes.h"
+#endif
 #endif
 
 #ifdef PORT
@@ -425,6 +429,57 @@ s32 BtlLoad_StepObject(BtlJob *job) {
     return 0;
 }
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+static s32 Bt4_GokuFormIndex(s32 chara) {
+    switch (chara) {
+    case BT4_GOKU_END: return 0;
+    case BT4_GOKU_INSTINCT_SIGN: return 1;
+    case BT4_GOKU_MASTERED_INSTINCT: return 2;
+    default: return -1;
+    }
+}
+
+static s32 Bt4_GokuCostumeModel(const BtlJob *job) {
+    const s32 target = Bt4_GokuFormIndex(job->chara);
+    static const s32 first[] = {0, 6, 10, 14};
+    extern s32 Bt4BodyChange_Active(s32 actor);
+    extern void *BtlChar_Get(s32 side);
+    extern s32 BtlAct_GetSwitchMember(void *chr);
+    s32 member, source, costume, destination;
+
+    if (target < 0 || !Bt4_ExtraFormsAllowed() || Bt4BodyChange_Active(job->side)) {
+        return -1;
+    }
+    member = job->initial ? 0 : BtlSide_GetActiveMember(job->side);
+    if (BtlCtrl_IsSwitching(job->side)) {
+        member = BtlAct_GetSwitchMember(BtlChar_Get(job->side));
+    }
+    if (member < 0 || member >= BattleSide_GetMemberCount(job->side)) {
+        return -1;
+    }
+
+    /* The roster retains the selected outfit while the active member changes form. */
+    source = Bt4_GokuFormIndex(BattleSide_GetMemberChara(job->side, member));
+    if (source < 0) {
+        return -1;
+    }
+    costume = BattleSide_GetMemberCostume(job->side, member);
+    if (costume < 0 || costume >= first[source + 1] - first[source]) {
+        return -1;
+    }
+    if (source == target) {
+        return Bt4_ModelFile(job->chara, costume, job->variant != 0);
+    }
+    if (!Port_GokuCostumesReady()) {
+        return -1;
+    }
+
+    destination = target - (target > source);
+    return BT4_GOKU_COSTUME_FILE_FIRST + (first[source] + costume) * 4 +
+           destination * 2 + (job->variant != 0);
+}
+#endif
+
 /* Job: loads a side's character (model, voice bank, data block) and swaps it in. */
 s32 TagBattle_VoiceBank(s32 chara){return BTL_VOICE_FILE(chara,gSaveData->flags&SAVE_FLAG_VOICE);}
 s32 BtlLoad_StepChara(BtlJob *job) {
@@ -441,7 +496,11 @@ s32 BtlLoad_StepChara(BtlJob *job) {
     case 0:
 #ifdef PORT
         if (gPortVariant != 0) {
-            model = Bt4_ModelFile(job->chara, job->costume, job->variant != 0);
+#ifdef BT4_TAG_TEAM_EXPANDED
+            model = Bt4_GokuCostumeModel(job);
+            if (model < 0)
+#endif
+                model = Bt4_ModelFile(job->chara, job->costume, job->variant != 0);
         } else
 #endif
         if (job->variant != 0) {

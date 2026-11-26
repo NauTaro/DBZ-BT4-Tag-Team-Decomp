@@ -631,6 +631,11 @@ void BtlAct_SuperBeamHandler(BtlSuperChr *chr, s32 phase) {
         case 0x127:
         case 0x149:
             aim = 1;
+            {
+                extern f32 Bt4Balance_SuperStartup(BtlSuperChr *, s32);
+                f32 rate = Bt4Balance_SuperStartup(chr, cls);
+                if (rate > 1.0f) BtlAnim_SetStep(chr, 2.0f * rate);
+            }
             BtlAnim_AdvanceThen(chr, SUPER_ANIM(cls, 1), 0.0f, 0);
             BtlSuper_RequestHitStop(chr, 0);
             BtlSuper_SetClass(chr, cls);

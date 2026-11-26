@@ -1,6 +1,10 @@
 #ifndef BATTLE_EFT_J_H
 #define BATTLE_EFT_J_H
 
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "battle/bt4_beam_parry.h"
+#endif
+
 #include "types.h"
 #include "sys/math3d.h"
 
@@ -270,6 +274,9 @@ typedef struct EftBlast {
     /* 0x3D0 */ u8 unk3D0[0x1E0];
     /* 0x5B0 */ EftJSet *set;
     /* 0x5B4 */ u8 unk5B4[0xC];
+#ifdef BT4_DEV_BEAM_PARRY
+    Bt4ParriedBeam parry;
+#endif
 } EftBlast; /* size 0x5C0 */
 
 /* ---- module "shots" (classes 0x2C38F8 manager / 0x2C3910 item); its callbacks are in eft_k.c, where the same

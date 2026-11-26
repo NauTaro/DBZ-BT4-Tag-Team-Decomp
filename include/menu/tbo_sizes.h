@@ -42,6 +42,12 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {64, 64, 0}, /* btn_xbox_x */
     {64, 64, 0}, /* btn_xbox_y */
     {64, 64, 0}, /* btn_xbox_menu */
+    {64, 64, 0}, /* btn_xbox_lb */
+    {64, 64, 0}, /* btn_xbox_lt */
+    {64, 64, 0}, /* btn_xbox_ls */
+    {64, 64, 0}, /* btn_xbox_rb */
+    {64, 64, 0}, /* btn_xbox_rt */
+    {64, 64, 0}, /* btn_xbox_rs */
 };
 
 #endif

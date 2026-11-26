@@ -6,6 +6,7 @@
 #ifdef PORT
 #include "battle/col_c.h" /* FontStyle / FONT_ALIGN_* / FONT_SHADOW_*, for the names of added stages */
 #include "plat_stages.h"  /* the manifest of added stages: their ids, names and file aliases */
+extern s32 ChrGrid_Random(const void *, s32, s32, s32 (*)(s32, s32), s32 *);
 #include "plat_songs.h"   /* the manifest of added songs (the music select) */
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,7 +48,7 @@ extern void Port_MenuMovie(int index);
 
 CharSel *gCharSel = NULL;
 
-extern void Bt4Costume_AttachCaption(MFlash *flash, MFlashRef *ref, s32 number, s32 total, const u16 *name, void *storage);
+extern void Bt4Costume_AttachCaption(MFlash *flash, MFlashRef *ref, s32 chara, s32 number, s32 total, const u16 *name, void *storage);
 extern void TextBox_Init(MTextBox *box, void *text, u32 preset);
 extern void TextBox_SetUnk80(MTextBox *box, s32 value);
 extern void TextBox_AttachLine(MFlash *flash, MFlashRef *ref, s32 x, s32 y, s32 line, MTextBox *box);
@@ -732,6 +733,12 @@ void CharSel_Init(s32 section) {
             gCharSel->stage->bgm = i;
         }
     }
+#ifdef PORT
+    /* Open the stage picker on its Random music entry. */
+    if (gCharSel->bgmCount > 0 && gCharSel->bgmIds[gCharSel->bgmCount - 1] == 0x18) {
+        gCharSel->stage->bgm = gCharSel->bgmCount - 1;
+    }
+#endif
     gCharSel->faceState = CHARSEL_LOAD_IDLE;
     for (i = 0; i < CHARSEL_SIDES; i++) {
 #ifdef PORT
@@ -1177,7 +1184,7 @@ void CharSel_Draw(void) {
             if(gCharSel->side[i]->colorPlate>=0 && gCharSel->side[i]->colorPlate<gCharSel->colorCount[i]) {
                 u32 *row = *(u32 **)((u8 *)&gCharSel->costumeBox[i] + 4);
                 const u16 *label = (const u16 *)((u8 *)row + (row[1 + gCharSel->side[i]->colorPlate] & ~3u));
-                Bt4Costume_AttachCaption(f, &ref, gCharSel->side[i]->colorPlate + 1, gCharSel->colorCount[i], label, &gCharSel->costumeBox[i]);
+                Bt4Costume_AttachCaption(f, &ref, gCharSel->side[i]->chara, gCharSel->side[i]->colorPlate + 1, gCharSel->colorCount[i], label, &gCharSel->costumeBox[i]);
             } else {
                 /* Native TextBox_AttachLine also clears its callback for line -1. */
                 TextBox_AttachLine(f, &ref, 0, 0, -1, &gCharSel->costumeBox[i]);
@@ -1353,6 +1360,8 @@ void CharSel_Input(s32 *running) {
         (gCharSel->flash[0].flags & MFLASH_PAD) && (gCharSel->flags & CHARSEL_STARTED)) {
         static int frame, positioned;
         s32 wanted = atoi(getenv("BT4_FIGHTER_SELECTION_TEST"));
+        const char *costumeTest = getenv("BT4_FIGHTER_SELECTION_COSTUME");
+        s32 wantedCostume = costumeTest ? atoi(costumeTest) : -1;
         if (!positioned) {
             for (j = 0; j < gCharSel->masterCount[0]; ++j) {
                 MChrCell *cell = &gCharSel->cells[0][j];
@@ -1378,13 +1387,19 @@ void CharSel_Input(s32 *running) {
         }
         if (gCharSel->turn == 1 || gCharSel->side[0]->state == CHARSEL_ST_DONE) {
             fprintf(stderr, "fighter selection: confirmed=%d costume=%d\n", gCharSel->side[0]->picked, gCharSel->side[0]->colorPlate);
-            exit(gCharSel->side[0]->picked != wanted);
+            exit(gCharSel->side[0]->picked != wanted ||
+                 (costumeTest && gCharSel->side[0]->colorPlate != wantedCostume));
         }
         if (++frame % 30 == 0) {
             const char *stale = getenv("BT4_FIGHTER_SELECTION_STALE");
             CharSelSide *side = gCharSel->side[0];
             if (stale && side->state == CHARSEL_ST_COLOR) side->chip[side->col] = atoi(stale);
-            gPad[0].gamePressed = PADG_CROSS;
+            if (costumeTest && side->state == CHARSEL_ST_COLOR && side->colorPlate != wantedCostume) {
+                if (wantedCostume < 0 || wantedCostume >= gCharSel->colorCount[0]) exit(3);
+                gPad[0].gameRepeat = PADG_RIGHT;
+            } else {
+                gPad[0].gamePressed = PADG_CROSS;
+            }
         }
     }
     /* Opt-in render regression: traverse the real training selector, then capture its map reel. */
@@ -1913,6 +1928,13 @@ void CharSel_Input(s32 *running) {
                     CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CUSTOM_CHIP, "fl_off_start");
                 } else {
                     if (CS_CELL.id == MCHR_RANDOM) {
+#ifdef PORT
+                        chara = ChrGrid_Random(gCharSel->cells[CS_N], gCharSel->masterCount[CS_N], CS_N, NULL, &n);
+                        if (chara < 0) {
+                            Snd_PlaySe(1, 7);
+                            continue;
+                        }
+#else
                         /* the random cell: draw a cell that is a character, then one of its forms */
                         for (;;) {
                             n = Rand_Range(gCharSel->masterCount[CS_N]);
@@ -1925,6 +1947,7 @@ void CharSel_Input(s32 *running) {
                         if (gCharSel->cells[CS_N][n].formCount != 0) {
                             chara = gCharSel->cells[CS_N][n].form[Rand_Range(gCharSel->cells[CS_N][n].formCount)];
                         }
+#endif
                         CS_SIDE->picked = chara;
 #ifdef PORT
                         if (Port_NetSession()) {

@@ -584,7 +584,14 @@ void Port_Trace(unsigned vblanks) {
             int slot=atoi(getenv("BT4_TEST_TRANSFORM"));
             int GAME_PTR gauge=BtlMember_GetActiveGauge(chr);
             gauge[3]=100000;gauge[5]=0;*(int GAME_PTR)(chr+0x1300)=1;
-            if(completed&&getenv("BT4_TEST_TRANSFORM_STEPS")){
+            const char *scenario = getenv("BT4_RENDER_TEST") ? getenv("BT4_TEST_TRANSFORM_SEQUENCE") : NULL;
+            if (scenario != NULL) {
+                /* A sequence such as 203 tests Sign, Mastered, and return in one fight. */
+                size_t count = strlen(scenario);
+                if ((size_t)completed >= count || scenario[completed] < '0' || scenario[completed] > '3') exit(4);
+                gauge[0] = gauge[1] * 3 / 10;
+                slot = scenario[completed] - '0';
+            } else if(completed&&getenv("BT4_TEST_TRANSFORM_STEPS")){
                 int n;for(n=0;n<4;++n)if(BtlParam_GetSlotId(chr,n)!=255&&BtlAct_CanTransform(chr,n,1,1)){slot=n;break;}
             }
             target=BtlParam_GetSlotId(chr,slot);origin=member[0];
@@ -686,8 +693,38 @@ void Port_Trace(unsigned vblanks) {
             fprintf(stderr,"story-loss damage injected with KO events\n");
         }
     }
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_TOPPO_CLASH_TEST") && gBtlSeq && gBtlSeq->state>=3){
+        extern void BtlScript_AddEvent(int,int);
+        extern int BtlScript_IsEventRunning(void), EftStruggle_IsActive(void);
+        static unsigned start, clashStarted;
+        if(!start && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=80 && !BtlScript_IsEventRunning()){
+            BtlScript_AddEvent(0xffff,10014);
+            fprintf(stderr,"story Toppo: opening clash event requested at vb=%u\n",vblanks);
+            start=vblanks;
+        }
+        if(start && !clashStarted && EftStruggle_IsActive()){
+            clashStarted=vblanks;
+            fprintf(stderr,"story Toppo: beam clash started vb=%u\n",vblanks);
+        }
+        if(clashStarted && !EftStruggle_IsActive()){
+            fprintf(stderr,"story Toppo: beam clash resolved after %u vblanks\n",vblanks-clashStarted);
+            exit(0);
+        }
+        if(start && vblanks-start>=5000){
+            fprintf(stderr,"story Toppo: clash did not resolve after %u vblanks\n",vblanks-start);
+            exit(3);
+        }
+    }
     if(getenv("BT4_STORY_BATTLE_TEST") && !getenv("BT4_STORY_CONTINUE_TEST") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=60) {
-        fprintf(stderr,"story-play script=%s state=3 tick=%d PASS\n",getenv("BT4_STORY_BATTLE_TEST"),BtlSeq_GetClock()[0]);exit(0);
+        extern int BattleSide_GetObjId(int), BtlCharApi_GetChara(int);
+        fprintf(stderr,"story-play script=%s state=3 tick=%d actors=%d,%d PASS\n",
+                getenv("BT4_STORY_BATTLE_TEST"),BtlSeq_GetClock()[0],
+                BtlCharApi_GetChara(BattleSide_GetObjId(0)),BtlCharApi_GetChara(BattleSide_GetObjId(1)));
+        exit(0);
+    }
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_BALANCE_AUDIT") && gBtlSeq && gBtlSeq->state == 3) {
+        extern int Bt4_RunBalanceAudit(void);
+        exit(Bt4_RunBalanceAudit());
     }
     if (getenv("BT4_TEST_TECH") != NULL && gBtlSeq != NULL && gBtlSeq->state == 3) {
         extern unsigned char GAME_PTR BtlChar_Get(int side);
@@ -717,6 +754,10 @@ void Port_Trace(unsigned vblanks) {
                 if(!placed)BtlAct_Request(BtlChar_Get(n),0xB);
                 if(n==actor){pos[0]=0.f;pos[2]=getenv("BT4_TEST_BEAM_SCENE")?-800.f:-40.f;}
                 if(n==victim){pos[0]=0.f;pos[2]=0.f;rot[1]=3.14159265f;}
+                if (getenv("BT4_TEST_BEAM_DEFENSE") && (n == actor || n == victim)) {
+                    pos[1] = -30.f;
+                    pos[2] = n == actor ? -200.f : 0.f;
+                }
                 BtlChar_Place(BtlChar_Get(n),pos,rot,BtlStage_FindZoneNear(-1,pos));
             }
             TagBattle_SetTarget(actor,victim);TagBattle_SetTarget(victim,actor);
@@ -733,6 +774,11 @@ void Port_Trace(unsigned vblanks) {
             int GAME_PTR gauge = BtlMember_GetActiveGauge(chr);
             int act = getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_ACTION")?(int)strtol(getenv("BT4_TEST_ACTION"),NULL,0):BtlAct_GetTechniqueAction(chr, slot);
             gauge[3] = gauge[4];
+            if (getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_BEAM_DEFENSE")) {
+                int GAME_PTR defense = BtlMember_GetActiveGauge(BtlChar_Get(victim));
+                defense[5] = 100000 * atoi(getenv("BT4_TEST_BEAM_DEFENSE"));
+                fprintf(stderr, "beam fixture: start hp=%d blast=%d\n", defense[0], defense[5]);
+            }
             if(getenv("BT4_TAG_RUSH_SCENE")){
                 extern int TagBattle_SetTarget(int,int);
                 TagBattle_SetTarget(2,3);TagBattle_SetTarget(3,2);
@@ -757,6 +803,11 @@ void Port_Trace(unsigned vblanks) {
         if (entered && !Bt4BodyChange_Active(actor) && !Bt4BodyChange_Active(victim) && vblanks-began > 180 && *(int GAME_PTR)(chr+0x948) < 0xFD && *(int GAME_PTR)(other+0x948) < 0xFD && (!getenv("BT4_TEST_ACTION")||*(int GAME_PTR)(chr+0x948)<0xB4||*(int GAME_PTR)(chr+0x948)>0xBF)) {
             if(!recovered){recovered=vblanks;fprintf(stderr,"bt4: tech recovered vb=%u\n",vblanks);}
             if(getenv("BT4_TAG_OWNERSHIP_TEST")&&vblanks-recovered<120)return;
+            if (getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_BEAM_DEFENSE")) {
+                int GAME_PTR defense = BtlMember_GetActiveGauge(BtlChar_Get(victim));
+                if (vblanks - recovered < 90) return;
+                fprintf(stderr, "beam fixture: end hp=%d blast=%d\n", defense[0], defense[5]);
+            }
             fprintf(stderr,"bt4: tech end action=%x tick=%d\n",*(int GAME_PTR)(chr+0x948),tick);
             if(simultaneous)fprintf(stderr,"bt4: concurrent tech complete actors=0,2\n");
             exit(0);

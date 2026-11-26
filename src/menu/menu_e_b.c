@@ -11,6 +11,7 @@ static void TeamSel_TagDrawFilter(void);
 #include "sys/save.h"
 #ifdef PORT
 #include "battle/col_c.h" /* FontStyle / FONT_ALIGN_* / FONT_SHADOW_*, for the names of added songs */
+extern s32 ChrGrid_Random(const void *, s32, s32, s32 (*)(s32, s32), s32 *);
 #include "plat_songs.h"   /* the songs added from outside the disc (the music select) */
 /* The port's song-name overlay (port/src/gs/ui.cpp / gs_draw.c), as the duel's select uses it (menu_c_e.c). */
 extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
@@ -54,7 +55,7 @@ TeamSel *gTeamSel = NULL;
 
 extern s32 ChrTbl_GetCost(s32 chara);
 extern s32 ChrTbl_IsRelated(s32 a, s32 b);
-extern void Bt4Costume_AttachCaption(MFlash *flash, MFlashRef *ref, s32 number, s32 total, const u16 *name, void *storage);
+extern void Bt4Costume_AttachCaption(MFlash *flash, MFlashRef *ref, s32 chara, s32 number, s32 total, const u16 *name, void *storage);
 extern void TextBox_Init(MTextBox *box, void *text, u32 preset);
 extern void TextBox_SetUnk80(MTextBox *box, s32 value);
 extern void TextBox_AttachLine(MFlash *flash, MFlashRef *ref, s32 x, s32 y, s32 line, MTextBox *box);
@@ -142,6 +143,13 @@ s32 TeamSel_FitsDp(s32 side, s32 chara) {
     }
     return gTeamSel->side[side]->cost + ChrTbl_GetCost(chara) <= w->dpMax;
 }
+
+#ifdef PORT
+static s32 TeamSel_RandomEligible(s32 side, s32 chara) {
+    return TeamSel_IsCharaFree(side, chara) && TeamSel_FitsDp(side, chara);
+}
+#endif
+
 
 /* Takes member `idx` out of a side's team: the members behind it move up and the last slot is emptied. */
 void TeamSel_RemoveMember(s32 side, s32 idx) {
@@ -827,6 +835,12 @@ void TeamSel_Init(s32 section) {
             gTeamSel->stage->bgmCursor = i;
         }
     }
+#ifdef PORT
+    /* Open the stage picker on its Random music entry. */
+    if (gTeamSel->bgmCount > 0 && gTeamSel->bgmIds[gTeamSel->bgmCount - 1] == 0x18) {
+        gTeamSel->stage->bgmCursor = gTeamSel->bgmCount - 1;
+    }
+#endif
     gTeamSel->faceState = TEAMSEL_LOAD_IDLE;
     if (gTeamSel->battleType == 2) {
         switch (gTeamSel->dpLevel) {
@@ -1262,7 +1276,7 @@ void TeamSel_Draw(void) {
             if(gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color>=0 && gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color<gTeamSel->colorCount[i]) {
                 u32 *row = *(u32 **)((u8 *)&gTeamSel->costumeBox[i] + 4);
                 const u16 *label = (const u16 *)((u8 *)row + (row[1 + gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color] & ~3u));
-                Bt4Costume_AttachCaption(flash, &ref, gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color + 1, gTeamSel->colorCount[i], label, &gTeamSel->costumeBox[i]);
+                Bt4Costume_AttachCaption(flash, &ref, gTeamSel->side[i]->chara, gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color + 1, gTeamSel->colorCount[i], label, &gTeamSel->costumeBox[i]);
             } else {
                 /* Native TextBox_AttachLine also clears its callback for line -1. */
                 TextBox_AttachLine(flash, &ref, 0, 0, -1, &gTeamSel->costumeBox[i]);
@@ -2052,6 +2066,13 @@ f32 TeamSel_Input(s32 *result) {
                         TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_off_start");
                     } else {
                         if (CUR_CELL.id == TS_RANDOM) {
+#ifdef PORT
+                            chara = ChrGrid_Random(gTeamSel->cells[CUR_N], gTeamSel->masterCount[CUR_N], CUR_N, TeamSel_RandomEligible, &idx);
+                            if (chara < 0) {
+                                Snd_PlaySe(1, 7);
+                                continue;
+                            }
+#else
                             /* draw a character (and one of its forms) until one is not related to another member */
                             do {
                                 for (;;) {
@@ -2066,6 +2087,7 @@ f32 TeamSel_Input(s32 *result) {
                                                 .form[Rand_Range(gTeamSel->cells[CUR_N][idx].formCount)];
                                 }
                             } while (!TeamSel_IsCharaFree(CUR_N, chara));
+#endif
                             CUR_MEMBER.chara = chara;
                         } else {
                             CUR_MEMBER.chara = CUR_CELL.id;

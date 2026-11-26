@@ -168,6 +168,8 @@ typedef struct {
     int playing;               /* the match on now (-1 none) */
     int choose;                /* the match whose winner the owner chooses (its two games disagreed twice), -1 none */
     int disagree[LEAVES - 1];
+    int readyMatch, readySides, readySeconds;
+    uint64_t readyDeadline;
     int side[2];               /* ... its entrants on sides 0 (1P, the host) and 1 */
     uint64_t oneResNs;         /* ... when one player's result came and not the other's (0 not yet) */
     uint8_t tok[TOUR][TOKEN];  /* the owner: each entrant's rejoin token (memory only), */
@@ -248,6 +250,8 @@ static struct {
     struct sockaddr_in routePeer;
     /* both */
     int leaving, closing, closedBy; /* closedBy: the owner closed it / removed this member (CLOSE) */
+    uint32_t wantTourGen;
+    int wantTourMatch, wantTourReady;
     int wantReady;             /* a member: READY asked for, until the owner's word says it (-1 none) */
     uint32_t chatOut;          /* a member: its lines so far; the owner: the lobby's */
     uint32_t chatIn;           /* a member: the owner's last line taken */
@@ -502,6 +506,8 @@ static void view_update(int force) {
     }
     sView.tourChoose = sView.tour == 1 ? sL.t.choose : -1;
     sView.tourCur = sView.tour == 1 ? sL.t.cur : -1;
+    sView.tourReadySides = sL.t.readySides;
+    sView.tourReadySeconds = sL.t.readySeconds;
     sView.tourOn = sView.tour == 1 && sL.phase == 1 ? sL.t.playing : -1;
     sView.tourChamp = sView.tour == 2 ? sL.t.champ : -1;
     SDL_UnlockSpinlock(&sLock);
@@ -686,6 +692,7 @@ static void tour_put(uint8_t *p) {
     for (i = 0; i < LOBBY_CLASSIC_SLOTS; i++) {
         p[608 + i] = (uint8_t)(sL.t.dropSecs[i] < 255 ? sL.t.dropSecs[i] : 255); /* (a held place's seconds left) */
     }
+    p[603] = (uint8_t)(sL.t.readySeconds | sL.t.readySides << 6);
     p[616] = (uint8_t)sL.t.choose; /* (the match whose winner the owner chooses, 0xFF none) */
 }
 
@@ -704,6 +711,8 @@ static void tour_get(const uint8_t *p) {
     sL.t.count = count;
     sL.t.gen = get(p, 94);
     sL.t.seed = get(p, 95);
+    sL.t.readySeconds = p[603] & 63;
+    sL.t.readySides = p[603] >> 6;
     sL.t.cur = (int)(int8_t)(uint8_t)(x & 0xFF);
     sL.t.champ = (int)(int8_t)(uint8_t)(x >> 8 & 0xFF);
     sL.t.playing = (int)(int8_t)(uint8_t)(x >> 16 & 0xFF);
@@ -717,7 +726,7 @@ static void tour_get(const uint8_t *p) {
     }
     for (i = 0; i < LOBBY_CLASSIC_SLOTS - 1; i++) {
         int win = (int)(int8_t)p[588 + i];
-        sL.t.win[i] = win >= 0 && win < count ? win : -1;
+        sL.t.win[i] = win == -2 || (win >= 0 && win < count) ? win : -1;
         sL.t.how[i] = p[595 + i] <= HOW_CHOSEN ? p[595 + i] : 0;
     }
     for (i = 0; i < LOBBY_CLASSIC_SLOTS; i++) {
@@ -742,7 +751,8 @@ static void bracket_put(uint8_t *p, int wireEntrants) {
     put(p, 2, sL.seq);
     put(p, 3, sL.t.gen);
     put(p, 4, sL.t.seed);
-    put(p, 5, (uint32_t)sL.t.state | (uint32_t)sL.t.size << 8 | (uint32_t)sL.t.count << 16);
+    put(p, 5, (uint32_t)sL.t.state | (uint32_t)sL.t.size << 8 | (uint32_t)sL.t.count << 16 |
+              (uint32_t)(sL.t.readySeconds | sL.t.readySides << 6) << 24);
     put(p, 6, (uint32_t)(uint8_t)sL.t.cur | (uint32_t)(uint8_t)sL.t.champ << 8 |
               (uint32_t)(uint8_t)sL.t.playing << 16 | (uint32_t)(uint8_t)sL.t.choose << 24);
     put(p, 7, (uint32_t)sL.entrants);
@@ -779,6 +789,8 @@ static void bracket_get(const uint8_t *p, int bytes) {
     sL.entrants = (int)entrants;
     sL.t.gen = get(p, 3);
     sL.t.seed = get(p, 4);
+    sL.t.readySeconds = (int)(meta >> 24 & 63u);
+    sL.t.readySides = (int)(meta >> 30);
     sL.t.state = state;
     sL.t.size = size;
     sL.t.count = count;
@@ -798,7 +810,7 @@ static void bracket_get(const uint8_t *p, int bytes) {
     for (int i = 0; i < size; ++i) sL.t.leaf[i] = bracket_index(leaf[i], 0, count);
     for (int i = 0; i < size - 1; ++i) {
         const uint8_t how = leaf[LEAVES + 2 * i + 1];
-        sL.t.win[i] = bracket_index(leaf[LEAVES + 2 * i], 0, count);
+        sL.t.win[i] = leaf[LEAVES + 2 * i] == 254 ? -2 : bracket_index(leaf[LEAVES + 2 * i], 0, count);
         sL.t.how[i] = how <= HOW_CHOSEN ? how : 0;
     }
 }
@@ -1123,7 +1135,7 @@ static void match_end(const char *note) {
 static int t_out(int e) {
     int m;
     for (m = 0; m < t_matches(); m++) {
-        if (sL.t.win[m] >= 0 && sL.t.win[m] != e && (t_part(m, 0) == e || t_part(m, 1) == e)) {
+        if (sL.t.how[m] && sL.t.win[m] != e && (t_part(m, 0) == e || t_part(m, 1) == e)) {
             return 1;
         }
     }
@@ -1198,39 +1210,48 @@ static void t_resolve(void) {
         changed = 0;
         for (m = 0; m < t_matches(); m++) {
             int a = t_part(m, 0), b = t_part(m, 1), w = -1, how = 0;
-            if (sL.t.win[m] >= 0) {
+            if (sL.t.how[m] || a == -1 || b == -1) {
                 continue;
             }
-            if (a == -2 && b >= 0) {
-                w = b, how = HOW_BYE;
-            } else if (b == -2 && a >= 0) {
-                w = a, how = HOW_BYE;
-            } else if (a >= 0 && b >= 0 && (sL.t.gone[a] || sL.t.gone[b])) {
-                w = sL.t.gone[a] && !sL.t.gone[b] ? b : a, how = HOW_WALKOVER;
-                if (!sL.t.gone[w]) {
+            if ((a >= 0 && sL.t.gone[a]) || (b >= 0 && sL.t.gone[b])) {
+                w = a >= 0 && !sL.t.gone[a] ? a : b >= 0 && !sL.t.gone[b] ? b : -2;
+                how = HOW_WALKOVER;
+                if (w >= 0) {
                     char text[NOTE];
                     SDL_snprintf(text, sizeof(text), "%s won by walkover", sL.t.name[w]);
                     note_set(text);
                 }
+            } else if (a == -2 || b == -2) {
+                w = a == -2 ? b : a;
+                how = HOW_BYE;
             }
-            if (w >= 0) {
+            if (how) {
                 sL.t.win[m] = w;
                 sL.t.how[m] = how;
                 changed = 1;
             }
         }
     }
-    if (sL.t.choose >= 0 && sL.t.win[sL.t.choose] >= 0) {
+    if (sL.t.choose >= 0 && sL.t.how[sL.t.choose]) {
         sL.t.choose = -1; /* (decided otherwise: a walkover) */
     }
     sL.t.cur = t_next();
     m = t_matches() - 1;
-    if (sL.t.state == 1 && sL.t.win[m] >= 0) {
+    if (sL.t.readyMatch != sL.t.cur) {
+        sL.t.readyMatch = sL.t.cur;
+        sL.t.readyDeadline = 0;
+        sL.t.readySides = sL.t.readySeconds = 0;
+    }
+    if (sL.t.state == 1 && sL.t.how[m]) {
         char text[NOTE];
         sL.t.state = 2;
-        sL.t.champ = sL.t.win[m];
-        SDL_snprintf(text, sizeof(text), "%s is the champion!", sL.t.name[sL.t.champ]);
-        note_set(text);
+        sL.t.champ = sL.t.win[m] >= 0 ? sL.t.win[m] : -1;
+        if (sL.t.champ >= 0) {
+            SDL_snprintf(text, sizeof(text), "%s is the champion!", sL.t.name[sL.t.champ]);
+            note_set(text);
+        } else {
+            note_set("Tournament ended without a champion.");
+        }
     }
     t_tokens();
     sL.dirty = 1;
@@ -1262,7 +1283,7 @@ static void t_new(void) {
             n++;
         }
     }
-    sL.t.cur = sL.t.champ = sL.t.playing = sL.t.choose = -1;
+    sL.t.cur = sL.t.champ = sL.t.playing = sL.t.choose = sL.t.readyMatch = -1;
     sL.t.gen = gen + 1;
     sL.t.state = 1;
     sL.t.count = n;
@@ -1332,6 +1353,39 @@ static void review_entrants(int n) {
     }
 }
 
+static int t_ready_member(int side);
+static int t_can_start(void);
+static void t_ready_set(int member, int ready, uint64_t now);
+static void t_ready_tick(uint64_t now);
+
+static void review_ready(void) {
+    const uint64_t now = 10 * SEC;
+    review_entrants(4);
+    t_new();
+    t_ready_tick(now);
+    if (sL.t.readySeconds != 60 || t_can_start()) exit(3);
+    int match = sL.t.cur, winner = t_part(match, 0);
+    t_ready_set(t_ready_member(0), 1, now + 59 * SEC);
+    t_ready_set(t_ready_member(1), 1, now + 60 * SEC);
+    t_ready_tick(now + 60 * SEC);
+    if (sL.t.win[match] != winner || sL.t.how[match] != HOW_WALKOVER || sL.t.readySides) exit(3);
+
+    review_entrants(2);
+    t_new();
+    t_ready_tick(now);
+    t_ready_tick(now + 60 * SEC);
+    if (sL.t.state != 2 || sL.t.champ != -1 || sL.t.win[0] != -2) exit(3);
+
+    review_entrants(2);
+    t_new();
+    t_ready_tick(now);
+    for (int side = 0; side < 2; ++side)
+        t_ready_set(t_ready_member(side), 1, now + SEC);
+    t_ready_tick(now + 61 * SEC);
+    if (!t_can_start() || sL.t.readySeconds) exit(3);
+    fprintf(stderr, "tournament ready: deadline, double forfeiture, and confirmations passed\n");
+}
+
 void Port_LobbyReviewFixture(int entrants){
     __typeof__(sL) saved;__typeof__(sTok) savedToken;int n,checks=0,games=0;
     if(!getenv("BT4_RENDER_TEST"))return;
@@ -1374,6 +1428,7 @@ void Port_LobbyReviewFixture(int entrants){
         if(sL.t.state!=2||sL.t.champ<0||sL.t.champ>=n||played!=n-1){fprintf(stderr,"tournament review FAILED: entrants=%d played=%d\n",n,played);exit(3);}
         ++checks;games+=played;
     }
+    review_ready();
     n=entrants<2?2:entrants>TOUR?TOUR:entrants;
     review_entrants(n);
     if (getenv("BT4_TOURNAMENT_LOBBY_FIXTURE")) {
@@ -1409,10 +1464,60 @@ static int member_by_id(uint32_t id) {
 /* The tournament's next match: its two put in 1P and 2P (the first of the match on the left of the bracket in
    1P), and begun. */
 /* The next match can begin: both its entrants are in the lobby (not one whose place is held). */
+static int t_ready_member(int side) {
+    int entrant = t_part(sL.t.cur, side);
+    return entrant >= 0 ? member_by_id(sL.t.id[entrant]) : -1;
+}
+
+static int t_ready_open(void) {
+    return sL.t.state == 1 && sL.t.cur >= 0 && !sL.phase && sL.t.choose < 0;
+}
+
+static void t_ready_set(int member, int ready, uint64_t now) {
+    if (!ready || !t_ready_open() || !sL.t.readyDeadline || now >= sL.t.readyDeadline || sL.t.readySides == 3)
+        return;
+    for (int side = 0; side < 2; ++side) {
+        int bit = 1 << side;
+        if (t_ready_member(side) == member) {
+            int mask = sL.t.readySides | bit;
+            if (mask != sL.t.readySides) {
+                sL.t.readySides = mask;
+                sL.dirty = 1;
+            }
+            break;
+        }
+    }
+}
+
 static int t_can_start(void) {
-    int m = sL.t.cur;
-    return sL.t.state == 1 && m >= 0 && sL.phase == 0 && sL.t.choose < 0 && t_part(m, 0) >= 0 && t_part(m, 1) >= 0 && member_by_id(sL.t.id[t_part(m, 0)]) >= 0 &&
-           member_by_id(sL.t.id[t_part(m, 1)]) >= 0;
+    return t_ready_open() && sL.t.readySides == 3 && t_ready_member(0) >= 0 && t_ready_member(1) >= 0;
+}
+
+static void t_ready_tick(uint64_t now) {
+    if (!t_ready_open())
+        return;
+    if (!sL.t.readyDeadline) {
+        if (t_ready_member(0) < 0 || t_ready_member(1) < 0)
+            return;
+        sL.t.readyDeadline = now + 60 * SEC;
+    }
+    if (sL.t.readySides != 3 && now >= sL.t.readyDeadline) {
+        for (int side = 0; side < 2; ++side) {
+            if (!(sL.t.readySides & (1 << side))) {
+                int entrant = t_part(sL.t.cur, side);
+                sL.t.gone[entrant] = 1;
+                sL.t.dropNs[entrant] = 0;
+                sL.t.dropSecs[entrant] = 0;
+            }
+        }
+        t_resolve();
+        return;
+    }
+    int seconds = sL.t.readySides == 3 ? 0 : (int)((sL.t.readyDeadline - now + SEC - 1) / SEC);
+    if (seconds != sL.t.readySeconds) {
+        sL.t.readySeconds = seconds;
+        sL.dirty = 1;
+    }
 }
 
 static void t_start(void) {
@@ -1760,6 +1865,9 @@ static void owner_packet(const uint8_t *pkt, int n, const struct sockaddr_in *fr
         if (sL.phase == 1 && sL.m[k].inGen == sL.gen) {
             sL.m[k].wasIn = 1;
         }
+        if (n >= 48 && get(pkt, 10) == sL.t.gen && sL.t.cur >= 0 &&
+            (get(pkt, 11) >> 1) == (uint32_t)sL.t.cur)
+            t_ready_set(k, get(pkt, 11) & 1, sL.m[k].heardNs);
         if (ready != sL.m[k].ready) {
             sL.m[k].ready = ready;
             if (s >= 0) {
@@ -1926,8 +2034,12 @@ static void owner_do(int what, int a, int b) {
             fprintf(stderr, "bt3: lobby: rules %s\n", rules_text());
         }
     } else if (what == LOBBY_READY) {
-        sL.m[0].ready = a != 0;
-        table_make();
+        if (sL.mode && sL.t.state == 1)
+            t_ready_set(0, a != 0, now_ns());
+        else {
+            sL.m[0].ready = a != 0;
+            table_make();
+        }
     }
 }
 
@@ -2080,7 +2192,9 @@ static void hello_send(const struct sockaddr_in *to) {
 }
 
 static void alive_send(void) {
-    uint32_t p[10] = {MAGIC, T_L_ALIVE, sL.myId, sL.seqSeen, 0, sL.goGen, sL.inGen, 0, sL.resGen, (uint32_t)sL.res};
+    uint32_t p[12] = {MAGIC, T_L_ALIVE, sL.myId, sL.seqSeen, 0, sL.goGen, sL.inGen, 0, sL.resGen, (uint32_t)sL.res};
+    p[10] = sL.wantTourGen;
+    p[11] = (uint32_t)sL.wantTourMatch << 1 | (uint32_t)sL.wantTourReady;
     int s;
     for (s = 0; s < LOBBY_SLOTS; s++) {
         if (sL.ids[s] == sL.myId && sL.myId != 0) {
@@ -2264,6 +2378,9 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         uint32_t gen = get(pkt, 2);
         if (gen > sL.backGen) {
             sL.backGen = gen;
+            /* A late end packet cannot interrupt a newer match. */
+            if (gen < sL.goGen || (sL.inGen && gen < sL.inGen))
+                return;
             memcpy(sL.note, pkt + 12, NOTE);
             name_clean(sL.note, NOTE);
             sL.phase = 0;
@@ -2548,6 +2665,7 @@ static void timers(void) {
         }
         t_decide();
         t_holds();
+        t_ready_tick(now);
         if (sL.phase == 1 && now - sL.goNs > MATCH_CONNECT_NS) {
             int a = sL.players[0], b = sL.players[1];
             int ok = (a == 0 ? NetIo_Connected() : sL.m[a].connected) && (b == 0 ? NetIo_Connected() : sL.m[b].connected);
@@ -2674,7 +2792,13 @@ static void do_cmd(const Cmd *c) {
     if (sL.on == 1) {
         owner_do(c->a, c->b, (signed char)c->text[0]);
     } else if (c->a == LOBBY_READY && sL.state == 2) {
-        sL.wantReady = c->b != 0;
+        if (sL.mode && sL.t.state == 1 && sL.t.cur >= 0) {
+            sL.wantTourGen = sL.t.gen;
+            sL.wantTourMatch = sL.t.cur;
+            sL.wantTourReady = c->b != 0;
+        } else {
+            sL.wantReady = c->b != 0;
+        }
         alive_send();
     }
 }

@@ -548,6 +548,45 @@ s32 ChrGrid_IsSelectable(ChrGridCell *cells, s32 index) {
     return ok;
 }
 
+#ifdef PORT
+/* The three grid types share the disc cell layout. Copy each cell so the menu
+   aliases do not depend on the compiler's struct aliasing rules. */
+s32 ChrGrid_Random(const void *grid, s32 count, s32 side, s32 (*eligible)(s32, s32), s32 *pickedCell) {
+    extern int Port_RosterRoll(int count), Port_NetSession(void), Port_TagNetwork(void);
+    const u8 *bytes = grid;
+    s32 candidates[256];
+    s32 source[256];
+    s32 total = 0;
+    s32 i, j;
+
+    for (i = 0; i < 256; ++i)
+        source[i] = -1;
+    for (i = 0; i < count; ++i) {
+        ChrGridCell cell;
+        memcpy(&cell, bytes + i * sizeof(cell), sizeof(cell));
+        if (cell.id < 0 || (cell.id >= CHRGRID_ID_RANDOM && cell.id <= CHRGRID_ID_EMPTY))
+            continue;
+        for (j = 0; j < CHRGRID_FORM_MAX && (j == 0 || j < cell.formCount); ++j) {
+            s32 id = cell.formCount > 0 ? cell.form[j] : cell.id;
+            if (id < 0 || id >= 256 || (id >= CHRGRID_ID_RANDOM && id <= CHRGRID_ID_EMPTY) ||
+                source[id] >= 0 || (eligible && !eligible(side, id)))
+                continue;
+            source[id] = i;
+            candidates[total++] = id;
+        }
+    }
+    if (total == 0)
+        return -1;
+    if (Port_NetSession() || Port_TagNetwork() || getenv("BT3_SEED"))
+        i = Rand_Range(total);
+    else
+        i = Port_RosterRoll(total);
+    i = candidates[i];
+    *pickedCell = source[i];
+    return i;
+}
+#endif
+
 /* Moves the cursor right in its row to the next selectable cell, wrapping. 0 if there is no other one. */
 s32 ChrGrid_MoveRight(ChrGridCell *cells, s32 *col, s32 row) {
     s32 start = *col;

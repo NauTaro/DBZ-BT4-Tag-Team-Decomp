@@ -198,7 +198,7 @@ static void TagHudEditor_Draw(void){
                 Ps_Disc(x+41+dx*PS_UNIT_X,y+61+dy,1.7f,color,color);
             }
             TrRadarArrow(x+41,y+61,0,-1,3.4f,Ps_Rgba(239,43,29,0x80));
-            Ps_Align(1);Ps_Text(x+41,y+109,"L3 CHANGE TARGET",.39f,116,0);Ps_Align(0);
+            Ps_Align(1);Ps_Text(x+41,y+109,"L3 ALLY / ENEMY",.39f,116,0);Ps_Align(0);
         }else{
             Ps_Align(1);Ps_Text(x+40,y,"TAG TEAM",.44f,80,1);Ps_Text(x+40,y+13,"5 : 5",.54f,64,0);Ps_Align(0);
         }

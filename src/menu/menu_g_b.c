@@ -2,6 +2,7 @@
 #include "port_variant.h"
 #include "menu/menu_g.h"
 #ifdef PORT
+#include "plat_songs.h"
 extern int Port_NetSession(void); /* port/src/gs/net.c */
 extern int Port_NetLobbyOwnerSide(void); /* port/src/gs/net.c: in a lobby's match, the owner's side; -1 otherwise */
 #endif
@@ -34,7 +35,12 @@ s32 Duel_Main(void) {
         case 38:
             if (!bgm) {
                 bgm = 1;
+#ifdef PORT
+                s32 track = PortSongs_SelectorTrack(NULL, 0);
+                Bgm_Play(PORT_BGM_FILE(track));
+#else
                 Bgm_Play(DUEL_BGM);
+#endif
             }
             {
                 s32 selection=DuelMenu_Run(1);

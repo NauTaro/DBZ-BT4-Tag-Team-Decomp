@@ -43,7 +43,13 @@
     X(TBO_BTN_XBOX_B, "btn_xbox_b") \
     X(TBO_BTN_XBOX_X, "btn_xbox_x") \
     X(TBO_BTN_XBOX_Y, "btn_xbox_y") \
-    X(TBO_BTN_XBOX_MENU, "btn_xbox_menu")
+    X(TBO_BTN_XBOX_MENU, "btn_xbox_menu") \
+    X(TBO_BTN_XBOX_LB, "btn_xbox_lb") \
+    X(TBO_BTN_XBOX_LT, "btn_xbox_lt") \
+    X(TBO_BTN_XBOX_LS, "btn_xbox_ls") \
+    X(TBO_BTN_XBOX_RB, "btn_xbox_rb") \
+    X(TBO_BTN_XBOX_RT, "btn_xbox_rt") \
+    X(TBO_BTN_XBOX_RS, "btn_xbox_rs")
 
 #define TBO_MAIN_TAG_OFF (TBO_ART_COUNT + 18)
 #define TBO_MAIN_TAG_ON (TBO_ART_COUNT + 19)
@@ -60,6 +66,8 @@ enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };
    the game never uses); the picture's number is in the palette address (CBP), the size given is 1024 x 1024 so
    that UVs 0..1024 cover the whole picture whatever its own size. */
 #define TBO_PSM 0x05
+#define TBO_TEX0(picture) (1ULL | (1ULL << 14) | ((unsigned long long)TBO_PSM << 20) | (10ULL << 26) | \
+                          (10ULL << 30) | (1ULL << 34) | ((unsigned long long)(picture) << 37))
 
 /* The lines of letters (port/src/gs/tbo_text.c) are drawn the same way: numbers TBO_TEXT_BASE and on, one per line
    the screens write, the picture made from a TrueType font of the font list. */

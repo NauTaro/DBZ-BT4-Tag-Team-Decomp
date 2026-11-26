@@ -1,5 +1,10 @@
 #include "common.h"
+#include "battle/bt4_beam_parry.h"
 #include "battle/eft_i.h"
+#ifdef BT4_DEV_BEAM_PARRY
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 /*
  * Technique effects, third part: 0x14F230..0x1532A0. See include/battle/eft_i.h.
@@ -1348,6 +1353,101 @@ f32 EftEmit_GetWidth2(EftEmitState *state) {
     return state->width2;
 }
 
+#ifdef BT4_DEV_BEAM_PARRY
+extern s32 BattleSide_GetObjId(s32 actor);
+
+/* Reuse the attack pack's active two-point emitters for the departing leg.
+ * They carry the same geometry and textures as the incoming wave. */
+static s32 EftBeamParry_Emit(Bt4ParriedBeam *parry, EftEmitSet *set, EftEmitState *original,
+                             Vec4 *start, Vec4 *end, f32 size, s32 commands) {
+    s32 objId = set->owner->objId;
+    s32 node = set->owner->param->node;
+    s32 any = 0;
+    const s32 groups[] = {15, 17};
+    for (s32 g = 0; g < 2; ++g) {
+        s32 type = groups[g];
+        EftEmitGroup *group = &set->grp[type];
+        if (!group->def) continue;
+        for (s32 i = 0; i < group->def->count; ++i) {
+            s32 part = group->first + i;
+            EftEmitDef *def = &set->defs[part];
+            void *handle = parry->redirected.h[part];
+            if (handle && !(type == 15 ? EftLink_IsAlive(handle) : EftRibbon_IsAlive(handle))) {
+                parry->redirected.h[part] = NULL;
+            }
+            if (!parry->redirected.h[part] &&
+                (!(commands & EFT_SPAWN_START) ||
+                 (!original->handle[0].h[part] && !original->handle[1].h[part]))) continue;
+            f32 partSize = original ? original->scale[part] * size : 0.0f;
+            if (type == 15) {
+                EftEmit_SpawnType15(set, &parry->redirected, commands, 1, objId, i,
+                                    partSize, 0.0f, def->rate, start, end, &parry->dir);
+            } else {
+                EftEmit_SpawnType17(set, &parry->redirected, commands, 1, objId, node, i,
+                                    start, end, &parry->dir, partSize, 0.0f, def->rate);
+            }
+            any |= parry->redirected.h[part] != NULL;
+        }
+    }
+    return any;
+}
+
+void EftBeamParry_Reset(Bt4ParriedBeam *parry, EftEmitSet *set) {
+    if (parry->frame >= BT4_BEAM_PARRY_RELEASE) {
+        EftBeamParry_Emit(parry, set, NULL, &parry->releasePoint, &parry->releasePoint, 0.0f, EFT_SPAWN_KILL);
+    }
+}
+
+s32 EftBeamParry_Update(Bt4ParriedBeam *parry, EftEmitSet *set, EftEmitState *original,
+                        u32 tag, Vec4 *muzzle, Vec4 *incoming, Vec4 *head, f32 scale, f32 speed) {
+    s32 actor = ((tag & BT4_BEAM_PARRY_ACTOR_MASK) >> BT4_BEAM_PARRY_TAG_SHIFT) - 1;
+    s32 frame = ++parry->frame;
+    s32 flight = frame - BT4_BEAM_PARRY_RELEASE;
+    Vec4 hand;
+
+    BtlCharApi_GetNodePos(BattleSide_GetObjId(actor), BT4_BEAM_PARRY_HAND, &hand);
+    if (flight < 0) {
+        *head = hand;
+        return 1;
+    }
+    if (flight == 0) {
+        Vec4 centre;
+        BtlCharApi_GetNodePos(BattleSide_GetObjId(actor), 0x11, &centre);
+        f32 towardPalm = (hand.x - centre.x) * incoming->z - (hand.z - centre.z) * incoming->x;
+        f32 side = towardPalm < 0.0f ? -1.0f : 1.0f;
+        Vec3_Set(&parry->dir, incoming->z * side, -0.62f, -incoming->x * side);
+        Vec3_Normalize(&parry->dir, &parry->dir);
+        parry->releasePoint = hand;
+    }
+
+    /* Draw a bend at the palm, then pull the incoming leg back and let
+     * the separated wave travel away without generating new hit records. */
+    Vec4 start = parry->releasePoint;
+    Vec4 end = start;
+    if (speed < 85.0f) speed = 85.0f;
+    Vec3_ScaleAdd(&end, &parry->dir, &start, speed * (flight + 1));
+    if (flight > 3) Vec3_ScaleAdd(&start, &parry->dir, &start, speed * (flight - 3));
+    f32 retract = flight * 0.18f;
+    if (retract > 1.0f) retract = 1.0f;
+    head->x = hand.x + (muzzle->x - hand.x) * retract;
+    head->y = hand.y + (muzzle->y - hand.y) * retract;
+    head->z = hand.z + (muzzle->z - hand.z) * retract;
+    head->w = 1.0f;
+
+    f32 fade = (BT4_BEAM_PARRY_FRAMES - frame) / 8.0f;
+    if (fade > 1.0f) fade = 1.0f;
+    if (fade < 0.0f) fade = 0.0f;
+    s32 flags = EFT_SPAWN_MOVE | EFT_SPAWN_SCALE;
+    if (flight == 0) flags |= EFT_SPAWN_START;
+    s32 visible = EftBeamParry_Emit(parry, set, original, &start, &end, scale * fade, flags);
+    if (flight == 0 && getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_BEAM_DEFENSE")) {
+        fprintf(stderr, "beam fixture: redirected actor=%d emitter=%d hand=%.1f,%.1f,%.1f outgoing=%.2f,%.2f,%.2f\n",
+                actor, visible, hand.x, hand.y, hand.z, parry->dir.x, parry->dir.y, parry->dir.z);
+    }
+    return frame < BT4_BEAM_PARRY_FRAMES;
+}
+#endif
+
 /* Drops a mark where the last stage line test hit: 10 frames later the mark effect starts there. The beam end
    is pulled back onto the surface and the stage object that was hit, if any, is destroyed. */
 /* (The flag is read into a local that is then set to 1 and stored: a variable set twice is not hoisted out of the
@@ -1503,6 +1603,9 @@ void EftSweep_AddHit(EftTask *task) {
         void *a = EftHitArena_AllocBox();
         void *b = EftHitArena_AllocBox();
 
+#ifdef BT4_DEV_BEAM_PARRY
+        rec->flags |= BT4_HIT_BEAM_CAPSULE;
+#endif
         ColCapsule_Set(a, &w->nodes.n[1][0].pos, &w->pose.cur, width);
         ColCapsule_Set(b, &w->nodes.n[1][0].pos, &w->pose.prev, width);
         EftHit_SetShapeBoxes(rec, a, b);
@@ -1583,6 +1686,9 @@ void EftSweep_Term(EftTask *task) {
     EftSweepWork *w = task->work;
     EftOwner *owner = w->owner;
 
+#ifdef BT4_DEV_BEAM_PARRY
+    EftBeamParry_Reset(&w->parry, w->set);
+#endif
     EftEmit_TermState(w->set, &w->state);
     if (owner->param->unk4 != 0) {
         EftShot_SetHeldFlagA8(owner->objId);
@@ -1602,6 +1708,15 @@ void EftSweep_Update(EftTask *task) {
         return;
     }
     EftEmit_UpdateNodesReq(owner, &w->nodes);
+#ifdef BT4_DEV_BEAM_PARRY
+    if ((u32)task->flags & BT4_BEAM_PARRY_ACTOR_MASK) {
+        s32 active = EftBeamParry_Update(&w->parry, w->set, &w->state, task->flags,
+                                        &w->nodes.n[1][0].pos, &w->dir, &w->pose.cur, w->scale, w->speed);
+        if (active) EftSweep_Emit(owner->objId, task, w->set, 0);
+        else EftSweep_Reset(task);
+        return;
+    }
+#endif
     if (!(w->flags & EFT_SWEEP_STARTED)) {
         if (EftShot_TestBits(owner->objId, 2)) {
             EftAim_GetDir(&w->dir, &w->nodes.n[0][0].pos, owner->objId);

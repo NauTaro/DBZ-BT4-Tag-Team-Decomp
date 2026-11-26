@@ -236,7 +236,6 @@ static void TagHud_Target(s32 viewer,s32 target){
 #ifdef BT4_TAG_TEAM_EXPANDED
     extern s32 TagBattle_Focus(s32);
     s32 focus=TagBattle_Focus(viewer);
-    if(focus==-2)return;
     if(focus>=0){target=focus;ally=1;gold=TagHud_Color(113,228,255);}
 #else
     (void)viewer;

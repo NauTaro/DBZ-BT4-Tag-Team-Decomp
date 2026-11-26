@@ -21,12 +21,15 @@
 #include <SDL3/SDL.h>
 #include "../../include/plat_songs.h"
 
-/* Keep the selector's music independent of the battle and online RNGs. The
-   caller supplies the normalized music list without its final Random entry. */
-int PortSongs_SelectorTrack(const int *ids, int count) {
+int Port_RosterRoll(int count) {
+    static Uint64 state;
+    if (!state)
+        state = SDL_GetPerformanceCounter();
+    return SDL_rand_r(&state, count);
+}
+
+static int ShuffleTrack(const int *ids, int count, Uint64 *state, int *previous) {
     static const int battleTracks[] = {8, 9, 10, 11, 12, 13, 14, 15, 16};
-    static Uint64 randomState;
-    static int previous = -1;
     int previousIndex = -1;
     int index;
 
@@ -34,25 +37,41 @@ int PortSongs_SelectorTrack(const int *ids, int count) {
         ids = battleTracks;
         count = SDL_arraysize(battleTracks);
     }
-    if (!randomState)
-        randomState = SDL_GetPerformanceCounter();
+    if (!*state)
+        *state = SDL_GetPerformanceCounter();
     for (int i = 0; i < count; ++i) {
-        if (ids[i] == previous) {
+        if (ids[i] == *previous) {
             previousIndex = i;
             break;
         }
     }
     if (count > 1 && previousIndex >= 0) {
-        index = SDL_rand_r(&randomState, count - 1);
+        index = SDL_rand_r(state, count - 1);
         if (index >= previousIndex)
             ++index;
     } else {
-        index = SDL_rand_r(&randomState, count);
+        index = SDL_rand_r(state, count);
     }
-    previous = ids[index];
+    return *previous = ids[index];
+}
+
+/* Menu previews and actual battles each remember their last track. */
+int PortSongs_SelectorTrack(const int *ids, int count) {
+    static Uint64 state;
+    static int previous = -1;
+    const int track = ShuffleTrack(ids, count, &state, &previous);
     if (SDL_getenv("BT3_BGM_DEBUG"))
-        SDL_Log("Selector soundtrack: %d", previous);
-    return previous;
+        SDL_Log("Selector soundtrack: %d", track);
+    return track;
+}
+
+int PortSongs_BattleTrack(void) {
+    static Uint64 state;
+    static int previous = -1;
+    const int track = ShuffleTrack(NULL, 0, &state, &previous);
+    if (SDL_getenv("BT3_BGM_DEBUG"))
+        SDL_Log("Battle soundtrack: %d", track);
+    return track;
 }
 #include <math.h>
 #include <stdint.h>

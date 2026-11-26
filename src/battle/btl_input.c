@@ -437,6 +437,23 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
         buttons=BtlInput_MergeStick(chr,buttons,stick);
         commands=BtlInput_BuildCommands(chr,buttons,prevButtons);
     }
+#ifdef BT4_TAG_TEAM_EXPANDED
+    extern char *getenv(const char *name);
+    extern int atoi(const char *text);
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_BEAM_DEFENSE") &&
+            chr->player == (getenv("BT4_TEST_TARGET") ? atoi(getenv("BT4_TEST_TARGET")) : 1) &&
+            !TagBattle_Network()) {
+        extern s32 *BtlSeq_GetClock(void);
+        const s32 tick = BtlSeq_GetClock()[0];
+        if (tick >= 158) {
+            buttons = BTLB_GUARD | BTLB_ANY_FACE;
+            stick[0] = getenv("BT4_TEST_BEAM_STILL") ? 0x7F : (tick / 4) % 2 ? 0 : 254;
+            stick[1] = 0x7F;
+            buttons = BtlInput_MergeStick(chr, buttons, stick);
+            commands = BtlInput_BuildCommands(chr, buttons, prevButtons);
+        }
+    }
+#endif
     active = 0;
     if (BtlChar_TestFlag(chr, 2) || BtlChar_TestFlag(chr, 3)) {
         if (!BtlChar_TestFlag(chr, 0x136)) {
@@ -578,6 +595,11 @@ void BtlInput_BuildMaskTable(BtlInputChr *chr) {
 
 /* Sets up the fighter's input: builds the mask table. */
 void BtlInput_Init(BtlInputChr *chr) {
+#ifdef BT4_DEV_BEAM_PARRY
+    chr->input.beamParryWindow = 0;
+    chr->input.beamParryStep = 0;
+    chr->input.beamParryPending = 0;
+#endif
     BtlInput_BuildMaskTable(chr);
 }
 
@@ -588,8 +610,6 @@ void BtlInput_Sample(BtlInputChr *chr) {
     u32 targetPressed=TagBattle_Network()?((TagBattle_NetPad(chr->player)[6]&1)?PAD_L3:0):pad->pressed;
     s32 targetDirection=TagBattle_Network()?((TagBattle_NetPad(chr->player)[6]>>1)&7):
         (pad->data[17]&0x80)?pad->data[17]&7:0;
-    const u32 targetMethod=TagBattle_Network()?(TagBattle_NetPad(chr->player)[6]>>4)&3:(pad->data[17]>>4)&3;
-    if(targetMethod!=0)targetPressed&=~PAD_L3;
     if(TagBattle_Active() && !chr->injectOn){
         extern s32 TagBattle_TargetDirection(s32 actor,s32 direction),TagBattle_Target(s32 actor);
         extern s32 TagBattle_LocalActor(void);
@@ -604,28 +624,18 @@ void BtlInput_Sample(BtlInputChr *chr) {
             u32 buttons;
             if(TagBattle_Network())memcpy(&buttons,TagBattle_NetPad(chr->player),4);
             else buttons=BtlInput_RemapButtons(pad->held,in->mask);
-            u32 pressed=pad->pressed,held=pad->held;
+            u32 held=pad->held;
             if(TagBattle_Network()){
                 const Pad *command=TagBattle_CommandPad(chr->player);
-                pressed=command->pressed;
                 held=command->held;
             }
-            if((pressed&PAD_SELECT)&&!(held&PAD_L2)){
-                TagBattle_StepCamera(chr->player);
-                targetDirection=0;
-                targetPressed&=~PAD_L3;
-            }
+            /* L3 + R3 belongs to cooperative actions, including when R3 was held first. */
+            if(held&PAD_R3)targetPressed&=~PAD_L3;
             /* The native Z Counter opens on Up + Rush. Keep both the L3
              * action and remapped directional targeting out of that chord. */
             if((buttons&(BTLB_UP|BTLB_RUSH))==(BTLB_UP|BTLB_RUSH)){
                 targetDirection=0;
                 targetPressed&=~PAD_L3;
-            }
-            if((targetPressed&PAD_L3)&&(buttons&(BTLB_CHARGE|BTLB_LOCKON))){
-                extern void TagBattle_ChangeFocus(s32,s32);
-                TagBattle_ChangeFocus(chr->player,(buttons&BTLB_CHARGE)!=0);
-                targetPressed&=~PAD_L3;
-                targetDirection=0;
             }
         }
 #endif
@@ -635,7 +645,9 @@ void BtlInput_Sample(BtlInputChr *chr) {
         if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_HUD_SWEEP") && BtlChar_TestFlag(chr,3) && BtlChar_FrameMod(30)==0)targetPressed|=PAD_L3;
 #ifdef BT4_TAG_TEAM_EXPANDED
         if(cameraControls){
-            if(targetDirection||(targetPressed&PAD_L3))TagBattle_NavigateCamera(chr->player,targetDirection);
+            extern void TagBattle_CycleCameraTarget(s32);
+            if(targetPressed&PAD_L3)TagBattle_CycleCameraTarget(chr->player);
+            else if(targetDirection)TagBattle_NavigateCamera(chr->player,targetDirection);
         }else
 #endif
         if(targetDirection)TagBattle_TargetDirection(chr->player,targetDirection);
@@ -702,6 +714,59 @@ void BtlInput_Sample(BtlInputChr *chr) {
  * cmdPressed's 8 / 13; with four references no statement order can make it win (the `nor` is pinned at the
  * third instruction and the store cannot come earlier), with six it is 12 / 18. The float values and the four
  * results go through locals because the loads and the stores are in different orders. */
+#ifdef BT4_DEV_BEAM_PARRY
+static void BtlInput_UpdateBeamParry(BtlInputChr *chr, u32 commands) {
+    BtlCharInput *in = &chr->input;
+    s32 dir = in->stickRaw[0] <= -0.55f ? -1 : in->stickRaw[0] >= 0.55f ? 1 : 0;
+    s32 step = in->beamParryStep;
+
+    if (in->beamParryPending) --in->beamParryPending;
+    if (!(commands & BTLC_GUARD_H) || chr->injectOn || TagBattle_IsActorLoading(chr->player)) {
+        in->beamParryStep = 0;
+        in->beamParryWindow = 0;
+        return;
+    }
+    if (in->beamParryWindow && --in->beamParryWindow == 0) {
+        step = in->beamParryStep = 0;
+    }
+    if (dir != 0 && step == 0) {
+        in->beamParryStep = dir;
+        in->beamParryWindow = 22;
+    } else if (dir * step < 0) {
+        const s32 count = step < 0 ? -step : step;
+        in->beamParryStep = dir * (count < 3 ? count + 1 : 3);
+        if (in->beamParryStep == 3 || in->beamParryStep == -3) {
+            in->beamParryWindow = 12;
+        }
+    }
+}
+
+/* A hit consumes the gesture. The side-step uses its normal movement and
+ * effects, with protection supplied only against the beam that was parried. */
+s32 BtlInput_BeamParryDirection(BtlInputChr *chr) {
+    BtlCharInput *in = &chr->input;
+    if (!in->beamParryWindow || !(in->cmdHeld & BTLC_GUARD_H)) return 0;
+    if (in->beamParryStep == -3) return -1;
+    return in->beamParryStep == 3;
+}
+
+void BtlInput_CommitBeamParry(BtlInputChr *chr) {
+    chr->input.beamParryStep = 0;
+    chr->input.beamParryWindow = 0;
+    chr->input.beamParryPending = 4;
+}
+
+s32 BtlInput_BeamParryPending(BtlInputChr *chr) {
+    return chr->input.beamParryPending != 0;
+}
+
+s32 BtlInput_TakeBeamParry(BtlInputChr *chr) {
+    s32 paid = chr->input.beamParryPending != 0;
+    chr->input.beamParryPending = 0;
+    return paid;
+}
+#endif
+
 void BtlInput_Update(BtlInputChr *chr) {
     u8 stick[2];
     u32 buttons;
@@ -742,6 +807,9 @@ void BtlInput_Update(BtlInputChr *chr) {
     in->cmdHeld = commands;
     in->stickRaw[0] = BtlInput_ByteToStick(stick[0]);
     in->stickRaw[1] = BtlInput_ByteToStick(stick[1]);
+#ifdef BT4_DEV_BEAM_PARRY
+    BtlInput_UpdateBeamParry(chr, commands);
+#endif
     if (TagBattle_IsActorLoading(chr->player)) {
         in->stick[0] = in->stickRaw[0];
         in->stick[1] = in->stickRaw[1];

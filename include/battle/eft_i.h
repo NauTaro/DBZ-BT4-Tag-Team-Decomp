@@ -3,6 +3,7 @@
 
 #include "types.h"
 #include "sys/math3d.h"
+#include "battle/bt4_beam_parry.h"
 
 /*
  * Technique effects, third part: src/battle/eft_i.c = 0x14F230..0x1532A0 (43 functions).
@@ -28,7 +29,6 @@
  */
 
 #define EFT_EMIT_TYPES 19    /* groups in a set; also the bits of *EftEmitSet.mask */
-#define EFT_EMIT_MAX 40      /* emitters over all groups (handle slots per half) */
 #define EFT_EMIT_NODES 6
 
 /* Flags argument of EftEmit_Spawn and of the eleven EftEmit_SpawnXxx. */
@@ -175,11 +175,6 @@ typedef struct EftEmitSet {
 
 #define EFT_EMIT_RES(set, i) ((set)->pair[(i) + 54])
 
-/* Particle objects of a set, one slot per emitter. */
-typedef struct EftEmitHandles {
-    /* 0x00 */ void *h[EFT_EMIT_MAX];
-} EftEmitHandles; /* size 0xA0 */
-
 /* Run-time state of a set: the particle objects it has started. */
 typedef struct EftEmitState {
     /* 0x000 */ EftEmitHandles handle[2];      /* [1] is the second node of a paired slot */
@@ -293,6 +288,9 @@ typedef struct EftSweepWork {
     /* 0x794 */ f32 time;
     /* 0x798 */ f32 life;
     /* 0x79C */ s32 unk79C;
+#ifdef BT4_DEV_BEAM_PARRY
+    Bt4ParriedBeam parry;
+#endif
 } EftSweepWork; /* size 0x7A0 */
 
 /* EftFollowWork.flags: the EFT_SWEEP_* values shifted where they differ. */

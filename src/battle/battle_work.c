@@ -69,7 +69,7 @@ BattleItemSet *TagBattle_GetDraftItems(s32 actor, s32 chara) {
     return &sTagDraftItems[actor];
 }
 #ifdef BT4_TAG_TEAM_EXPANDED
-static s32 sTagFocus[10], sTagCameraMode[10], sTagCounterTarget[10];
+static s32 sTagFocus[10], sTagCounterTarget[10];
 static u32 sTagCombat[10];
 s32 TagBattle_DevCombatActive(void){
     extern int Port_TagRulesV2(void),Port_TagNetwork(void);
@@ -304,7 +304,7 @@ void TagBattle_ResetPairs(void){
 #ifdef BT4_TAG_TEAM_EXPANDED
     memset(sTagSplitView, 0, sizeof(sTagSplitView));
     sTagSplitView[1].actor = 1;
-    for(i=0;i<10;++i){sTagFocus[i]=-1;sTagCameraMode[i]=0;sTagCounterTarget[i]=-1;}
+    for(i=0;i<10;++i){sTagFocus[i]=-1;sTagCounterTarget[i]=-1;}
 #endif
     for(i=0;i<10;++i){sTagPairs[i]=sTagAttackers[i]=sTagDamageTargets[i]=-1;sTagPairGrace[i]=0;}
 }
@@ -379,50 +379,41 @@ static s32 TagBattle_AllyFocusAvailable(s32 actor,s32 ally){
         (BtlCharApi_GetHp(ally)>0||TagRevive_Hud(ally,&progress,&total,&helpers));
 }
 
-s32 TagBattle_CameraMode(s32 actor){
-    return TagBattle_DevCombatActive()&&actor>=0&&actor<sTagActors?sTagCameraMode[actor]:0;
-}
-
 s32 TagBattle_Focus(s32 actor){
     if(!TagBattle_DevCombatActive()||actor<0||actor>=sTagActors||
        sTagPairs[actor]>=0||sTagCounterTarget[actor]>=0)return -1;
-    if(sTagCameraMode[actor]==0)return -1;
-    if(sTagCameraMode[actor]==1&&TagBattle_AllyFocusAvailable(actor,sTagFocus[actor]))return sTagFocus[actor];
-    return -2;
+    return TagBattle_AllyFocusAvailable(actor,sTagFocus[actor])?sTagFocus[actor]:-1;
 }
-static void TagBattle_SelectCamera(s32 actor,s32 mode){
-    s32 i,best=-1;
-    f32 distance=1.0e20f;
-    Vec4 origin;
-    extern void BtlCharApi_GetBasePos(s32,Vec4 *);
-    extern s32 TagRevive_Hud(s32,s32 *,s32 *,s32 *);
-    if(!TagBattle_DevCombatActive()||actor<0||actor>=sTagActors||sTagPairs[actor]>=0||sTagCounterTarget[actor]>=0)return;
-    sTagCameraMode[actor]=mode;
-    sTagFocus[actor]=-1;
-    if(mode!=1)return;
-    BtlCharApi_GetBasePos(BattleSide_GetObjId(actor),&origin);
-    for(i=0;i<sTagActors;++i){
-        Vec4 p;
-        f32 x,y,z,d;
-        s32 progress,total,helpers,downed;
-        if(!TagBattle_AllyFocusAvailable(actor,i))continue;
-        downed=TagRevive_Hud(i,&progress,&total,&helpers);
-        BtlCharApi_GetBasePos(BattleSide_GetObjId(i),&p);
-        x=p.x-origin.x;y=p.y-origin.y;z=p.z-origin.z;
-        d=x*x+y*y+z*z+(downed?0.0f:100000000.0f);
-        if(d<distance){distance=d;best=i;}
+
+s32 TagBattle_CameraMode(s32 actor){
+    return TagBattle_Focus(actor)>=0;
+}
+
+void TagBattle_CycleCameraTarget(s32 actor){
+    extern void *BtlChar_Get(s32);
+    extern s32 BtlAct_GetCurrent(void *);
+    if(!TagBattle_DevCombatActive()||actor<0||actor>=sTagActors||sTagPairs[actor]>=0||
+       sTagCounterTarget[actor]>=0)return;
+    s32 candidate;
+    const s32 action=BtlAct_GetCurrent(BtlChar_Get(actor));
+    if(action>=0xB4&&action<=0xBF)return;
+
+    const s32 focus=TagBattle_Focus(actor);
+    if(focus<0){
+        for(candidate=TagBattle_Target(actor)+1;candidate<sTagActors;++candidate)
+            if(TagBattle_SetTarget(actor,candidate))return;
     }
-    sTagFocus[actor]=best;
-}
-void TagBattle_StepCamera(s32 actor){
-    TagBattle_SelectCamera(actor,(TagBattle_CameraMode(actor)+1)%3);
-}
-void TagBattle_ChangeFocus(s32 actor,s32 ally){
-    const s32 mode=ally?1:2;
-    TagBattle_SelectCamera(actor,TagBattle_CameraMode(actor)==mode?0:mode);
+    for(candidate=focus+1;candidate<sTagActors;++candidate){
+        if(!TagBattle_AllyFocusAvailable(actor,candidate))continue;
+        sTagFocus[actor]=candidate;
+        return;
+    }
+    sTagFocus[actor]=-1;
+    for(candidate=0;candidate<sTagActors;++candidate)
+        if(TagBattle_SetTarget(actor,candidate))return;
 }
 void TagBattle_FocusEnemy(s32 actor){
-    TagBattle_SelectCamera(actor,0);
+    if(actor>=0&&actor<sTagActors)sTagFocus[actor]=-1;
 }
 void TagBattle_CounterTarget(s32 actor,s32 attacker){
     if(!TagBattle_DevCombatActive()||actor<0||actor>=sTagActors||attacker<0||
@@ -497,21 +488,12 @@ s32 TagBattle_TargetDirection(s32 actor,s32 direction) {
 void TagBattle_NavigateCamera(s32 actor,s32 direction){
     if(!TagBattle_DevCombatActive()||actor<0||actor>=sTagActors||sTagPairs[actor]>=0||
        sTagCounterTarget[actor]>=0)return;
-    const s32 mode=sTagCameraMode[actor];
-    if(mode==0){
-        if(direction)TagBattle_TargetDirection(actor,direction);
-        else TagBattle_CycleTarget(actor);
-    }else if(mode==1){
-        const s32 focus=TagBattle_AllyFocusAvailable(actor,sTagFocus[actor])?sTagFocus[actor]:actor;
-        if(direction){
-            const s32 next=TagBattle_DirectionalTarget(actor,direction,1,focus);
-            if(next>=0)sTagFocus[actor]=next;
-        }else{
-            for(s32 i=1;i<=sTagActors;++i){
-                const s32 next=(focus+i)%sTagActors;
-                if(TagBattle_AllyFocusAvailable(actor,next)){sTagFocus[actor]=next;break;}
-            }
-        }
+    const s32 focus=TagBattle_Focus(actor);
+    if(focus<0){
+        TagBattle_TargetDirection(actor,direction);
+    }else{
+        const s32 next=TagBattle_DirectionalTarget(actor,direction,1,focus);
+        if(next>=0)sTagFocus[actor]=next;
     }
 }
 #endif
@@ -664,7 +646,13 @@ void Battle_ResetWork(void) {
     BattleResult_Clear();
     BtlEvent_Reset();
 #ifdef PORT
-    Bgm_Play(PORT_BGM_FILE(Battle_GetBgm())); /* (a song added from outside the disc has a file id of its own) */
+    s32 bgm = Battle_GetBgm();
+    const s32 mode = Battle_GetMode();
+    if (mode >= 0 && mode <= 6 && mode != 1 && !Battle_GetSetup()->script && Port_TestBgm() < 0) {
+        /* Keep the local song choice out of the match state and story cues. */
+        bgm = PortSongs_BattleTrack();
+    }
+    Bgm_Play(PORT_BGM_FILE(bgm));
 #else
     Bgm_Play(Battle_GetBgm() + 0x816);
 #endif
@@ -704,10 +692,22 @@ BattleMemberPool *Battle_GetWork5A8(void) {
     return &Battle_GetWork()->pool;
 }
 
+/* Freeze the rules at load time so dropping a connection cannot change a fighter mid-match. */
+static s32 sOnlineBalance;
+
+s32 Bt4Balance_UsesOnlineRules(void) {
+    return sOnlineBalance;
+}
+
 /* Loads everything a battle needs (blocking, behind the loading screen) and creates the two sides' objects. */
 s32 Battle_Load(void) {
     s32 actor;
     TagBattle_Prepare();
+#ifdef PORT
+    extern int Port_NetActive(void), Port_NetSpectating(void);
+    sOnlineBalance = Battle_GetMode() == BTL_MODE_TRAINING || Port_NetActive() ||
+                     Port_NetSpectating() || TagBattle_Network();
+#endif
     BtlObj_Init(1);
     Gsc_InitDefault(gBtlScriptCommands);
     BtlScript_Init();
@@ -725,5 +725,6 @@ s32 Battle_Unload(void) {
     BtlScript_Free();
     Gsc_Exit();
     TagBattle_End();
+    sOnlineBalance = 0;
     return 1;
 }

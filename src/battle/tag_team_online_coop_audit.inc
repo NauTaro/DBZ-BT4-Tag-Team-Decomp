@@ -65,13 +65,17 @@ static void TagCoop_NetworkAfter(void){
     if(mode==3&&sCoopAuditPlaced&&BtlCharApi_GetHp(0)>0)sCoopAuditRevived=1;
     if(mode==5){
         extern s32 TagBattle_Focus(s32);
-        if(sTagOnlineFrame==610)TagCoop_Check("delivered_input_focuses_ally",TagBattle_Focus(0)==2&&TagBattle_Target(0)==1);
-        if(sTagOnlineFrame==630)TagCoop_Check("delivered_input_unlocks_camera",TagBattle_Focus(0)==-2&&TagBattle_Target(0)==1);
-        if(sTagOnlineFrame==645)TagCoop_Check("free_camera_ignores_target_switch",TagBattle_Focus(0)==-2&&TagBattle_Target(0)==1);
-        if(sTagOnlineFrame==665)TagCoop_Check("select_restores_enemy_camera",TagBattle_Focus(0)==-1);
-        if(sTagOnlineFrame==685)TagCoop_Check("dpad_selection_disables_l3",TagBattle_Target(0)==1);
-        if(sTagOnlineFrame==695)TagCoop_Check("right_stick_selection_disables_l3",TagBattle_Target(0)==1);
-        if(sTagOnlineFrame==700){
+        if (sTagOnlineFrame>=590 && (sTagOnlinePads[0][6] || sTagOnlinePads[0][17]))
+            fprintf(stderr, "tag online coop input: frame=%u packet=%02x/%02x target=%d focus=%d pair=%d\n",
+                sTagOnlineFrame,sTagOnlinePads[0][6],sTagOnlinePads[0][17],TagBattle_Target(0),TagBattle_Focus(0),TagBattle_Pair(0));
+        if(sTagOnlineFrame==610)TagCoop_Check("select_leaves_target_unchanged",TagBattle_Focus(0)==-1&&TagBattle_Target(0)==1);
+        if(sTagOnlineFrame==630)TagCoop_Check("l3_selects_next_enemy",TagBattle_Focus(0)==-1&&TagBattle_Target(0)==3);
+        if(sTagOnlineFrame==650)TagCoop_Check("l3_selects_ally_while_charging",TagBattle_Focus(0)==2&&TagBattle_Target(0)==3);
+        if(sTagOnlineFrame==665)TagCoop_Check("l3_wraps_from_ally_to_enemy",TagBattle_Focus(0)==-1&&TagBattle_Target(0)==1);
+        if(sTagOnlineFrame==685)TagCoop_Check("l3_selects_enemy_with_dpad",TagBattle_Focus(0)==-1&&TagBattle_Target(0)==3);
+        if(sTagOnlineFrame==695)TagCoop_Check("l3_works_with_right_stick_configuration",TagBattle_Focus(0)==2&&TagBattle_Target(0)==3);
+        if(sTagOnlineFrame==715)TagCoop_Check("l3_r3_preserves_target",TagBattle_Focus(0)==2&&TagBattle_Target(0)==3);
+        if(sTagOnlineFrame==720){
             fprintf(stderr,"tag online coop result: %s seat=%d\n",sCoopAuditFailed?"FAIL":"PASS",Port_TagSeat());
             fflush(stderr);exit(sCoopAuditFailed?3:0);
         }

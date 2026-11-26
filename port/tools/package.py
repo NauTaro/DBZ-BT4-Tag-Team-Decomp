@@ -257,6 +257,15 @@ def take_jiren_voice(out):
         shutil.copy2(ROOT / "port" / "assets" / "jiren-voice" / name, target / name)
 
 
+def take_goku_costumes(out):
+    source = ROOT / "port" / "assets" / "goku-costumes"
+    target = out / "tbo" / "goku-costumes"
+    target.mkdir(parents=True, exist_ok=True)
+    for index in range(56):
+        filename = f"{index:02d}.bin"
+        shutil.copy2(source / filename, target / filename)
+
+
 def main_win():
     """BT3_CC=win64: bt3.exe (cross-built or built in MSYS2), BT4decomp-setup.exe (port/setup/build.sh win), SDL3.dll."""
     import toolchain
@@ -297,6 +306,7 @@ def main_win():
     take_fonts(out, lic)
     take_tbo_art(out, lic)
     take_jiren_voice(out)
+    take_goku_costumes(out)
     (out / "textures").mkdir()
     (out / "textures/README.txt").write_text(TEXTURES_NOTE.replace("\n", "\r\n"))
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):

@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/bt4_balance.h"
 #include "battle/view_a.h"
 #include "battle/view_b.h"
 #include "menu/port_screen.h"
@@ -368,7 +369,7 @@ void Bt4Costume_FixArrows(Flash *flash) {
     Flash_ClipSetFlags(flash, &ref, 4, 1);
 }
 
-void Bt4Costume_AttachCaption(Flash *flash, FlashRef *ref, s32 number, s32 total,
+void Bt4Costume_AttachCaption(Flash *flash, FlashRef *ref, s32 chara, s32 number, s32 total,
                               const u16 *name, void *storage) {
     Bt4CostumeCaption *caption = NULL;
     s32 i,pick=0;
@@ -392,7 +393,9 @@ void Bt4Costume_AttachCaption(Flash *flash, FlashRef *ref, s32 number, s32 total
             }
             name=NULL;
         }
-        Bt4Costume_Utf8(caption->name,name);
+        /* The third native Ginyu model is his appearance in Tagoma's body. */
+        if (chara == BT4_GINYU && number == BT4_GINYU_TAGOMA_OUTFIT + 1) strcpy(caption->name, "Tagoma");
+        else Bt4Costume_Utf8(caption->name,name);
     }
     Flash_ClipSetFlags(flash, ref, 0x800, 1);
     Flash_ClipSetCallbackC(flash, ref, Bt4Costume_DrawCaption, caption);

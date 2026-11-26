@@ -2,6 +2,7 @@
 #define BATTLE_BTL_INPUT_H
 
 #include "types.h"
+#include "battle/bt4_beam_parry.h"
 #include "battle/battle.h"
 
 /*
@@ -155,6 +156,9 @@ typedef struct BtlCharInput {
     /* 0x000 [0x570] */ u32 rawHeld;       /* gPad[chr->pad].held (PAD_* bits) sampled by BtlInput_Sample */
     /* 0x004 [0x574] */ u8 rawStickX;      /* gPad left stick, quantised */
     /* 0x005 [0x575] */ u8 rawStickY;
+#ifdef BT4_DEV_BEAM_PARRY
+    /* 0x006 [0x576] */ u8 beamParryPending;
+#endif
     /* 0x008 [0x578] */ u32 mask[BTL_BUTTON_BITS]; /* PAD_* mask of each battle button bit */
     /* 0x084 [0x5F4] */ s32 padStatus;     /* Pad.status; double taps are only made when it is 0 or 1 */
     /* 0x088 [0x5F8] */ s32 padLastStatus; /* Pad.lastStatus */
@@ -182,7 +186,12 @@ typedef struct BtlCharInput {
     /* 0x3A4 [0x914] */ s32 ringRead;      /* next slot to read */
     /* 0x3A8 [0x918] */ u8 frameBits[30];  /* two interleaved 120-bit sets (byte = (bit / 8) * 2 + set), cleared at the end of
                                               every BtlInput_Update; BtlInput_TestAction(chr, id, arg) sets bit id of set (arg != 0) */
+#ifdef BT4_DEV_BEAM_PARRY
+    /* 0x3C6 [0x936] */ u8 beamParryWindow;
+    /* 0x3C7 [0x937] */ s8 beamParryStep;
+#else
     /* 0x3C6 [0x936] */ u8 unk3C6[2];
+#endif
     /* 0x3C8 [0x938] */ BtlInputRecord rec; /* this frame's record */
 } BtlCharInput; /* 0x3D8 */
 

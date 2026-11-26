@@ -23,8 +23,8 @@ int BtlEmote_Input(int object, unsigned buttons, int idle, int selected) {
     const unsigned chord = BTLB_LOCKON | BTLB_GUARD;
     const unsigned cancel = BTLB_DIR_MASK | BTLB_DASH | BTLB_ASCEND | BTLB_DESCEND |
                             BTLB_RUSH | BTLB_BLAST | BTLB_CHARGE;
-    const int available = idle && selected >= 1 && selected <= BTL_EMOTE_COUNT && !(buttons & cancel);
-    const int claimed = available && (buttons & chord) == chord;
+    const int available = idle && !(buttons & cancel);
+    const int claimed = available && selected >= 1 && selected <= BTL_EMOTE_COUNT && (buttons & chord) == chord;
     BtlEmoteState *state;
 
     if (object < 0 || object >= BTL_OBJ_MAX) return 0;

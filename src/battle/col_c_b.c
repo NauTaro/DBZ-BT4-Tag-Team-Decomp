@@ -1,5 +1,8 @@
 #include "common.h"
 #include "battle/col_c.h"
+#ifdef PORT
+#include "menu/tbo_art.h"
+#endif
 
 /*
  * Inline icon tags of the text printer: 0x23C310..0x23D1E8. A 16-bit string may contain
@@ -61,6 +64,32 @@ s32 FontIcon_IsOnScreen(s32 x0, s32 y0, s32 x1, s32 y1) {
     return result;
 }
 
+#ifdef PORT
+/* The native controller sheet assigns each button and its animated variants
+ * a fixed texture entry. Directional and combination symbols keep their art. */
+u64 FontIcon_XboxTex0(s32 texture) {
+    extern s32 PortInput_XboxGlyphs(s32 player);
+    s32 picture;
+
+    switch (texture) {
+        case 10: case 20: picture = TBO_BTN_XBOX_B; break;
+        case 11: case 21: case 24: picture = TBO_BTN_XBOX_X; break;
+        case 12: case 22: case 25: picture = TBO_BTN_XBOX_Y; break;
+        case 13: case 23: picture = TBO_BTN_XBOX_A; break;
+        case 14: picture = TBO_BTN_XBOX_LB; break;
+        case 15: picture = TBO_BTN_XBOX_LT; break;
+        case 16: case 26: picture = TBO_BTN_XBOX_LS; break;
+        case 17: picture = TBO_BTN_XBOX_RB; break;
+        case 18: picture = TBO_BTN_XBOX_RT; break;
+        case 19: case 27: picture = TBO_BTN_XBOX_RS; break;
+        default: return 0;
+    }
+    if (!PortInput_XboxGlyphs(0))
+        return 0;
+    return TBO_TEX0(picture);
+}
+#endif
+
 /*
  * Writes one icon sprite (TEX0_1, RGBAQ, UV, XYZ2, UV, XYZ2) showing a frame of its texture.
  * Cells per row = texture width / cell size; drawn size = (s32)(cell size * scale); corners at
@@ -110,6 +139,14 @@ void FontIcon_PutSprite(u64 **pkt, FontCmd *cmd, FontIconDef *icon, s32 frame, s
         tv0 = size * (frame / perRow);
         tu1 = (frame % perRow + 1) * size;
         tv1 = (frame / perRow + 1) * size;
+#ifdef PORT
+        u64 xbox = FontIcon_XboxTex0(icon->tex);
+        if (xbox) {
+            reg = xbox;
+            tu0 = tv0 = 0;
+            tu1 = tv1 = 1023;
+        }
+#endif
         (*pkt)[0] = reg;
         (*pkt)[1] = (u64)color | ((u64)0x3F800000 << 32);
         *pkt += 2;

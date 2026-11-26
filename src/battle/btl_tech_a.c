@@ -59,6 +59,7 @@ extern s32 BtlStat_GetKiChargeBonus(BtlTechChr *chr);
 extern s32 BtlStat_GetKiRegenBonus(BtlTechChr *chr);
 extern s32 BtlStat_GetKiRecoverBonus(BtlTechChr *chr);
 extern s32 BtlStat_GetBlastGainBonus(BtlTechChr *chr);
+extern f32 BtlStat_EvalCurve(s32 level, s32 row);
 extern f32 BtlStat_GetMeleeDamageScale(BtlTechChr *chr);
 extern f32 BtlStat_GetGuardKiCostScale(BtlTechChr *chr);
 extern f32 BtlStat_GetSpeedScale(BtlTechChr *chr);
@@ -987,7 +988,10 @@ s32 BtlAtk_GetDamage(BtlTechChr *chr) {
     s32 hits;
 
     val = val * BtlStat_GetMeleeDamageScale(chr);
-    val = val * (100 + Bt4Balance_Rule(BtlChar_GetObj(chr)->chara)->melee) / 100;
+    const Bt4BalanceRule *balance = Bt4Balance_Rule(BtlChar_GetObj(chr)->chara);
+    s32 melee = balance->melee;
+    if ((balance->classFlags & BT4_BALANCE_GIANT) && (id == 0x55 || id == 0x56)) melee = 100;
+    val = val * (100 + melee) / 100;
     val = BtlAtk_ApplyAbilities(chr, val, id);
     switch (BtlAct_GetCurrent(chr)) {
         case 0x93:
@@ -1012,7 +1016,10 @@ s32 BtlAtk_GetGuardDamage(BtlTechChr *chr) {
     s32 hits;
 
     val = val * BtlStat_GetMeleeDamageScale(chr);
-    val = val * (100 + Bt4Balance_Rule(BtlChar_GetObj(chr)->chara)->melee) / 100;
+    const Bt4BalanceRule *balance = Bt4Balance_Rule(BtlChar_GetObj(chr)->chara);
+    s32 melee = balance->melee;
+    if ((balance->classFlags & BT4_BALANCE_GIANT) && (id == 0x55 || id == 0x56)) melee = 100;
+    val = val * (100 + melee) / 100;
     if (BtlAct_TestPoweredSkill(chr, 0x10)) {
         if ((u32)id < 0xB) {
             val -= val * 3 / 10;
@@ -1359,12 +1366,18 @@ u32 BtlParam_GetFlags(BtlTechChr *chr) {
 
 /* Parameter +0x14: skill bits. */
 u32 BtlParam_GetFlags2(BtlTechChr *chr) {
-    return BtlChar_GetObj(chr)->param->flags2;
+    BtlTechObj *obj = BtlChar_GetObj(chr);
+    u32 flags = obj->param->flags2;
+    if (Bt4Balance_Rule(obj->chara)->classFlags & BT4_BALANCE_GIANT) flags |= 0x2000;
+    return flags;
 }
 
 /* Parameter +0x18: skill bits that also need the powered-up mode. */
 u32 BtlParam_GetFlags3(BtlTechChr *chr) {
-    return BtlChar_GetObj(chr)->param->flags3;
+    BtlTechObj *obj = BtlChar_GetObj(chr);
+    u32 flags = obj->param->flags3;
+    if (obj->chara == 6 && Bt4Balance_UsesOnlineRules()) flags &= ~0x40u;
+    return flags;
 }
 
 /* Parameter +0x00 (u16). */
@@ -1654,8 +1667,9 @@ s32 BtlParam_IsTypeSetB(BtlTechChr *chr) {
    at least 1 when the raw value is positive. */
 s32 BtlParam_GetCount80(BtlTechChr *chr) {
     BtlParam *param = BtlChar_GetObj(chr)->param;
-    s32 shots = Bt4Balance_Rule(BtlChar_GetObj(chr)->chara)->shots;
-    s32 v = shots ? shots : param->blastLimitA;
+    const Bt4BalanceRule *rule = Bt4Balance_Rule(BtlChar_GetObj(chr)->chara);
+    s32 v = rule->shots ? rule->shots : param->blastLimitA;
+    if (Bt4Balance_UsesOnlineRules() && !rule->classFlags && v >= 2 && v <= 5) v = 6;
 
     if (BtlMember_HasAbility(chr, 0x11)) {
         v -= 3;
@@ -1664,7 +1678,7 @@ s32 BtlParam_GetCount80(BtlTechChr *chr) {
     } else if (BtlMember_HasAbility(chr, 0xF)) {
         v -= 1;
     }
-    if (shots || param->blastLimitA > 0) {
+    if (rule->shots || param->blastLimitA > 0) {
         if (v <= 0) {
             v = 1;
         }
@@ -1706,8 +1720,9 @@ s32 BtlParam_GetUnk8A(BtlTechChr *chr, u32 n) {
     if (n >= 5) {
         n = 0;
     }
-    /* Combo entry shares the same animation pair as neutral entry. Odd variants prepend a retreat. */
-    return n == 3 ? param->unk8A[n] & ~1 : param->unk8A[n];
+    /* Neutral entry, combo entry and the triangle fallback share the paired animations.
+       The aerial and ground specials use the same bit solely for the retreat. */
+    return n == 3 || Bt4Balance_UsesOnlineRules() ? param->unk8A[n] & ~1 : param->unk8A[n];
 }
 
 /* Parameter +0x1C. */
@@ -1782,8 +1797,14 @@ s32 BtlParam_GetKiRegenRate(BtlTechChr *chr) {
     BtlTechObj *obj = BtlChar_GetObj(chr);
     const Bt4BalanceRule *rule = Bt4Balance_Rule(obj->chara);
     s32 v = obj->param->kiRegen / 30;
-    if (obj->chara == 80) v = 85; /* Nappa: slow passive refill. */
-    else if (rule->passive && v <= 0) v = 125;
+    if (Bt4Balance_UsesOnlineRules()) {
+        const s32 frames = 30 * (rule->classFlags ? 6 : 5);
+        v = (20000 + frames - 1) / frames - (s32)(BtlStat_EvalCurve(0, 1) / 30.0f);
+    } else if (obj->chara == 80) {
+        v = 85;
+    } else if (rule->passive && v <= 0) {
+        v = 125;
+    }
 
     return BtlUtil_Max(v + BtlStat_GetKiRegenBonus(chr), 0);
 }
@@ -1842,7 +1863,11 @@ s32 BtlParam_GetAmountB(BtlTechChr *chr) {
 /* Blast gauge gained per frame: (parameter +0x44) / 30 + curve row 3; x1.2 (ability 0x32), halved (0x1A), x0.8
    (0x33); at least 20. */
 s32 BtlParam_GetBlastGainRate(BtlTechChr *chr) {
-    s32 v = BtlChar_GetObj(chr)->param->blastGain / 30;
+    BtlTechObj *obj = BtlChar_GetObj(chr);
+    s32 seconds = Bt4Balance_Rule(obj->chara)->blastSeconds;
+    s32 frames = Bt4Balance_UsesOnlineRules() ? seconds * 30 : 0;
+    s32 v = obj->param->blastGain / 30;
+    if (frames) v = (100000 + frames - 1) / frames - (s32)(BtlStat_EvalCurve(0, 3) / 30.0f);
 
     v += BtlStat_GetBlastGainBonus(chr);
     if (BtlMember_HasAbility(chr, 0x32)) {
@@ -1856,14 +1881,12 @@ s32 BtlParam_GetBlastGainRate(BtlTechChr *chr) {
     }
     v = BtlUtil_Max(v, 20);
 #ifdef BT4_TAG_TEAM_EXPANDED
-    {
-        s32 fighter = BtlChar_GetObj(chr)->chara;
-        s32 seconds = Bt4Balance_Rule(fighter)->blastSeconds;
-        if (fighter == BT4_GOHAN_SSJ2 && !seconds) seconds = 7;
+    if (!Bt4Balance_UsesOnlineRules()) {
+        if (obj->chara == BT4_GOHAN_SSJ2 && !seconds) seconds = 7;
         if (seconds) {
-        const s32 stock = 100000;
-        const s64 denominator = stock + 30LL * seconds * v;
-        v = (s32)(((s64)stock * v + denominator / 2) / denominator);
+            const s32 stock = 100000;
+            const s64 denominator = stock + 30LL * seconds * v;
+            v = (s32)(((s64)stock * v + denominator / 2) / denominator);
         }
     }
 #endif

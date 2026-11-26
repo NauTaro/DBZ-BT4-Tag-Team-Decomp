@@ -133,8 +133,7 @@ static void fusion_test_pads(void){
         if(sFusionTestCase>=2&&sFusionTestCase<=4)fusion_check("no_unconsented_or_invalid_fusion",!sFusionTestStarted&&!sFusion[0].state&&!sFusion[1].state);
         else{
             fusion_check("native_playable",sFusionTestPlayable);
-            if(sFusionTestCase==5)fusion_check("native_potara_is_permanent",sFusion[0].state==F_FUSED&&sFusion[0].total==0);
-            else{
+            {
                 BtlMgrChr *a=BtlChar_Get(0),*b=BtlChar_Get(1);BtlMgrGauge *x=&BtlMember_GetActive(a)->gauge,*y=&BtlMember_GetActive(b)->gauge;
                 s32 scale=sFusionTestCase==10?100:1;
                 fusion_check("separation_finished",!sFusion[0].state&&!sFusion[1].state);

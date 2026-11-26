@@ -1,3 +1,35 @@
+# BT4decomp 0.1.39.6 R3 1.1
+
+- Click the left stick (L3) to cycle through enemies and allies in Tag Team.
+- Added a minimum input delay setting for Tag Team rooms and fixed several issues with fusion timers and recovering the original fighters after separation.
+- Tournament players have 60 seconds to confirm they are ready when called for their match.
+- Improved joining public matches as a spectator and returning to the lobby afterward.
+- Voice chat now starts in listening mode with the microphone muted.
+- Updated the random fighter selection and the default battle soundtrack in Duel.
+- Added four configurable emote slots and Xbox button prompts to the native controller options.
+- Added Time Nest autosave, restored the opening beam clash against Toppo, and widened Corrupted Zamasu's victory shot.
+- Fixed a battle lockup after Ginyu's Body Change. His Tagoma outfit is now selectable as his third costume.
+- Goku (End) now carries his selected outfit into Ultra Instinct and back when he reverts.
+- Updated fighter balance in Online and Training, including Ki recovery, Blast recharge, move costs, and giant follow-ups.
+
+Update both clients before joining a Tag Team match.
+
+<!-- bt4-update:en
+- Press L3 to cycle through enemies and allies in Tag Team. Online rooms can also set a minimum input delay.
+- Tournament players now have 60 seconds to confirm they are ready.
+- Updated random fighter and music selection. Added four emote slots and Time Nest autosave.
+-->
+<!-- bt4-update:es
+- Pulsa L3 para recorrer los objetivos enemigos y aliados en Tag Team. Las salas en línea también pueden elegir un retraso mínimo de entrada.
+- En torneos, los jugadores tienen 60 segundos para confirmar que están listos.
+- Mejoramos la selección aleatoria de luchador y música. Añadimos cuatro espacios para gestos y autoguardado en el Nido del Tiempo.
+-->
+<!-- bt4-update:pt
+- Pressione L3 para percorrer os alvos inimigos e aliados no Tag Team. As salas online também podem definir um atraso mínimo de entrada.
+- Nos torneios, os jogadores têm 60 segundos para confirmar que estão prontos.
+- Atualizamos a seleção aleatória de lutadores e músicas. Adicionamos quatro espaços para gestos e salvamento automático no Ninho do Tempo.
+-->
+
 # BT4decomp 0.1.39.6 R3
 
 - Character select now plays a random track each time you open it, across offline and online modes.

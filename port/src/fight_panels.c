@@ -261,6 +261,11 @@ static void portrait_path(int side, int slot, int chara, int costume) {
     }
 }
 
+int Port_ProfilePortraitPath(int chara,char *out,int capacity) {
+    if(chara<0||chara>=CHARA_MAX||capacity<=0)return 0;
+    return Port_FilePath(1,FACE_FILE+chara-1,NULL,out,capacity);
+}
+
 static void read_side(FpState *st, int side) {
     extern int PortMods_ViewActor(int side);
     extern int BattleSide_GetObjId(int side);

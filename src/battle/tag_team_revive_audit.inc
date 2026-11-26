@@ -52,8 +52,9 @@ static void TagRevive_TestPads(void){
     }
     if(sReviveTestCase==13&&sReviveTestTick==95){
         extern s32 TagBattle_Boss(s32),TagBattle_CombatDamage(s32,s32,s32);
-        extern s32 TagBattle_Focus(s32),TagBattle_SetTarget(s32,s32);
-        extern void TagBattle_ChangeFocus(s32,s32),TagBattle_FocusEnemy(s32);
+        extern s32 TagBattle_SetTarget(s32,s32);
+        extern void TagBattle_CycleCameraTarget(s32),TagBattle_FocusEnemy(s32);
+        extern s32 TagBattle_Focus(s32);
         extern void TagBattle_CounterTarget(s32,s32),TagBattle_ClearCounterTarget(s32);
         TagRevive_Check("boss_resists_catch_and_scales_damage",
             TagBattle_Boss(0)&&!TagBattle_ReservePair(1,0)&&
@@ -62,10 +63,10 @@ static void TagRevive_TestPads(void){
         TagRevive_Check("counter_preserves_actual_attacker",TagBattle_Target(0)==3&&!TagBattle_SetTarget(0,1));
         TagBattle_ClearCounterTarget(0);
         TagBattle_SetTarget(0,1);
-        TagBattle_ChangeFocus(0,1);
-        TagRevive_Check("ally_focus_keeps_enemy_for_combat",TagBattle_Focus(0)==2&&TagBattle_Target(0)==1);
-        TagBattle_ChangeFocus(0,0);
-        TagRevive_Check("unlock_keeps_enemy_for_combat",TagBattle_Focus(0)==-2&&TagBattle_Target(0)==1);
+        for(s32 j=0;j<TagBattle_Count()&&TagBattle_Focus(0)<0;++j)TagBattle_CycleCameraTarget(0);
+        TagRevive_Check("ally_focus_keeps_enemy_for_combat",TagBattle_Focus(0)==2&&TagBattle_Target(0)==3);
+        TagBattle_CycleCameraTarget(0);
+        TagRevive_Check("enemy_view_restores_enemy_for_combat",TagBattle_Focus(0)==-1&&TagBattle_Target(0)==1);
         TagBattle_FocusEnemy(0);
         {
             extern void BtlMembers_UpdateQueuedDamage(void);

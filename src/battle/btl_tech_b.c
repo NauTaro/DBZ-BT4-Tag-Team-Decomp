@@ -114,7 +114,12 @@ s32 BtlParam_GetUnk72(BtlTechBChr *chr) {
 /* Parameter +0x74: attack charge rate at gauge 0 (BtlAct_GetChargeRate); x1.2 with ability 0x4A. */
 f32 BtlParam_GetChargeRateA(BtlTechBChr *chr) {
     BtlTechBObj *obj = BtlChar_GetObj(chr);
-    f32 v = obj->chara >= 131 && obj->chara <= 133 ? 0.9f : obj->param->chargeRateA;
+    f32 v = obj->param->chargeRateA;
+    if (Bt4Balance_UsesOnlineRules()) {
+        if (obj->chara == 133 || obj->chara == 190 || obj->chara == 200 || obj->chara == 209) v = 1.25f;
+    } else if (obj->chara >= 131 && obj->chara <= 133) {
+        v = 0.9f;
+    }
 
     if (BtlMember_HasAbility(chr, 0x4A)) {
         v *= 1.2f;
@@ -125,7 +130,8 @@ f32 BtlParam_GetChargeRateA(BtlTechBChr *chr) {
 /* Parameter +0x78: attack charge rate at a full gauge. */
 f32 BtlParam_GetChargeRateB(BtlTechBChr *chr) {
     BtlTechBObj *obj = BtlChar_GetObj(chr);
-    if ((obj->chara >= 131 && obj->chara <= 133) || obj->chara == 190 || obj->chara == 209) {
+    if (obj->chara == 133 || obj->chara == 190 || obj->chara == 209 ||
+        (Bt4Balance_UsesOnlineRules() ? obj->chara == 200 : (obj->chara == 131 || obj->chara == 132))) {
         return 4.31f;
     }
     return obj->param->chargeRateB;
@@ -238,9 +244,7 @@ s32 BtlKiBlast_ScaleDamageByAbility(BtlTechBChr *chr, s32 damage, s32 kind) {
         damage += damage / 2;
     }
     if (obj->chara == 54) damage += damage / 10;
-    if (obj->chara == BT4_CELL_PERFECT) {
-        damage = damage * 3 / 10;
-    }
+    if (obj->chara == BT4_CELL_PERFECT) damage = damage * 3 / 10;
     /* Projectile kinds 4-7 are dash shots, 8-11 are vertical shots, and 12 is the combo volley. */
     if (kind == 12) {
         damage /= 2;
@@ -248,6 +252,12 @@ s32 BtlKiBlast_ScaleDamageByAbility(BtlTechBChr *chr, s32 damage, s32 kind) {
         damage = damage * ((kind >= 4 && kind <= 11) ? 120 : 70) / 100;
     }
     if (obj->chara == 28) damage = damage * 85 / 100; /* Chiaotzu */
+    const Bt4BalanceRule *balance = Bt4Balance_Rule(obj->chara);
+    if (kind == 0 || kind == 4 || kind == 8) {
+        damage = damage * (100 + balance->blastDamagePercent) / 100;
+    } else if ((kind >= 1 && kind <= 3) || (kind >= 5 && kind <= 7)) {
+        damage = damage * (100 + balance->chargedBlastDamagePercent) / 100;
+    }
 #endif
     return damage;
 }
@@ -1031,7 +1041,7 @@ u32 BtlSuper_GetFlags(BtlTechBChr *chr, s32 slot) {
     BtlSuperData *tbl = obj->super;
 
     slot -= 2;
-    if (slot == 2 && obj->chara == 1) return tbl->flags[slot] | 1u;
+    if (slot == 2 && (obj->chara == 1 || (obj->chara == 108 && Bt4Balance_UsesOnlineRules()))) return tbl->flags[slot] | 1u;
 #ifdef BT4_TAG_TEAM_EXPANDED
     if (slot == 0 && ((obj->chara == BT4_YAJIROBE && tbl->id[slot] == 419) ||
                       (obj->chara == 150 && tbl->id[slot] == 460))) {
@@ -1062,12 +1072,26 @@ f32 BtlSuper_GetShotTime(BtlTechBChr *chr, s32 slot) {
 
 /* Speed per frame of the technique's projectile (table +0x54 in 10 km/h). */
 f32 BtlSuper_GetShotSpeed(BtlTechBChr *chr, s32 slot) {
-    return BtlChar_GetObj(chr)->super->shotSpeed[slot - 2] * 10.0f * BTL_KMH_PER_FRAME;
+    BtlTechBObj *obj = BtlChar_GetObj(chr);
+    f32 speed = obj->super->shotSpeed[slot - 2] * 10.0f * BTL_KMH_PER_FRAME;
+    if (slot == 2 && obj->chara == 120 && Bt4Balance_UsesOnlineRules()) speed *= 1.15f;
+    return speed;
+}
+
+f32 Bt4Balance_SuperStartup(BtlTechBChr *chr, s32 slot) {
+    if (!Bt4Balance_UsesOnlineRules()) return 1.0f;
+    s32 fighter = BtlChar_GetObj(chr)->chara;
+    if ((fighter == 143 && slot == 4) || (fighter == 211 && slot == 2) ||
+        (fighter == 169 && slot == 3) || (fighter == 120 && slot == 2)) return 1.15f;
+    return 1.0f;
 }
 
 /* Turn rate in radians per frame (table +0x60 in degrees per second). */
 f32 BtlSuper_GetShotTurnRate(BtlTechBChr *chr, s32 slot) {
-    return BtlChar_GetObj(chr)->super->shotTurn[slot - 2] * 3.14159265f / 180.0f * (1.0f / 30.0f);
+    BtlTechBObj *obj = BtlChar_GetObj(chr);
+    f32 turn = obj->super->shotTurn[slot - 2];
+    if (slot == 3 && obj->chara == 198 && Bt4Balance_UsesOnlineRules() && turn < 64.0f) turn = 64.0f;
+    return turn * 3.14159265f / 180.0f * (1.0f / 30.0f);
 }
 
 /* Table +0x6C (float). */
@@ -1207,6 +1231,7 @@ s32 BtlSuper_GetBaseDamage(BtlTechBChr *chr, s32 slot, s32 total) {
         if (rule->superScale[idx] > 0) {
             damage = damage * (100 + rule->superScale[idx]) * 83 / 10000;
         }
+        damage = damage * (100 + rule->damagePercent[idx]) / 100;
     }
     if (!total) {
         damage /= BtlSuper_GetHitCount(chr, slot);

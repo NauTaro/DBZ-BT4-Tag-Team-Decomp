@@ -15,6 +15,8 @@
 #include <atomic>
 #include <vector>
 #include "match_supabase.h"
+#include "profile_cards.h"
+#include "tag_team_p2p.h"
 #include "net_lobby.h"
 #include "../../include/tag_team.h"
 #include "supabase_signal.h"
@@ -24,11 +26,28 @@ extern "C" void Port_RankedShutdown(void);
 #define JSON_NOEXCEPTION
 #include "../../third_party/voice/json.hpp"
 using Dj=nlohmann::json;
+#include "profile_image_codec.inc"
 namespace {
 std::mutex lock;unsigned serial=20000;
 std::string text(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
 unsigned number(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_number_unsigned()?p->get<unsigned>():0;}
 bool jsonFlag(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_boolean()&&p->get<bool>();}
+Bt4ProfileCard profileCard(const Dj &card){
+    Bt4ProfileCard result={int(std::min(7u,number(card,"name_color"))),int(std::min(7u,number(card,"background"))),
+                          jsonFlag(card,"premium")?int(std::min(6u,number(card,"decoration"))):0,jsonFlag(card,"premium"),
+                          jsonFlag(card,"checkout_available"),{},{},{},{}};
+    const auto media=card.find("media");
+    if(media!=card.end()&&media->is_object()){
+        auto copy=[&](char (&out)[37],const char *kind){
+            const std::string id=text(*media,kind);
+            if(id.size()==36&&id.find_first_not_of("0123456789abcdef-")==std::string::npos)
+                memcpy(out,id.c_str(),37);
+        };
+        copy(result.avatar,"avatar");
+        if(result.premium){copy(result.motion,"motion");copy(result.banner,"banner");copy(result.bannerMotion,"banner_motion");}
+    }
+    return result;
+}
 struct Discovery {
     unsigned generation=0,init=0,countsRequest=0,tagCountsRequest=0,reconcile=0;bool on=false,waiting=false,refreshRoom=false;
     Bt4DiscoveryStatus status={};Dj descriptor,profile,localAddresses;std::string wire,content;
@@ -514,6 +533,60 @@ extern "C" void Bt4Discovery_End(unsigned generation){std::lock_guard<std::mutex
     if(d.ranked&&d.sawFight){auto m=text(d.descriptor,"generation");for(auto &w:rankedWatches)if(w.match==m&&!w.until){w.until=SDL_GetTicks()+120000;w.next=0;}}
     Dj leave=Dj::object();auto generationId=text(d.descriptor,"generation");if(!generationId.empty())leave["generation"]=generationId;
     rpc("leave",leave);d.earlySignals.clear();d.on=false;d.turn={};d.turnRequest=0;rankedActive=false;rankedRockSeed=0;}
+extern "C" void Port_ProfileCardForPlayer(const char *name,Bt4ProfileCard *out){
+    *out={};
+    std::lock_guard<std::mutex> guard(lock);
+    if(!d.on||!name||!*name)return;
+    const auto members=d.descriptor.find("members");
+    if(members==d.descriptor.end()||!members->is_array())return;
+    for(const auto &member:*members){
+        if(text(member,"name")!=name||text(member,"role")!="player")continue;
+        const auto card=member.find("card");
+        if(card!=member.end()&&card->is_object())*out=profileCard(*card);
+        break;
+    }
+}
+extern "C" int Port_ProfileRankedRating(const char *name){
+    if(!name||!*name)return -1;
+    std::lock_guard<std::mutex> guard(lock);
+    if(!d.on||!d.ranked)return -1;
+    const auto members=d.descriptor.find("members");
+    if(members==d.descriptor.end()||!members->is_array())return -1;
+    for(const auto &member:*members){
+        if(text(member,"name")!=name||text(member,"role")!="player")continue;
+        const auto rating=member.find("rating");
+        if(rating!=member.end()&&rating->is_number_unsigned())
+            return int(std::min(100000u,rating->get<unsigned>()));
+    }
+    return -1;
+}
+extern "C" void Port_ProfileCardForTagPlayer(const char *name,Bt4ProfileCard *out){
+    *out={};
+    if(!name||!*name)return;
+    // The RTC worker only changes the descriptor when Cloudflare sends a roster.
+    // Recheck at a bounded rate and keep JSON out of the render loop.
+    static std::string known;
+    static std::map<std::string,Bt4ProfileCard> cards;
+    static Uint64 next=0;
+    const Uint64 now=SDL_GetTicks();
+    if(now>=next){
+        next=now+250;
+        char data[8192]={};
+        if(!TagPeer_Descriptor(data,sizeof(data)))data[0]=0;
+        if(known!=data){
+            known=data;
+            cards.clear();
+            const auto parsed=Dj::parse(known,nullptr,false);
+            const auto members=parsed.find("members");
+            if(members!=parsed.end()&&members->is_array())for(const auto &member:*members){
+                const auto card=member.find("card");
+                if(card!=member.end()&&card->is_object())cards.emplace(text(member,"name"),profileCard(*card));
+            }
+        }
+    }
+    const auto profile=cards.find(name);
+    if(profile!=cards.end())*out=profile->second;
+}
 extern "C" int Bt4Discovery_Counts(int protocol,uint64_t content,int out[5]){
     std::lock_guard<std::mutex> g(lock);if(!out)return 0;pump();Uint64 now=SDL_GetTicks();
     if(!d.lastCounts||now-d.lastCounts>=30000){d.lastCounts=now;char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.countsRequest=++serial;
@@ -653,6 +726,18 @@ Uint64 nextRankedStatus=0,nextRankedTop=0,rankedStatusDeadline=0,rankedTopDeadli
 Uint64 nextNicknameCheck=0;
 int nicknameState=BT4_NICKNAME_LOADING;
 std::string nickname,profileProject;
+unsigned cardRequest=0;
+Uint64 cardDeadline=0;
+int cardState=0;
+Bt4ProfileCard ownCard={};
+unsigned checkoutRequest=0;
+Uint64 checkoutDeadline=0;
+int checkoutState=0;
+std::string checkoutUrl;
+struct MediaRequest {std::string id; unsigned request=0; Uint64 until=0; Dj body;};
+std::deque<MediaRequest> profileMedia;
+std::mutex profileDraftLock;
+ProfileImageSource profileDraft;
 constexpr Uint64 ProfileTimeout=45000,TopInterval=600000;
 void rankedPage(){
     rankedView.pages=std::max(1,(rankedTotal+4)/5);
@@ -670,6 +755,8 @@ void profileRoute(){
     profileProject=project;
     rankedStatusRequest=rankedTopRequest=nicknameRequest=directoryRequest=0;
     directory={};nextDirectory=0;
+    cardRequest=0;cardState=0;ownCard={};profileMedia.clear();
+    checkoutRequest=0;checkoutState=0;checkoutUrl.clear();
     nextRankedStatus=nextRankedTop=0;
     rankedView.state=0;rankedView.rating=rankedView.wins=rankedView.losses=0;
     rankedView.streakScoring=rankedView.streakWins=rankedView.streakPoints=0;
@@ -707,6 +794,27 @@ void profilePump(Uint64 now){
                 snprintf(entry.name,sizeof(entry.name),"%s",name.c_str());
                 entry.capacity=int(capacity);entry.occupancy=int(occupancy);entry.kind=int(kind);
             }
+            continue;
+        }
+        if(id==checkoutRequest){
+            checkoutRequest=0;
+            const auto url=text(*body,"url");
+            if(url.compare(0,28,"https://checkout.stripe.com/")==0&&url.size()<2048){
+                checkoutUrl=url;checkoutState=2;
+            }else checkoutState=-1;
+            continue;
+        }
+        auto media=std::find_if(profileMedia.begin(),profileMedia.end(),[&](const MediaRequest &entry){return entry.request==id;});
+        if(media!=profileMedia.end()){
+            media->request=0;
+            if(text(*body,"id")==media->id)media->body=std::move(*body);
+            continue;
+        }
+        if(id==cardRequest){
+            cardRequest=0;
+            const auto premium=body->find("premium");
+            cardState=premium!=body->end()&&premium->is_boolean()?2:-1;
+            if(cardState==2)ownCard=profileCard(*body);
             continue;
         }
         if(id==nicknameRequest){
@@ -778,7 +886,118 @@ void profilePump(Uint64 now){
         if(rankedView.topState==0)rankedView.topState=-1;
     }
     if(nicknameRequest&&now>=nicknameDeadline){nicknameRequest=0;nicknameState=BT4_NICKNAME_UNAVAILABLE;nextNicknameCheck=now+15000;}
+    if(cardRequest&&now>=cardDeadline){cardRequest=0;cardState=-1;}
+    if(checkoutRequest&&now>=checkoutDeadline){checkoutRequest=0;checkoutState=-1;}
 }
+}
+extern "C" int Port_ProfileCheckout(int action,char *url,unsigned capacity){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profileRoute();profilePump(SDL_GetTicks());
+    if(action<0){checkoutRequest=0;checkoutState=0;checkoutUrl.clear();}
+    if(action>0&&!checkoutRequest){
+        checkoutRequest=profileRequest("profile_checkout","{}");
+        checkoutDeadline=SDL_GetTicks()+15000;checkoutState=checkoutRequest?1:-1;
+    }
+    const int state=checkoutState;
+    if(state==2&&url&&capacity){
+        SDL_strlcpy(url,checkoutUrl.c_str(),capacity);checkoutUrl.clear();checkoutState=0;
+    }
+    return state;
+}
+extern "C" int Port_ProfileCardView(Bt4ProfileCard *out){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profileRoute();profilePump(SDL_GetTicks());*out=ownCard;return cardState;
+}
+extern "C" void Port_ProfileCardRequest(const Bt4ProfileCard *card){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profileRoute();
+    if(cardRequest)return;
+    Dj args=Dj::object();
+    if(card)args["card"]={{"name_color",card->nameColor},{"background",card->background},{"decoration",card->decoration}};
+    cardRequest=profileRequest(card?"profile_card_save":"profile_card_get",args.dump().c_str());
+    cardDeadline=SDL_GetTicks()+ProfileTimeout;
+    cardState=cardRequest?1:-1;
+}
+static int profileMediaSubmit(const Dj &args){
+    if(args.is_null()||args.empty())return 0;
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profileRoute();
+    if(cardRequest)return 0;
+    cardRequest=profileRequest("profile_media_save",args.dump().c_str());
+    cardDeadline=SDL_GetTicks()+ProfileTimeout;
+    cardState=cardRequest?1:-1;
+    return cardRequest!=0;
+}
+extern "C" int Port_ProfileMediaSave(const char *kind,const char *path){
+    return profileMediaSubmit(path?profileImage(path,kind):Dj{{"kind",kind},{"remove",true}});
+}
+extern "C" int Port_ProfileDraftFile(const char *kind,const char *path){
+    auto image=loadProfileImage(path,kind);
+    if(image.pixels.empty())return 0;
+    std::lock_guard<std::mutex> guard(profileDraftLock);
+    profileDraft=std::move(image);
+    return 1;
+}
+extern "C" int Port_ProfileDraftRoster(int character){
+    ProfileImageSource image;
+    image.kind="avatar";image.width=256;image.height=512;image.delays={200};
+    image.pixels.resize(256*512*4);
+    if(!Port_ProfileRosterPortrait(character,image.pixels.data()))return 0;
+    std::lock_guard<std::mutex> guard(profileDraftLock);
+    profileDraft=std::move(image);
+    return 1;
+}
+extern "C" int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height){
+    std::lock_guard<std::mutex> guard(profileDraftLock);
+    if(profileDraft.pixels.empty())return 0;
+    const bool banner=profileDraft.kind=="banner"||profileDraft.kind=="banner_motion";
+    *width=banner?256:128;
+    *height=banner?64:128;
+    const auto data=profileResize(profileDraft.pixels.data(),profileDraft.width,profileDraft.height,*width,*height,x,y,zoom);
+    return profilePixels(data,rgba,size_t(*width)*(*height)*4);
+}
+extern "C" int Port_ProfileDraftUpload(float x,float y,float zoom){
+    Dj args;
+    {
+        std::lock_guard<std::mutex> guard(profileDraftLock);
+        args=encodeProfileImage(profileDraft,x,y,zoom);
+    }
+    return profileMediaSubmit(args);
+}
+extern "C" void Port_ProfileDraftReset(){
+    std::lock_guard<std::mutex> guard(profileDraftLock);
+    profileDraft={};
+}
+extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *width,int *height,int *count,int delays[6]){
+    if(!id||!*id)return 0;
+    std::lock_guard<std::mutex> guard(rankedLock);
+    const Uint64 now=SDL_GetTicks();
+    profileRoute();profilePump(now);
+    auto entry=std::find_if(profileMedia.begin(),profileMedia.end(),[&](const MediaRequest &media){return media.id==id;});
+    if(entry==profileMedia.end()){
+        if(profileMedia.size()>=48)profileMedia.pop_front();
+        profileMedia.push_back({id,0,0,{}});
+        entry=std::prev(profileMedia.end());
+    }
+    if(now>=entry->until&&entry->body.is_null()){
+        entry->request=profileRequest("profile_media_get",Dj{{"id",id}}.dump().c_str());
+        entry->until=now+15000;
+    }
+    if(entry->body.is_null())return 0;
+    const auto &body=entry->body;
+    const std::string kind=text(body,"kind");
+    int w,h;
+    profileImageDimensions(kind,w,h);
+    const auto frames=body.find("frames"),timing=body.find("delays");
+    if(frames==body.end()||!frames->is_array()||frames->empty()||frames->size()>((kind=="motion"||kind=="banner_motion")?6u:1u)||
+       timing==body.end()||!timing->is_array()||timing->size()!=frames->size())return 0;
+    const size_t frameBytes=size_t(w)*h*4;
+    for(size_t i=0;i<frames->size();++i){
+        if(!(*frames)[i].is_string()||!(*timing)[i].is_number_unsigned()||
+            !profilePixels((*frames)[i].get<std::string>(),pixels+i*frameBytes,frameBytes))return 0;
+        delays[i]=int(std::clamp((*timing)[i].get<unsigned>(),100u,1000u));
+    }
+    *width=w;*height=h;*count=int(frames->size());return 1;
 }
 extern "C" void Bt4Discovery_Directory(int protocol,uint64_t content,uint64_t tagContent,Bt4PublicDirectory *out){
     std::lock_guard<std::mutex> guard(rankedLock);

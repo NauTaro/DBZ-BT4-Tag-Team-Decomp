@@ -9,6 +9,7 @@
  */
 #include <ctype.h>
 #include <stdint.h>
+#include "bt4_goku_costumes.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,10 +167,38 @@ int ADXF_GetPtStat(int ptid) {
     return sPartDir[ptid & 7][0] != '\0' ? STAT_READEND : STAT_STOP;
 }
 
+int Port_GokuCostumesReady(void) {
+    static int ready;
+    int index;
+
+    if (ready != 0) {
+        return ready > 0;
+    }
+    for (index = 0; index < BT4_GOKU_COSTUME_FILE_COUNT; ++index) {
+        char path[96];
+        FILE *file;
+
+        snprintf(path, sizeof(path), BT4_GOKU_COSTUME_PATH "%02d.bin", index);
+        file = fopen(path, "rb");
+        if (file == NULL) {
+            ready = -1;
+            return 0;
+        }
+        fclose(file);
+    }
+    ready = 1;
+    return 1;
+}
+
 void *ADXF_OpenAfs(int ptid, int flid) {
     char rel[128];
 
-    snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+    if (ptid == 3 && flid >= BT4_GOKU_COSTUME_PART_INDEX &&
+        flid < BT4_GOKU_COSTUME_PART_INDEX + BT4_GOKU_COSTUME_FILE_COUNT) {
+        snprintf(rel, sizeof(rel), BT4_GOKU_COSTUME_PATH "%02d.bin", flid - BT4_GOKU_COSTUME_PART_INDEX);
+    } else {
+        snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+    }
     return open_rel(rel);
 }
 

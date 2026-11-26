@@ -1,9 +1,11 @@
 extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
 extern int TagBattle_Active(void);
 #include "common.h"
+#include "battle/bt4_beam_parry.h"
 extern s32 TagBattle_Count(void);
 extern s32 TagBattle_Target(s32 actor);
 #include "battle/eft_det_a.h"
+#include "battle/eft_ae.h"
 
 #ifdef BT4_TAG_TEAM_EXPANDED
 static u32 sTagHitTargets[sizeof(((EftDetList *)0)->rec) / sizeof(EftDetRec)];
@@ -136,6 +138,9 @@ extern s32 EftHit_NotifyBlastTask(u32 idx, void *tri);
 /* The fighter's answer to a record that touches it (btl_char_coll_b.c). */
 extern s32 BtlColl_TryDodge(s32 objId, EftDetRec *hit);
 extern s32 BtlColl_TryDeflect(s32 objId, EftDetRec *hit);
+#ifdef BT4_DEV_BEAM_PARRY
+extern s32 BtlColl_TryBeamParry(s32 objId, s32 actor, EftDetRec *hit);
+#endif
 extern s32 BtlColl_TryReflect(s32 objId, EftDetRec *hit);
 extern s32 BtlColl_TryAbsorb(s32 objId, EftDetRec *hit);
 extern s32 BtlColl_TryGuard(s32 objId, EftDetRec *hit);
@@ -979,6 +984,12 @@ s32 EftDet_HitFighterMulti(EftDetRec *rec, s32 target, s32 idx) {
  * (found by EftDet_StagePass, which ran before) is dropped. Then the fighter answers, first yes wins: dodge
  * (nothing reported), deflect (0x40), reflect (0x80), absorb (0x20), then guard (2) or hit (1).
  * (The mix of `rec->` and `list->rec[i].` is what reproduces the original's two induction pointers.) */
+#ifdef BT4_DEV_BEAM_PARRY
+u32 *EftDet_BeamParryTaskTag(EftDetRec *rec) {
+    BtlTask *task = rec->task;
+    return task != NULL ? &task->tag : NULL;
+}
+#endif
 #ifdef BT4_TAG_TEAM_EXPANDED
 #include "tag_team_projectile_hits.inc"
 #endif
@@ -1020,6 +1031,17 @@ void EftDet_FighterPass(void) {
                 if (ok) {
                     list->rec[i].shape.hitFlags |= EFT_DET_HIT_FIGHTER;
                     EftHit_MarkLastHit(rec);
+#ifdef BT4_DEV_BEAM_PARRY
+                    if (getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_BEAM_DEFENSE")) {
+                        fprintf(stderr, "beam fixture: contact type=%d shape=%d flags=%x\n", rec->type, rec->shape.type, rec->flags);
+                    }
+                    if (BtlColl_TryBeamParry(BattleSide_GetObjId(target), target, rec)) {
+                        if (getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_BEAM_DEFENSE")) {
+                            fprintf(stderr, "beam fixture: contact parried\n");
+                        }
+                        continue;
+                    }
+#endif
                     if (BtlColl_TryDodge(target, rec)) {
                         continue;
                     }

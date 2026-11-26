@@ -1,4 +1,8 @@
 #include "common.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "battle/bt4_balance.h"
+#include "bt4_goku_costumes.h"
+#endif
 #include "port_variant.h"
 #include "battle/view_a.h"
 #include "battle/orbit_cam.h"
@@ -103,6 +107,15 @@ s32 Bt4_ModelFile(s32 chara, s32 costume, s32 damaged) {
 
 s32 Bt4_CharaFromModelFile(s32 id) {
     s32 c, base = 0x1612;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (id >= BT4_GOKU_COSTUME_FILE_FIRST && id < BT4_GOKU_COSTUME_FILE_FIRST + BT4_GOKU_COSTUME_FILE_COUNT) {
+        static const s32 forms[] = {BT4_GOKU_END, BT4_GOKU_INSTINCT_SIGN, BT4_GOKU_MASTERED_INSTINCT};
+        s32 outfit = (id - BT4_GOKU_COSTUME_FILE_FIRST) / 4;
+        s32 source = outfit < 6 ? 0 : outfit < 10 ? 1 : 2;
+        s32 target = ((id - BT4_GOKU_COSTUME_FILE_FIRST) / 2) % 2;
+        return forms[target + (target >= source)];
+    }
+#endif
     for (c = 0; c < 250; c++) {
         s32 end = base + 2 * Bt4_Costumes(c);
         if (id >= base && id < end) return c;
@@ -189,7 +202,12 @@ void ChrView_SetupCamera(s32 chara) {
         OrbitCam_Reset();
         OrbitCam_SetFloorClamp(1);
         OrbitCam_SetTarget(0.0f, info->targetY, 0.0f);
-        OrbitCam_SetAngles(0.0f, 3.14159265f, 0.0f);
+#ifdef PORT
+        if (getenv("BT4_RENDER_TEST") && getenv("BT4_CHARREF_VIEW_SIDE")) {
+            OrbitCam_SetAngles(0.0f, 2.09439510f, 0.0f);
+        } else
+#endif
+            OrbitCam_SetAngles(0.0f, 3.14159265f, 0.0f);
         OrbitCam_SetDist(info->dist);
         if (gChrView->zoom != 0) {
             OrbitCam_SetDistRange(PORT_V(3.0f, *(f32 *)((u8 *)info + 0x38)), 100.0f);

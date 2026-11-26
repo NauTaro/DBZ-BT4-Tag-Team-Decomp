@@ -1,5 +1,8 @@
 #include "common.h"
 #include "battle/view_b.h"
+#ifdef PORT
+#include "battle/bt4_balance.h"
+#endif
 #include "sys/common.h"
 #include "sys/save.h"
 
@@ -21,10 +24,18 @@ s32 ChrTbl_WrapCostume(s32 chara, s32 *costume) {
     ChrTblFile *file = CHRTBL_FILE;
     ChrTblEntry *table = (ChrTblEntry *)CHRTBL_SECTION(file, charaOffset);
 
-    if (costume != NULL && !(*costume < table[chara].costumes)) {
+    s32 count = table[chara].costumes;
+#ifdef PORT
+    /* Tagoma's models are present in the game data but omitted from Ginyu's
+     * selection count. Expose that slot without changing the file indices. */
+    if (chara == BT4_GINYU && count <= BT4_GINYU_TAGOMA_OUTFIT) {
+        count = BT4_GINYU_TAGOMA_OUTFIT + 1;
+    }
+#endif
+    if (costume != NULL && !(*costume < count)) {
         *costume = 0;
     }
-    return table[chara].costumes;
+    return count;
 }
 
 /* The character's cost. */

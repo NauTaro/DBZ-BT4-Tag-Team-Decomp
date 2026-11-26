@@ -1123,6 +1123,7 @@ extern int Port_TagOption(const char*,int),Port_TagSharedOption(const char*,int)
 extern int Port_TagSharedHealth(int,int,s32*,int),Port_TagSharedHealthAll(s32 values[2][5][5]),Port_TagSharedReady(void);
 extern void Port_TagChoiceItems(int,int,const u16*);
 extern unsigned Port_TagBattleRules(void);
+extern int Port_TagRoomDelay(void);
 extern int Port_TagSetBattleRules(unsigned rules);
 extern void Port_TagOpenWithRules(int,int,int,const char *,unsigned long long,unsigned);
 extern s16 gBattleTimeLimitTbl[8];
@@ -1240,11 +1241,11 @@ static s32 Tb_TagSetting(const char *key,s32 initial,s32 lo,s32 hi){
     return value<lo||value>hi?initial:value;
 }
 
-enum {TAG_RULE_REFEREE, TAG_RULE_STAGE, TAG_RULE_CPU_1, TAG_RULE_CPU_2, TAG_RULE_ROWS};
+enum {TAG_RULE_REFEREE, TAG_RULE_STAGE, TAG_RULE_CPU_1, TAG_RULE_CPU_2, TAG_RULE_DELAY, TAG_RULE_ROWS};
 static s32 sTagBattleRuleRow, sTagBattleRuleReturn = TB_TAG;
 static s32 sTagNetworkRuleUiDone;
 static char *sTagBattleRuleLabels[TAG_RULE_ROWS] = {
-    "Referee", "Stage destruction", "Team 1 CPU transformations", "Team 2 CPU transformations"
+    "Referee", "Stage destruction", "Team 1 CPU transformations", "Team 2 CPU transformations", "Minimum Input Delay"
 };
 static const char *const sTagBattleRuleKeys[TAG_RULE_ROWS] = {
     "tag_off_referee", "tag_off_destroy_stage", "tag_off_cpu_forms_1", "tag_off_cpu_forms_2"
@@ -1258,7 +1259,10 @@ static const char *const sTagReferees[] = {
 static const s32 sTagBattleRuleDefault[TAG_RULE_ROWS] = {4, 0, 1, 1};
 static const s32 sTagBattleRuleMax[TAG_RULE_ROWS] = {6, 1, 1, 1};
 
+static s32 Tb_TagBattleRuleCount(void) {return Tb_TagOffline()?TAG_RULE_DELAY:TAG_RULE_ROWS;}
+
 static s32 Tb_TagBattleRuleValue(s32 row) {
+    if(row==TAG_RULE_DELAY)return sTagBattleRuleReturn==TB_TAG_ROOM?Port_TagRoomDelay():Tb_TagSetting("tag_net_min_delay",0,0,12);
     if(sTagBattleRuleReturn==TB_TAG_ROOM){
         const unsigned rules=Port_TagBattleRules();
         if(row==TAG_RULE_REFEREE)return (rules&7)?(rules&7)-1:4;
@@ -1303,12 +1307,19 @@ static void Tb_TagBattleRulesUpdate(s32 live) {
         Snd_PlaySe(1, 2);
         return;
     }
-    Ps_Move(&sTagBattleRuleRow, TAG_RULE_ROWS);
+    Ps_Move(&sTagBattleRuleRow, Tb_TagBattleRuleCount());
     if(!editable)return;
     const s32 row = sTagBattleRuleRow;
     s32 dir = Ps_Side();
     if (!dir && (gPad[0].gamePressed & PADG_CROSS)) dir = 1;
     if (!dir) return;
+    if(row==TAG_RULE_DELAY){
+        if(!room){
+            Port_SettingSave("tag_net_min_delay",Ps_Wrap(Tb_TagBattleRuleValue(row)+dir,0,12));
+            Snd_PlaySe(1,0);
+        }
+        return;
+    }
     const s32 next=Ps_Wrap(Tb_TagBattleRuleValue(row)+dir,0,sTagBattleRuleMax[row]);
     if(room){
         unsigned rules=Port_TagBattleRules();
@@ -1627,7 +1638,7 @@ static char *sPracticeHelp[] = {"Open the native Training mode.", "Practice Tag 
 static char *sTutorialActions[] = {"Camera and targets", "Reviving allies", "Joint attacks",
                                  "Cooperative fusion", "Practice 2 vs 2"};
 static char *sTutorialHelp[] = {
-    "Press Select to switch between enemy, ally and free view. Change targets with the control chosen in Tag Team settings.",
+    "Press L3 to cycle through enemies and allies. Use the right stick or D-pad to select a target if enabled.",
     "Get close to a downed ally. Hold the Ki Charge button when the rescue prompt appears.",
     "Follow a launch when prompted. Chain three follow-ups to set up a joint beam attack.",
     "Use compatible fighters. Follow the fusion prompts and press R3 to accept your ally's invitation.",
@@ -1695,7 +1706,7 @@ static void Tb_TagCreate(s32 listed){
         if(!offline)Port_TagInitialTeams(sTb->tagLeft,sTb->tagRight);
         {
             extern void Port_TagOpenListedWithRules(int,int,int,const char *,unsigned long long,unsigned,int);
-            Port_TagOpenListedWithRules(offline?2:5,sTb->time,0,Port_NetNameGet(),content,Tb_TagNetworkRules(),listed);
+            Port_TagOpenListedWithRules(offline?2:5,sTb->time,offline?0:Tb_TagSetting("tag_net_min_delay",0,0,12),Port_NetNameGet(),content,Tb_TagNetworkRules(),listed);
         }
         if(offline){Port_TagTeams(sTb->tagLeft,sTb->tagRight);if(sTb->tagCPU){s32 i;for(i=1;i<Port_TagSlots();++i)Port_TagSlot(i,1,sTb->tagDifficulty);}}
     }
@@ -2324,6 +2335,7 @@ static void Tb_ProfileUpdate(s32 live) {
     Pad *pad = &gPad[0];
 
     Ps_Prompt(0, "Type Name");
+    Ps_Prompt(1, "Edit Card");
     Ps_Prompt(2, "Back");
     if (!live) {
         return;
@@ -2332,6 +2344,10 @@ static void Tb_ProfileUpdate(s32 live) {
     if ((pad->gamePressed & PADG_CROSS) && sTb->prCur == PR_NAME) {
         Snd_PlaySe(1, 1);
         Tb_OpenName(0);
+    } else if (pad->gamePressed & PADG_SQUARE) {
+        extern void Port_UiOpenProfileCard(void);
+        Port_UiOpenProfileCard();
+        Snd_PlaySe(1, 1);
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
         Tb_SaveChoices();
@@ -2881,10 +2897,12 @@ static void Tb_TagOptionText(s32 row,s32 selected,char *label,char *value){
 }
 
 static void Tb_DrawTagBattleRulesText(void) {
-    for (s32 row = 0; row < TAG_RULE_ROWS; ++row) {
+    for (s32 row = 0; row < Tb_TagBattleRuleCount(); ++row) {
         char value[48];
         const s32 option = Tb_TagBattleRuleValue(row);
-        Ps_Copy(value, row == TAG_RULE_REFEREE ? sTagReferees[option] : option ? "Enabled" : "Disabled",
+        if(row==TAG_RULE_DELAY&&option)snprintf(value,sizeof(value),Tb_Fmt("%d frames"),option);
+        else if(row==TAG_RULE_DELAY)Ps_Copy(value,"Automatic",sizeof(value));
+        else Ps_Copy(value, row == TAG_RULE_REFEREE ? sTagReferees[option] : option ? "Enabled" : "Disabled",
                 sizeof(value));
         Tb_TagOptionText(row, row == sTagBattleRuleRow, sTagBattleRuleLabels[row], value);
     }
@@ -2974,7 +2992,7 @@ static void Tb_DrawTagSettingsText(void){
         case TAG_OPT_TARGET:sprintf(value,"%d",PortSpectator_Target()+1);break;
         case TAG_OPT_SPEED:sprintf(value,"%d%%",PortSpectator_Speed());break;
         case TAG_OPT_ZOOM:sprintf(value,"%d%%",PortSpectator_Zoom());break;
-        case TAG_OPT_LOCKON:{static char *methods[]={"L3","Right stick","D-pad"};Ps_Copy(value,methods[PortInput_TagTargetMethod(0,-1)],48);break;}
+        case TAG_OPT_LOCKON:{static char *methods[]={"L3","L3 / Right stick","L3 / D-pad"};Ps_Copy(value,methods[PortInput_TagTargetMethod(0,-1)],48);break;}
         case TAG_OPT_JOINT:Ps_Copy(value,Tb_TagOptionValue("tag_off_joint",1)?"Enabled":"Disabled",48);break;
         default:break;
         }
@@ -3773,7 +3791,7 @@ static s32 Tb_TourNextReady(void) {
     PortLobbyView *v = &sTbLv;
     s32 m = v->tourCur;
 
-    return m >= 0 && v->tourChoose < 0 && v->tourA[m] >= 0 && v->tourB[m] >= 0 && v->tourDrop[v->tourA[m]] == 0 && v->tourDrop[v->tourB[m]] == 0;
+    return m >= 0 && v->tourChoose < 0 && v->tourA[m] >= 0 && v->tourB[m] >= 0 && v->tourDrop[v->tourA[m]] == 0 && v->tourDrop[v->tourB[m]] == 0 && v->tourReadySides == 3;
 }
 
 static s32 Tb_LobbyCanStart(void) {
@@ -4740,6 +4758,7 @@ static void Tb_LobbyFocus(char *focus, char *now) {
 #define BR_BTN_Y 280.0f
 #define BR_ACT_START 1
 #define BR_ACT_BACK 2
+#define BR_ACT_READY 5
 #define BR_ACT_PICK_A 3 /* the owner's choice of a match's winner (its two games disagreed twice): its first, */
 #define BR_ACT_PICK_B 4 /* ... its second */
 
@@ -4828,7 +4847,7 @@ static s32 Tb_BrOut(const PortLobbyView *v, s32 e) {
     s32 m;
 
     for (m = 0; m < v->tourSize - 1; m++) {
-        if (v->tourWin[m] >= 0 && v->tourWin[m] != e && (v->tourA[m] == e || v->tourB[m] == e)) {
+        if (v->tourHow[m] && v->tourWin[m] != e && (v->tourA[m] == e || v->tourB[m] == e)) {
             return 1;
         }
     }
@@ -4906,14 +4925,24 @@ static s32 Tb_BrChoosing(void) {
     return sTbLv.owner && !sTbLv.phase && m >= 0 && sTbLv.tourA[m] >= 0 && sTbLv.tourB[m] >= 0;
 }
 
+static s32 Tb_BrReadyBit(void) {
+    PortLobbyView *v = &sTbLv;
+    s32 m = v->tourCur;
+    if (m < 0 || v->phase || v->tourMe < 0 || v->tourReadySeconds == 0)
+        return 0;
+    return v->tourA[m] == v->tourMe ? 1 : v->tourB[m] == v->tourMe ? 2 : 0;
+}
+
 static s32 Tb_BracketCount(void) {
-    return Tb_BrChoosing() ? 3 : sTbLv.owner ? 2 : 1;
+    return Tb_BrChoosing() ? 3 : 1 + sTbLv.owner + (Tb_BrReadyBit() != 0);
 }
 
 static s32 Tb_BracketAct(s32 k) {
     if (Tb_BrChoosing()) {
         return k == 0 ? BR_ACT_PICK_A : k == 1 ? BR_ACT_PICK_B : BR_ACT_BACK;
     }
+    if (Tb_BrReadyBit() && k-- == 0)
+        return BR_ACT_READY;
     return sTbLv.owner && k == 0 ? BR_ACT_START : BR_ACT_BACK;
 }
 
@@ -4928,6 +4957,8 @@ static char *Tb_BracketActName(s32 act) {
     if (act == BR_ACT_START) {
         return v->phase ? "Match On" : v->tour == 2 ? "New Tournament" : "Start Match";
     }
+    if (act == BR_ACT_READY)
+        return v->tourReadySides & Tb_BrReadyBit() ? "Ready Confirmed" : "Ready";
     return "Back to the Lobby";
 }
 
@@ -4996,6 +5027,9 @@ static void Tb_BracketUpdate(s32 live) {
     if (pad->gamePressed & PADG_CROSS) {
         if (Tb_BracketAct(sTb->brCur) == BR_ACT_START) {
             Tb_BracketStart();
+        } else if (Tb_BracketAct(sTb->brCur) == BR_ACT_READY) {
+            Snd_PlaySe(1, 1);
+            Port_LobbyDo(LOBBY_READY, 1, 0);
         } else if (Tb_BracketAct(sTb->brCur) != BR_ACT_BACK) { /* the owner's choice of the winner: final */
             Snd_PlaySe(1, 1);
             Port_LobbyDo(LOBBY_TOUR_CHOOSE, Tb_BracketAct(sTb->brCur) == BR_ACT_PICK_A ? 0 : 1, 0);
@@ -5197,10 +5231,14 @@ static void Tb_DrawBracketText(void) {
     if (v->tourChamp >= 0) {
         Ps_TextRaw(256.0f, Ps_TextTop((BR_CH_Y0 + BR_CH_Y1) * 0.5f, 0.7f), v->tourName[v->tourChamp], 0.7f, 124.0f, 0);
     } else {
-        Ps_Text(256.0f, Ps_TextTop((BR_CH_Y0 + BR_CH_Y1) * 0.5f, 0.50f), "Pending", 0.50f, 102.0f, 4);
+        Ps_Text(256.0f, Ps_TextTop((BR_CH_Y0 + BR_CH_Y1) * 0.5f, 0.50f), v->tour == 2 ? "No Champion" : "Pending", 0.50f, 102.0f, 4);
     }
     Ps_Text(256.0f, Ps_TextTop(Tb_BrMid() + 15.0f, 0.42f), section ? "QUALIFIER" : "FINAL", 0.42f, 92.0f, focus == size - 2 && v->tour == 1 ? 1 : 4);
-    if (sTbLv.tourChoose >= 0 && !sTbLv.phase) {
+    if (!v->phase && v->tourReadySeconds > 0) {
+        char timer[96];
+        sprintf(timer, Tb_Fmt("Confirm Ready within %d s"), v->tourReadySeconds);
+        Ps_Text(256.0f, Ps_TextTop(BR_BTN_Y - 9.0f, 0.42f), timer, 0.42f, 440.0f, 1);
+    } else if (sTbLv.tourChoose >= 0 && !sTbLv.phase) {
         Ps_Text(256.0f, Ps_TextTop(BR_BTN_Y - 9.0f, 0.42f), v->owner ? "THE TWO GAMES DISAGREE ON THIS MATCH: CHOOSE THE WINNER" : "THE OWNER IS CHOOSING THE WINNER",
                 0.42f, 440.0f, 1);
     }
@@ -5315,6 +5353,10 @@ static char *Tb_Help(void) {
         return "Set the camera for your Tag Team battles.";
     case TB_TAG_BATTLE_RULES:
         if(sTagBattleRuleReturn==TB_TAG_ROOM&&!Port_TagHost())return "These are the host's battle rules. All players use the same settings.";
+        if (sTagBattleRuleRow == TAG_RULE_DELAY)
+            return sTagBattleRuleReturn==TB_TAG_ROOM ?
+                "The minimum input delay was set when the room was created." :
+                "Set the minimum input delay in frames. Automatic adapts to the connection.";
         if (sTagBattleRuleRow == TAG_RULE_REFEREE) return "Choose who announces the fight.";
         if (sTagBattleRuleRow == TAG_RULE_STAGE)
             return "Allow powerful attacks to destroy stages that have a destroyed version.";
@@ -5794,7 +5836,7 @@ static void Tb_Draw(void) {
     case TB_TAG_RECOVERY:
         Tb_TagOptionsPlate(sTagRecoveryRow,TAG_REC_ROWS);break;
     case TB_TAG_BATTLE_RULES:
-        Tb_TagOptionsPlate(sTagBattleRuleRow, TAG_RULE_ROWS); break;
+        Tb_TagOptionsPlate(sTagBattleRuleRow, Tb_TagBattleRuleCount()); break;
     case TB_TAG_ROOM:
         Tb_DrawTagRoom(); break;
     case TB_CREATE:

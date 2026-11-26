@@ -460,11 +460,24 @@ void HudSprite_DrawAt(HudCSprite *spr, HudCRes *res, u8 ctx2, s32 tbp, s32 cbp) 
     if (spr->tex >= 0) {
         s32 block = t->imageBlock + tbp;
         u64 clut = (u64)(pal->clutBlock + cbp) << 37;
+        u64 tex0 = t->tex0 | clut | block | ((u64)0x8000 << 19);
+#ifdef PORT
+        extern HudCRes *FontIcon_GetRes(void);
+        extern u64 FontIcon_XboxTex0(s32 texture);
+        u64 xbox = res == FontIcon_GetRes() ? FontIcon_XboxTex0(spr->tex) : 0;
+        if (xbox) {
+            tex0 = xbox;
+            uv[0][0] = uv[2][0] = 0;
+            uv[1][0] = uv[3][0] = 1023;
+            uv[0][1] = uv[1][1] = 0;
+            uv[2][1] = uv[3][1] = 1023;
+        }
+#endif
 
         p[0] = (u64)spr->r | ((u64)spr->g << 8) | ((u64)spr->b << 16) | ((u64)spr->a << 24);
-        p[1] = t->tex0 | clut | block | ((u64)0x8000 << 19);
+        p[1] = tex0;
         p += 2;
-        p[0] = t->tex0 | clut | block | ((u64)0x8000 << 19);
+        p[0] = tex0;
         p[1] = ((u64)ctx << 9) | 0x154; /* triangle strip, textured, alpha blended, UV coordinates */
         p += 2;
     } else {

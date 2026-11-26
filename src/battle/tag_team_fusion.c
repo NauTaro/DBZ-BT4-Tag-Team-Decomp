@@ -237,7 +237,7 @@ static void fusion_hold_partner(s32 a){
 static s32 fusion_streaming(void){s32 a;for(a=0;a<10;++a)if(sFusion[a].state==F_NATIVE||sFusion[a].state>=F_SEPARATE)return 1;return 0;}
 static s32 fusion_begin(s32 a,s32 b){
     BtlMgrChr *c=BtlChar_Get(a),*other=BtlChar_Get(b);TagFusionSlot *s=&sFusion[a],*p=&sFusion[b];
-    s32 index=s->index,seq=BtlParam_GetUnkB1(c,index);
+    s32 index=s->index;
     if(fusion_streaming()||!fusion_idle(a)||!fusion_idle(b)||!fusion_compatible(a,b,index))return 0;
     s->original=*BtlMember_GetActive(c);p->original=*BtlMember_GetActive(other);
     s->originalCount=c->memberCount;s->originalActive=c->curMember;s->shadow=c->members[1];
@@ -252,9 +252,8 @@ static s32 fusion_begin(s32 a,s32 b){
     }
     if(BattleSide_GetControl(b)==BTL_CONTROL_PAD &&
        (BattleSide_GetControl(a)!=BTL_CONTROL_PAD || (BtlChar_Rand()&1)))s->controller=b;
-    /* Fusion dance is temporary. Native Potara remains permanent; it is not
-     * forcibly separated by a menu timer. */
-    s->total=s->ticks=seq==1?sFusionDuration*30:0;
+    /* The room's timer applies to both the dance and Potara. */
+    s->total=s->ticks=sFusionDuration*30;
     c->members[1]=p->original;c->memberCount=2;
     if(!BtlAct_QueueFusion(c,index,1)){c->members[1]=s->shadow;c->memberCount=s->originalCount;return 0;}
     s->state=F_NATIVE;p->state=F_PARTNER;s->startup=0;
@@ -391,7 +390,11 @@ void TagFusion_Action(void *fighter,s32 phase){
     if(phase==1){
         if(s->state==F_SEPARATE){
             BtlAct_SetFormCurrent(c);c->newChara=s->original.chara;c->newCostume=s->original.costume;c->new20=s->original.gauge.unk20;
-            if(BtlChange_TryRequestChara(c->side,c->newChara,c->newCostume,c->new20,-1,-1,-1))s->state=F_LOADING;
+            /* Restore the fighter's model, animations, moves and voice bank.
+             * Loading a costume alone leaves the merged fighter's tables bound. */
+            if(BtlChange_TryRequestChara(c->side,c->newChara,c->newCostume,c->new20,
+                                        c->newChara,c->newChara,c->newChara))
+                s->state=F_LOADING;
         }else if(s->state==F_LOADING&&BtlChange_IsLoadedFor(c->side)){
             BtlChange_SetReady(c->side);BtlAnim_Request(c,0,0);s->state=F_READY;
         }else if(s->state==F_LOADED){BtlChange_SetDone(c->side);s->state=F_DONE;

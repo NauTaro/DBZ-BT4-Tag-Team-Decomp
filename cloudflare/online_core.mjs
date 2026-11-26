@@ -1,4 +1,5 @@
 import {ONLINE_SCHEMA} from './online_schema.mjs';
+import {getProfileMedia,ownProfileCard,profileCard,saveProfileMedia} from './online_profile_cards.mjs';
 import {migrateCharacters,characterSelection,saveRankedCharacters,mirrorRanked,reportOnlineMatch} from './online_characters.mjs';
 import {advanceRankedMonth,rankedCollection,rankedMonthAt,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
 import {claimRankedRock,claimQuickRock,RANKED_ROCK_WIRE,rollRankedRock,rollQuickRock} from './ranked_rocks.mjs';
@@ -48,10 +49,17 @@ export class OnlineCore {
     descriptor(user){
         const m=this.member(user);if(!m||m.expires<=this.now())return {version:1,state:'none'};
         const r=this.one('SELECT * FROM online_rooms WHERE id=?',m.room);
-        const rankedRoom=r.wire.startsWith('ranked-v1:');
-        const members=this.rows(`SELECT m.peer,m.name,m.role,m.udp,p.rating FROM online_members m
+        const ranked=r.wire.startsWith('ranked-v1:');
+        const members=this.rows(`SELECT m.peer,m.name,m.role,m.udp,c.name_color,c.background,c.decoration,c.premium_until
+            ,p.rating
+            ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='avatar') avatar
+            ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='motion') motion
+            ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='banner') banner
+            ,(SELECT id FROM online_profile_banner_motion WHERE user_id=m.user_id) banner_motion
+            FROM online_members m LEFT JOIN online_profile_cards c ON c.user_id=m.user_id
             LEFT JOIN ranked_players p ON p.user_id=m.user_id AND p.ruleset='solo' AND ?=1
-            WHERE m.room=? ORDER BY m.peer`,rankedRoom?1:0,r.id);
+            WHERE m.room=? ORDER BY m.peer`,ranked?1:0,r.id);
+        const now=this.now();
         const rock=r.wire.startsWith('ranked-v1:')&&r.wire.endsWith(RANKED_ROCK_WIRE)&&m.role==='player'
             ?this.one('SELECT seed FROM ranked_rock_rolls WHERE match_id=?',r.generation):null;
         const quick=m.role==='player'&&r.mode==='duel'&&!r.wire.startsWith('ranked-v1:')
@@ -60,8 +68,16 @@ export class OnlineCore {
             ...(rock?{ranked_rock_seed:rock.seed}:{}),
             ...(quick?{quick_rock_seed:quick.seed}:{}),
             rules:r.rules,host:1,self:m.peer,capacity:r.capacity,joinable:!!r.joinable,expires_at:new Date(r.expires).toISOString(),
-            members:members.map(({peer,name,role,rating})=>({peer,name,role,
-                ...(role==='player'&&Number.isInteger(rating)?{rating}:{})})),udp:members.filter(p=>p.udp).map(p=>({peer:p.peer,addresses:JSON.parse(p.udp)}))};
+            members:members.map(member=>{
+                const {peer,name,role,avatar,motion,banner,banner_motion,rating}=member;
+                const entry={peer,name,role,...(ranked&&role==='player'&&Number.isInteger(rating)?{rating}:{})};
+                if(member.name_color==null&&!avatar)return entry;
+                const card=profileCard(member,now);
+                card.media={...(avatar?{avatar}:{}),...(card.premium&&motion?{motion}:{}),...(card.premium&&banner?{banner}:{}),
+                    ...(card.premium&&banner_motion?{banner_motion}:{})};
+                return {...entry,card};
+            }),
+            udp:members.filter(p=>p.udp).map(p=>({peer:p.peer,addresses:JSON.parse(p.udp)}))};
     }
     changed(room){for(const p of this.rows('SELECT user_id FROM online_members WHERE room=?',room))this.events.push({user:p.user_id,event:'bt4.room',body:this.descriptor(p.user_id)});}
     close(room){
@@ -124,23 +140,31 @@ export class OnlineCore {
             if(a.rock_version===1)this.run('INSERT OR IGNORE INTO quick_rock_queue VALUES(?)',user);
             else this.run('DELETE FROM quick_rock_queue WHERE user_id=?',user);
         }
-        let waiting=this.rows(`SELECT q.user_id,c.user_id IS NOT NULL AS supports_rocks
-            FROM online_queue q LEFT JOIN quick_rock_queue c ON c.user_id=q.user_id
-            WHERE q.mode=? AND q.wire=? AND q.content=? AND q.rules=? AND q.expires>?
-            ORDER BY q.made,q.user_id LIMIT ?`,a.mode,wire,a.content,a.rules,this.now(),ranked?40:desired);
-        if(ranked&&waiting.length>=2){
-            const recent=this.rows('SELECT a,b FROM ranked_matches WHERE completed>=? AND void=0',this.now()-30000);
-            const blocked=new Set(recent.map(m=>[m.a,m.b].sort().join(':')));
-            let pair=[];
-            for(let i=0;i<waiting.length&&!pair.length;i++){
-                for(let j=i+1;j<waiting.length;j++){
-                    if(!blocked.has([waiting[i].user_id,waiting[j].user_id].sort().join(':'))){
-                        pair=[waiting[i],waiting[j]];
-                        break;
-                    }
-                }
-            }
-            waiting=pair;
+        let waiting;
+        if(ranked){
+            const now=this.now();
+            const streak=this.rankedScoring()==='streak';
+            const initial=streak?0:1000;
+            const rating=this.one("SELECT rating FROM ranked_players WHERE user_id=? AND ruleset='solo'",user)?.rating??initial;
+            const opponent=this.one(`SELECT q.user_id,q.made
+                FROM online_queue q
+                LEFT JOIN ranked_players p ON p.user_id=q.user_id AND p.ruleset='solo'
+                WHERE q.mode=? AND q.wire=? AND q.content=? AND q.rules=? AND q.expires>? AND q.user_id<>?
+                  AND abs(coalesce(p.rating,?)-?)<=min(?,100+25*max(0,(?-max(q.made,?))/10000))
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ranked_matches m WHERE m.completed>=? AND m.void=0
+                        AND ((m.a=? AND m.b=q.user_id) OR (m.b=? AND m.a=q.user_id))
+                  )
+                ORDER BY abs(coalesce(p.rating,?)-?),q.made,q.user_id LIMIT 1`,
+                a.mode,wire,a.content,a.rules,now,user,initial,rating,streak?600:400,now,own.made,
+                now-30000,user,user,initial,rating);
+            waiting=opponent?[{user_id:user},opponent]:[];
+            if(opponent&&(opponent.made<own.made||(opponent.made===own.made&&opponent.user_id<user)))waiting.reverse();
+        }else{
+            waiting=this.rows(`SELECT q.user_id,c.user_id IS NOT NULL AS supports_rocks
+                FROM online_queue q LEFT JOIN quick_rock_queue c ON c.user_id=q.user_id
+                WHERE q.mode=? AND q.wire=? AND q.content=? AND q.rules=? AND q.expires>?
+                ORDER BY q.made,q.user_id LIMIT ?`,a.mode,wire,a.content,a.rules,this.now(),desired);
         }
         if(waiting.length<desired)return {version:1,state:'waiting'};
         const host=waiting[0].user_id;
@@ -293,6 +317,14 @@ export class OnlineCore {
         this.events=[];
         if(!UUID.test(user)||!this.one('SELECT id FROM online_users WHERE id=?',user))error('AUTH_REQUIRED');
         if(!a||typeof a!=='object'||Array.isArray(a)||bytes(JSON.stringify(a))>18000)error('BAD_REQUEST');
+        if(op==='profile_card_get')return ownProfileCard(this,user);
+        if(op==='profile_media_get')return getProfileMedia(this,user,a);
+        if(op==='profile_card_save'||op==='profile_media_save'){
+            const card=op==='profile_card_save'?ownProfileCard(this,user,a.card ?? null):saveProfileMedia(this,user,a);
+            const member=this.member(user);
+            if(member)this.changed(member.room);
+            return card;
+        }
         if(op==='nickname_get')return this.name(user)?{state:'ready',name:this.name(user)}:{state:'required'};
         if(op==='nickname_set'){
             if(typeof a.name!=='string')error('INVALID_NICKNAME');const name=a.name.normalize('NFKC').trim();

@@ -1309,17 +1309,30 @@ int Port_PadRead(int socket, unsigned char *data) {
     if(socket==0 && PortSpectator_ConsumesInput()) {
         btn=PortSpectator_FilterButtons(btn);rx=ry=lx=ly=0x80;
     }
+    int emote = 0;
+    {
+        extern int PortMods_InBattle(void);
+        if (PortMods_InBattle() && !PortSpectator_ConsumesInput()) {
+            int slot = 0;
+            if ((btn & (B_L1 | B_CIRCLE)) == (B_L1 | B_CIRCLE)) {
+                int x = (int)rx - 128, y = (int)ry - 128;
+                if (abs(x) > 52 || abs(y) > 52) {
+                    slot = abs(x) > abs(y) ? (x > 0 ? 1 : 3) : (y > 0 ? 2 : 0);
+                }
+            }
+            emote = Port_Setting(kBattleEmoteSettings[slot], 0);
+            if (emote < 1 || emote > BTL_EMOTE_COUNT)
+                emote = 0;
+            if (emote && (btn & (B_L1 | B_CIRCLE)) == (B_L1 | B_CIRCLE))
+                rx = ry = 0x80;
+        }
+    }
     memset(data, 0, 18);
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);
     data[2] = rx; data[3] = ry; data[4] = lx; data[5] = ly;
-    {
-        /* This byte travels in rollback histories and in spectator recordings. */
-        extern int Port_Setting(const char *, int);
-        extern int PortMods_InBattle(void);
-        const int emote = PortMods_InBattle() ? Port_Setting(BTL_EMOTE_SETTING, 0) : 0;
-        if (emote > 0 && emote <= BTL_EMOTE_COUNT) data[BTL_EMOTE_PAD_BYTE] = (unsigned char)emote;
-    }
+    /* This byte travels in rollback histories and in spectator recordings. */
+    data[BTL_EMOTE_PAD_BYTE] = (unsigned char)emote;
     {
         extern int PortMods_InBattle(void), Port_TagBattleRenderActive(void);
         const int tag = Port_TagBattleRenderActive() && PortMods_InBattle() && !PortSpectator_ConsumesInput();

@@ -58,7 +58,9 @@ typedef struct BtlCollHit {
 /* Active member's gauge block (BtlMember_GetActiveGauge). */
 typedef struct BtlCollGauge {
     /* 0x00 */ s32 health;
-    /* 0x04 */ u8 unk4[0x20 - 0x4];
+    /* 0x04 */ u8 unk4[0x14 - 0x4];
+    /* 0x14 */ s32 blast;
+    /* 0x18 */ u8 unk18[0x20 - 0x18];
     /* 0x20 */ s32 unk20;
 } BtlCollGauge;
 

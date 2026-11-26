@@ -207,6 +207,7 @@ static int voiceThread(void *){
     int generation=-1,error=0;std::shared_ptr<VoiceWs> ws;std::string appliedRoster,lastDirectRoom;Uint64 reconnect=0,tick=SDL_GetTicks(),ping=0,stats=0,lastSpeech=0,start=SDL_GetTicks(),manualRequestAt=0,manualLeaseAt=0;uint16_t sequence=0;uint32_t timestamp=0;size_t testOffset=0;
     auto samples=testSamples();FILE *testAudio=nullptr;
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_TEST_RECEIVE_PCM"))testAudio=fopen(getenv("BT4_VOICE_TEST_RECEIVE_PCM"),"wb");
+    bool captureRequested=false;
     while(!v.quit){
         PortVoiceOptions options;int next,mode,seat;bool directSession,manualRoom;float positions[40];int worldMode,listener,worldCount;Uint64 worldAt;std::string url,cap,name,inName,outName,roster,rendezvous;
         {std::lock_guard<std::mutex>g(v.lock);options=v.options;next=v.generation;mode=v.sessionMode;seat=v.seat;url=v.url;cap=v.cap;name=v.name;directSession=v.direct;roster=v.directRoster;manualRoom=v.manualRoom;rendezvous=v.rendezvous;worldMode=v.worldMode;listener=v.listener;worldCount=v.worldCount;worldAt=v.worldAt;memcpy(positions,v.positions,sizeof(positions));inName=v.inputName;outName=v.outputName;}
@@ -214,7 +215,7 @@ static int voiceThread(void *){
             {std::lock_guard<std::mutex>g(signalingLock);signaling.reset();directSignaling=directSession;directGeneration=directSession?cap:std::string();}ws.reset();appliedRoster.clear();directMedia=directSession;
             if(!directSession||lastDirectRoom!=cap){outgoingRevision.clear();incomingRevision.clear();pendingVoiceCandidates.clear();lastDirectRoom=cap;}
             for(auto &p:peers)closePeer(p);
-            capture.close();playback.close();
+            capture.close();playback.close();captureRequested=false;
             if(encoder)opus.opus_encoder_destroy(encoder);encoder=nullptr;selfId=0;generation=next;reconnect=0;sequence=0;testOffset=0;start=SDL_GetTicks();
             {std::lock_guard<std::mutex>g(v.lock);v.state.connected=v.state.capture=v.state.count=v.state.transmitting=v.state.speaking=0;lastSpeech=0;v.state.level=0;}
         }
@@ -254,15 +255,19 @@ static int voiceThread(void *){
         if(!encoder){
             encoder=opus.opus_encoder_create(16000,1,OPUS_APPLICATION_VOIP,&error);if(!encoder){status("Voice encoder could not start.");SDL_Delay(500);continue;}
             opus.opus_encoder_ctl(encoder,OPUS_SET_BITRATE(24000));opus.opus_encoder_ctl(encoder,OPUS_SET_COMPLEXITY(4));opus.opus_encoder_ctl(encoder,OPUS_SET_PACKET_LOSS_PERC(5));
-            if(!fixture())capture.open(inName);
             playback.open(outName);
             if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"bt4 voice devices: backend=host-audio capture=%d playback=%d\n",(bool)capture,(bool)playback);
-            {std::lock_guard<std::mutex>g(v.lock);v.state.capture=(bool)capture||(!samples.empty()&&inName!="@none");}
             tick=SDL_GetTicks();
         }
         Uint64 now=SDL_GetTicks();if(now<tick){SDL_Delay(2);continue;}if(now-tick>80)tick=now;tick+=20;
+        bool requestCapture=!options.muted&&!fixture();
+        if(requestCapture!=captureRequested){
+            captureRequested=requestCapture;
+            if(requestCapture)capture.open(inName);
+            else capture.close();
+        }
         short input[320]={};int got=0;
-        if(!samples.empty()&&inName!="@none"){for(int i=0;i<320;++i)input[i]=samples[(testOffset+i)%samples.size()];testOffset+=320;got=640;}
+        if(!options.muted&&!samples.empty()&&inName!="@none"){for(int i=0;i<320;++i)input[i]=samples[(testOffset+i)%samples.size()];testOffset+=320;got=640;}
         else if(capture)got=capture.read(input);
         float level=0;for(auto &s:input){float f=s*(options.gain/100.f);s=(short)std::max(-32768.f,std::min(32767.f,f));level+=(s/32768.f)*(s/32768.f);}level=sqrtf(level/320);
         bool held=v.pttKey||v.pttPad;if(fixture())held=(now-start)>2000&&((now-start)%7000)<5000;
@@ -303,8 +308,8 @@ static int voiceThread(void *){
             auto &pub=publicPeers[count++];pub.id=p.id;pub.seat=p.seat;pub.team=p.team;pub.muted=p.muted;pub.speaking=now-p.speaking<250&&p.speaking;pub.direct=p.connected;pub.proximity=proximity;SDL_strlcpy(pub.name,p.name.c_str(),sizeof(pub.name));direct+=pub.direct;
         }
         {short outputPcm[320];for(int i=0;i<320;++i)outputPcm[i]=(short)std::max(-32768.f,std::min(32767.f,mixed[i]*(options.volume/100.f)));if(testAudio)fwrite(outputPcm,sizeof(short),320,testAudio);if(playback)playback.write(outputPcm);}
-        {std::lock_guard<std::mutex>g(v.lock);v.state.capture=(bool)capture||(!samples.empty()&&inName!="@none");v.state.decoded+=decodedFrames;v.state.count=count;v.state.transmitting=talk;v.state.speaking=speaking;v.state.level=level;memcpy(v.state.peers,publicPeers,sizeof(publicPeers));
-            SDL_strlcpy(v.state.status,!playback?"Voice output unavailable; check your audio device.":!v.state.capture?"Listening; microphone unavailable.":count==0?"Voice connected; waiting for another player.":direct==count?"Voice connected directly.":"Voice connected; relay available.",sizeof(v.state.status));
+        {std::lock_guard<std::mutex>g(v.lock);v.state.capture=(bool)capture||(!options.muted&&!samples.empty()&&inName!="@none");v.state.decoded+=decodedFrames;v.state.count=count;v.state.transmitting=talk;v.state.speaking=speaking;v.state.level=level;memcpy(v.state.peers,publicPeers,sizeof(publicPeers));
+            SDL_strlcpy(v.state.status,!playback?"Voice output unavailable; check your audio device.":options.muted?"Listening; microphone muted.":!v.state.capture?"Listening; microphone unavailable.":count==0?"Voice connected; waiting for another player.":direct==count?"Voice connected directly.":"Voice connected; relay available.",sizeof(v.state.status));
             if(getenv("BT4_RENDER_TEST")&&now-stats>=2000){fprintf(stderr,"bt4 voice stats: peers=%d sent=%u received=%u direct=%u relay=%u capture=%d played=%u\n",count,v.state.sent,v.state.received,v.state.direct,v.state.relayed,v.state.capture,playback.played());fflush(stderr);stats=now;}
         }
     }
@@ -312,8 +317,8 @@ static int voiceThread(void *){
 }
 static void init(){
     std::lock_guard<std::mutex>g(v.lock);if(v.initialized)return;v.initialized=true;
-    v.options.enabled=Port_Setting("voice_enabled",0)!=0;v.options.mode=Port_Setting("voice_mode",0)==1;v.options.key=Port_Setting("voice_key",SDL_SCANCODE_F8);v.options.button=Port_Setting("voice_button",-1);
-    v.options.gain=std::max(0,std::min(200,Port_Setting("voice_gain",100)));v.options.volume=std::max(0,std::min(150,Port_Setting("voice_volume",100)));v.options.threshold=std::max(1,std::min(200,Port_Setting("voice_threshold",15)));v.options.indicators=Port_Setting("voice_indicators",1)!=0;v.options.muted=Port_Setting("voice_mic_muted",0)!=0;
+    v.options.enabled=Port_Setting("voice_enabled",1)!=0;v.options.mode=Port_Setting("voice_mode",0)==1;v.options.key=Port_Setting("voice_key",SDL_SCANCODE_F8);v.options.button=Port_Setting("voice_button",-1);
+    v.options.gain=std::max(0,std::min(200,Port_Setting("voice_gain",100)));v.options.volume=std::max(0,std::min(150,Port_Setting("voice_volume",100)));v.options.threshold=std::max(1,std::min(200,Port_Setting("voice_threshold",15)));v.options.indicators=Port_Setting("voice_indicators",1)!=0;v.options.muted=Port_Setting("voice_mic_muted",1)!=0;
     char text[256];Port_SettingText("voice_input","",text,sizeof(text));v.inputName=text;Port_SettingText("voice_output","",text,sizeof(text));v.outputName=text;
     SDL_strlcpy(v.state.status,v.options.enabled?"Voice ready; join an online room.":"Voice chat is off.",sizeof(v.state.status));atexit(PortVoice_Shutdown);
 }

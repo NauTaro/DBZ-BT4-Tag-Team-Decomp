@@ -1127,6 +1127,46 @@ static void tex_decode(const TexDecode *d) {
 
 /* GS memory -> an RGBA texture for the current TEX0 (alpha as stored: 0x80 is opaque). The back end makes
    the texture and takes the decoded pixels (freed after it has uploaded them). */
+/* Options has a native controller illustration and a separate strip of eight
+   button glyphs. Match their decoded pixels so the localized action labels
+   elsewhere in the movie are never replaced. */
+static int xbox_options_art(uint32_t *pixels, uint32_t width, uint32_t height) {
+    uint64_t hash = 14695981039346656037ull;
+    const char *name;
+    char path[1024];
+
+    for (uint32_t i=0;i<width*height;++i) {
+        hash = (hash ^ pixels[i]) * 1099511628211ull;
+    }
+    if (height == 128 && hash == 0x6210e0efbf5a35b9ull) name = "xbox_native_controller.png";
+    else if (height == 256 && hash == 0x21f28956992488b2ull) name = "xbox_native_buttons.png";
+    else return 0;
+
+    const char *base = SDL_GetBasePath();
+    snprintf(path,sizeof(path),"%stbo/ui/%s",base ? base : "",name);
+    SDL_Surface *png = SDL_LoadPNG(path);
+    if (!png) {
+        snprintf(path,sizeof(path),"tbo/ui/%s",name);
+        png = SDL_LoadPNG(path);
+    }
+    if (!png) {
+        snprintf(path,sizeof(path),"port/tbo/ui/%s",name);
+        png = SDL_LoadPNG(path);
+    }
+    if (!png) return 0;
+    SDL_Surface *rgba = SDL_ConvertSurface(png,SDL_PIXELFORMAT_RGBA32);
+    SDL_DestroySurface(png);
+    if (!rgba) return 0;
+
+    const int valid = rgba->w == (int)width && rgba->h == (int)height;
+    if (valid) {
+        for (uint32_t y=0;y<height;++y)
+            memcpy(pixels+y*width,(const uint8_t *)rgba->pixels+y*rgba->pitch,width*4u);
+    }
+    SDL_DestroySurface(rgba);
+    return valid;
+}
+
 static GsTex texture_get(int ctx, int menuHd) {
     uint64_t t0 = gGs.tex0[ctx] & 0x1FFFFFFFFFFFFFFFull, texa = gGs.texa;
     uint32_t tbp = t0 & 0x3FFF, tbw = (t0 >> 14) & 0x3F, psm = (t0 >> 20) & 0x3F, tw = 1u << ((t0 >> 26) & 15), th = 1u << ((t0 >> 30) & 15);
@@ -1143,6 +1183,9 @@ static GsTex texture_get(int ctx, int menuHd) {
     int originalBootText = Port_GameProfileMenuActive() && MenuText_IsSharedTexture((int)tbp, (int)cbp);
     int selectedFont = 0;
     uint64_t hdKey = 0;
+    extern int Port_UpdateMenuScreen(void), PortInput_XboxGlyphs(int player);
+    const int xboxOptions = tw == 128 && (th == 128 || th == 256) &&
+                            gPortMenuMode && Port_UpdateMenuScreen() == 39 && PortInput_XboxGlyphs(0);
 
     if (tw > 1024) { tw = 1024; }
     if (th > 1024) { th = 1024; }
@@ -1161,6 +1204,7 @@ static GsTex texture_get(int ctx, int menuHd) {
     gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale((int)ceilf(SCALE)));
     if (menuHd) { gen ^= 0xB7404D00u + (uint32_t)sMenuHD; }
     if (originalBootText) { gen ^= 0xB007F017u; }
+    if (xboxOptions) { gen ^= 0x58B04F19u; }
     gen ^= bits <= 8 ? MenuLabels_ArtKey() : 0; /* the chosen language's menu art ready: decoded again */
     int toonSharp = sToonWanted ? Mods_Look()->shading : 0; /* (a fighter's shading ramp, redrawn: its own copy) */
     if (toonSharp > 0) { gen ^= 0x70017000u + (uint32_t)toonSharp * 0x9E3779B1u; }
@@ -1238,7 +1282,7 @@ static GsTex texture_get(int ctx, int menuHd) {
         }
     }
     /* A texture pack still uses the game's source pixels to identify Battle text for widescreen geometry. */
-    px = !replaced || localizedMenu || selectedFont || originalBootText || MenuText_MayHaveBattleTexture((int)tw, (int)th, bits <= 8) ?
+    px = !replaced || localizedMenu || selectedFont || originalBootText || xboxOptions || MenuText_MayHaveBattleTexture((int)tw, (int)th, bits <= 8) ?
          malloc((size_t)tw * th * 4) : NULL;
     if (!replaced && px == NULL) { return gsWhite; }
     {   /* a palette's colours read and expanded once, by the index as stored (8-bit: the GS's order of the 256 entries
@@ -1274,6 +1318,12 @@ static GsTex texture_get(int ctx, int menuHd) {
     }
     if(px==NULL && replaced && !gPortMenuMode && Mods_Look()->energy_light>0)
         texture_light_average(tbp,tbw,psm,tw,th,cbp,cpsm,bits,sTexAvg);
+    if (px != NULL && xboxOptions && xbox_options_art(px,tw,th)) {
+        replaced = 0;
+        packWait = -1;
+        rw = tw;
+        rh = th;
+    }
     if (px != NULL && !replaced && bits <= 8) {
         MenuLabels_ArtSwap((unsigned char *)px, (int)tw, (int)th); /* the European picture, in the chosen language */
     }

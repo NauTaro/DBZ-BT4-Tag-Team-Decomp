@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/bt4_beam_parry.h"
 #include "battle/eft_j.h"
 
 /*
@@ -1136,6 +1137,9 @@ void EftBlast_AddHit(EftJTask *task) {
         void *a = EftHitArena_AllocBox();
         void *b = EftHitArena_AllocBox();
 
+#ifdef BT4_DEV_BEAM_PARRY
+        rec->flags |= BT4_HIT_BEAM_CAPSULE;
+#endif
         ColCapsule_Set(a, &w->muzzle, &w->head, r);
         ColCapsule_Set(b, &w->muzzle, &w->tail, r);
         EftHit_SetShapeBoxes(rec, a, b);
@@ -1247,7 +1251,7 @@ void EftBlast_Init(EftJTask *task, EftJSrc *arg) {
     EftBlastMgr *mgr = parent->work;
     EftJDef *def;
 
-    memset(w, 0, 0x5C0);
+    memset(w, 0, sizeof(*w));
     w->src = src;
     def = src->def;
     w->speed = def->speed;
@@ -1291,6 +1295,9 @@ void EftBlast_Term(EftJTask *task) {
     EftBlast *w = task->work;
     EftJSrc *src = w->src;
 
+#ifdef BT4_DEV_BEAM_PARRY
+    EftBeamParry_Reset(&w->parry, (struct EftEmitSet *)w->set);
+#endif
     EftEmit_TermState(w->set, w->emit);
     if (src->def->unk4 != 0) {
         EftShot_SetHeldFlagA8(src->objId);
@@ -1298,6 +1305,8 @@ void EftBlast_Term(EftJTask *task) {
 }
 
 /* Update callback of an item: charge (grows with the fighter's charge), fire, fly (with homing), end. */
+void EftBlast_Reset(EftJTask *task);
+
 void EftBlast_Update(EftJTask *task) {
     EftJVec pos;
     EftBlast *w = task->work;
@@ -1311,6 +1320,16 @@ void EftBlast_Update(EftJTask *task) {
         EftShot_PlayFireSound(src->objId, src);
     }
     EftEmit_UpdateNodesReq(src, w->node);
+#ifdef BT4_DEV_BEAM_PARRY
+    if ((u32)task->unk4 & BT4_BEAM_PARRY_ACTOR_MASK) {
+        s32 active = EftBeamParry_Update(&w->parry, (struct EftEmitSet *)w->set, (struct EftEmitState *)w->emit,
+                                        task->unk4, (Vec4 *)&w->muzzle, (Vec4 *)&w->dir,
+                                        (Vec4 *)&w->head, w->drawScale, w->speed);
+        if (active) EftBlast_UpdateParts(src->objId, task, w->set, 0);
+        else EftBlast_Reset(task);
+        return;
+    }
+#endif
     if (!(w->flags & 0x40)) {
         if (EftShot_TestBits(src->objId, 2)) {
             EftAim_GetDir(&w->dir, &w->hand, src->objId);
@@ -1450,6 +1469,9 @@ void EftBlast_PostUpdate(EftJTask *task) {
     } else if (task->unk4 & 4) {
         w->flags |= 0x4000;
     }
+#ifdef BT4_DEV_BEAM_PARRY
+    if ((u32)task->unk4 & BT4_BEAM_PARRY_ACTOR_MASK) return;
+#endif
     if ((u16)(task->hit & 1)) {
         Vec3_Sub(&d, &task->pos, &w->head);
         Vec3_Copy(&w->head, &task->pos);
@@ -1487,7 +1509,7 @@ void EftBlastMgr_Init(EftJTask *task, EftJSrc *src) {
     EftShot_Nop(0x324);
     memset(m, 0, 0x324);
     EftEmit_LoadSet(src, &m->set, 0, src->pack, 0, 4);
-    BtlTask_CreateChildList(task, 2, 0x5C0);
+    BtlTask_CreateChildList(task, 2, sizeof(EftBlast));
 }
 
 /* Term callback of the manager. */

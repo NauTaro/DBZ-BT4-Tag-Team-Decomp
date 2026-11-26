@@ -99,6 +99,12 @@ static void EftDet_TagFighterPass(void){
             rec->shape.contact=contacts[k].contact;rec->flags=flags;
             if(state){task->frames=(s8)state->frames[actor];task->hits=(s8)state->hits[actor];}
             EftHit_MarkLastHit(rec);
+#ifdef BT4_DEV_BEAM_PARRY
+            if (BtlColl_TryBeamParry(objId, actor, rec)) {
+                terminal = 1;
+                break;
+            }
+#endif
             if(BtlColl_TryDodge(objId,rec))continue;
             if(state)state->touched[actor]=sTagImpactFrame;
             if(BtlColl_TryDeflect(objId,rec)){

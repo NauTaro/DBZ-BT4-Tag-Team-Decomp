@@ -93,6 +93,7 @@ def main(p,mac=False):
     (licenses/'curl.txt').write_text('curl license: https://curl.se/docs/copyright.html\n')
     p.take_fonts(out,licenses);p.take_tbo_art(out,licenses)
     p.take_jiren_voice(out)
+    p.take_goku_costumes(out)
     p.take_example_mods(out)
     for name,note in [('textures',p.TEXTURES_NOTE),('stages',p.STAGES_NOTE),('songs',p.SONGS_NOTE),('mods',p.MODS_NOTE)]:
         (out/name/'README.txt').write_text(note,encoding='utf8')

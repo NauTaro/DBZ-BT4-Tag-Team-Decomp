@@ -1,4 +1,6 @@
 #include "common.h"
+#include "battle/bt4_private_balance.h"
+#include "battle/bt4_beam_parry.h"
 extern s32 TagBattle_Target(s32 actor);
 extern void Bt4_SpendTransformKi(void *chr, s32 amount);
 #include "battle/btl_act_c.h"
@@ -986,6 +988,32 @@ s32 BtlAct_Action3A(Chr *chr, s32 phase) {
 s32 BtlAct_Action3B(Chr *chr, s32 phase) {
     s32 *work = &chr->work[2];
 
+#ifdef BT4_DEV_BEAM_PARRY
+    extern s32 BtlInput_TakeBeamParry(Chr *);
+    if (phase == 0 && BtlInput_TakeBeamParry(chr)) {
+        *work = -BT4_BEAM_PARRY_WINDUP;
+        BtlAnim_Play(chr, 0xF9, 0.07f);
+        return 0;
+    }
+    if (phase != 0 && *work < 0) {
+        if (phase == 1) {
+            BtlMove_Step(chr, 6, 6, 7, 0.0f, BTL_KMH(100.0f));
+            BtlMove_ApplyGravity(chr);
+            BtlChar_SetFlag(chr, 0x1C);
+            ++*work;
+            if (*work == 0) {
+                BtlAnim_Play(chr, 0xFA, 0.06f);
+                *work = -32;
+            } else if (BtlAnim_Advance(chr, 0) && *work < -BT4_BEAM_PARRY_WINDUP) {
+                BtlAct_Request(chr, 0xB);
+            } else if (*work == -BT4_BEAM_PARRY_FRAMES) {
+                BtlAct_Request(chr, 0xB);
+            }
+        }
+        return 0;
+    }
+#endif
+
     if (phase == 0) {
         BtlAnim_Play(chr, 0xF9, 0.15f);
         *work = 4;
@@ -1264,14 +1292,14 @@ s32 BtlAct_Action41(Chr *chr, s32 phase) {
     }
 }
 
-/* Action 0x42: animation 0x192 over 25 frames; costs 5000 health (flags 0x42B), holds flag 0x4B for the first half. */
+/* Action 0x42: emergency knockback over 25 frames, with a health cost. */
 s32 BtlAct_Action42(Chr *chr, s32 phase) {
     if (phase == 0) {
         BtlAnim_Play(chr, 0x192, 0.15f);
         BtlChar_SetHeldFlag(chr, 0xE);
         BtlChar_GetPos(chr)->unk98 = 0.0f;
         BtlChar_GetPos(chr)->unk9C = 0.0f;
-        BtlMember_Damage(chr, 8000, 0x42B);
+        BtlMember_Damage(chr, Bt4Balance_UsesOnlineRules() ? 7200 : 8000, 0x42B);
         BtlChar_SetHeldFlag(chr, 0x4B);
         BtlCharSnd_PlayCommon(chr, 0x24);
         BtlChar_PlayVoice(chr, 6);

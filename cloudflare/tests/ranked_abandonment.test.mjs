@@ -140,6 +140,7 @@ test('confirmed repeated forfeits still penalize the quitter and credit the winn
     const f=fixture(),a=f.user('Winner'),b=f.user('Quitter');
     let m;
     for(let i=0;i<3;i++){
+        if(i>0)f.rating(b,f.call(a,'ranked_status').rating);
         m=f.pair(a,b);if(i===0){f.rating(a,500);f.rating(b,500);}
         f.call(b,'ranked_forfeit',{match:m.id,reason:'local_quit'});
         assert.equal(f.history(m,b).delta,-100);
