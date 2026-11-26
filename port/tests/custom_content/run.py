@@ -4,7 +4,7 @@ SDL3_DIR selects a prebuilt SDL3 prefix on Windows. Else pkg-config is used.
 Optional --adx and --textures arguments exercise a user's real resources.
 """
 from pathlib import Path
-import argparse,json,os,struct,subprocess,sys,tempfile,wave,zipfile,zlib,shutil
+import argparse,json,os,re,struct,subprocess,sys,tempfile,wave,zipfile,zlib,shutil
 root=Path(__file__).resolve().parents[3]
 ap=argparse.ArgumentParser();ap.add_argument('--adx',type=Path);ap.add_argument('--textures',type=Path);args=ap.parse_args()
 out=root/'port/build/test_custom_content';out.mkdir(parents=True,exist_ok=True)
@@ -35,7 +35,9 @@ run([str(menu)],cwd=out)
 menu_shutdown=build('menu_shutdown_probe',['port/tests/custom_content/menu_shutdown_probe.cpp'],cxx=True)
 for attempt in range(3):run([str(menu_shutdown)],cwd=out,timeout=30)
 def function(path,signature):
-    text=(root/path).read_text();start=text.index(signature);at=text.index('{',start)+1;depth=1
+    text=(root/path).read_text()
+    definition,=re.finditer(re.escape(signature)+r'[^;{}]*\{',text)
+    start=definition.start();at=definition.end();depth=1
     while depth:depth+=(text[at]=='{')-(text[at]=='}');at+=1
     return text[start:at]
 (out/'sync_under_test.inc').write_text(function('port/src/gs/gs_core.c','int Gs_SyncPath(')+'\n'+function('port/src/plat_stub.c','int sceGsSyncPath('))
