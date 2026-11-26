@@ -7,6 +7,10 @@
 #define STBI_NO_STDIO
 #define STBI_NO_HDR
 #define STBI_NO_LINEAR
+// Keep the private decoder's state out of the relocated macOS TLS segment.
+// The codec uses default decoding flags and reports errors via return values.
+#define STBI_NO_THREAD_LOCALS
+#define STBI_NO_FAILURE_STRINGS
 #define STBI_MAX_DIMENSIONS 2048
 #include "../../third_party/stb/stb_image.h"
 
