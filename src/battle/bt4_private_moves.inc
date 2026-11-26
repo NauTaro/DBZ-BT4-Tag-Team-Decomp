@@ -73,6 +73,7 @@ static Bt4BalanceMoveEdits Bt4Balance_MoveEdits(s32 fighter) {
 
 static void *sBalanceText[250];
 static void *sBalanceTables[250];
+static void *sBalanceGoldenBeam;
 static void Bt4Balance_FreeMoves(void);
 
 static u8 *Bt4Balance_Parameters(s32 chara) {
@@ -164,6 +165,10 @@ static void Bt4Balance_Movement(f32 *dst, s32 points) {
 
 static void Bt4Balance_FreeMoves(void) {
     s32 i;
+    if (sBalanceGoldenBeam != NULL) {
+        Heap_Free(sBalanceGoldenBeam);
+        sBalanceGoldenBeam = NULL;
+    }
     for (i = 0; i < 250; i++) {
         if (sBalanceTables[i] != NULL) Heap_Free(sBalanceTables[i]);
         if (sBalanceText[i] != NULL) Heap_Free(sBalanceText[i]);
@@ -331,6 +336,123 @@ void *Bt4Balance_TechCamera(s32 chara, s32 slot) {
     return Bt4_PackEntry(pack, slot + 1);
 }
 
+/* Final Form Frieza's first super is the attack used by Golden Frieza online.
+ * Tint a separate copy of its indexed effect textures so the donor keeps his original colors. */
+static void Bt4Balance_RedBeamColor(u8 *rgba) {
+    u8 high = (rgba[0] > rgba[1] ? rgba[0] : rgba[1]);
+    u8 low = (rgba[0] < rgba[1] ? rgba[0] : rgba[1]);
+    if (rgba[2] > high) high = rgba[2];
+    if (rgba[2] < low) low = rgba[2];
+    if (high - low < 4) return;
+    rgba[0] = high;
+    rgba[1] = rgba[2] = low;
+}
+
+static void Bt4Balance_RedBeamClut(u8 *texture, u32 length) {
+    const u32 *header = (const u32 *)texture;
+    u32 count, i;
+    if (length < 8 || header[1] > length / 4) return;
+    count = header[0];
+    if (count > (length - header[1] * 4) / 0x40) return;
+
+    for (i = 0; i < count; ++i) {
+        const u32 *entry = header + header[1] + i * 16;
+        u32 offset, j;
+        u8 *rgba;
+        /* The 256-color RGBA CLUTs have a 0x60-byte GIF transfer header and a 0x20-byte footer. */
+        if (entry[1] == 0 || entry[1] > length / 4 || entry[3] != 0x480) continue;
+        offset = entry[1] * 4;
+        if (entry[3] > length - offset) continue;
+        rgba = texture + offset + 0x60;
+        for (j = 0; j < 256; ++j, rgba += 4) Bt4Balance_RedBeamColor(rgba);
+    }
+}
+
+/* Type 14 sprites multiply the palette by a separate RGBA animation track. */
+static void Bt4Balance_RedBeamSprite(u8 *sprite, u32 length) {
+    const u32 *header = (const u32 *)sprite;
+    u32 i, keys = 0, offset;
+    if (length < 0x20 || header[0] != 0x30303056u ||
+        sprite[4] > (length - 0x20) / 0x20) return;
+    offset = header[2];
+    if (offset > length) return;
+    for (i = 0; i < sprite[4]; ++i) keys += sprite[0x24 + 0x20 * i];
+    if (keys > (length - offset) / 0x40) return;
+    for (i = 0; i < keys; ++i) Bt4Balance_RedBeamColor(sprite + offset + 0x40 * i + 0x30);
+}
+
+static void Bt4Balance_RedBeamTracks(f32 *fields, u32 count) {
+    u32 i;
+    for (i = 0; i < count; ++i) {
+        f32 *rgb = fields + i * 4;
+        f32 high = (rgb[0] > rgb[1] ? rgb[0] : rgb[1]);
+        f32 low = (rgb[0] < rgb[1] ? rgb[0] : rgb[1]);
+        if (rgb[2] > high) high = rgb[2];
+        if (rgb[2] < low) low = rgb[2];
+        rgb[0] = high;
+        rgb[1] = rgb[2] = low;
+    }
+}
+
+/* Type 5 emitters have separate float RGB tracks for start/end, ranges and pulse. */
+static void Bt4Balance_RedBeamParticles(u8 *data, u32 length) {
+    f32 *fields = (f32 *)data;
+    u32 i;
+    if (length < 0x114) return;
+    Bt4Balance_RedBeamTracks(fields, 12);
+    for (i = 0; i < 6; ++i) {
+        f32 *pulse = fields + 0xC0 / 4 + i;
+        f32 high = (pulse[0] > pulse[6] ? pulse[0] : pulse[6]);
+        f32 low = (pulse[0] < pulse[6] ? pulse[0] : pulse[6]);
+        if (pulse[12] > high) high = pulse[12];
+        if (pulse[12] < low) low = pulse[12];
+        pulse[0] = high;
+        pulse[6] = pulse[12] = low;
+    }
+}
+
+static void *Bt4Balance_GoldenBeam(void *source, u32 size) {
+    static const u8 textures[] = {5, 6, 7, 8, 25, 26, 27, 32, 39};
+    static const u8 haloAndTrail[] = {34, 36, 38, 41};
+    const u32 *entries = source;
+    u8 *copy;
+    u32 i;
+    if (sBalanceGoldenBeam != NULL) return sBalanceGoldenBeam;
+    if (source == NULL || size < 43 * 4 || entries[0] < 41 ||
+        (entries[1] & ~3u) < 43 * 4 ||
+        (entries[4] & ~3u) > size - 4 ||
+        *(const u32 *)((const u8 *)source + (entries[4] & ~3u)) != 0x00034021u) return source;
+
+    copy = (u8 *)Port_GameBigAlloc(size);
+    if (copy == NULL) return source;
+    memcpy(copy, source, size);
+    for (i = 0; i < sizeof(textures); ++i) {
+        u32 first = entries[textures[i]] & ~3u;
+        u32 end = entries[textures[i] + 1] & ~3u;
+        if (first < end && end <= size) Bt4Balance_RedBeamClut(copy + first, end - first);
+    }
+    for (i = 10; i <= 24; i += 2) {
+        u32 first = entries[i] & ~3u;
+        u32 end = entries[i + 1] & ~3u;
+        if (first < end && end <= size) Bt4Balance_RedBeamParticles(copy + first, end - first);
+    }
+    for (i = 28; i <= 31; ++i) {
+        u32 first = entries[i] & ~3u;
+        u32 end = entries[i + 1] & ~3u;
+        if (first < end && end <= size) Bt4Balance_RedBeamSprite(copy + first, end - first);
+    }
+    /* Kind 16 billboards make the rings. Kind 17 supplies the ribbon trail. */
+    for (i = 0; i < sizeof(haloAndTrail); ++i) {
+        u32 first = entries[haloAndTrail[i]] & ~3u;
+        u32 end = entries[haloAndTrail[i] + 1] & ~3u;
+        if (first <= end && end <= size && end - first >= 0x30) {
+            Bt4Balance_RedBeamTracks((f32 *)(copy + first), 3);
+        }
+    }
+    sBalanceGoldenBeam = copy;
+    return copy;
+}
+
 static void Bt4Balance_BindMoves(BObjMdl *mdl, s32 chara, u8 *tables) {
 
     Bt4BalanceMoveEdits editData;
@@ -451,6 +573,14 @@ static void Bt4Balance_BindMoves(BObjMdl *mdl, s32 chara, u8 *tables) {
         Bt4Balance_Animation(mdl, donation, 0x105 + 0x22 * slot, 0x22);
         pack = Bt4_CharaPackById(donation, 4);
         mdl->unk84[slot + 2] = Bt4_PackEntry(pack, slot + 3);
+        if (chara == 70 && pack != NULL && Bt4Balance_UsesOnlineRules()) {
+            const u32 *entries = (const u32 *)pack;
+            u32 first = entries[slot + 3] & ~3u;
+            u32 end = entries[slot + 4] & ~3u;
+            if (end > first) {
+                mdl->unk84[slot + 2] = Bt4Balance_GoldenBeam(mdl->unk84[slot + 2], end - first);
+            }
+        }
         pack = Bt4_CharaPackById(donation, 0);
         ((void **)mdl->unk98)[slot] = Bt4_PackEntry(Bt4_PackEntry(pack, 3), slot + 1);
     }

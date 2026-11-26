@@ -4594,6 +4594,33 @@ static int interp_reproject(const Vtx *v, float *x, float *y, float *z) {
     return interp_reproject_with(sInterpD, v, x, y, z);
 }
 
+/* Keep every corner of a clipped piece in the same projection. Mixing native
+   and warped corners can open a seam or stretch a sliver across the view. */
+static void interp_place_piece(const Vtx *current, Vtx *out, const InterpEndpoint *previous, int count, float t) {
+    InterpEndpoint points[INTERP_PIECE_MAX * 3];
+    int k;
+    for (k = 0; k < count; ++k) {
+        const Vtx *v = &current[k];
+        const InterpEndpoint *old = &previous[k];
+        InterpEndpoint *p = &points[k];
+        if (sInterpHaveDt) {
+            float span = 40.0f + 3.0f * sInterpCamMove;
+            if (!interp_reproject_with(sInterpDt, v, &p->x, &p->y, &p->z) ||
+                !(fabsf(p->x - v->x) <= span && fabsf(p->y - v->y) <= span) ||
+                !(p->z >= 0.0f && p->z <= 1.0f)) return;
+        } else {
+            p->x = old->x + (v->x - old->x) * t;
+            p->y = old->y + (v->y - old->y) * t;
+            p->z = old->z + (v->z - old->z) * t;
+        }
+    }
+    for (k = 0; k < count; ++k) {
+        out[k].x = points[k].x;
+        out[k].y = points[k].y;
+        out[k].z = points[k].z;
+    }
+}
+
 static int sInterpTrust; /* the piece is of a kind known to stand still in the world: no further questions */
 /* Moves a piece by the camera's change. 0 = not possible (it keeps this picture's place). */
 static int interp_piece_camera(const InterpPrim *c, float t) {
@@ -4660,26 +4687,15 @@ static int interp_piece_camera(const InterpPrim *c, float t) {
             return 0;
         }
     }
+    InterpEndpoint previous[INTERP_PIECE_MAX * 3];
+    for (k = 0; k < nv; ++k) previous[k] = (InterpEndpoint){x[k], y[k], z[k]};
     if (sInterpPlanBuilding) {
         uint32_t piece = (uint32_t)(c - sInterpPrims);
         sInterpPlanMode[piece] = 2;
         sInterpPlanView[piece] = (int16_t)sInterpViewLoaded;
-        for (k = 0; k < nv; k++) {
-            sInterpPlanPoint[c->first + k] = (InterpEndpoint){x[k], y[k], z[k]};
-        }
+        memcpy(&sInterpPlanPoint[c->first], previous, nv * sizeof(*previous));
     }
-    for (k = 0; k < nv; k++) {
-        float xt, yt, zt;
-        if (sInterpHaveDt && interp_reproject_with(sInterpDt, &cv[k], &xt, &yt, &zt)) {
-            ov[k].x = xt; /* where the camera, part of its way, sees the corner */
-            ov[k].y = yt;
-            ov[k].z = zt;
-        } else {
-            ov[k].x = x[k] + (cv[k].x - x[k]) * t;
-            ov[k].y = y[k] + (cv[k].y - y[k]) * t;
-            ov[k].z = z[k] + (cv[k].z - z[k]) * t;
-        }
-    }
+    interp_place_piece(cv, ov, previous, nv, t);
     return 1;
 }
 static unsigned gInterpWhy[5]; /* no like-drawn triangle before; all too far; 2D with another piece of texture; standing still; (spare) */
@@ -5279,18 +5295,18 @@ static void interp_plan_apply(float t) {
             }
         }
         int nv = c->tris * 3;
+        if (mode == 2) {
+            interp_place_piece(&gsVerts[c->first], &sInterpBlendVerts[c->first],
+                               &sInterpPlanPoint[c->first], nv, t);
+            continue;
+        }
         for (int k = 0; k < nv; k++) {
             const Vtx *v = &gsVerts[c->first + k];
             Vtx *o = &sInterpBlendVerts[c->first + k];
             const InterpEndpoint *p = &sInterpPlanPoint[c->first + k];
-            float x, y, z;
-            if (mode == 2 && sInterpHaveDt && interp_reproject_with(sInterpDt, v, &x, &y, &z)) {
-                o->x = x; o->y = y; o->z = z;
-            } else {
-                o->x = p->x + (v->x - p->x) * t;
-                o->y = p->y + (v->y - p->y) * t;
-                o->z = p->z + (v->z - p->z) * t;
-            }
+            o->x = p->x + (v->x - p->x) * t;
+            o->y = p->y + (v->y - p->y) * t;
+            o->z = p->z + (v->z - p->z) * t;
         }
     }
 }
@@ -5680,6 +5696,7 @@ static uint64_t sInterpCostNs;
 static void interp_forget(void) {
     sInterpPlanFrame=~0u;
     sInterpNext = sInterpPrevCount = sInterpPrevPrimCount = sInterpPrevVertCount = 0;
+    sInterpRepeat = 0;
     sInterpHaveCam = sInterpHaveD = sInterpHaveDt = 0;
     sInterpViewCount = 0;
     sInterpViewLoaded = -1;
@@ -5990,8 +6007,7 @@ void GsGpu_FrameEnd(void) {
         if (sInterpNext != 0) {
             GsGpu_InterpPump(0, 1);
         }
-        sInterpPrevCount = 0;
-        sInterpPrevPrimCount = 0;
+        interp_forget();
         gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0;
         skip_decide();
         return;
@@ -6013,6 +6029,10 @@ void GsGpu_FrameEnd(void) {
             /* An explicit native-30 choice is not an obsolete profile. */
             gsInterp = getenv("BT3_INTERP") != NULL ? atoi(getenv("BT3_INTERP")) : Port_Setting("interp", 4);
             gsInterp = gsInterp < 0 ? 0 : gsInterp > 4 ? 4 : gsInterp;
+        }
+        /* History recorded before Smooth Motion was disabled is too old to blend. */
+        if (gsInterp == 0 && (sInterpPrevCount || sInterpPrevPrimCount || sInterpNext)) {
+            interp_forget();
         }
         /* Allocate the interpolation history only when it is actually enabled,
            including when enabled later from F1. Native rendering needs none. */
