@@ -1,4 +1,4 @@
-import {fulfillProfilePass,revokeProfilePass} from './online_profile_cards.mjs';
+import {fulfillProfilePass,profilePassPrice,revokeProfilePass} from './online_profile_cards.mjs';
 
 const product='bt4_profile_30_days';
 const encoder=new TextEncoder();
@@ -16,7 +16,7 @@ export async function profileCheckout(env,user,request=fetch) {
     const body=new URLSearchParams({
         mode:'payment',success_url:returnUrl,cancel_url:returnUrl,client_reference_id:user,
         'adaptive_pricing[enabled]':'false','payment_method_types[0]':'card',
-        'line_items[0][price_data][currency]':'usd','line_items[0][price_data][unit_amount]':'100',
+        'line_items[0][price_data][currency]':'usd','line_items[0][price_data][unit_amount]':String(profilePassPrice),
         'line_items[0][price_data][product_data][name]':'BT4 profile pass (30 days)',
         'line_items[0][quantity]':'1','metadata[product]':product,
         'payment_intent_data[metadata][product]':product
@@ -59,7 +59,7 @@ export function applyProfileWebhook(core,env,event) {
     }
     if (!['checkout.session.completed','checkout.session.async_payment_succeeded'].includes(event.type)||
         payment.object!=='checkout.session'||payment.mode!=='payment'||payment.payment_status!=='paid'||
-        payment.amount_total!==100||payment.currency!=='usd'||
+        payment.amount_total!==profilePassPrice||payment.currency!=='usd'||
         payment.metadata?.product!==product||!/^pi_[a-zA-Z0-9]+$/.test(payment.payment_intent)) return false;
     fulfillProfilePass(core,{user_id:payment.client_reference_id,payment_id:payment.payment_intent,
         amount_minor:payment.amount_total,currency:payment.currency,paid_at:event.created*1000});

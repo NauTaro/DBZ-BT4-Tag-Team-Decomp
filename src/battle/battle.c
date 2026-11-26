@@ -474,6 +474,8 @@ void Battle_Loop(void) {
             dir=(gPad[0].gamePressed&(PADG_R1|PADG_RIGHT))?1:(gPad[0].gamePressed&(PADG_L1|PADG_LEFT))?-1:0;
             TagBattle_UpdateSpectator(dir);ready=TagOnline_Tick();
             if(ready<0){
+                extern void Port_TagRollbackStop(void);
+                Port_TagRollbackStop();
                 fprintf(stderr,"tag online disconnected: %s\n",Port_TagError());
                 TagBattle_SetReturn(2);TagOnline_Ending();Port_TagClose();
                 BattleResult_Set(BTL_RESULT_ABORT,0);break;
@@ -555,6 +557,7 @@ void Battle_Loop(void) {
         TagRules_Test();
 #endif
         done = BtlGame_Update();
+        if(TagBattle_Network()&&(done||!BtlSeq_IsFighting()))TagOnline_ConfirmTransition();
         if (TagBattle_Local() && BtlSeq_IsFighting() && getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_HEALTH_TEST")) {
             extern void TagHealth_TestAudit(void);
             TagHealth_TestAudit();

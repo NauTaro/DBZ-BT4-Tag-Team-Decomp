@@ -31,10 +31,10 @@ test('card customizations follow the account and expose cosmetics without paymen
     f.invoke(a,'profile_card_save',{card:{background:3}});
     assert.equal(f.c.events.find(event=>event.user===b).body.members[0].card.background,3);
 });
-test('a verified one-dollar receipt grants exactly thirty days and retries do not extend it',()=>{
+test('a verified three-dollar receipt grants exactly thirty days and retries do not extend it',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo');
     const paidAt=f.c.now();
-    const receipt={user_id:a,payment_id:'payment_123',amount_minor:100,currency:'usd',paid_at:paidAt};
+    const receipt={user_id:a,payment_id:'payment_123',amount_minor:300,currency:'usd',paid_at:paidAt};
     assert.throws(()=>fulfillProfilePass(f.c,{...receipt,amount_minor:99}),/BAD_PROFILE_PAYMENT/);
     assert.equal(fulfillProfilePass(f.c,receipt).premium_until,paidAt+passDurationMs);
     assert.equal(fulfillProfilePass(f.c,receipt).premium_until,paidAt+passDurationMs);
@@ -62,7 +62,7 @@ test('profile media is fetched on demand, scoped to a room, and follows pass exp
     const guest=f.invoke(b,'join',{...profile,code:room.code});
     assert.deepEqual(guest.members[0].card.media,{avatar:common});
     assert.equal(f.invoke(b,'profile_media_get',{id:common}).frames[0],avatar);
-    fulfillProfilePass(f.c,{user_id:a,payment_id:'motion_123',amount_minor:100,currency:'usd',paid_at:f.c.now()});
+    fulfillProfilePass(f.c,{user_id:a,payment_id:'motion_123',amount_minor:300,currency:'usd',paid_at:f.c.now()});
     const animated=f.invoke(a,'profile_media_save',motion).media.motion;
     const cover=f.invoke(a,'profile_media_save',{kind:'banner',frames:[banner],delays:[100]}).media.banner;
     const animatedCover=f.invoke(a,'profile_media_save',{...motion,kind:'banner_motion'}).media.banner_motion;
@@ -81,7 +81,7 @@ test('the shared avatar slot switches between GIF and static images and removal 
     const frame=Buffer.alloc(2048,23).toString('base64');
     const gif={kind:'motion',frames:[frame],delays:[125]};
     assert.throws(()=>f.invoke(user,'profile_media_save',gif),/PROFILE_PASS_REQUIRED/);
-    fulfillProfilePass(f.c,{user_id:user,payment_id:'avatar_receipt',amount_minor:100,currency:'usd',paid_at:f.c.now()});
+    fulfillProfilePass(f.c,{user_id:user,payment_id:'avatar_receipt',amount_minor:300,currency:'usd',paid_at:f.c.now()});
     const gifId=f.invoke(user,'profile_media_save',gif).media.motion;
     const photo=f.invoke(user,'profile_media_save',{...gif,kind:'avatar'}).media;
     assert.ok(photo.avatar);
@@ -90,21 +90,21 @@ test('the shared avatar slot switches between GIF and static images and removal 
     f.invoke(user,'profile_media_save',gif);
     assert.deepEqual(f.invoke(user,'profile_media_save',{kind:'avatar',remove:true}).media,{});
 });
-test('checkout uses the authenticated account and the webhook requires signed paid USD 1 events',async()=>{
+test('checkout uses the authenticated account and the webhook requires signed paid USD 3 events',async()=>{
     const f=fixture(),a=f.user('Alpha');
     const env={STRIPE_PROFILE_SECRET_KEY:'sk_test_example',STRIPE_PROFILE_WEBHOOK_SECRET:'whsec_example',
         STRIPE_PROFILE_RETURN_URL:'https://example.com/profile'};
     const link=await profileCheckout(env,a,async (url,{body})=>{
         assert.equal(url,'https://api.stripe.com/v1/checkout/sessions');
         assert.equal(body.get('client_reference_id'),a);
-        assert.equal(body.get('line_items[0][price_data][unit_amount]'),'100');
+        assert.equal(body.get('line_items[0][price_data][unit_amount]'),'300');
         assert.equal(body.get('mode'),'payment');
         return Response.json({url:'https://checkout.stripe.com/c/pay/test'});
     });
     assert.equal(link.url,'https://checkout.stripe.com/c/pay/test');
     const ts=Math.floor(f.c.now()/1000);
     const payment={object:'checkout.session',livemode:false,mode:'payment',client_reference_id:a,
-        metadata:{product:'bt4_profile_30_days'},payment_status:'paid',amount_total:100,currency:'usd',payment_intent:'pi_example'};
+        metadata:{product:'bt4_profile_30_days'},payment_status:'paid',amount_total:300,currency:'usd',payment_intent:'pi_example'};
     const original={type:'checkout.session.completed',livemode:false,created:ts,data:{object:payment}};
     const raw=JSON.stringify(original);
     const header='t='+ts+',v1='+createHmac('sha256',env.STRIPE_PROFILE_WEBHOOK_SECRET).update(ts+'.'+raw).digest('hex');
@@ -133,7 +133,7 @@ test('the coordinator webhook uses the raw signed request and records payment wi
     const ts=Math.floor(f.c.now()/1000),raw=JSON.stringify({
         type:'checkout.session.completed',livemode:false,created:ts,data:{object:{
             object:'checkout.session',livemode:false,mode:'payment',client_reference_id:user,
-            metadata:{product:'bt4_profile_30_days'},payment_status:'paid',amount_total:100,currency:'usd',payment_intent:'pi_webhook'
+            metadata:{product:'bt4_profile_30_days'},payment_status:'paid',amount_total:300,currency:'usd',payment_intent:'pi_webhook'
         }}
     });
     const signature='t='+ts+',v1='+createHmac('sha256',env.STRIPE_PROFILE_WEBHOOK_SECRET).update(ts+'.'+raw).digest('hex');
@@ -160,15 +160,15 @@ test('Ko-fi purchase activates only the linked profile and each order is usable 
     const html=await page.text();
     assert.match(html,/https:\/\/ko-fi\.com\/nautaro/);
     assert.ok(html.includes(code));
-    assert.ok(html.includes('pago único de 1 USD'));
+    assert.ok(html.includes('pago único de 3 USD'));
     const event={verification_token:env.KOFI_PROFILE_TOKEN,type:'Donation',is_subscription_payment:false,
         kofi_transaction_id:'2b4e4eb0-002d-4f84-8af1-8c69198a1da2',timestamp:new Date(f.c.now()).toISOString(),
-        amount:'1.00',currency:'USD',message:code};
+        amount:'3.00',currency:'USD',message:code};
     const send=changes=>coordinator.fetch(new Request('https://sandbox.example.com/v5/profile/kofi/webhook',{
         method:'POST',body:new URLSearchParams({data:JSON.stringify({...event,...changes})})
     }));
     assert.equal((await send({verification_token:'wrong'})).status,401);
-    for(const changes of [{message:'ordinary tip'},{amount:'2.00'},{currency:'EUR'},{type:'Shop Order'},
+    for(const changes of [{message:'ordinary tip'},{amount:'1.00'},{amount:'3.01'},{currency:'EUR'},{type:'Shop Order'},
         {is_subscription_payment:true},{timestamp:new Date(f.c.now()-10000).toISOString()}]){
         assert.equal((await send(changes)).status,200);
         assert.equal(f.invoke(a,'profile_card_get').premium,false);

@@ -1,3 +1,4 @@
+export const profilePassPrice = 300;
 export const passDurationMs = 30 * 24 * 60 * 60 * 1000;
 const formats = {avatar:[2048,1],motion:[2048,6],banner:[8192,1],banner_motion:[2048,6]};
 const matchId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -103,7 +104,7 @@ export function fulfillProfilePass(core, purchase) {
     const {user_id, payment_id, amount_minor, currency, paid_at} = purchase ?? {};
     if (typeof user_id !== 'string' || !core.one('SELECT id FROM online_users WHERE id=?', user_id) ||
         typeof payment_id !== 'string' || !/^[a-zA-Z0-9_-]{6,120}$/.test(payment_id) ||
-        amount_minor !== 100 || currency !== 'usd' ||
+        amount_minor !== profilePassPrice || currency !== 'usd' ||
         !Number.isSafeInteger(paid_at) || paid_at <= 0 || paid_at > core.now())
         throw new Error('BAD_PROFILE_PAYMENT');
     const prior = core.one('SELECT user_id,paid_at FROM online_profile_payments WHERE payment_id=?', payment_id);

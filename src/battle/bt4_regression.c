@@ -1,6 +1,8 @@
 /* Opt-in regression checks run by the headless harness after a real battle has loaded. */
 #include "common.h"
 #include "battle/btl_input.h"
+#include "battle/btl_act_g.h"
+#include "battle/bt4_private_balance.h"
 #include <stdio.h>
 extern u8 *BtlChar_Get(s32 side);
 extern u8 *BtlChar_GetObj(void *chr);
@@ -175,6 +177,7 @@ s32 Bt4_RunBalanceAudit(void) {
     extern s32 BtlKiBlast_ScaleDamageByAbility(void *, s32, s32);
     void *chr = BtlChar_Get(0);
     s32 *gauge = BtlMember_GetActiveGauge(chr);
+    const s32 fighter = *(s32 *)BtlMember_GetActive(chr);
     printf("balance audit: mode=%d enabled=%d fighter=%d hp=%d maxBlast=%d startKi=%d"
            " passive=%d regen=%d blast=%d charge=%d normal=%d rise=%d"
            " step=%d pursuit=%d costOne=%d costTwo=%d damageOne=%d damageTwo=%d"
@@ -187,6 +190,25 @@ s32 Bt4_RunBalanceAudit(void) {
            BtlSuper_GetBaseDamage(chr, 2, 1), BtlSuper_GetBaseDamage(chr, 3, 1),
            !!(BtlSuper_GetFlags(chr, 4) & 1), BtlKiBlast_ScaleDamageByAbility(chr, 1000, 0),
            BtlKiBlast_ScaleDamageByAbility(chr, 1000, 3));
+    printf(" ascending=%d limit=%d", BtlKiBlast_ScaleDamageByAbility(chr, 1000, 8),
+           Bt4Balance_Rule(fighter)->risingShotLimit);
+    if(fighter==120){
+        extern s32 BtlAct_Throw(void *,s32);
+        *(s32 *)((u8 *)chr+0x948)=0xB7;
+        BtlAct_Throw(chr,0);
+        printf(" throw=%d",((ActGChr *)chr)->queue.total);
+    }
+    if(fighter==35||fighter==69||fighter==142||fighter==203){
+        const s32 first=(fighter==35||fighter==142)?0x37:0x90;
+        const s32 count=first==0x37?10:3;
+        u8 **motions=(u8 **)(BtlChar_GetObj(chr)+0xC0);
+        printf(" motion=");
+        for(s32 i=first;i<first+count;++i){
+            u32 hash=2166136261u;
+            if(motions[i])for(s32 j=0;j<128;++j) hash=(hash^motions[i][j])*16777619u;
+            printf("%s%08x",i==first?"":",",hash);
+        }
+    }
     putchar('\n');
     return 0;
 }

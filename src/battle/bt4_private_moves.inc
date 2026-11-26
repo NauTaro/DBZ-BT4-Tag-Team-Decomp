@@ -556,7 +556,8 @@ static void Bt4Balance_BindMoves(BObjMdl *mdl, s32 chara, u8 *tables) {
     if (chara == 35) Bt4Balance_Animation(mdl, online ? 38 : 36, 0x199, 4);
     if (online) {
         if (chara == 3) Bt4Balance_Animation(mdl, 31, 0x90, 3);
-        if (chara == 203) Bt4Balance_Animation(mdl, 3, 0x90, 3);
+        if (chara == 203) Bt4Balance_Animation(mdl, 69, 0x90, 3);
+        if (chara == 35) Bt4Balance_Animation(mdl, 142, 0x37, 10);
         if (chara == 73) Bt4Balance_Animation(mdl, 59, 0x93, 1);
         if (chara == 77 || chara == 151) Bt4Balance_Animation(mdl, 29, 0x93, 1);
         if (chara == 126 || chara == 230) Bt4Balance_Animation(mdl, 94, 0x93, 1);

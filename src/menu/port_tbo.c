@@ -1241,11 +1241,11 @@ static s32 Tb_TagSetting(const char *key,s32 initial,s32 lo,s32 hi){
     return value<lo||value>hi?initial:value;
 }
 
-enum {TAG_RULE_REFEREE, TAG_RULE_STAGE, TAG_RULE_CPU_1, TAG_RULE_CPU_2, TAG_RULE_DELAY, TAG_RULE_ROWS};
+enum {TAG_RULE_REFEREE, TAG_RULE_STAGE, TAG_RULE_CPU_1, TAG_RULE_CPU_2, TAG_RULE_DELAY, TAG_RULE_ROLLBACK, TAG_RULE_ROWS};
 static s32 sTagBattleRuleRow, sTagBattleRuleReturn = TB_TAG;
 static s32 sTagNetworkRuleUiDone;
 static char *sTagBattleRuleLabels[TAG_RULE_ROWS] = {
-    "Referee", "Stage destruction", "Team 1 CPU transformations", "Team 2 CPU transformations", "Minimum Input Delay"
+    "Referee", "Stage destruction", "Team 1 CPU transformations", "Team 2 CPU transformations", "Minimum Input Delay", "Local Rollback"
 };
 static const char *const sTagBattleRuleKeys[TAG_RULE_ROWS] = {
     "tag_off_referee", "tag_off_destroy_stage", "tag_off_cpu_forms_1", "tag_off_cpu_forms_2"
@@ -1262,6 +1262,7 @@ static const s32 sTagBattleRuleMax[TAG_RULE_ROWS] = {6, 1, 1, 1};
 static s32 Tb_TagBattleRuleCount(void) {return Tb_TagOffline()?TAG_RULE_DELAY:TAG_RULE_ROWS;}
 
 static s32 Tb_TagBattleRuleValue(s32 row) {
+    if(row==TAG_RULE_ROLLBACK)return Tb_TagSetting("tag_net_rollback",0,0,4);
     if(row==TAG_RULE_DELAY)return sTagBattleRuleReturn==TB_TAG_ROOM?Port_TagRoomDelay():Tb_TagSetting("tag_net_min_delay",0,0,12);
     if(sTagBattleRuleReturn==TB_TAG_ROOM){
         const unsigned rules=Port_TagBattleRules();
@@ -1288,7 +1289,7 @@ static void Tb_TagBattleRulesUpdate(s32 live) {
         if(Port_TagPhase()!=1){Tb_SetMode(TB_TAG_ROOM);return;}
     }
     const s32 editable=!room||Port_TagHost();
-    if(editable){Ps_Prompt(3, "Change");Ps_Prompt(0, "Confirm");}
+    if(editable||sTagBattleRuleRow==TAG_RULE_ROLLBACK){Ps_Prompt(3, "Change");Ps_Prompt(0, "Confirm");}
     Ps_Prompt(2, "Back");
     if (!live) return;
     if(room&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_NET_RULE_UI_TEST")){
@@ -1308,11 +1309,16 @@ static void Tb_TagBattleRulesUpdate(s32 live) {
         return;
     }
     Ps_Move(&sTagBattleRuleRow, Tb_TagBattleRuleCount());
-    if(!editable)return;
     const s32 row = sTagBattleRuleRow;
+    if(!editable&&row!=TAG_RULE_ROLLBACK)return;
     s32 dir = Ps_Side();
     if (!dir && (gPad[0].gamePressed & PADG_CROSS)) dir = 1;
     if (!dir) return;
+    if(row==TAG_RULE_ROLLBACK){
+        Port_SettingSave("tag_net_rollback",Ps_Wrap(Tb_TagBattleRuleValue(row)+dir,0,4));
+        Snd_PlaySe(1,0);
+        return;
+    }
     if(row==TAG_RULE_DELAY){
         if(!room){
             Port_SettingSave("tag_net_min_delay",Ps_Wrap(Tb_TagBattleRuleValue(row)+dir,0,12));
@@ -2900,7 +2906,7 @@ static void Tb_DrawTagBattleRulesText(void) {
     for (s32 row = 0; row < Tb_TagBattleRuleCount(); ++row) {
         char value[48];
         const s32 option = Tb_TagBattleRuleValue(row);
-        if(row==TAG_RULE_DELAY&&option)snprintf(value,sizeof(value),Tb_Fmt("%d frames"),option);
+        if((row==TAG_RULE_DELAY||row==TAG_RULE_ROLLBACK)&&option)snprintf(value,sizeof(value),Tb_Fmt("%d frames"),option);
         else if(row==TAG_RULE_DELAY)Ps_Copy(value,"Automatic",sizeof(value));
         else Ps_Copy(value, row == TAG_RULE_REFEREE ? sTagReferees[option] : option ? "Enabled" : "Disabled",
                 sizeof(value));
@@ -5352,6 +5358,8 @@ static char *Tb_Help(void) {
         if(sTagSettingsRow==TAG_OPT_JOINT)return "Local battles: hold L2 and press R3 near a CPU ally to coordinate your energy attacks. Both fighters need ki and compatible techniques.";
         return "Set the camera for your Tag Team battles.";
     case TB_TAG_BATTLE_RULES:
+        if(sTagBattleRuleRow==TAG_RULE_ROLLBACK)
+            return "Set how many frames your game can predict in online Tag Team battles.";
         if(sTagBattleRuleReturn==TB_TAG_ROOM&&!Port_TagHost())return "These are the host's battle rules. All players use the same settings.";
         if (sTagBattleRuleRow == TAG_RULE_DELAY)
             return sTagBattleRuleReturn==TB_TAG_ROOM ?

@@ -255,6 +255,7 @@ s32 BtlKiBlast_ScaleDamageByAbility(BtlTechBChr *chr, s32 damage, s32 kind) {
     const Bt4BalanceRule *balance = Bt4Balance_Rule(obj->chara);
     if (kind == 0 || kind == 4 || kind == 8) {
         damage = damage * (100 + balance->blastDamagePercent) / 100;
+        if (kind == 8) damage = damage * (100 + balance->risingShotDamagePercent) / 100;
     } else if ((kind >= 1 && kind <= 3) || (kind >= 5 && kind <= 7)) {
         damage = damage * (100 + balance->chargedBlastDamagePercent) / 100;
     }
@@ -1232,6 +1233,7 @@ s32 BtlSuper_GetBaseDamage(BtlTechBChr *chr, s32 slot, s32 total) {
             damage = damage * (100 + rule->superScale[idx]) * 83 / 10000;
         }
         damage = damage * (100 + rule->damagePercent[idx]) / 100;
+        if (slot == 3) damage = damage * (100 + rule->feedbackSuper2Percent) / 100;
     }
     if (!total) {
         damage /= BtlSuper_GetHitCount(chr, slot);

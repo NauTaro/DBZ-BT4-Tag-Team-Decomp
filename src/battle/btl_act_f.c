@@ -3,6 +3,7 @@ extern int TagBattle_Active(void);
 extern s32 Bt4_HasRecoveryVariant(void *chr);
 #include "battle/btl_act_f.h"
 #include "battle/bt4_balance.h"
+#include "battle/bt4_private_balance.h"
 #include "battle/btl_char_mgr.h"
 
 /*
@@ -3318,6 +3319,11 @@ void BtlActThrow_SetupDamage(ActGChr *chr, s32 extraHit) {
         chr->queue.hits++;
     }
     damage = BtlAtk_GetDamage(chr);
+    {
+        extern s32 BtlCharApi_GetChara(s32 actor);
+        const Bt4BalanceRule *rule = Bt4Balance_Rule(BtlCharApi_GetChara(chr->objId));
+        damage = damage * (100 + rule->throwPercent) / 100;
+    }
     chr->queue.unk0 = damage;
     chr->queue.total = damage;
     chr->queue.perHit = damage / (chr->queue.hits + 5);

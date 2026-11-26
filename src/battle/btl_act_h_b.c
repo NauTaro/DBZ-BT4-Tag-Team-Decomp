@@ -2553,7 +2553,7 @@ s32 BtlDecide_Attack(BtlActIChr *chr, s32 mask) {
         return 1;
     }
     if ((mask & 0x20000) && (BtlParam_GetFlags2(chr) & 0x10) && BtlMember_HasKi(chr, BtlKiBlast_GetKiCostOf(chr, 8))
-        && chr->unkDE0 < BtlParam_GetCount80(chr) && BtlMove_CanFireBlast(chr, 0, NULL)) {
+        && chr->unkDE0 < BtlParam_GetCount80(chr) && BtlMove_CanFireBlast(chr, 2, NULL)) {
         BtlColl_AddActionBit(chr, 0xB2);
         if (TEST(0x59)) {
             BtlAct_SetQueue(chr, 0, 0xB2);

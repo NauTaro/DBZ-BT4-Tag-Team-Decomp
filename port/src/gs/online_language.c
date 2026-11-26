@@ -995,6 +995,8 @@ static const char *const kPracticeAndRoomsText[][3]={
     {"Public Rooms","Salas públicas","Salas públicas"},
     {"Private Rooms","Salas privadas","Salas privadas"},
     {"Minimum Input Delay","Retardo mínimo de entrada","Atraso mínimo de entrada"},
+    {"Local Rollback","Rollback local","Rollback local"},
+    {"Set how many frames your game can predict in online Tag Team battles.","Ajusta cuántos fotogramas puede predecir tu juego en combates Tag Team en línea.","Ajuste quantos quadros seu jogo pode prever em partidas Tag Team online."},
     {"Set the minimum input delay in frames. Automatic adapts to the connection.","Fija el retardo mínimo de entrada en fotogramas. El modo automático se adapta a la conexión.","Defina o atraso mínimo de entrada em quadros. O modo automático se adapta à conexão."},
     {"The minimum input delay was set when the room was created.","El retardo mínimo de entrada se configuró al crear la sala.","O atraso mínimo de entrada foi definido na criação da sala."},
     {"Automatic input delay uses the ping and the room's rollback setting.","El retraso automático se ajusta al ping y al rollback de la sala.","O atraso automático é ajustado ao ping e ao rollback da sala."},

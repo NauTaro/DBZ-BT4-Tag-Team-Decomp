@@ -501,7 +501,7 @@ static void profile_card_editor(const char *name,float u,bool &open) {
             char url[2048]={};
             const int checkout=Port_ProfileCheckout(0,url,sizeof(url));
             ImGui::BeginDisabled(checkout==1);
-            if (ImGui::Button(profile_label("30 days · USD 1","30 días · 1 USD","30 dias · US$ 1")))
+            if (ImGui::Button(profile_label("30 days · USD 3","30 días · 3 USD","30 dias · US$ 3")))
                 Port_ProfileCheckout(1,nullptr,0);
             ImGui::SameLine();
             if (ImGui::Button(profile_label("Refresh pass","Actualizar pase","Atualizar passe"))) {

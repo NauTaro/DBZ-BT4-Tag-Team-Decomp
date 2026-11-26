@@ -53,6 +53,9 @@ static void TagOnline_CommandPads(void){
 static u32 sTagOnlineFrame;
 static s32 sTagReplayAudit;
 extern void Port_TagReplayAuditReset(void);
+extern void Port_TagRollbackReset(void),Port_TagRollbackReconcile(u32 frame),Port_TagRollbackSent(u32 frame);
+extern s32 Port_TagRollbackEnabled(void),Port_TagRollbackReplay(void),Port_TagRollbackSkipSend(u32 frame);
+extern s32 Port_TagRollbackUnconfirmed(u32 frame),Port_TagRollbackGet(u32 frame,s32 allow,u8 pad[10][18]);
 static u32 sTagOnlinePressed;
 static u32 sTagOnlinePausePressed,sTagOnlinePauseRepeat;
 static s32 sTagOnlinePausePending;
@@ -94,6 +97,7 @@ static void TagOnline_Reset(void){
     if(!TagBattle_Network())return;
     sTagReplayAudit=getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_LOCAL_TEST") && getenv("BT4_TAG_REPLAY_AUDIT");
     if (sTagReplayAudit) Port_TagReplayAuditReset();
+    else Port_TagRollbackReset();
     Port_Srand(Port_TagSeed());for(i=0;i<4;++i)key[i]=Port_Rand();Rand_SeedByArray(key,4);
 }
 extern s32 Port_TagReplayAuditActive(void),Port_TagReplayAuditAtCheck(u32 frame);
@@ -102,7 +106,7 @@ extern void Port_TagReplayAuditRecord(u32 frame, const u8 pad[10][18]);
 extern void Port_TagReplayAuditCheck(u32 frame, u32 checksum);
 
 static s32 TagOnline_ReplayActive(void) {
-    return sTagReplayAudit && Port_TagReplayAuditActive();
+    return (sTagReplayAudit && Port_TagReplayAuditActive()) || Port_TagRollbackReplay();
 }
 
 static u32 TagOnline_ReplayChecksum(void) {
@@ -121,6 +125,27 @@ static u32 TagOnline_ReplayChecksum(void) {
         hash = (hash ^ TagBattle_Target(actor)) * 16777619u;
     }
     return hash;
+}
+
+static s32 TagOnline_CanPredict(s32 sequence) {
+    extern s32 BtlSeq_GetTimeLeft(void),BtlStage_IsReady(void),DemoCam_IsActive(void);
+    extern s32 BtlAct_GetCurrent(void *);
+    s32 i;
+    if(sequence!=3 || (Battle_GetWork()->flags&(BATTLE_FLAG_PAUSE|BATTLE_FLAG_PAUSE_MENU)) ||
+        sTagOnlinePausePending || !BtlStage_IsReady() || DemoCam_IsActive()) return 0;
+    const s32 timeLeft=BtlSeq_GetTimeLeft();
+    if(timeLeft>=0&&timeLeft<=3)return 0;
+    for(i=0;i<TagBattle_Count();++i){
+        const s32 act=BtlAct_GetCurrent(BtlChar_Get(i));
+        /* Stay on confirmed frames around specials, throws, transformations and knock-outs. */
+        if(BtlCharApi_GetHp(i)<=10000 || act>0xAF || (act>=0x63 && act<=0x67)) return 0;
+    }
+    return 1;
+}
+
+static void TagOnline_ConfirmTransition(void) {
+    extern void Port_TagRollbackFence(u32);
+    Port_TagRollbackFence(sTagOnlineFrame);
 }
 
 static s32 TagOnline_Tick(void){
@@ -149,6 +174,7 @@ static s32 TagOnline_Tick(void){
         return 0;
     }
     if(phase!=5)return 0;
+    if(!sTagReplayAudit)Port_TagRollbackReconcile(sTagOnlineFrame);
     if(!sTagOnlineSent&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_PAUSE_TEST")&&Port_TagHost()&&sTagOnlineFrame>=650){
         static s32 step;extern void Port_TagUiCapture(int);
         ++step;gPad[0].gamePressed=gPad[0].gameRepeat=0;
@@ -174,6 +200,7 @@ static s32 TagOnline_Tick(void){
         sTagOnlinePausePressed|=gPad[0].gamePressed;
         sTagOnlinePauseRepeat|=gPad[0].gameRepeat;
     }
+    if(!sTagOnlineSent && Port_TagRollbackSkipSend(sTagOnlineFrame))sTagOnlineSent=1;
     if(!sTagOnlineSent){
         u8 packet[18]={0};s32 actor=Port_TagSeat();Pad *pad=&gPad[0];
         BtlInputChr *chr=BtlChar_Get(actor);u32 buttons=BtlInput_RemapButtons(pad->held|sTagOnlinePressed,chr->input.mask);
@@ -218,13 +245,16 @@ static s32 TagOnline_Tick(void){
         /* Transport adds the owner's camera distance in byte 10. Other
          * reserved bytes stay zero; Dev and Test use the same online rules. */
         if(!Port_TagSendInput(sTagOnlineFrame+Port_TagDelay(),packet))return -1;
+        Port_TagRollbackSent(sTagOnlineFrame);
         sTagOnlinePressed=0;
         sTagOnlineSent=1;
     }
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_WAIT_TEST")){
         static s32 waitTick;if(++waitTick%4){if(!sTagOnlineWaitStarted)sTagOnlineWaitStarted=Port_TagMenuMillis();return 0;}
     }
-    if(!Port_TagTakeFrame(sTagOnlinePads)){if(!sTagOnlineWaitStarted)sTagOnlineWaitStarted=Port_TagMenuMillis();return 0;}
+    const s32 ready=sTagReplayAudit?Port_TagTakeFrame(sTagOnlinePads):
+        Port_TagRollbackGet(sTagOnlineFrame,Port_TagRollbackEnabled()&&TagOnline_CanPredict(sequence),sTagOnlinePads);
+    if(!ready){if(!sTagOnlineWaitStarted)sTagOnlineWaitStarted=Port_TagMenuMillis();return 0;}
     TagOnline_CommandPads();
     if(sTagOnlinePausePressed||sTagOnlinePauseRepeat){
         gPad[0].gamePressed|=sTagOnlinePausePressed;
@@ -331,7 +361,7 @@ static void TagOnline_Trace(void){
         if(DemoCam_IsActive())safe=0;
         if(safe||sTagOnlineFrame>=1800){Port_TagCapture();sTagOnlineCaptured=1;}
     }
-    if(sTagResultActive||sTagOnlineEnding||sTagOnlineFrame%30)return;
+    if(sTagResultActive||sTagOnlineEnding||sTagOnlineFrame%30||Port_TagRollbackUnconfirmed(sTagOnlineFrame))return;
     {u32 hash=2166136261u; s32 i,k,count=TagBattle_Count();extern s32 BtlAct_GetCurrent(void *),BtlCharApi_GetChara(s32),BtlCharApi_GetCostume(s32);
         hash^=(u32)count;hash*=16777619u;
         for(i=0;i<count;++i){f32 pos[4];u32 words[10];

@@ -1,6 +1,7 @@
 #include "common.h"
 extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/btl_char_move.h"
+#include "battle/bt4_private_balance.h"
 
 /* Fighter movement, 0x1DC9A0-0x1E0290 (see battle/btl_char_move.h for the model and the structures).
  *
@@ -221,6 +222,13 @@ s32 BtlMove_IsHeadingIntoWall(BtlMoveChr *chr, f32 angle) {
    returns 1 while it is below the character's limit for the class (BtlParam_GetCount80 / BtlParam_GetUnk82). */
 s32 BtlMove_CanFireBlast(BtlMoveChr *chr, s32 mode, s32 *outCount) {
     s32 n = 0;
+    s32 rising = 0;
+    s32 risingLimit = 0;
+    if (mode == 2) {
+        extern s32 BtlCharApi_GetChara(s32 actor);
+        risingLimit = Bt4Balance_Rule(BtlCharApi_GetChara(chr->objId))->risingShotLimit;
+        if (!risingLimit) mode = 0;
+    }
     BtlMoveBlastList *list = EftHit_GetList();
     s32 i;
 
@@ -242,10 +250,12 @@ s32 BtlMove_CanFireBlast(BtlMoveChr *chr, s32 mode, s32 *outCount) {
             continue;
         }
         switch (def->kind) {
+        case 8:
+            if (mode == 2) rising++;
+            /* fall through: rising shots are also ordinary projectiles */
         case 0:
         case 4:
-        case 8:
-            if (mode == 0) {
+            if (mode != 1) {
                 n++;
             }
             break;
@@ -257,9 +267,11 @@ s32 BtlMove_CanFireBlast(BtlMoveChr *chr, s32 mode, s32 *outCount) {
         }
     }
     if (outCount != NULL) {
-        *outCount = n;
+        *outCount = mode == 2 ? rising : n;
     }
     switch (mode) {
+    case 2:
+        return rising < risingLimit && n < BtlParam_GetCount80(chr);
     case 0:
         if (n < BtlParam_GetCount80(chr)) {
             return 1;

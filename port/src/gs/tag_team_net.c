@@ -1306,6 +1306,58 @@ static unsigned tag_merge_target_input(unsigned previous, unsigned current){
     return (current&0x30)|direction|((previous|current)&1u);
 }
 
+/* Keep the authoritative cursor and local input outside the rewindable simulation. */
+#define TAG_ROLL_MAX 4
+typedef struct TagRollbackState {
+    int limit, hasLast;
+    uint32_t resendBefore, replayUntil;
+    unsigned replayAudioFrom;
+    TtInputFrame history[TT_INPUT_HISTORY];
+    struct LocalFrame { uint32_t frame; int valid; unsigned char pad[TT_PAD_BYTES]; } local[TT_INPUT_HISTORY];
+    unsigned char last[TT_MAX_PLAYERS][TT_PAD_BYTES];
+} TagRollbackState;
+static TagRollbackState tagRoll;
+
+void Port_TagRollbackReset(void) {
+    extern int Port_Setting(const char *,int), Port_RollCan(void);
+    memset(&tagRoll,0,sizeof(tagRoll));
+    int limit=Port_Setting("tag_net_rollback",0);
+    if(limit>0 && limit<=TAG_ROLL_MAX && Port_TagSeat()>=0 && !solo_cpu_fight() && Port_RollCan())
+        tagRoll.limit=limit;
+}
+
+static void tag_roll_local(uint32_t frame,const unsigned char *pad) {
+    if(!tagRoll.limit)return;
+    struct LocalFrame *slot=&tagRoll.local[frame%TT_INPUT_HISTORY];
+    slot->frame=frame;slot->valid=1;memcpy(slot->pad,pad,TT_PAD_BYTES);
+}
+
+int Port_TagRollbackEnabled(void) {return tagRoll.limit!=0;}
+int Port_TagRollbackReplay(void) {return tagRoll.replayUntil!=0;}
+void Port_TagRollbackStop(void) {
+    extern int gPortResim;
+    if(tagRoll.replayUntil) gPortResim=0;
+    tagRoll.limit=0;
+    tagRoll.replayUntil=0;
+}
+int Port_TagRollbackSkipSend(uint32_t frame) {return tagRoll.limit && frame<tagRoll.resendBefore;}
+int Port_TagRollbackUnconfirmed(uint32_t executed) {return tagRoll.limit && executed>received.next;}
+
+static void tag_roll_rewind(uint32_t first,uint32_t frame) {
+    extern int gPortResim;extern unsigned gPortVBlanks;
+    extern void Port_RollBack(int depth);
+    tagRoll.replayUntil=frame;
+    tagRoll.replayAudioFrom=gPortVBlanks-2u*(frame-first);
+    gPortResim=1;
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ROLL_AUDIT"))
+        fprintf(stderr,"tag rollback: rewound %u frame(s) at %u\n",frame-first,first);
+    Port_RollBack(frame-first);
+    abort();
+}
+
+void Port_TagRollbackFence(uint32_t frame) {
+    if (Port_TagRollbackUnconfirmed(frame)) tag_roll_rewind(received.next,frame);
+}
 int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
     /* The original camera distance affects native targeting angles. Carry the
      * owner's choice with the shared input, never read a local preference on
@@ -1357,6 +1409,7 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
                 packet[24]|=tag_pending_skip;packet[33]|=tag_pending_coop;
             }
             request(packet);if(state.phase!=TT_FIGHT)return 0;
+            tag_roll_local(next,packet+16);
         }
         memcpy(tag_input_pad,pad,TT_PAD_BYTES);
         tag_pending_coop=0;tag_pending_buttons=tag_pending_l3=tag_pending_skip=0;
@@ -1364,6 +1417,7 @@ int Port_TagSendInput(uint32_t frame,const unsigned char pad[TT_PAD_BYTES]){
     }
     Ttw_Request(packet,TTW_INPUT,state.epoch);Ttw_Write(packet+12,frame);memcpy(packet+16,pad,TT_PAD_BYTES);
     request(packet);
+    if(state.phase==TT_FIGHT)tag_roll_local(frame,packet+16);
     return state.phase==TT_FIGHT;
 
 }
@@ -1421,6 +1475,77 @@ void Port_TagReplayAuditCheck(unsigned frame, unsigned checksum) {
     fprintf(stderr, "tag replay test: frames=%d original=%08x replay=%08x\n",
         TAG_REPLAY_DEPTH, tag_replay_audit.checksum, checksum);
     if (tag_replay_audit.checksum != checksum) exit(3);
+}
+
+int Port_TagTakeFrame(unsigned char out[TT_MAX_PLAYERS][TT_PAD_BYTES]);
+
+static void tag_roll_confirm(uint32_t frame,const unsigned char pad[TT_MAX_PLAYERS][TT_PAD_BYTES]) {
+    TtInputFrame *slot=&tagRoll.history[frame%TT_INPUT_HISTORY];
+    slot->frame=frame;slot->mask=2;
+    memcpy(slot->pad,pad,sizeof(slot->pad));memcpy(tagRoll.last,pad,sizeof(tagRoll.last));
+    tagRoll.hasLast=1;
+}
+
+void Port_TagRollbackReconcile(uint32_t frame) {
+    extern int gPortResim;extern unsigned gPortVBlanks;
+    extern void PortSe_RunAgainEnds(unsigned first,unsigned live);
+    unsigned char truth[TT_MAX_PLAYERS][TT_PAD_BYTES];
+    uint32_t first=frame;
+    if(!tagRoll.limit)return;
+    if(tagRoll.replayUntil){
+        if(frame<tagRoll.replayUntil)return;
+        PortSe_RunAgainEnds(tagRoll.replayAudioFrom,gPortVBlanks);
+        tagRoll.replayUntil=0;gPortResim=0;
+    }
+    while(received.next<frame){
+        uint32_t index=received.next;
+        TtInputFrame *slot=&tagRoll.history[index%TT_INPUT_HISTORY];
+        if(!Port_TagTakeFrame(truth))break;
+        if(first==frame && (slot->frame!=index || slot->mask!=1 ||
+                memcmp(slot->pad,truth,received.seats*TT_PAD_BYTES))) first=index;
+        tag_roll_confirm(index,truth);
+    }
+    if(first<frame)tag_roll_rewind(first,frame);
+}
+
+int Port_TagRollbackGet(uint32_t frame,int allow,unsigned char pad[TT_MAX_PLAYERS][TT_PAD_BYTES]) {
+    extern int Port_RollSave(void),gPortResim;extern unsigned gPortVBlanks;
+    extern void PortSe_BlankBegins(unsigned);
+    if(!tagRoll.limit)return Port_TagTakeFrame(pad);
+    TtInputFrame *slot=&tagRoll.history[frame%TT_INPUT_HISTORY];
+    if(slot->frame==frame&&slot->mask==2){
+        memcpy(pad,slot->pad,sizeof(slot->pad));gPortResim=Port_TagRollbackReplay();
+        return 1;
+    }
+    if(frame==received.next&&Port_TagTakeFrame(pad)){
+        tag_roll_confirm(frame,pad);
+        gPortResim=Port_TagRollbackReplay();
+        if(!gPortResim)PortSe_BlankBegins(gPortVBlanks);
+        return 1;
+    }
+    if(tagRoll.replayUntil || !allow || !tagRoll.hasLast || frame-received.next>=(unsigned)tagRoll.limit){
+        gPortResim=0;
+        return 0;
+    }
+    /* Save before applying the guessed controls. The transport continues monotonically. */
+    if(Port_RollSave())return Port_TagRollbackGet(frame,0,pad);
+    memcpy(pad,tagRoll.last,sizeof(tagRoll.last));
+    for(int seat=0;seat<received.seats;++seat){
+        pad[seat][6]&=0x30;pad[seat][8]=0; /* no predicted targeting or sequence presses */
+    }
+    const int local=Port_TagSeat();
+    const struct LocalFrame *submitted=&tagRoll.local[frame%TT_INPUT_HISTORY];
+    if(local>=0&&submitted->valid&&submitted->frame==frame)memcpy(pad[local],submitted->pad,TT_PAD_BYTES);
+    slot=&tagRoll.history[frame%TT_INPUT_HISTORY];
+    slot->frame=frame;slot->mask=1;memcpy(slot->pad,pad,sizeof(slot->pad));
+    PortSe_BlankBegins(gPortVBlanks);
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ROLL_AUDIT")&&frame%60==0)
+        fprintf(stderr,"tag rollback: predicted frame %u\n",frame);
+    return 1;
+}
+
+void Port_TagRollbackSent(uint32_t frame){
+    if(tagRoll.limit && frame>=tagRoll.resendBefore)tagRoll.resendBefore=frame+1;
 }
 
 int Port_TagTakeFrame(unsigned char out[TT_MAX_PLAYERS][TT_PAD_BYTES]){

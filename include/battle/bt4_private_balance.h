@@ -6,7 +6,8 @@ typedef struct Bt4BalanceRule {
     s8 ki[2], blast[2], superScale[3];
     s8 shots, guardShots, speed, melee, defense, start, passive, stocks, health;
     s8 blastSeconds, excludeKi, recovery, noArmor, flight;
-    s8 damagePercent[3];
+    s8 damagePercent[3], feedbackSuper2Percent, throwPercent;
+    s8 risingShotLimit, risingShotDamagePercent;
     s16 blastDamagePercent, chargedBlastDamagePercent;
     u8 classFlags;
 } Bt4BalanceRule;
@@ -279,7 +280,7 @@ static inline const Bt4BalanceRule *Bt4Balance_Rule(s32 id) {
         [117] = {.passive=4, .blastSeconds=23},
         [118] = {.passive=3, .blastSeconds=19, .damagePercent={8, 0, 0}},
         [119] = {.passive=3, .blastSeconds=23, .damagePercent={0, 6, 0}},
-        [120] = {.health=1, .passive=5, .blastSeconds=23, .damagePercent={10, -15, 0}, .classFlags=BT4_BALANCE_ANDROID},
+        [120] = {.health=1, .passive=5, .blastSeconds=23, .throwPercent=100, .damagePercent={10, -15, 0}, .classFlags=BT4_BALANCE_ANDROID},
         [121] = {.damage={6225, 0}, .speed=1, .passive=3, .blastSeconds=23},
         [122] = {.melee=10, .shots=8, .passive=3, .blastSeconds=19},
         [123] = {.ki={2, 0}, .passive=3, .blastSeconds=23},
@@ -287,12 +288,12 @@ static inline const Bt4BalanceRule *Bt4Balance_Rule(s32 id) {
         [125] = {.blast={1, 0}, .passive=3, .blastSeconds=23},
         [126] = {.damage={6225, 0}, .speed=1, .passive=3, .blastSeconds=19},
         [127] = {.ki={2, 0}, .blast={0, 1}, .speed=1, .passive=3, .blastSeconds=23},
-        [128] = {.passive=5, .blastSeconds=23, .damagePercent={0, 10, 0}, .classFlags=BT4_BALANCE_ANDROID},
+        [128] = {.passive=5, .blastSeconds=23, .feedbackSuper2Percent=20, .damagePercent={0, 10, 0}, .classFlags=BT4_BALANCE_ANDROID},
         [129] = {.speed=1, .passive=5, .blastSeconds=19, .damagePercent={6, 0, 0}, .classFlags=BT4_BALANCE_ANDROID},
         [130] = {.speed=1, .blast={1, 0}, .passive=5, .blastSeconds=23, .classFlags=BT4_BALANCE_ANDROID},
         [131] = {.speed=1, .passive=3, .blastSeconds=19},
         [132] = {.speed=1, .passive=3, .blastSeconds=19},
-        [133] = {.speed=2, .passive=4, .blastSeconds=23, .classFlags=BT4_BALANCE_TANK, .guardShots=3, .blastDamagePercent=10},
+        [133] = {.speed=2, .passive=4, .blastSeconds=23, .classFlags=BT4_BALANCE_TANK, .risingShotLimit=3, .guardShots=3, .blastDamagePercent=10},
         [134] = {.blast={1, 0}, .damage={0, 8000}, .passive=3, .blastSeconds=23, .damagePercent={0, -15, 0}},
         [135] = {.passive=3, .blastSeconds=23},
         [136] = {.damage={6225, 0}, .passive=3, .blastSeconds=23, .classFlags=BT4_BALANCE_TANK},
@@ -303,7 +304,7 @@ static inline const Bt4BalanceRule *Bt4Balance_Rule(s32 id) {
         [141] = {.damage={6225, 0}, .passive=3, .blastSeconds=19},
         [142] = {.damage={6225, 0}, .passive=3, .blastSeconds=23},
         [143] = {.passive=3, .blastSeconds=23, .damagePercent={-15, -20, 0}, .classFlags=BT4_BALANCE_GIANT, .speed=1, .melee=20},
-        [144] = {.blast={1, 0}, .passive=3, .blastSeconds=23, .damagePercent={0, 15, 0}, .ki={0, 4}, .classFlags=BT4_BALANCE_ANDROID},
+        [144] = {.blast={1, 0}, .passive=5, .blastSeconds=23, .damagePercent={0, 15, 0}, .ki={0, 4}, .classFlags=BT4_BALANCE_ANDROID},
         [145] = {.passive=3, .blastSeconds=23, .speed=1, .defense=-4, .shots=8, .blastDamagePercent=15, .guardShots=3},
         [146] = {.damage={6225, 0}, .passive=3, .blastSeconds=19, .melee=5},
         [147] = {.passive=4, .blastSeconds=19, .classFlags=BT4_BALANCE_TANK},
@@ -345,7 +346,7 @@ static inline const Bt4BalanceRule *Bt4Balance_Rule(s32 id) {
         [187] = {.damage={6225, 5810}, .passive=3, .blastSeconds=19, .defense=5},
         [188] = {.damage={0, 6640}, .speed=1, .passive=3, .blastSeconds=19},
         [189] = {.speed=1, .passive=3, .blastSeconds=19, .damagePercent={-6, 0, 0}},
-        [190] = {.damage={8000, 0}, .speed=2, .passive=3, .blastSeconds=23, .damagePercent={-15, 0, 0}, .classFlags=BT4_BALANCE_TANK, .guardShots=3, .blastDamagePercent=10},
+        [190] = {.damage={8000, 0}, .speed=2, .passive=3, .blastSeconds=23, .damagePercent={-15, 0, 0}, .classFlags=BT4_BALANCE_TANK, .risingShotLimit=3, .guardShots=3, .blastDamagePercent=10},
         [191] = {.passive=3, .blastSeconds=19, .damagePercent={-8, 0, 0}},
         [192] = {.passive=3, .blastSeconds=19, .damagePercent={-12, -12, 0}},
         [193] = {.blast={0, 1}, .damage={6225, 7000}, .start=5, .speed=1, .excludeKi=1, .passive=3, .blastSeconds=23, .damagePercent={0, -5, 0}, .ki={0, 3}},
@@ -364,7 +365,7 @@ static inline const Bt4BalanceRule *Bt4Balance_Rule(s32 id) {
         [206] = {.damage={5810, 0}, .passive=5, .blastSeconds=23, .damagePercent={0, -8, 0}, .classFlags=BT4_BALANCE_ANDROID},
         [207] = {.blast={1, 0}, .passive=5, .blastSeconds=23, .classFlags=BT4_BALANCE_ANDROID},
         [208] = {.blast={1, 0}, .damage={0, 8000}, .shots=8, .speed=1, .passive=3, .blastSeconds=23, .damagePercent={0, -20, 0}},
-        [209] = {.damage={0, 8500}, .speed=2, .passive=3, .blastSeconds=23, .damagePercent={0, 15, 0}, .classFlags=BT4_BALANCE_TANK, .guardShots=3, .blastDamagePercent=10},
+        [209] = {.damage={0, 8500}, .speed=2, .passive=3, .blastSeconds=23, .feedbackSuper2Percent=10, .damagePercent={0, 15, 0}, .classFlags=BT4_BALANCE_TANK, .risingShotLimit=3, .guardShots=3, .blastDamagePercent=10},
         [210] = {.blast={1, 0}, .damage={6225, 0}, .ki={3, 0}, .passive=3, .blastSeconds=23},
         [211] = {.passive=3, .blastSeconds=23, .damagePercent={10, 15, 0}, .classFlags=BT4_BALANCE_GIANT, .speed=1, .melee=40},
         [212] = {.blast={1, 0}, .damage={0, 5810}, .health=1, .start=5, .recovery=1, .passive=5, .blastSeconds=23, .damagePercent={-6, 0, 0}, .classFlags=BT4_BALANCE_ANDROID},
@@ -379,7 +380,7 @@ static inline const Bt4BalanceRule *Bt4Balance_Rule(s32 id) {
         [221] = {.ki={0, 2}, .speed=1, .shots=8, .guardShots=4, .passive=3, .blastSeconds=19, .damagePercent={-12, 5, 0}},
         [222] = {.damage={6225, 6640}, .ki={0, 4}, .shots=6, .excludeKi=1, .passive=3, .blastSeconds=19, .damagePercent={0, -6, 0}},
         [223] = {.damage={6225, 6640}, .speed=1, .passive=3, .blastSeconds=19, .damagePercent={-10, -10, 0}},
-        [224] = {.passive=3, .blastSeconds=23, .damagePercent={-10, 0, 0}, .stocks=6, .blastDamagePercent=200, .chargedBlastDamagePercent=400},
+        [224] = {.passive=3, .blastSeconds=23, .risingShotDamagePercent=-75, .damagePercent={-10, 0, 0}, .stocks=6, .blastDamagePercent=200, .chargedBlastDamagePercent=400},
         [225] = {.passive=3, .blastSeconds=19},
         [226] = {.damage={0, 6225}, .ki={0, 2}, .passive=3, .blastSeconds=23},
         [227] = {.stocks=4, .defense=-10, .passive=3, .blastSeconds=23, .damagePercent={0, 8, 0}},
