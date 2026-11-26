@@ -799,7 +799,10 @@ void profilePump(Uint64 now){
         if(id==checkoutRequest){
             checkoutRequest=0;
             const auto url=text(*body,"url");
-            if(url.compare(0,28,"https://checkout.stripe.com/")==0&&url.size()<2048){
+            const std::string kofi=std::string(Bt4Signal_Project())+"/v5/profile/kofi/BT4-";
+            const bool kofiUrl=kofi.compare(0,8,"https://")==0 && url.size()==kofi.size()+24 &&
+                url.compare(0,kofi.size(),kofi)==0 && url.find_first_not_of("0123456789ABCDEF",kofi.size())==std::string::npos;
+            if((url.compare(0,28,"https://checkout.stripe.com/")==0&&url.size()<2048)||kofiUrl){
                 checkoutUrl=url;checkoutState=2;
             }else checkoutState=-1;
             continue;

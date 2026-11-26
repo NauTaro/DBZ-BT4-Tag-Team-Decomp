@@ -5,6 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {OnlineCore,seasonAt,clientAtLeast} from '../online_core.mjs';
 import {fulfillProfilePass,passDurationMs} from '../online_profile_cards.mjs';
 import {applyProfileWebhook,profileCheckout,verifyProfileWebhook} from '../online_profile_checkout.mjs';
+import {kofiCheckout,kofiEnabled} from '../online_profile_kofi.mjs';
 import {createHmac} from 'node:crypto';
 import {OnlineCoordinator} from '../online_worker.mjs';
 
@@ -144,6 +145,49 @@ test('the coordinator webhook uses the raw signed request and records payment wi
     assert.equal((await coordinator.fetch(request(raw))).status,200);
     assert.equal(f.invoke(user,'profile_card_get').premium,true);
 });
+test('Ko-fi purchase activates only the linked profile and each order is usable once', async()=>{
+    const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo');
+    const env={KOFI_PROFILE_ORIGIN:'https://sandbox.example.com',KOFI_PROFILE_TOKEN:'fake-token-only-for-tests'};
+    assert.equal(kofiEnabled({...env,KOFI_PROFILE_ORIGIN:'https://sandbox.example.com/redirect'}),false);
+    const coordinator=Object.create(OnlineCoordinator.prototype);
+    coordinator.core=f.c;coordinator.env=env;
+    coordinator.ctx={storage:{transactionSync:fn=>fn()}};
+    const order=kofiCheckout(f.c,env,a),code=order.url.split('/').pop();
+    assert.deepEqual(kofiCheckout(f.c,env,a),order);
+    const page=await coordinator.fetch(new Request(order.url,{headers:{'Accept-Language':'es'}}));
+    assert.equal(page.status,200);
+    assert.equal(page.headers.get('referrer-policy'),'no-referrer');
+    const html=await page.text();
+    assert.match(html,/https:\/\/ko-fi\.com\/nautaro/);
+    assert.ok(html.includes(code));
+    assert.ok(html.includes('pago único de 1 USD'));
+    const event={verification_token:env.KOFI_PROFILE_TOKEN,type:'Donation',is_subscription_payment:false,
+        kofi_transaction_id:'2b4e4eb0-002d-4f84-8af1-8c69198a1da2',timestamp:new Date(f.c.now()).toISOString(),
+        amount:'1.00',currency:'USD',message:code};
+    const send=changes=>coordinator.fetch(new Request('https://sandbox.example.com/v5/profile/kofi/webhook',{
+        method:'POST',body:new URLSearchParams({data:JSON.stringify({...event,...changes})})
+    }));
+    assert.equal((await send({verification_token:'wrong'})).status,401);
+    for(const changes of [{message:'ordinary tip'},{amount:'2.00'},{currency:'EUR'},{type:'Shop Order'},
+        {is_subscription_payment:true},{timestamp:new Date(f.c.now()-10000).toISOString()}]){
+        assert.equal((await send(changes)).status,200);
+        assert.equal(f.invoke(a,'profile_card_get').premium,false);
+    }
+    assert.equal((await send({})).status,200);
+    assert.equal(f.invoke(a,'profile_card_get').premium_until,f.c.now()+passDurationMs);
+    assert.equal(f.invoke(b,'profile_card_get').premium,false);
+    assert.equal((await coordinator.fetch(new Request(order.url))).status,404);
+    f.tick(5000);
+    assert.equal((await send({})).status,200);
+    assert.equal((await send({kofi_transaction_id:'second-charge',timestamp:new Date(f.c.now()).toISOString()})).status,200);
+    assert.equal(f.invoke(a,'profile_card_get').premium_until,f.c.now()-5000+passDurationMs);
+    const second=kofiCheckout(f.c,env,b);
+    f.tick(86400001);
+    assert.equal((await send({kofi_transaction_id:'expired-charge',message:second.url.split('/').pop(),
+        timestamp:new Date(f.c.now()).toISOString()})).status,200);
+    assert.equal(f.invoke(b,'profile_card_get').premium,false);
+});
+
 test('private rooms work in both hosting directions and isolate outsiders',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo'),outside=f.user('Charlie');
     for(const [host,guest] of [[a,b],[b,a]]){

@@ -7,6 +7,8 @@ import {launchRanked,resetRanked,rankedMonthEnd,monthlyRanked} from './ranked_se
 import {fulfillProfilePass} from './online_profile_cards.mjs';
 import {applyProfileWebhook,profileCheckout,profileCheckoutEnabled,verifyProfileWebhook} from './online_profile_checkout.mjs';
 
+import {applyKofiPayment,kofiCheckout,kofiEnabled,kofiPage} from './online_profile_kofi.mjs';
+
 const json=(body,status=200)=>Response.json(body,{status,headers:{'Cache-Control':'no-store'}});
 async function readText(request,limit){
     const reader=request.body?.getReader();if(!reader)return '';
@@ -42,6 +44,7 @@ export class OnlineCoordinator {
             if(!this.core.name(user)||
                 this.core.one("SELECT 1 n FROM online_legacy WHERE table_name='banned_users' AND json_extract(body,'$.user_id')=? LIMIT 1",user))
                 throw new Error('ACCOUNT_UNAVAILABLE');
+            if (kofiEnabled(this.env)) return this.ctx.storage.transactionSync(()=>kofiCheckout(this.core,this.env,user));
             return profileCheckout(this.env,user);
         }
         if(op!=='turn_credentials')return this.dispatch(user,op,args);
@@ -68,7 +71,7 @@ export class OnlineCoordinator {
             if(this.core.one("SELECT 1 n FROM online_legacy WHERE table_name='banned_users' AND json_extract(body,'$.user_id')=? LIMIT 1",user))throw new Error('ACCOUNT_UNAVAILABLE');
             const reply=this.core.command(user,op,args);
             if(op==='profile_card_get'||op==='profile_card_save'||op==='profile_media_save')
-                reply.checkout_available=profileCheckoutEnabled(this.env)&&!!this.env.STRIPE_PROFILE_RETURN_URL;
+                reply.checkout_available=kofiEnabled(this.env)||(profileCheckoutEnabled(this.env)&&!!this.env.STRIPE_PROFILE_RETURN_URL);
             return {reply,events:this.core.events};
         });
     if (committed.events.length) {
@@ -141,6 +144,23 @@ export class OnlineCoordinator {
         if(disallowedRequest(request))return json({error:'CLIENT_NOT_ALLOWED'},403);
         const url=new URL(request.url),path=url.pathname;
         try{
+            if(path.startsWith('/v5/profile/kofi/')){
+                if(!kofiEnabled(this.env))return json({error:'NOT_FOUND'},404);
+                if(path==='/v5/profile/kofi/webhook'&&request.method==='POST'){
+                    const raw=await readText(request,65536);
+                    let event;
+                    try { event=JSON.parse(new URLSearchParams(raw).get('data')); }
+                    catch { return json({error:'BAD_PROFILE_PAYMENT'},400); }
+                    if(!safeEqual(event?.verification_token,this.env.KOFI_PROFILE_TOKEN))return json({error:'AUTH_REQUIRED'},401);
+                    this.ctx.storage.transactionSync(()=>applyKofiPayment(this.core,event));
+                    return json({received:true});
+                }
+                if(request.method==='GET'){
+                    return kofiPage(this.core,path.slice('/v5/profile/kofi/'.length),request.headers.get('Accept-Language')||'')||
+                        json({error:'NOT_FOUND'},404);
+                }
+                return json({error:'NOT_FOUND'},404);
+            }
             if(path==='/v5/profile/payment-webhook'){
                 if(request.method!=='POST'||!profileCheckoutEnabled(this.env))return json({error:'NOT_FOUND'},404);
                 const raw=await readText(request,65536);

@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS online_profile_cards(user_id TEXT PRIMARY KEY REFEREN
 CREATE TABLE IF NOT EXISTS online_profile_payments(payment_id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES online_users(id),paid_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS online_profile_payments_user ON online_profile_payments(user_id);
 CREATE TABLE IF NOT EXISTS online_profile_refunds(payment_id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS online_profile_kofi_orders(code TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES online_users(id),made INTEGER NOT NULL,expires INTEGER NOT NULL,payment_id TEXT);
+CREATE INDEX IF NOT EXISTS online_profile_kofi_orders_user ON online_profile_kofi_orders(user_id,made);
+CREATE INDEX IF NOT EXISTS online_profile_kofi_orders_expiry ON online_profile_kofi_orders(expires);
 CREATE TABLE IF NOT EXISTS online_profile_media(user_id TEXT NOT NULL REFERENCES online_users(id),kind TEXT NOT NULL CHECK(kind IN ('avatar','motion','banner')),id TEXT NOT NULL UNIQUE,body TEXT NOT NULL,updated INTEGER NOT NULL,PRIMARY KEY(user_id,kind));
 CREATE TABLE IF NOT EXISTS online_profile_banner_motion(user_id TEXT PRIMARY KEY REFERENCES online_users(id),id TEXT NOT NULL UNIQUE,body TEXT NOT NULL,updated INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS online_rooms(id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, generation TEXT NOT NULL UNIQUE, owner TEXT NOT NULL, mode TEXT NOT NULL, wire TEXT NOT NULL, content TEXT NOT NULL, rules TEXT NOT NULL, capacity INTEGER NOT NULL, listed INTEGER NOT NULL, joinable INTEGER NOT NULL, expires INTEGER NOT NULL, next_peer INTEGER NOT NULL);
