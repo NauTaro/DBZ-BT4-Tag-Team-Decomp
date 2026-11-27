@@ -264,7 +264,7 @@ static void portrait_face(ImDrawList *dl, SDL_GPUTexture *tex, const ModsCmd &c,
 }
 
 #include "tag_hud.h"
-#include "hud_placement.h"
+#include "../../../include/hud_placement.h"
 void ModsUi_Draw(void) {
     if (gUiPresentW <= 0 || gUiPresentH <= 0 || !Mods_HudRead(&sDraw)) {
         return;

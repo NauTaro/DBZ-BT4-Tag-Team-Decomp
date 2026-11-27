@@ -41,7 +41,7 @@ static uint32_t sPresentationObject;
 #include "menu_labels.h"      /* European menu art and native language selector pictures */
 #include "mods.h"             /* the look script mods ask for (bt3.look) */
 #include "tag_menu_movie.h"
-#include "hud_placement.h"
+#include "../../../include/hud_placement.h"
 #include <math.h>
 
 /* Stage-name overlay: defined here (C) so both the renderer (gs_gpu.c) and the game's menu (menu_c_e.c) can

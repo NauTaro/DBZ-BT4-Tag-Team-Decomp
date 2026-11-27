@@ -1,7 +1,7 @@
 /* Presentation-only battle snapshot; no audio callback reads the game heap. */
 #include <SDL3/SDL.h>
 #include <string.h>
-#include "battle/emotes.h"
+#include "../../../include/battle/emotes.h"
 #include "spatial_audio.h"
 static SDL_SpinLock sLock;
 static struct {int active,listener,secondListener,count,alive[10];float pos[40];Uint64 at;} sWorld;

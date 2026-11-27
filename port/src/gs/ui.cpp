@@ -29,7 +29,7 @@ extern "C" void GsDx9_StripTextureFree(void *);
 #include "ui.h"
 #include "../../../include/battle/emotes.h"
 #include "profile_cards.h"
-#include "hud_placement.h"
+#include "../../../include/hud_placement.h"
 #include <algorithm>
 #include "tag_hud.h"
 #include "../../include/tag_team.h"

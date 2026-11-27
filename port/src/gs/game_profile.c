@@ -1,5 +1,6 @@
 /* Full disc profiles. Selection precedes game data loading; no live data swap. */
 #include "game_profile.h"
+#include "../../include/bt4_goku_costumes.h"
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,12 @@ extern void Port_SettingText(const char *,const char *,char *,int);
 extern void Port_SettingTextSave(const char *,const char *);
 extern void Port_SettingsWrite(void);
 extern int Port_Setting(const char *,int);
+
+void Port_GokuCostumePath(const char *relative, char *path, unsigned capacity) {
+    const char *base = SDL_GetBasePath();
+    snprintf(path, capacity, "%s%s", base ? base : "", relative);
+}
+
 static int sEnglish,sLanguage,sExternal,sSkip,sReady[3];
 static int sMenuActive,sMenuChoice,sMenuAlpha;
 void Port_GameProfileMenuSet(int active,int choice,int alpha){

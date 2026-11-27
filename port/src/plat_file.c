@@ -10,7 +10,6 @@
 #include <ctype.h>
 #include <stdint.h>
 #include "bt4_goku_costumes.h"
-#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,11 +165,6 @@ int ADXF_LoadPartitionNw(int ptid, char *fname, void *dir, void *ptinfo) {
 
 int ADXF_GetPtStat(int ptid) {
     return sPartDir[ptid & 7][0] != '\0' ? STAT_READEND : STAT_STOP;
-}
-
-void Port_GokuCostumePath(const char *relative, char *path, unsigned capacity) {
-    const char *base = SDL_GetBasePath();
-    snprintf(path, capacity, "%s%s", base ? base : "", relative);
 }
 
 int Port_GokuCostumesReady(void) {
