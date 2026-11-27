@@ -256,7 +256,7 @@ extern void Port_TagModeOptions(int,int);
 extern int Port_TagFreeForAll(void),Port_TagQueueWaiting(int);
 extern void Port_NetRulesSet(int type, int dp, int time);
 extern const char *Port_NetNameGet(void);
-extern void Port_UiProfileHeader(const char *name, f32 left, f32 top, f32 right, f32 bottom);
+extern void Port_UiProfileHeader(const char *name, s32 left, s32 top, s32 right, s32 bottom);
 extern void Port_NetNameSave(const char *name);
 extern int Port_LobbyStartCode(int host, const char *code);
 extern const char *Port_NetLanAddress(void);                        /* this PC's address on its own network, "" not known */
@@ -6016,7 +6016,7 @@ static void Tb_DrawText(void) {
     /* (no status and no title under it: "ONLINE" was not whether the game is connected, and the title is the
        screen's heading) */
     if(!sTagHomeEntry&&(sTb->mode==TB_PROFILE||sTb->mode==TB_NAME)){
-        Port_UiProfileHeader(Port_NetNameGet(),Ps_X(300.0f),Ps_Y(10.0f),Ps_X(504.0f),Ps_Y(44.0f));
+        Port_UiProfileHeader(Port_NetNameGet(),(s32)Ps_X(300.0f),(s32)Ps_Y(10.0f),(s32)Ps_X(504.0f),(s32)Ps_Y(44.0f));
     }else{
         Port_UiProfileHeader(NULL,0,0,0,0);
     }

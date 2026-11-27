@@ -3182,11 +3182,11 @@ static std::mutex sBannerLock;
 static OnlineBanner sBanner;
 struct ProfileHeader {
     char name[32]={};
-    float left=0,top=0,right=0,bottom=0;
+    int left=0,top=0,right=0,bottom=0;
     Uint64 seen=0;
 };
 static ProfileHeader sProfileHeader;
-extern "C" void Port_UiProfileHeader(const char *name,float left,float top,float right,float bottom) {
+extern "C" void Port_UiProfileHeader(const char *name,int left,int top,int right,int bottom) {
     std::lock_guard<std::mutex> guard(sBannerLock);
     if(!name){sProfileHeader={};return;}
     SDL_strlcpy(sProfileHeader.name,name,sizeof(sProfileHeader.name));
@@ -3195,6 +3195,7 @@ extern "C" void Port_UiProfileHeader(const char *name,float left,float top,float
     sProfileHeader.seen=SDL_GetTicks();
 }
 static void profile_header_draw(const ProfileHeader &header) {
+    if(header.right<=header.left||header.bottom<=header.top)return;
     static Uint64 nextRequest=0;
     Bt4ProfileCard card={};
     if(getenv("BT4_RENDER_TEST")){
