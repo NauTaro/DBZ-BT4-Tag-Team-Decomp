@@ -256,7 +256,7 @@ extern void Port_TagModeOptions(int,int);
 extern int Port_TagFreeForAll(void),Port_TagQueueWaiting(int);
 extern void Port_NetRulesSet(int type, int dp, int time);
 extern const char *Port_NetNameGet(void);
-extern void Port_UiProfileHeader(const char *name, s32 left, s32 top, s32 right, s32 bottom);
+extern void Port_UiProfileHeader(const char *name, s32 left, s32 top, s32 right, s32 bottom, s32 dragonBalls);
 extern void Port_NetNameSave(const char *name);
 extern int Port_LobbyStartCode(int host, const char *code);
 extern const char *Port_NetLanAddress(void);                        /* this PC's address on its own network, "" not known */
@@ -5879,8 +5879,6 @@ static void Tb_Draw(void) {
         break;
     }
     Tb_PageIn(0);
-    if(!sTagHomeEntry&&sTb->mode!=TB_PROFILE&&sTb->mode!=TB_NAME)
-        Ps_Panel(TBO_KIT_WINDOW, 300.0f+Tb_TagCardShift(), 10.0f, 504.0f+Tb_TagCardShift(), 44.0f, 0x80);
     {   /* the game's box with the hosts' line (the buttons under it: Tb_DrawText); in a lobby what happened last */
         u16 *box = NULL;
 
@@ -6015,17 +6013,16 @@ static void Tb_DrawText(void) {
     }
     /* (no status and no title under it: "ONLINE" was not whether the game is connected, and the title is the
        screen's heading) */
-    if(!sTagHomeEntry&&(sTb->mode==TB_PROFILE||sTb->mode==TB_NAME)){
-        const f32 right=512.0f-Ps_Left()-16.0f;
-        Port_UiProfileHeader(Port_NetNameGet(),(s32)Ps_X(right-196.0f),(s32)Ps_Y(14.0f),
-                            (s32)Ps_X(right),(s32)Ps_Y(79.0f));
+    if(!sTagHomeEntry){
+        const s32 full=sTb->mode==TB_PROFILE||sTb->mode==TB_NAME;
+        const f32 right=full?512.0f-Ps_Left()-16.0f:504.0f+Tb_TagCardShift();
+        const f32 width=full?196.0f:204.0f;
+        Bt4RankedView ranked;
+        Tb_RankedUiView(&ranked);
+        Port_UiProfileHeader(Port_NetNameGet(),(s32)Ps_X(right-width),(s32)Ps_Y(full?14.0f:10.0f),
+                            (s32)Ps_X(right),(s32)Ps_Y(full?79.0f:44.0f),ranked.dragonBalls!=0);
     }else{
-        Port_UiProfileHeader(NULL,0,0,0,0);
-    }
-    if(!sTagHomeEntry&&sTb->mode!=TB_PROFILE&&sTb->mode!=TB_NAME){
-        Bt4RankedView ranked;Tb_RankedUiView(&ranked);
-        if(ranked.dragonBalls)Tb_DragonBall(327+Tb_TagCardShift(),27,8.5f,ranked.dragonBalls,1);
-        Ps_TextRaw(322.0f+Tb_TagCardShift()+(ranked.dragonBalls?20:0), Ps_TextTop(27.0f, 0.6f), (char *)Port_NetNameGet(), 0.6f, 166.0f-(ranked.dragonBalls?20:0), 1);
+        Port_UiProfileHeader(NULL,0,0,0,0,0);
     }
     if (sTb->mode == TB_BLOCK) {
         Tb_DrawBlockText();
@@ -6150,6 +6147,20 @@ s32 PortTbo_Run(void) {
     }
     Port_EscQuit(0);
     Tb_WinInit();
+    if(!sTagHomeEntry&&gMenuArc5){
+        extern void Port_CacheFighterNames(void *,void *);
+        void *roster=Sprite_Unpack(MPACK_AT(gMenuArc5,2),NULL,NULL);
+        if(roster){
+            Port_CacheFighterNames(MPACK_AT(roster,43),MPACK_AT(roster,44));
+            Heap_Free(roster);
+            if(getenv("BT4_RENDER_TEST")&&getenv("BT4_PROFILE_ROSTER_AUDIT")){
+                extern int Port_CachedFighterName(int,char *,int);
+                char name[80];
+                for(s32 id=0;id<256;++id)
+                    if(Port_CachedFighterName(id,name,sizeof(name)))fprintf(stderr,"profile roster %03d %s\n",id,name);
+            }
+        }
+    }
     if (getenv("BT4_RENDER_TBO") != NULL) {
         const char *which = getenv("BT4_RENDER_TBO");
         if(!strcmp(which,"tag-quick-wait")&&getenv("BT4_RENDER_TEST")){sTb->tagQuick=4;Tb_SetMode(TB_TAG_ROOM);}
@@ -6436,6 +6447,7 @@ s32 PortTbo_Run(void) {
     Port_EscQuit(1);
     Port_TextMode(0);
     Tb_WinTerm();
+    Port_UiProfileHeader(NULL,0,0,0,0,0);
     if(!Tb_TagPrivate()&&!getenv("BT4_RENDER_TEST"))Port_OnlinePresence(0);
     if (sTb->train != 2) Port_TagClose();
     if (!sTb->train && (sTb->mode == TB_WAIT || sTb->mode == TB_SPAR)) {

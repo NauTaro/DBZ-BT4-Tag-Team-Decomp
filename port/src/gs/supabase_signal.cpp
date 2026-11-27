@@ -39,7 +39,7 @@ std::string str(const Sj &j,const char *key){auto i=j.find(key);return i!=j.end(
 struct Job{
     int consumer=0;unsigned serial=0;std::string op;Sj args;
     unsigned session=0;int project=-1;std::string generation;
-    Uint64 notBefore=0;
+    Uint64 notBefore=0,expires=0;
 };
 struct Identity {
     std::string access,refresh,user,file;Uint64 renewAt=0;
@@ -309,7 +309,8 @@ static int entry(void*){
         }
         if(have){
             Sj reply;bool admit=bt4route::admission(job.op),blocked=false;
-            if((job.project>=0&&job.project!=activeProject)||
+            if(job.expires&&now>=job.expires){reply={{"error","TIMEOUT"}};blocked=true;}
+            else if((job.project>=0&&job.project!=activeProject)||
                 (!job.generation.empty()&&job.generation!=pinnedGeneration&&job.op!="leave"&&job.op!="ranked_report"&&job.op!="match_report"&&job.consumer!=5)){
                 reply={{"error","ROOM_ROUTE_EXPIRED"}};blocked=true;
             }
@@ -399,17 +400,21 @@ extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,con
     if(consumer<3&&strcmp(op,"counts")&&strcmp(op,"list"))state.realtime|=1u<<consumer;
     if(!strcmp(op,"cancel"))state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==consumer&&(j.op=="queue"||j.op=="ranked_queue");}),state.jobs.end());
     Job job;job.consumer=consumer;job.serial=serial;job.op=op;job.args=std::move(body);job.session=state.sessions[consumer];
+    if(job.op=="profile_card_save"||job.op=="profile_media_save")job.expires=SDL_GetTicks()+19000;
     // Admission uses the current signed authority. Room work is pinned when
     // enqueued, so a late operation cannot mutate a room on another project.
     if(!bt4route::admission(job.op)&&job.op!="counts"&&job.op!="presence"&&consumer!=4){
         job.project=state.projectIndex.load();job.generation=state.roomGeneration;
     }
     if(job.op=="leave"&&str(job.args,"generation").empty()&&!job.generation.empty())job.args["generation"]=job.generation;
-    state.jobs.push_back(std::move(job));wake(nullptr);return 1;
+    if(job.expires||job.op=="profile_card_get")state.jobs.push_front(std::move(job));
+    else state.jobs.push_back(std::move(job));
+    wake(nullptr);return 1;
 }
 extern "C" int Bt4Signal_Read(int consumer,char *out,size_t capacity){
     if(consumer<0||consumer>5||!out||!capacity)return 0;std::lock_guard<std::mutex> g(state.lock);
-    auto &events=state.events[consumer];if(events.empty())return 0;if(events.front().size()+1>capacity)return -1;
+    auto &events=state.events[consumer];if(events.empty())return 0;
+    if(events.front().size()+1>capacity){if(consumer==4)events.pop_front();return -1;}
     memcpy(out,events.front().c_str(),events.front().size()+1);events.pop_front();return 1;
 }
 extern "C" void Bt4Signal_Close(void){

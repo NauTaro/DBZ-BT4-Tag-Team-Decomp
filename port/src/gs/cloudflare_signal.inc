@@ -102,6 +102,7 @@ static int cloudEntry(void*){
         if(authSent&&!ready){identities[2].access.clear();identities[2].renewAt=0;identityReady=false;}
         socket.reset();ready=false;authSent=false;state.status=0;
         for(auto &item:pending){Job j=std::move(item.second.first);j.notBefore=SDL_GetTicks()+1000;
+            if(j.expires){complete(j,Sj{{"error","TIMEOUT"}});continue;}
             std::lock_guard<std::mutex> guard(state.lock);if(state.jobs.size()<64)state.jobs.push_front(std::move(j));}
         pending.clear();retry=SDL_GetTicks()+std::min(10000u,500u<<std::min(4u,failures++));
     };
@@ -164,6 +165,7 @@ static int cloudEntry(void*){
             if(it!=state.jobs.end()){job=std::move(*it);state.jobs.erase(it);have=true;}}
         if(have){
             if(!current(job)&&job.op!="leave"&&job.op!="cancel"&&job.op!="ranked_report"&&job.op!="match_report")continue;
+            if(job.expires&&now>=job.expires){complete(job,Sj{{"error","TIMEOUT"}});continue;}
             if(bt4route::admission(job.op)&&Update_OnlineRequired()){complete(job,Sj{{"error","UPDATE_REQUIRED"}});continue;}
             if(bt4route::admission(job.op))job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",2}};
             if(httpFallback){

@@ -11,7 +11,7 @@
 // The codec uses default decoding flags and reports errors via return values.
 #define STBI_NO_THREAD_LOCALS
 #define STBI_NO_FAILURE_STRINGS
-#define STBI_MAX_DIMENSIONS 2048
+#define STBI_MAX_DIMENSIONS 4096
 #include "../../third_party/stb/stb_image.h"
 // Same upstream revision as the private decoder.
 #define STB_IMAGE_WRITE_STATIC
@@ -64,7 +64,7 @@ static bool profilePixels(const std::string &input,unsigned char *out,size_t byt
 
 // Count GIF image blocks before decoding so a short compressed file cannot allocate
 // an unbounded stack of frames. The decoder also checks every block it consumes.
-static bool boundedProfileGif(const unsigned char *data,size_t size){
+static bool boundedProfileGif(const unsigned char *data,size_t size,int width,int height){
     if(size<14||memcmp(data,"GIF",3))return false;
     auto tableSize=[](unsigned flags)->size_t{return flags&128?size_t(3)<<(1+(flags&7)):0;};
     size_t pos=13+tableSize(data[10]);
@@ -85,7 +85,7 @@ static bool boundedProfileGif(const unsigned char *data,size_t size){
             if(pos==size)return false;
             ++pos;
         }else if(marker==0x2c){
-            if(size-pos<9||++count>48)return false;
+            if(size-pos<9||++count>240||size_t(count)*width*height>16*1024*1024)return false;
             pos+=9+tableSize(data[pos+8]);
             if(pos>=size)return false;
             ++pos;
@@ -121,11 +121,24 @@ struct ProfileImageSource {
     std::vector<int> delays;
     int width=0,height=0;
 };
-static ProfileImageSource loadProfileImage(const char *filename,const std::string &kind){
-    constexpr Sint64 maxSize=4*1024*1024;
+static ProfileImageSource loadProfileImage(const char *filename,const std::string &kind,int *error=nullptr){
+    constexpr Sint64 maxSize=10*1024*1024;
+    if(error)*error=BT4_PROFILE_IMPORT_INVALID;
     SDL_IOStream *stream=SDL_IOFromFile(filename,"rb");
     if(!stream)return {};
     const Sint64 size=SDL_GetIOSize(stream);
+    if(kind=="avatar"){
+        char signature[6];
+        const bool gif=SDL_ReadIO(stream,signature,sizeof(signature))==sizeof(signature)&&
+            (!memcmp(signature,"GIF87a",6)||!memcmp(signature,"GIF89a",6));
+        if(gif){
+            SDL_CloseIO(stream);
+            if(error)*error=BT4_PROFILE_IMPORT_DONORS;
+            return {};
+        }
+        if(SDL_SeekIO(stream,0,SDL_IO_SEEK_SET)<0){SDL_CloseIO(stream);return {};}
+    }
+    if(size>maxSize&&error)*error=BT4_PROFILE_IMPORT_SIZE;
     std::vector<unsigned char> file(size>0&&size<=maxSize?size_t(size):0);
     const bool loaded=!file.empty()&&SDL_ReadIO(stream,file.data(),file.size())==file.size();
     SDL_CloseIO(stream);
@@ -136,8 +149,8 @@ static ProfileImageSource loadProfileImage(const char *filename,const std::strin
     if(motion!=gif)return {};
     int width=0,height=0,channels=0,count=1,*delays=nullptr;
     if(!stbi_info_from_memory(file.data(),(int)file.size(),&width,&height,&channels)||
-        width<1||height<1||width>2048||height>2048)return {};
-    if(motion&&(width>512||height>512||!boundedProfileGif(file.data(),file.size())))return {};
+        width<1||height<1||width>STBI_MAX_DIMENSIONS||height>STBI_MAX_DIMENSIONS)return {};
+    if(motion&&!boundedProfileGif(file.data(),file.size(),width,height))return {};
     unsigned char *pixels=motion?stbi_load_gif_from_memory(file.data(),(int)file.size(),&delays,&width,&height,&count,&channels,4):
         stbi_load_from_memory(file.data(),(int)file.size(),&width,&height,&channels,4);
     if(!pixels||count<1||(format=="banner_motion"&&count<2)){stbi_image_free(pixels);stbi_image_free(delays);return {};}

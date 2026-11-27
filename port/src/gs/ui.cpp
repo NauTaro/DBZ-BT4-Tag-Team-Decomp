@@ -3194,15 +3194,17 @@ static OnlineBanner sBanner;
 struct ProfileHeader {
     char name[32]={};
     int left=0,top=0,right=0,bottom=0;
+    bool dragonBall=false;
     Uint64 seen=0;
 };
 static ProfileHeader sProfileHeader;
-extern "C" void Port_UiProfileHeader(const char *name,int left,int top,int right,int bottom) {
+extern "C" void Port_UiProfileHeader(const char *name,int left,int top,int right,int bottom,int dragonBalls) {
     std::lock_guard<std::mutex> guard(sBannerLock);
     if(!name){sProfileHeader={};return;}
     SDL_strlcpy(sProfileHeader.name,name,sizeof(sProfileHeader.name));
     sProfileHeader.left=left;sProfileHeader.top=top;
     sProfileHeader.right=right;sProfileHeader.bottom=bottom;
+    sProfileHeader.dragonBall=dragonBalls!=0;
     sProfileHeader.seen=SDL_GetTicks();
 }
 static void profile_header_draw(const ProfileHeader &header) {
@@ -3216,7 +3218,7 @@ static void profile_header_draw(const ProfileHeader &header) {
         }
     } else {
         const int state=Port_ProfileCardView(&card);
-        if(state<=0&&SDL_GetTicks()>=nextRequest){
+        if(state<=0&&!sProfileEditor&&SDL_GetTicks()>=nextRequest){
             Port_ProfileCardRequest(nullptr);
             nextRequest=SDL_GetTicks()+10000;
         }
@@ -3224,7 +3226,7 @@ static void profile_header_draw(const ProfileHeader &header) {
     const float sx=gUiPresentW/512.0f,sy=gUiPresentH/448.0f;
     profile_header_card(ImGui::GetBackgroundDrawList(),
         ImVec2(gUiPresentX+header.left*sx,gUiPresentY+header.top*sy),
-        (header.right-header.left)*sx,(header.bottom-header.top)*sy,header.name,card);
+        (header.right-header.left)*sx,(header.bottom-header.top)*sy,header.name,card,header.dragonBall);
 }
 struct RankedToast {Uint64 started=0;int rating=0,delta=0;};
 static RankedToast sRankedToast;

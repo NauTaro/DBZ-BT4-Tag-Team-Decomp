@@ -17,6 +17,9 @@ typedef struct {
 void Port_ProfileCardForPlayer(const char *name, Bt4ProfileCard *out);
 void Port_ProfileCardForTagPlayer(const char *name, Bt4ProfileCard *out);
 int Port_ProfileCardView(Bt4ProfileCard *out);
+enum Bt4ProfileCardStatus { BT4_CARD_FAILED=-1, BT4_CARD_EMPTY, BT4_CARD_LOADING, BT4_CARD_READY, BT4_CARD_SAVING, BT4_CARD_SAVE_FAILED };
+enum Bt4ProfileImportStatus { BT4_PROFILE_IMPORT_INVALID=-1, BT4_PROFILE_IMPORT_DONORS=-2, BT4_PROFILE_IMPORT_SIZE=-3 };
+int Port_ProfileCardError(char *out, int capacity);
 void Port_ProfileCardRequest(const Bt4ProfileCard *card);
 int Port_ProfileMediaSave(const char *kind, const char *path);
 int Port_ProfileMediaRead(const char *id, unsigned char pixels[BT4_PROFILE_PIXEL_CAPACITY], int *width, int *height, int *count, int delays[6]);

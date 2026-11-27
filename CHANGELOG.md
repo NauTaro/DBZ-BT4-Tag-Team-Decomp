@@ -2,7 +2,9 @@
 
 - New profile photos appear sharper. Ranked match cards now show a larger portrait, the player's nickname, and their points, wins, and losses.
 - Your personalized card now appears on the right of the Profile screen with a larger portrait and a cleaner frame.
+- Your personalized card also appears throughout Tenkaichi Budokai Online wherever your name was shown.
 - Pick any RGB color for your online name and banner.
+- Upload profile photos and banners up to 10 MB. Club members can upload a GIF from the same Profile Photo button. Character portraits are listed using the game's language, and failed uploads can be retried.
 - Player cards stay visible on the Modern HUD. Show or hide player cards and their ping separately in F1 → UI.
 - Open F1 → UI → Customize HUD to move battle HUD elements, including online profile cards and Tag Team indicators. Your layout saves when you release an element.
 - Added the BT4 unlock code to the main menu. Hold L1 + R1 and enter ↘, Triangle, ↙, Triangle, ↑ on the D-pad.

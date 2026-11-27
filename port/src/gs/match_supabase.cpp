@@ -745,6 +745,8 @@ std::string nickname,profileProject;
 unsigned cardRequest=0;
 Uint64 cardDeadline=0;
 int cardState=0;
+bool cardAvailable=false;
+std::string cardError;
 Bt4ProfileCard ownCard={};
 unsigned checkoutRequest=0;
 Uint64 checkoutDeadline=0;
@@ -771,7 +773,7 @@ void profileRoute(){
     profileProject=project;
     rankedStatusRequest=rankedTopRequest=nicknameRequest=directoryRequest=0;
     directory={};nextDirectory=0;
-    cardRequest=0;cardState=0;ownCard={};profileMedia.clear();
+    cardRequest=0;cardState=0;cardAvailable=false;cardError.clear();ownCard={};profileMedia.clear();
     checkoutRequest=0;checkoutState=0;checkoutUrl.clear();
     nextRankedStatus=nextRankedTop=0;
     rankedView.state=0;rankedView.rating=rankedView.wins=rankedView.losses=0;
@@ -790,7 +792,8 @@ unsigned profileRequest(const char *op,const char *args){
 }
 void profilePump(Uint64 now){
     char buffer[24577];
-    while(Bt4Signal_Read(4,buffer,sizeof(buffer))>0){
+    while(int read=Bt4Signal_Read(4,buffer,sizeof(buffer))){
+        if(read<0)continue;
         Dj event=Dj::parse(buffer,nullptr,false);unsigned id=number(event,"serial");
         auto project=text(event,"project");
         if(!id||(!project.empty()&&project!=profileProject))continue;
@@ -832,8 +835,12 @@ void profilePump(Uint64 now){
         if(id==cardRequest){
             cardRequest=0;
             const auto premium=body->find("premium");
-            cardState=premium!=body->end()&&premium->is_boolean()?2:-1;
-            if(cardState==2)ownCard=profileCard(*body);
+            if(premium!=body->end()&&premium->is_boolean()){
+                ownCard=profileCard(*body);cardAvailable=true;cardError.clear();cardState=BT4_CARD_READY;
+            }else{
+                cardError=text(*body,"error");
+                cardState=cardAvailable?BT4_CARD_SAVE_FAILED:BT4_CARD_FAILED;
+            }
             continue;
         }
         if(id==nicknameRequest){
@@ -905,7 +912,9 @@ void profilePump(Uint64 now){
         if(rankedView.topState==0)rankedView.topState=-1;
     }
     if(nicknameRequest&&now>=nicknameDeadline){nicknameRequest=0;nicknameState=BT4_NICKNAME_UNAVAILABLE;nextNicknameCheck=now+15000;}
-    if(cardRequest&&now>=cardDeadline){cardRequest=0;cardState=-1;}
+    if(cardRequest&&now>=cardDeadline){
+        cardRequest=0;cardError="TIMEOUT";cardState=cardAvailable?BT4_CARD_SAVE_FAILED:BT4_CARD_FAILED;
+    }
     if(checkoutRequest&&now>=checkoutDeadline){checkoutRequest=0;checkoutState=-1;}
 }
 }
@@ -927,6 +936,12 @@ extern "C" int Port_ProfileCardView(Bt4ProfileCard *out){
     std::lock_guard<std::mutex> guard(rankedLock);
     profileRoute();profilePump(SDL_GetTicks());*out=ownCard;return cardState;
 }
+extern "C" int Port_ProfileCardError(char *out,int capacity){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    if(capacity<=0)return 0;
+    SDL_strlcpy(out,cardError.c_str(),size_t(capacity));
+    return !cardError.empty();
+}
 extern "C" void Port_ProfileCardRequest(const Bt4ProfileCard *card){
     std::lock_guard<std::mutex> guard(rankedLock);
     profileRoute();
@@ -938,8 +953,10 @@ extern "C" void Port_ProfileCardRequest(const Bt4ProfileCard *card){
         if(card->hasBannerRgb)args["card"]["banner_rgb"]=card->bannerRgb;
     }
     cardRequest=profileRequest(card?"profile_card_save":"profile_card_get",args.dump().c_str());
-    cardDeadline=SDL_GetTicks()+ProfileTimeout;
-    cardState=cardRequest?1:-1;
+    cardDeadline=SDL_GetTicks()+20000;
+    cardError=cardRequest?"":"SIGNALING_UNAVAILABLE";
+    cardState=cardRequest?(cardAvailable?BT4_CARD_SAVING:BT4_CARD_LOADING):
+        (cardAvailable?BT4_CARD_SAVE_FAILED:BT4_CARD_FAILED);
 }
 static int profileMediaSubmit(const Dj &args){
     if(args.is_null()||args.empty())return 0;
@@ -947,16 +964,19 @@ static int profileMediaSubmit(const Dj &args){
     profileRoute();
     if(cardRequest)return 0;
     cardRequest=profileRequest("profile_media_save",args.dump().c_str());
-    cardDeadline=SDL_GetTicks()+ProfileTimeout;
-    cardState=cardRequest?1:-1;
+    cardDeadline=SDL_GetTicks()+20000;
+    cardError=cardRequest?"":"SIGNALING_UNAVAILABLE";
+    cardState=cardRequest?(cardAvailable?BT4_CARD_SAVING:BT4_CARD_LOADING):
+        (cardAvailable?BT4_CARD_SAVE_FAILED:BT4_CARD_FAILED);
     return cardRequest!=0;
 }
 extern "C" int Port_ProfileMediaSave(const char *kind,const char *path){
     return profileMediaSubmit(path?profileImage(path,kind):Dj{{"kind",kind},{"remove",true}});
 }
 extern "C" int Port_ProfileDraftFile(const char *kind,const char *path){
-    auto image=loadProfileImage(path,kind);
-    if(image.pixels.empty())return 0;
+    int error=-1;
+    auto image=loadProfileImage(path,kind,&error);
+    if(image.pixels.empty())return error;
     std::lock_guard<std::mutex> guard(profileDraftLock);
     profileDraft=std::move(image);
     return 1;

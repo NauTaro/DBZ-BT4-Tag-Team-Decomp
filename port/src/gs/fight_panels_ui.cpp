@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <SDL3/SDL.h>
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -203,12 +204,35 @@ extern "C" int Port_ProfileRosterPortrait(int chara,unsigned char *rgba) {
     return Port_ProfilePortraitPath(chara,path,sizeof(path))&&portrait_rgba(path,rgba);
 }
 extern "C" int Port_CachedFighterName(int,char *,int);
+extern "C" int Port_GameProfileLanguage(void);
+extern "C" int Port_TrLine(const char *,char *,int);
 extern "C" int Port_ProfileRosterName(int chara,char *name,int capacity) {
     char path[FP_PATH];
     if(!Port_ProfilePortraitPath(chara,path,sizeof(path)))return 0;
-    if(Port_CachedFighterName(chara,name,capacity)&&name[0])return 1;
-    if (capacity <= 0) return 0;
-    SDL_snprintf(name, capacity, "#%03d", chara);
+    if(!Port_CachedFighterName(chara,name,capacity)||!name[0])return 0;
+    if(Port_GameProfileLanguage()!=2)return 1;
+    char translated[80];
+    if(Port_TrLine(name,translated,sizeof(translated))){
+        SDL_strlcpy(name,translated,capacity);
+        return 1;
+    }
+    static const char *const terms[][2]={
+        {"(Early)","(Início)"},{"(Mid)","(Meio)"},{"(End)","(Fim)"},{"(Teen)","(Jovem)"},{"(Kid)","(Criança)"},
+        {"(Youth)","(Jovem)"},{"(Future)","(Futuro)"},{"(Sword)","(Espada)"},{"(Melee)","(Corpo a corpo)"},
+        {"Super Saiyan","Super Saiyajin"},{"Great Ape","Oozaru"},{"Golden Frieza","Freeza Dourado"},
+        {"Ultimate Gohan","Gohan Supremo"},{"Perfect Cell","Cell Perfeito"},{"Great Saiyaman","Grande Saiyaman"},
+        {"Frieza","Freeza"},{"(1st Form)","(1ª Forma)"},{"(2nd Form)","(2ª Forma)"},{"(3rd Form)","(3ª Forma)"},
+        {"First Form","Primeira Forma"},{"Second Form","Segunda Forma"},{"Third Form","Terceira Forma"},
+        {"Final Form","Forma Final"},{"Full Power","Poder Máximo"},{"Ultra Instinct","Instinto Superior"},
+        {"Legendary","Lendário"},{"Corrupted","Corrompido"},{"Evil","Maligno"},{"Android","Androide"},
+        {"Fused Zamasu","Zamasu Fundido"},{"Super Hero","Super-Herói"},{"Hero","Herói"},{"Namekian","Namekuseijin"}
+    };
+    std::string display=name;
+    for(const auto &term:terms){
+        const auto position=display.find(term[0]);
+        if(position!=std::string::npos)display.replace(position,strlen(term[0]),term[1]);
+    }
+    SDL_strlcpy(name,display.c_str(),capacity);
     return 1;
 }
 

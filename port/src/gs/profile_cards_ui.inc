@@ -116,7 +116,7 @@ static bool profile_color_edit(const char *id,ImU32 ink,unsigned &color) {
     color=((packed&255)<<16)|(packed&0xff00)|((packed>>16)&255);
     return true;
 }
-static void profile_header_card(ImDrawList *dl,ImVec2 p,float w,float h,const char *name,const Bt4ProfileCard &card) {
+static void profile_header_card(ImDrawList *dl,ImVec2 p,float w,float h,const char *name,const Bt4ProfileCard &card,bool dragonBall) {
     const float photo=h*0.92f, radius=h*0.09f;
     const ImVec2 end(p.x+w,p.y+h), face(p.x+h*0.04f,p.y+h*0.04f);
     const ImVec2 faceEnd(face.x+photo,face.y+photo);
@@ -145,7 +145,8 @@ static void profile_header_card(ImDrawList *dl,ImVec2 p,float w,float h,const ch
     const ImVec2 textStart(bannerStart.x+h*0.12f,bannerStart.y),textEnd(bannerEnd.x-h*0.1f,bannerEnd.y);
     const float size=h*0.34f, y=(textStart.y+textEnd.y-size)*0.5f;
     const char *endName=nullptr;
-    font->CalcTextSizeA(size,fmaxf(0,textEnd.x-textStart.x-(card.decoration?h*0.20f:0)),0,name,nullptr,&endName);
+    const float reserved=(card.decoration?h*0.20f:0)+(dragonBall?h*0.37f:0);
+    font->CalcTextSizeA(size,fmaxf(0,textEnd.x-textStart.x-reserved),0,name,nullptr,&endName);
     if(endName&&endName>name){
         dl->AddText(font,size,ImVec2(textStart.x,y+1),IM_COL32(0,0,0,220),name,endName);
         dl->AddText(font,size,ImVec2(textStart.x,y),profile_name_ink(card),name,endName);
@@ -155,6 +156,12 @@ static void profile_header_card(ImDrawList *dl,ImVec2 p,float w,float h,const ch
         const float r=h*0.07f;
         dl->AddQuadFilled(ImVec2(center.x,center.y-r),ImVec2(center.x+r,center.y),
                          ImVec2(center.x,center.y+r),ImVec2(center.x-r,center.y),accent);
+    }
+    if(dragonBall){
+        const ImVec2 center(textEnd.x-h*(card.decoration?0.43f:0.15f),(bannerStart.y+bannerEnd.y)/2);
+        dl->AddCircleFilled(center,h*0.135f,IM_COL32(255,170,38,255));
+        dl->AddCircleFilled(ImVec2(center.x-h*0.034f,center.y-h*0.047f),h*0.036f,IM_COL32(255,228,151,255));
+        dl->AddCircleFilled(ImVec2(center.x+h*0.024f,center.y+h*0.017f),h*0.041f,IM_COL32(176,55,24,255),5);
     }
 }
 static void profile_card_draw(ImDrawList *dl, ImVec2 p, float w, float h, const char *name, const Bt4ProfileCard &card,
@@ -386,6 +393,11 @@ static void profile_ranked_encounter(ImDrawList *dl, ImVec2 p, float u, const ch
 static std::atomic<int> sProfilePicker{0};
 static std::atomic<unsigned> sProfileCropSequence{0};
 static bool sRosterCrop=false;
+static const char *profile_donors_only() {
+    return profile_label("You must be a member of the supporters club to do this.",
+        "Debes formar parte del club de donadores para realizar esta acción.",
+        "Você precisa fazer parte do clube de doadores para realizar esta ação.");
+}
 static void profile_crop_editor(float u) {
     static float x=0.5f,y=0.5f,zoom=1.0f;
     static SDL_GPUTexture *texture=nullptr;
@@ -437,11 +449,28 @@ static void profile_crop_editor(float u) {
         sRosterCrop=false;
     }
 }
+struct ProfileImport {const char *kind;char *path;};
+static int SDLCALL profile_decode_selected(void *data) {
+    auto *file=static_cast<ProfileImport *>(data);
+    const int status=Port_ProfileDraftFile(file->kind,file->path);
+    SDL_free(file->path);
+    delete file;
+    if(status>0)++sProfileCropSequence;
+    sProfilePicker=status>0?2:status;
+    return 0;
+}
 static void SDLCALL profile_media_selected(void *kind,const char *const *paths,int) {
-    const bool selected=paths&&*paths;
-    const bool success=selected&&Port_ProfileDraftFile((const char *)kind,*paths);
-    if(success)++sProfileCropSequence;
-    sProfilePicker=success?2:(!selected&&paths)?0:-1;
+    if(!paths||!*paths){sProfilePicker=paths?0:BT4_PROFILE_IMPORT_INVALID;return;}
+    auto *file=new ProfileImport{static_cast<const char *>(kind),SDL_strdup(*paths)};
+    if(file->path){
+        if(auto *thread=SDL_CreateThread(profile_decode_selected,"Profile image import",file)){
+            SDL_DetachThread(thread);
+            return;
+        }
+    }
+    SDL_free(file->path);
+    delete file;
+    sProfilePicker=BT4_PROFILE_IMPORT_INVALID;
 }
 
 static void profile_roster_picker(float u) {
@@ -453,11 +482,16 @@ static void profile_roster_picker(float u) {
         filter.Clear();count=0;
         for(int id=0;id<256;++id)if(Port_ProfileRosterName(id,entries[count].name,sizeof(entries[count].name)))
             entries[count++].id=id;
+        std::stable_sort(entries,entries+count,[](const Entry &a,const Entry &b){
+            return SDL_strcasecmp(a.name,b.name)<0;
+        });
         ImGui::OpenPopup("##bt4-roster-photo");
     }
     ImGui::SetNextWindowSize(ImVec2(320*u,0),ImGuiCond_Appearing);
     if(ImGui::BeginPopup("##bt4-roster-photo")) {
         filter.Draw(profile_label("Search","Buscar","Buscar"),-1);
+        if(!count)ImGui::TextUnformatted(profile_label("Character names are unavailable.",
+            "No se pudieron cargar los nombres de los personajes.","Não foi possível carregar os nomes dos personagens."));
         if(ImGui::BeginChild("##characters",ImVec2(0,224*u))) {
             for(int i=0;i<count;++i)if(filter.PassFilter(entries[i].name)) {
                 ImGui::PushID(entries[i].id);
@@ -480,21 +514,21 @@ static void profile_media_control(const char *kind,const char *label,const char 
     static const SDL_DialogFileFilter photo[]={{"PNG / JPEG","png;jpg;jpeg"}};
     static const SDL_DialogFileFilter gif[]={{"GIF","gif"}};
     static const SDL_DialogFileFilter anyAvatar[]={{"PNG / JPEG / GIF","png;jpg;jpeg;gif"}};
-    const bool premiumAvatar=strcmp(kind,"avatar_auto")==0;
+    const bool avatar=strcmp(kind,"avatar_auto")==0||strcmp(kind,"avatar")==0;
     ImGui::PushID(kind);
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
     ImGui::SameLine(172*u);
-    const char *pick=*id?profile_label("Change","Cambiar","Alterar"):profile_label("Upload","Subir","Enviar");
+    const char *pick=!avatar&&*id?profile_label("Change","Cambiar","Alterar"):profile_label("Upload","Subir","Enviar");
     if (ImGui::Button(pick,ImVec2(88*u,0))) {
         sRosterCrop=false;
         sProfilePicker=1;
         SDL_ShowOpenFileDialog(profile_media_selected,const_cast<char *>(kind),SDL_GetKeyboardFocus(),
-            premiumAvatar?anyAvatar:animated?gif:photo,1,nullptr,false);
+            avatar?anyAvatar:animated?gif:photo,1,nullptr,false);
     }
     if (*id) {
         ImGui::SameLine();
-        if (ImGui::Button(profile_label("Remove","Quitar","Remover"))) Port_ProfileMediaSave(premiumAvatar?"avatar":kind,nullptr);
+        if (ImGui::Button(profile_label("Remove","Quitar","Remover"))) Port_ProfileMediaSave(avatar?"avatar":kind,nullptr);
     }
     ImGui::PopID();
 }
@@ -505,17 +539,27 @@ static void profile_card_editor(const char *name,float u,bool &open) {
     static int previous=0;
     Bt4ProfileCard current={};
     const int state=Port_ProfileCardView(&current);
-    if (!state) Port_ProfileCardRequest(nullptr);
-    if (state==2 && (state!=previous || draft.premium!=current.premium)) draft=current;
+    if(state==BT4_CARD_EMPTY)Port_ProfileCardRequest(nullptr);
+    if(state==BT4_CARD_READY&&(state!=previous||draft.premium!=current.premium))draft=current;
     previous=state;
-    if (state==1 || !state) {
+    if(state==BT4_CARD_LOADING||state==BT4_CARD_EMPTY){
         ImGui::TextUnformatted(profile_label("Loading profile…", "Cargando perfil…", "Carregando perfil…"));
         return;
     }
-    if (state<0) {
+    if(state==BT4_CARD_FAILED){
         ImGui::TextUnformatted(profile_label("Profile unavailable", "Perfil no disponible", "Perfil indisponível"));
         if (ImGui::Button(profile_label("Try again", "Reintentar", "Tentar novamente"))) Port_ProfileCardRequest(nullptr);
         return;
+    }
+    if(state==BT4_CARD_SAVING)ImGui::TextUnformatted(profile_label("Saving profile…","Guardando perfil…","Salvando perfil…"));
+    if(state==BT4_CARD_SAVE_FAILED){
+        char error[64]={};
+        Port_ProfileCardError(error,sizeof(error));
+        const char *message=!strcmp(error,"PROFILE_PASS_REQUIRED")?profile_donors_only():
+            !strcmp(error,"RATE_LIMITED")?profile_label("Please wait a few seconds and retry.","Espera unos segundos y vuelve a intentar.","Aguarde alguns segundos e tente novamente."):
+            !strcmp(error,"TIMEOUT")?profile_label("The server did not confirm the save. Try again.","El servidor no confirmó el guardado. Vuelve a intentar.","O servidor não confirmou que salvou. Tente novamente."):
+            profile_label("The profile could not be saved. Try again.","No se pudo guardar el perfil. Vuelve a intentar.","Não foi possível salvar o perfil. Tente novamente.");
+        ImGui::TextWrapped("%s",message);
     }
     const char *backgrounds[] = {
         profile_label("Red","Rojo","Vermelho"), profile_label("Blue","Azul","Azul"),
@@ -575,7 +619,7 @@ static void profile_card_editor(const char *name,float u,bool &open) {
             combo("##decoration",profile_label("Decoration","Decoración","Decoração"),&draft.decoration,decorations,7);
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.70f,0.92f,0.92f,1),"%s",profile_label("Images","Imágenes","Imagens"));
-        ImGui::BeginDisabled(sProfilePicker==1);
+        ImGui::BeginDisabled(sProfilePicker==1||state==BT4_CARD_SAVING);
         profile_media_control(current.premium?"avatar_auto":"avatar",profile_label("Profile photo","Foto de perfil","Foto de perfil"),
                               current.motion[0]?current.motion:current.avatar,false,u);
         profile_roster_picker(u);
@@ -584,10 +628,14 @@ static void profile_card_editor(const char *name,float u,bool &open) {
             profile_media_control("banner_motion",profile_label("Animated banner","Banner animado","Banner animado"),current.bannerMotion,true,u);
         }
         ImGui::EndDisabled();
-        if (sProfilePicker==-1) ImGui::TextWrapped("%s",profile_label(
-            "Could not import the image. Check its format and size (up to 4 MB).",
-            "No se pudo importar la imagen. Revisa el formato y el tamaño (hasta 4 MB).",
-            "Não foi possível importar a imagem. Confira o formato e o tamanho (até 4 MB)."));
+        const int picker=sProfilePicker.load();
+        if(picker==BT4_PROFILE_IMPORT_DONORS)ImGui::TextWrapped("%s",profile_donors_only());
+        else if(picker==BT4_PROFILE_IMPORT_SIZE)ImGui::TextWrapped("%s",profile_label(
+            "The file exceeds the 10 MB limit.","El archivo supera el límite de 10 MB.","O arquivo ultrapassa o limite de 10 MB."));
+        else if(picker==BT4_PROFILE_IMPORT_INVALID)ImGui::TextWrapped("%s",profile_label(
+            "Could not import the image. Check its format and dimensions.",
+            "No se pudo importar la imagen. Revisa el formato y las dimensiones.",
+            "Não foi possível importar a imagem. Confira o formato e as dimensões."));
         ImGui::TableNextColumn();
         ImGui::TextColored(ImVec4(0.70f,0.92f,0.92f,1),"%s",profile_label("Preview","Vista previa","Prévia"));
         const ImVec2 size(ImGui::GetContentRegionAvail().x,72*u);
@@ -628,7 +676,7 @@ static void profile_card_editor(const char *name,float u,bool &open) {
     ImGui::PushStyleColor(ImGuiCol_Button,ImVec4(0.95f,0.72f,0.26f,1));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(1,0.86f,0.46f,1));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive,ImVec4(0.90f,0.62f,0.18f,1));
-    ImGui::BeginDisabled(sProfilePicker==1);
+    ImGui::BeginDisabled(sProfilePicker==1||state==BT4_CARD_SAVING);
     if (ImGui::Button(save,ImVec2(buttonWidth,0))) {
         Port_ProfileCardRequest(&draft);
         previous=1;
