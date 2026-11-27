@@ -3213,7 +3213,7 @@ static void profile_header_draw(const ProfileHeader &header) {
     const float sx=gUiPresentW/512.0f,sy=gUiPresentH/448.0f;
     profile_card_draw(ImGui::GetBackgroundDrawList(),
         ImVec2(gUiPresentX+header.left*sx,gUiPresentY+header.top*sy),
-        (header.right-header.left)*sx,(header.bottom-header.top)*sy,header.name,card);
+        (header.right-header.left)*sx,(header.bottom-header.top)*sy,header.name,card,0.34f);
 }
 struct RankedToast {Uint64 started=0;int rating=0,delta=0;};
 static RankedToast sRankedToast;

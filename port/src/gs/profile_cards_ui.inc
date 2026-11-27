@@ -103,7 +103,8 @@ static ImU32 profile_name_ink(const Bt4ProfileCard &card) {
     if(!card.hasNameRgb)return profileNameColors[card.nameColor];
     return IM_COL32((card.nameRgb>>16)&255,(card.nameRgb>>8)&255,card.nameRgb&255,255);
 }
-static void profile_card_draw(ImDrawList *dl, ImVec2 p, float w, float h, const char *name, const Bt4ProfileCard &card) {
+static void profile_card_draw(ImDrawList *dl, ImVec2 p, float w, float h, const char *name, const Bt4ProfileCard &card,
+                              float nameScale=0.48f) {
     const ImU32 ink = profile_name_ink(card);
     const ImVec2 bottom(p.x + w, p.y + h);
     const float cut=h*0.17f;
@@ -132,7 +133,7 @@ static void profile_card_draw(ImDrawList *dl, ImVec2 p, float w, float h, const 
             ImVec2(portrait.x + h * 0.12f, portrait.y + h * 0.13f), ink, h * 0.05f);
     }
 
-    const float textSize = h * 0.48f;
+    const float textSize = h * nameScale;
     const ImVec2 clipFrom(p.x + h * 1.05f, p.y);
     const ImVec2 clipTo(bottom.x - h * (card.decoration ? 0.56f : 0.16f), bottom.y);
     if (clipTo.x > clipFrom.x) {
