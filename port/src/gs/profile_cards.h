@@ -13,7 +13,10 @@ typedef struct {
     int hasBannerRgb;
 } Bt4ProfileCard;
 #define BT4_PROFILE_AVATAR_MAX 320
-#define BT4_PROFILE_PIXEL_CAPACITY (BT4_PROFILE_AVATAR_MAX * BT4_PROFILE_AVATAR_MAX * 4)
+#define BT4_PROFILE_ANIMATION_FRAMES 120
+#define BT4_PROFILE_ANIMATION_COLUMNS 8
+#define BT4_PROFILE_PIXEL_CAPACITY (BT4_PROFILE_ANIMATION_FRAMES * 192 * 192 * 4)
+#define BT4_PROFILE_MEDIA_WIRE_CAP 1200000
 void Port_ProfileCardForPlayer(const char *name, Bt4ProfileCard *out);
 void Port_ProfileCardForTagPlayer(const char *name, Bt4ProfileCard *out);
 int Port_ProfileCardView(Bt4ProfileCard *out);
@@ -22,10 +25,10 @@ enum Bt4ProfileImportStatus { BT4_PROFILE_IMPORT_INVALID=-1, BT4_PROFILE_IMPORT_
 int Port_ProfileCardError(char *out, int capacity);
 void Port_ProfileCardRequest(const Bt4ProfileCard *card);
 int Port_ProfileMediaSave(const char *kind, const char *path);
-int Port_ProfileMediaRead(const char *id, unsigned char pixels[BT4_PROFILE_PIXEL_CAPACITY], int *width, int *height, int *count, int delays[6]);
+int Port_ProfileMediaRead(const char *id, unsigned char **pixels, int *width, int *height, int *count, int *columns, int delays[BT4_PROFILE_ANIMATION_FRAMES]);
 int Port_ProfileDraftFile(const char *kind,const char *path);
 int Port_ProfileDraftRoster(int character);
-int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height,int *count,int delays[6]);
+int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height,int *count,int *columns,int delays[BT4_PROFILE_ANIMATION_FRAMES]);
 int Port_ProfileDraftUpload(float x,float y,float zoom);
 void Port_ProfileDraftReset(void);
 int Port_ProfilePortraitPath(int chara,char *out,int capacity);

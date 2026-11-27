@@ -170,10 +170,11 @@ static int cloudEntry(void*){
             if(bt4route::admission(job.op))job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",2}};
             const bool profileTransfer=job.op=="profile_card_save"||job.op=="profile_media_save"||job.op=="profile_media_get";
             if(httpFallback||profileTransfer){
-                Sj body;identityReady=cloudAuthenticate();bool ok=identityReady&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
+                const char *path=job.op=="profile_media_save"&&job.args.contains("animation")?"/v5/profile/media":"/v5/api";
+                Sj body;identityReady=cloudAuthenticate();bool ok=identityReady&&http(path,{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
                 if(!ok&&lastHttpStatus==401&&body.is_object()&&str(body,"error")=="AUTH_REQUIRED"){
                     identities[2].access.clear();identities[2].renewAt=0;
-                    identityReady=cloudAuthenticate();ok=identityReady&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
+                    identityReady=cloudAuthenticate();ok=identityReady&&http(path,{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
                 }
                 if(!ok&&!body.is_object())body={{"error","SIGNALING_UNAVAILABLE"}};
                 complete(job,body);

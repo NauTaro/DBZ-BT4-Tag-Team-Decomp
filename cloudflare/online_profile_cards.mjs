@@ -1,6 +1,7 @@
 export const profilePassPrice = 300;
 export const officialDonorLifetime = Number.MAX_SAFE_INTEGER;
 const formats = {avatar:[2048,1],motion:[2048,6],banner:[8192,1],banner_motion:[2048,6]};
+export const profileAnimationRequestLimit = 1200000;
 const matchId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 
 export function profileMedia(core, user, premium) {
@@ -61,20 +62,42 @@ function validAvatarDetail(encoded) {
     const byte=i=>bytes.charCodeAt(i);
     if(bytes.length>=33&&bytes.startsWith('\x89PNG\r\n\x1a\n')&&bytes.slice(12,16)==='IHDR')
         return square(byte(16)*16777216+byte(17)*65536+byte(18)*256+byte(19),byte(20)*16777216+byte(21)*65536+byte(22)*256+byte(23));
-    if(byte(0)!==0xff||byte(1)!==0xd8)return false;
-    for(let cursor=2;cursor+4<=bytes.length;){
-        if(byte(cursor++)!==0xff)return false;
-        const marker=byte(cursor++), length=byte(cursor)*256+byte(cursor+1);
-        if(length<2||cursor+length>bytes.length)return false;
-        if(marker===0xc0&&length>=8)
-            return square(byte(cursor+5)*256+byte(cursor+6),byte(cursor+3)*256+byte(cursor+4));
-        if(marker===0xda||marker===0xd9)return false;
-        cursor+=length;
-    }
-    return false;
+    const jpeg=jpegDimensions(bytes);
+    return jpeg!==null&&square(...jpeg);
 }
 
-export function saveProfileMedia(core,user,{kind,frames,delays,remove,detail}) {
+function jpegDimensions(bytes) {
+    const byte=i=>bytes.charCodeAt(i);
+    if(byte(0)!==0xff||byte(1)!==0xd8)return null;
+    for(let cursor=2;cursor+4<=bytes.length;){
+        if(byte(cursor++)!==0xff)return null;
+        const marker=byte(cursor++), length=byte(cursor)*256+byte(cursor+1);
+        if(length<2||cursor+length>bytes.length)return null;
+        if(marker===0xc0&&length>=8)
+            return [byte(cursor+5)*256+byte(cursor+6),byte(cursor+3)*256+byte(cursor+4)];
+        if(marker===0xda||marker===0xd9)return null;
+        cursor+=length;
+    }
+    return null;
+}
+
+function validProfileAnimation(kind,animation) {
+    if(!animation||typeof animation!=='object'||Array.isArray(animation))return false;
+    const {width,height,delays,atlas}=animation;
+    if(kind!=='motion'&&kind!=='banner_motion')return false;
+    if(![96,128,160,192].includes(kind==='motion'?width:width/2)||
+       height!==(kind==='motion'?width:width/4))return false;
+    if(!Array.isArray(delays)||delays.length<2||delays.length>120||
+       delays.some(delay=>!Number.isInteger(delay)||delay<20||delay>240000)||
+       delays.reduce((sum,delay)=>sum+delay,0)>240000)return false;
+    if(typeof atlas!=='string'||!atlas.length||atlas.length>1160000||atlas.length%4||
+       !/^[A-Za-z0-9+/]+={0,2}$/.test(atlas))return false;
+    const dimensions=jpegDimensions(atob(atlas));
+    return dimensions!==null&&dimensions[0]===width*Math.min(8,delays.length)&&
+        dimensions[1]===height*Math.ceil(delays.length/8);
+}
+
+export function saveProfileMedia(core,user,{kind,frames,delays,remove,detail,animation}) {
     if (typeof kind!=='string'||!Object.hasOwn(formats,kind)) throw new Error('BAD_PROFILE_MEDIA');
     const animatedBanner=kind==='banner_motion';
     if (remove===true) {
@@ -98,11 +121,13 @@ export function saveProfileMedia(core,user,{kind,frames,delays,remove,detail}) {
     }
     if (animatedBanner&&frames.length<2) throw new Error('BAD_PROFILE_MEDIA');
     if(detail!==undefined&&(kind!=='avatar'||!validAvatarDetail(detail)))throw new Error('BAD_PROFILE_MEDIA');
+    if(animation!==undefined&&!validProfileAnimation(kind,animation))throw new Error('BAD_PROFILE_MEDIA');
     const now=core.now(),id=core.uuid();
     const old=animatedBanner?core.one('SELECT updated FROM online_profile_banner_motion WHERE user_id=?',user):
         core.one('SELECT updated FROM online_profile_media WHERE user_id=? AND kind=?',user,kind);
     if (old && now-old.updated<5000) throw new Error('RATE_LIMITED');
-    const body=JSON.stringify({kind,frames,delays,...(detail?{detail}:{})});
+    const body=JSON.stringify({kind,frames,delays,...(detail?{detail}:{}),
+        ...(animation?{animation:{width:animation.width,height:animation.height,delays:animation.delays,atlas:animation.atlas}}:{})});
     if(animatedBanner)core.run(`INSERT INTO online_profile_banner_motion VALUES(?,?,?,?)
         ON CONFLICT(user_id) DO UPDATE SET id=excluded.id,body=excluded.body,updated=excluded.updated`,user,id,body,now);
     else core.run(`INSERT INTO online_profile_media VALUES(?,?,?,?,?)
@@ -112,7 +137,7 @@ export function saveProfileMedia(core,user,{kind,frames,delays,remove,detail}) {
     return ownProfileCard(core,user);
 }
 
-export function getProfileMedia(core,user,{id,hd,detail}) {
+export function getProfileMedia(core,user,{id,hd,detail,animation}) {
     if (typeof id!=='string'||!matchId.test(id)) throw new Error('BAD_PROFILE_MEDIA');
     const row=core.one(`SELECT media.user_id,media.kind,media.body,c.premium_until FROM (
             SELECT user_id,kind,body FROM online_profile_media WHERE id=?
@@ -126,6 +151,7 @@ export function getProfileMedia(core,user,{id,hd,detail}) {
     if (!row || (row.kind!=='avatar' && !(row.premium_until>core.now()))) throw new Error('PROFILE_MEDIA_UNAVAILABLE');
     const media=JSON.parse(row.body);
     if(detail!==true)delete media.detail;
+    if(animation!==true)delete media.animation;
     if(row.kind==='avatar'&&hd!==true&&media.frames[0].length===17068){
         const high=atob(media.frames[0]);
         let low='';

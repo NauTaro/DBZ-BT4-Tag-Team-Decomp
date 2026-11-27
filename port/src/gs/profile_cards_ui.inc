@@ -45,8 +45,16 @@ struct ProfileTexture {
     char id[37]={};
     SDL_GPUTexture *texture=nullptr;
     int used=-1;
-    int height=0,count=0,delays[6]={};
+    int width=0,height=0,count=0,columns=1,delays[BT4_PROFILE_ANIMATION_FRAMES]={};
+    size_t bytes=0;
 };
+
+static SDL_GPUTexture *profile_texture_upload(ProfileTexture &asset,uint8_t *pixels){
+    const int w=asset.width*asset.columns;
+    const int h=asset.height*((asset.count+asset.columns-1)/asset.columns);
+    asset.bytes=size_t(w)*h*4;
+    return make_strip(pixels,asset.bytes,w,h,1);
+}
 
 static const ProfileTexture *profile_texture(const char *id) {
     static ProfileTexture cache[48];
@@ -61,21 +69,26 @@ static const ProfileTexture *profile_texture(const char *id) {
         if (entry.used<slot->used) slot=&entry;
     }
     if (slot->used==now) return nullptr;
-    uint8_t *pixels=(uint8_t *)malloc(BT4_PROFILE_PIXEL_CAPACITY);
-    if(!pixels)return nullptr;
-    int width=0,height=0,count=0,delays[6]={};
-    if (!Port_ProfileMediaRead(id,pixels,&width,&height,&count,delays)) {
-        free(pixels);
-        return nullptr;
-    }
-    const size_t bytes=size_t(width)*height*count*4;
-    SDL_GPUTexture *texture=make_strip(pixels,bytes,width,height,count);
-    if (!texture) return nullptr;
+    uint8_t *pixels=nullptr;
+    ProfileTexture next;
+    if (!Port_ProfileMediaRead(id,&pixels,&next.width,&next.height,&next.count,&next.columns,next.delays))return nullptr;
+    next.texture=profile_texture_upload(next,pixels);
+    if (!next.texture) return nullptr;
     Ui_TextureFree(slot->texture);
-    *slot={};
+    *slot=next;
     SDL_strlcpy(slot->id,id,sizeof(slot->id));
-    slot->texture=texture;slot->used=now;slot->height=height;slot->count=count;
-    memcpy(slot->delays,delays,sizeof(delays));
+    slot->used=now;
+    size_t bytes=0;
+    for(const auto &entry:cache)bytes+=entry.bytes;
+    while(bytes>112u*1024*1024){
+        ProfileTexture *old=nullptr;
+        for(auto &entry:cache)
+            if(entry.texture&&entry.used!=now&&(!old||entry.used<old->used))old=&entry;
+        if(!old)break;
+        bytes-=old->bytes;
+        Ui_TextureFree(old->texture);
+        *old={};
+    }
     return slot;
 }
 
@@ -84,9 +97,11 @@ static void profile_image_draw(ImDrawList *dl,const ProfileTexture &asset,ImVec2
     for (int i=0;i<asset.count;i++) cycle+=asset.delays[i];
     int time=cycle?int(SDL_GetTicks()%Uint64(cycle)):0,frame=0;
     while (frame+1<asset.count&&time>=asset.delays[frame]) time-=asset.delays[frame++];
-    const float inset=0.5f/(asset.height*asset.count);
-    const float v0=float(frame)/asset.count+inset,v1=float(frame+1)/asset.count-inset;
-    dl->AddImageRounded(ImTextureRef((ImTextureID)(intptr_t)asset.texture),p,q,ImVec2(0,v0),ImVec2(1,v1),tint,rounding);
+    const int rows=(asset.count+asset.columns-1)/asset.columns;
+    const int x=frame%asset.columns,y=frame/asset.columns;
+    const float u=0.5f/asset.width,v=0.5f/asset.height;
+    dl->AddImageRounded(ImTextureRef((ImTextureID)(intptr_t)asset.texture),p,q,
+        ImVec2((x+u)/asset.columns,(y+v)/rows),ImVec2((x+1-u)/asset.columns,(y+1-v)/rows),tint,rounding);
 }
 
 static constexpr ImU32 profileBannerColors[] = {
@@ -393,6 +408,16 @@ static void profile_ranked_encounter(ImDrawList *dl, ImVec2 p, float u, const ch
 static std::atomic<int> sProfilePicker{0};
 static std::atomic<unsigned> sProfileCropSequence{0};
 static bool sRosterCrop=false;
+struct ProfileCropUpload {float x,y,zoom;};
+
+static int SDLCALL profile_upload_crop(void *data) {
+    auto *crop=static_cast<ProfileCropUpload *>(data);
+    const int result=Port_ProfileDraftUpload(crop->x,crop->y,crop->zoom);
+    delete crop;
+    Port_ProfileDraftReset();
+    sProfilePicker=result?0:BT4_PROFILE_IMPORT_INVALID;
+    return 0;
+}
 static const char *profile_donors_only() {
     return profile_label("You must be a member of the supporters club to do this.",
         "Debes formar parte del club de donadores para realizar esta acción.",
@@ -401,7 +426,6 @@ static const char *profile_donors_only() {
 static void profile_crop_editor(float u) {
     static float x=0.5f,y=0.5f,zoom=1.0f;
     static ProfileTexture preview;
-    static int w=0;
     static unsigned sequence=0;
     const unsigned current=sProfileCropSequence.load();
     if(sequence!=current) {
@@ -423,15 +447,14 @@ static void profile_crop_editor(float u) {
     if (!preview.texture||update) {
         auto *rgba=(uint8_t *)malloc(BT4_PROFILE_PIXEL_CAPACITY);
         ProfileTexture next;
-        int width=0;
-        if(rgba&&Port_ProfileDraftPreview(x,y,zoom,rgba,&width,&next.height,&next.count,next.delays)) {
-            next.texture=make_strip(rgba,size_t(width)*next.height*next.count*4,width,next.height,next.count);
-            if(next.texture){Ui_TextureFree(preview.texture);preview=next;w=width;}
+        if(rgba&&Port_ProfileDraftPreview(x,y,zoom,rgba,&next.width,&next.height,&next.count,&next.columns,next.delays)) {
+            next.texture=profile_texture_upload(next,rgba);
+            if(next.texture){Ui_TextureFree(preview.texture);preview=next;}
         }else free(rgba);
     }
     if(preview.texture) {
-        const float width=fminf((w>preview.height?340:150)*u,ImGui::GetContentRegionAvail().x);
-        const ImVec2 p=ImGui::GetCursorScreenPos(),viewport(width,width*preview.height/w);
+        const float width=fminf((preview.width>preview.height?340:150)*u,ImGui::GetContentRegionAvail().x);
+        const ImVec2 p=ImGui::GetCursorScreenPos(),viewport(width,width*preview.height/preview.width);
         ImGui::InvisibleButton("##drag-photo",viewport);
         profile_image_draw(ImGui::GetWindowDrawList(),preview,p,ImGui::GetItemRectMax(),0,IM_COL32_WHITE);
         if(ImGui::IsItemActive()&&ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
@@ -444,11 +467,21 @@ static void profile_crop_editor(float u) {
     const bool cancel=ImGui::Button(profile_label("Cancel","Cancelar","Cancelar"));
     ImGui::SameLine();
     const bool use=ImGui::Button(profile_label("Apply image","Aplicar imagen","Aplicar imagem"));
-    if(cancel||use) {
-        sProfilePicker=cancel||Port_ProfileDraftUpload(x,y,zoom)?0:-1;
+    if(cancel) {
+        sProfilePicker=0;
         Port_ProfileDraftReset();
-        // ImGui still references this frame's image. Free it on entry to the next crop.
         sRosterCrop=false;
+    }
+    if(use) {
+        sProfilePicker=1;
+        auto *crop=new ProfileCropUpload{x,y,zoom};
+        if(auto *thread=SDL_CreateThread(profile_upload_crop,"Profile image upload",crop)){
+            sRosterCrop=false;
+            SDL_DetachThread(thread);
+        }else{
+            delete crop;
+            sProfilePicker=2;
+        }
     }
 }
 struct ProfileImport {const char *kind;char *path;};

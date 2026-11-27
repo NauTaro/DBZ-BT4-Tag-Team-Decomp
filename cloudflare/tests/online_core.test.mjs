@@ -89,6 +89,27 @@ test('existing verified receipts activate lifetime access and refunded receipts 
     assert.equal(f.invoke(paid,'profile_card_get').premium_until,officialDonorLifetime);
     assert.equal(f.invoke(refunded,'profile_card_get').premium,false);
 });
+test('high-resolution animation preserves 120 timings and room access with legacy playback',()=>{
+    const f=fixture(), owner=f.user('Animated'), guest=f.user('Guest'), outsider=f.user('Outsider');
+    const width=192,height=192;
+    // A JPEG SOF0 header with the dimensions of the full atlas.
+    const atlas=Buffer.alloc(84000,0x80);
+    Buffer.from([0xff,0xd8,0xff,0xc0,0,8,8,11,64,6,0,3]).copy(atlas);
+    const animation={width,height,atlas:atlas.toString('base64'),delays:Array(120).fill(40)};
+    const options={kind:'motion',frames:Array(6).fill(Buffer.alloc(2048).toString('base64')),delays:Array(6).fill(800),animation};
+    assert.throws(()=>f.invoke(owner,'profile_media_save',options),/PROFILE_PASS_REQUIRED/);
+    grantProfilePass(f.c,{user_id:owner,until_ms:f.c.now()+month});
+    assert.throws(()=>f.invoke(owner,'profile_media_save',{...options,animation:{...animation,width:160}}),/BAD_PROFILE_MEDIA/);
+    const id=f.invoke(owner,'profile_media_save',options).media.motion;
+    const room=f.invoke(owner,'create',profile);
+    f.invoke(guest,'join',{...profile,code:room.code});
+    assert.deepEqual(f.invoke(guest,'profile_media_get',{id,animation:true}).animation,animation);
+    const legacy=f.invoke(guest,'profile_media_get',{id,detail:true});
+    assert.equal(legacy.animation,undefined);
+    assert.equal(legacy.frames.length,6);
+    assert.throws(()=>f.invoke(outsider,'profile_media_get',{id,animation:true}),/PROFILE_MEDIA_UNAVAILABLE/);
+});
+
 test('profile media is fetched on demand, scoped to a room, and follows pass expiration',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo'),outside=f.user('Charlie');
     const avatar=Buffer.alloc(2048,19).toString('base64');

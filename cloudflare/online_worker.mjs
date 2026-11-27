@@ -4,7 +4,7 @@ import {verifyAccess,legacyProof,legacyBootstrap,createSession,sha256} from './o
 import {roomTurn} from './online_turn.mjs';
 import {importRows} from './online_migration.mjs';
 import {launchRanked,resetRanked,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
-import {fulfillProfilePass,grantProfilePass} from './online_profile_cards.mjs';
+import {fulfillProfilePass,grantProfilePass,profileAnimationRequestLimit} from './online_profile_cards.mjs';
 import {applyProfileWebhook,profileCheckout,profileCheckoutEnabled,verifyProfileWebhook} from './online_profile_checkout.mjs';
 
 import {applyKofiPayment,kofiCheckout,kofiEnabled,kofiPage} from './online_profile_kofi.mjs';
@@ -294,6 +294,11 @@ export class OnlineCoordinator {
                 return new Response(null,{status:101,webSocket:client});
             }
             const user=await this.user(request);if(!user)return json({error:'AUTH_REQUIRED'},401);
+            if(path==='/v5/profile/media'&&request.method==='POST'){
+                const body=await readJson(request,profileAnimationRequestLimit+128);
+                if(body.op!=='profile_media_save'&&body.op!=='profile_media_get')throw new Error('BAD_REQUEST');
+                return json(await this.execute(user,body.op,body.args));
+            }
             const body=await readJson(request);
             if(path==='/v5/api'&&request.method==='POST')return json(await this.execute(user,body.op,body.args));
             return json({error:'BAD_REQUEST'},400);

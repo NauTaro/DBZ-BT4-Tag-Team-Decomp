@@ -791,10 +791,10 @@ unsigned profileRequest(const char *op,const char *args){
     return Bt4Signal_Command(4,id,op,args)?id:0;
 }
 void profilePump(Uint64 now){
-    char buffer[24577];
-    while(int read=Bt4Signal_Read(4,buffer,sizeof(buffer))){
+    static std::vector<char> buffer(BT4_PROFILE_MEDIA_WIRE_CAP+512);
+    while(int read=Bt4Signal_Read(4,buffer.data(),buffer.size())){
         if(read<0)continue;
-        Dj event=Dj::parse(buffer,nullptr,false);unsigned id=number(event,"serial");
+        Dj event=Dj::parse(buffer.data(),nullptr,false);unsigned id=number(event,"serial");
         auto project=text(event,"project");
         if(!id||(!project.empty()&&project!=profileProject))continue;
         auto body=event.find("body");if(body==event.end()||!body->is_object())continue;
@@ -990,20 +990,18 @@ extern "C" int Port_ProfileDraftRoster(int character){
     profileDraft=std::move(image);
     return 1;
 }
-extern "C" int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height,int *count,int delays[6]){
+extern "C" int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height,
+                                       int *count,int *columns,int delays[BT4_PROFILE_ANIMATION_FRAMES]){
     std::lock_guard<std::mutex> guard(profileDraftLock);
     if(profileDraft.pixels.empty())return 0;
     const bool banner=profileDraft.kind=="banner"||profileDraft.kind=="banner_motion";
-    const int frames=int(profileDraft.delays.size());
-    *count=std::min(frames,6);
+    const auto frames=profileTimeline(profileDraft);
+    *count=int(frames.size());
+    *columns=std::min(*count,BT4_PROFILE_ANIMATION_COLUMNS);
     *width=(*count>1)?128:BT4_PROFILE_AVATAR_MAX;
     *height=banner?*width/4:*width;
-    const size_t stride=size_t(*width)*(*height)*4;
-    for(int i=0;i<*count;++i){
-        const int from=i*frames/(*count),until=(i+1)*frames/(*count);
-        profileCrop(profileDraft,rgba+i*stride,*width,*height,4,x,y,zoom,from);
-        delays[i]=profileFrameDuration(profileDraft,from,until);
-    }
+    profileAtlas(profileDraft,frames,rgba,*width,*height,4,x,y,zoom);
+    for(int i=0;i<*count;++i)delays[i]=frames[i].delay;
     return 1;
 }
 extern "C" int Port_ProfileDraftUpload(float x,float y,float zoom){
@@ -1018,18 +1016,25 @@ extern "C" void Port_ProfileDraftReset(){
     std::lock_guard<std::mutex> guard(profileDraftLock);
     profileDraft={};
 }
-extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *width,int *height,int *count,int delays[6]){
+extern "C" int Port_ProfileMediaRead(const char *id,unsigned char **output,int *width,int *height,int *count,
+                                    int *columns,int delays[BT4_PROFILE_ANIMATION_FRAMES]){
     if(!id||!*id)return 0;
     if(getenv("BT4_RENDER_TEST")&&(!strcmp(id,"preview-local")||!strcmp(id,"preview-rival"))){
         const char *path=getenv(!strcmp(id,"preview-local")?"BT4_RANKED_PREVIEW_LOCAL":"BT4_RANKED_PREVIEW_RIVAL");
         if(!path)return 0;
         const Dj body=profileImage(path,"avatar");
         if(body.is_null())return 0;
-        *count=1;delays[0]=100;
-        if(body.contains("detail"))
-            return profileDecodeAvatar(body["detail"].get_ref<const std::string &>(),pixels,width,height);
+        *count=1;*columns=1;delays[0]=100;
+        auto *pixels=(unsigned char *)malloc(BT4_PROFILE_AVATAR_MAX*BT4_PROFILE_AVATAR_MAX*4);
+        if(!pixels)return 0;
+        if(body.contains("detail")&&profileDecodeAvatar(body["detail"].get_ref<const std::string &>(),pixels,width,height)){
+            *output=pixels;return 1;
+        }
         profileImageDimensions("avatar",*width,*height);
-        return profilePixels(body["frames"][0].get_ref<const std::string &>(),pixels,size_t(*width)*(*height)*4);
+        if(profilePixels(body["frames"][0].get_ref<const std::string &>(),pixels,size_t(*width)*(*height)*4)){
+            *output=pixels;return 1;
+        }
+        free(pixels);return 0;
     }
     std::lock_guard<std::mutex> guard(rankedLock);
     const Uint64 now=SDL_GetTicks();
@@ -1041,17 +1046,43 @@ extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *w
         entry=std::prev(profileMedia.end());
     }
     if(now>=entry->until&&entry->body.is_null()){
-        entry->request=profileRequest("profile_media_get",Dj{{"id",id},{"hd",true},{"detail",true}}.dump().c_str());
+        entry->request=profileRequest("profile_media_get",Dj{{"id",id},{"hd",true},{"detail",true},{"animation",true}}.dump().c_str());
         entry->until=now+15000;
     }
     if(entry->body.is_null())return 0;
     const auto &body=entry->body;
     const std::string kind=text(body,"kind");
+    const auto animation=body.find("animation");
+    if(animation!=body.end()&&animation->is_object()&&(kind=="motion"||kind=="banner_motion")){
+        const auto timing=animation->find("delays"),atlas=animation->find("atlas");
+        const unsigned w=number(*animation,"width"),h=number(*animation,"height");
+        const unsigned res=kind=="motion"?w:w/2;
+        if((res==96||res==128||res==160||res==192)&&w==(kind=="motion"?res:res*2)&&h==(kind=="motion"?w:w/4)&&
+           timing!=animation->end()&&timing->is_array()&&timing->size()>=2&&timing->size()<=BT4_PROFILE_ANIMATION_FRAMES&&
+           atlas!=animation->end()&&atlas->is_string()){
+            const int n=int(timing->size()), cols=std::min(n,BT4_PROFILE_ANIMATION_COLUMNS);
+            const int rows=(n+cols-1)/cols;
+            int atlasW,atlasH;
+            auto *pixels=(unsigned char *)malloc(size_t(w)*h*cols*rows*4);
+            if(pixels&&std::all_of(timing->begin(),timing->end(),[](const Dj &delay){
+                   return delay.is_number_unsigned()&&delay.get<uint64_t>()>=20&&delay.get<uint64_t>()<=240000;
+               })&&profileDecodeImage(atlas->get_ref<const std::string &>(),pixels,&atlasW,&atlasH,870000,w*cols,h*rows)){
+                for(int i=0;i<n;++i)delays[i]=(*timing)[i].get<int>();
+                entry->body=nullptr;entry->until=0;
+                *output=pixels;
+                *width=w;*height=h;*count=n;*columns=cols;return 1;
+            }
+            free(pixels);
+        }
+    }
     const auto detail=body.find("detail");
-    if(kind=="avatar"&&detail!=body.end()&&detail->is_string()&&
-       profileDecodeAvatar(detail->get_ref<const std::string &>(),pixels,width,height)){
-        *count=1;delays[0]=100;
-        return 1;
+    if(kind=="avatar"&&detail!=body.end()&&detail->is_string()){
+        auto *pixels=(unsigned char *)malloc(BT4_PROFILE_AVATAR_MAX*BT4_PROFILE_AVATAR_MAX*4);
+        if(pixels&&profileDecodeAvatar(detail->get_ref<const std::string &>(),pixels,width,height)){
+            *output=pixels;*count=1;*columns=1;delays[0]=100;
+            return 1;
+        }
+        free(pixels);
     }
     int w,h;
     profileImageDimensions(kind,w,h);
@@ -1061,12 +1092,16 @@ extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *w
     if(kind=="avatar"&&(*frames)[0].is_string()&&(*frames)[0].get_ref<const std::string &>().size()==2732)
         w=h=32;
     const size_t frameBytes=size_t(w)*h*4;
+    auto *pixels=(unsigned char *)malloc(frameBytes*frames->size());
+    if(!pixels)return 0;
     for(size_t i=0;i<frames->size();++i){
         if(!(*frames)[i].is_string()||!(*timing)[i].is_number_unsigned()||
-            !profilePixels((*frames)[i].get<std::string>(),pixels+i*frameBytes,frameBytes))return 0;
+            !profilePixels((*frames)[i].get<std::string>(),pixels+i*frameBytes,frameBytes)){
+            free(pixels);return 0;
+        }
         delays[i]=int(std::clamp((*timing)[i].get<unsigned>(),100u,1000u));
     }
-    *width=w;*height=h;*count=int(frames->size());return 1;
+    *output=pixels;*width=w;*height=h;*count=int(frames->size());*columns=1;return 1;
 }
 extern "C" void Bt4Discovery_Directory(int protocol,uint64_t content,uint64_t tagContent,Bt4PublicDirectory *out){
     std::lock_guard<std::mutex> guard(rankedLock);

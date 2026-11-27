@@ -2,6 +2,7 @@
  * Network work is owned by one background thread. Credentials are never logged.
  */
 #include <SDL3/SDL.h>
+#include "profile_cards.h"
 #include "../../include/online_room_policy.h"
 #include <stdio.h>
 #include <string.h>
@@ -121,7 +122,10 @@ static bool emit(int consumer,const Sj &j){
 static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &answer,bool optional=false,const char *hostOverride=nullptr,const std::string *accessOverride=nullptr){
     auto &identity=currentIdentity();lastHttpStatus=0;
     const std::string data=body.dump();std::string result;long code=0;
-    if(data.size()>20000)return false;
+    const size_t sendLimit=hostOverride&&path=="/v5/profile/media"?BT4_PROFILE_MEDIA_WIRE_CAP+128:20000;
+    const size_t receiveLimit=hostOverride&&path=="/v5/api"&&body.value("op",std::string())=="profile_media_get"
+        ? BT4_PROFILE_MEDIA_WIRE_CAP : 65536;
+    if(data.size()>sendLimit)return false;
 #ifdef _WIN32
     HINTERNET session=WinHttpOpen(L"BT4decomp signaling",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);
     if(!session)return false;
@@ -136,7 +140,7 @@ static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &a
     std::wstring wh(headers.begin(),headers.end());
     bool ok=request&&WinHttpSendRequest(request,wh.c_str(),(DWORD)wh.size(),(void*)data.data(),(DWORD)data.size(),(DWORD)data.size(),0)&&WinHttpReceiveResponse(request,nullptr);
     if(ok){DWORD status=0,size=sizeof(status),got;ok=WinHttpQueryHeaders(request,WINHTTP_QUERY_STATUS_CODE|WINHTTP_QUERY_FLAG_NUMBER,WINHTTP_HEADER_NAME_BY_INDEX,&status,&size,WINHTTP_NO_HEADER_INDEX);code=status;
-        char bytes[4096];while(ok){if(!WinHttpReadData(request,bytes,sizeof(bytes),&got)){ok=false;break;}if(!got)break;if(result.size()+got>65536){ok=false;break;}result.append(bytes,got);}}
+        char bytes[4096];while(ok){if(!WinHttpReadData(request,bytes,sizeof(bytes),&got)){ok=false;break;}if(!got)break;if(result.size()+got>receiveLimit){ok=false;break;}result.append(bytes,got);}}
     if(request)WinHttpCloseHandle(request);if(connection)WinHttpCloseHandle(connection);WinHttpCloseHandle(session);
     if(!ok)return false;
 #else
@@ -148,8 +152,13 @@ static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &a
     curl_easy_setopt(request,CURLOPT_URL,url.c_str());curl_easy_setopt(request,CURLOPT_HTTPHEADER,headers);
     curl_easy_setopt(request,CURLOPT_POSTFIELDS,data.c_str());curl_easy_setopt(request,CURLOPT_POSTFIELDSIZE,(long)data.size());
     curl_easy_setopt(request,CURLOPT_TIMEOUT_MS,optional?1600L:8000L);curl_easy_setopt(request,CURLOPT_CONNECTTIMEOUT_MS,optional?750L:4000L);curl_easy_setopt(request,CURLOPT_NOSIGNAL,1L);
-    curl_easy_setopt(request,CURLOPT_WRITEFUNCTION,+[](char *data,size_t size,size_t n,void *p)->size_t{auto &out=*static_cast<std::string*>(p);if(n>65536||size>65536||size*n>65536-out.size())return 0;out.append(data,size*n);return size*n;});
-    curl_easy_setopt(request,CURLOPT_WRITEDATA,&result);
+    struct Download {std::string &body;size_t limit;} download{result,receiveLimit};
+    curl_easy_setopt(request,CURLOPT_WRITEFUNCTION,+[](char *data,size_t size,size_t n,void *p)->size_t{
+        auto &out=*static_cast<Download*>(p);
+        if(size&&n>(out.limit-out.body.size())/size)return 0;
+        out.body.append(data,size*n);return size*n;
+    });
+    curl_easy_setopt(request,CURLOPT_WRITEDATA,&download);
     auto rc=curl_easy_perform(request);curl_easy_getinfo(request,CURLINFO_RESPONSE_CODE,&code);
     curl_easy_cleanup(request);curl_slist_free_all(headers);if(rc!=CURLE_OK)return false;
 #endif
@@ -387,7 +396,9 @@ extern "C" int Bt4Signal_Status(void){return state.status;}
 extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consumer>5)return;std::lock_guard<std::mutex> g(state.lock);if(enabled){state.consumers|=1u<<consumer;if(consumer<3)state.realtime|=1u<<consumer;}else{state.consumers&=~(1u<<consumer);state.realtime&=~(1u<<consumer);state.events[consumer].clear();++state.sessions[consumer];
         state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==consumer&&j.op!="leave"&&j.op!="cancel"&&j.op!="ranked_report"&&j.op!="match_report";}),state.jobs.end());}}
 extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,const char *args){
-    if(consumer<0||consumer>5||!op||!args||strlen(args)>18000)return 0;
+    if(consumer<0||consumer>5||!op||!args)return 0;
+    const size_t limit=consumer==4&&!strcmp(op,"profile_media_save")?BT4_PROFILE_MEDIA_WIRE_CAP:18000;
+    if(strlen(args)>limit)return 0;
     if((consumer==3)!=(!strcmp(op,"presence")))return 0;
     bool lifecycle=!strcmp(op,"ranked_heartbeat")||!strcmp(op,"ranked_forfeit")||!strcmp(op,"ranked_rock")||!strcmp(op,"quick_rock")||!strcmp(op,"match_report");if((consumer==5)!=lifecycle)return 0;
     bool profile=!strcmp(op,"public_rooms")||!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top")||!strcmp(op,"nickname_get")||!strcmp(op,"nickname_set");profile=profile||!strncmp(op,"profile_card_",13)||!strncmp(op,"profile_media_",14)||!strcmp(op,"profile_checkout");if((consumer==4)!=profile)return 0;

@@ -171,7 +171,8 @@ static void profileImageDimensions(const std::string &kind,int &w,int &h){
 static constexpr size_t profileAvatarWireBytes=11200;
 
 static void profileCrop(const ProfileImageSource &source,unsigned char *output,int w,int h,int channels,
-                        float px,float py,float zoom,int frame=0){
+                        float px,float py,float zoom,int frame=0,int stride=0){
+    if(!stride)stride=w*channels;
     const int width=std::max(1,int(std::min(source.width,source.height*w/h)/zoom));
     const int height=std::max(1,int(std::min(source.height,source.width*h/w)/zoom));
     const int left=int((source.width-width)*px),top=int((source.height-height)*py);
@@ -185,10 +186,75 @@ static void profileCrop(const ProfileImageSource &source,unsigned char *output,i
             for(int c=0;c<3;c++)sum[c]+=(p[c]*p[3]+35*(255-p[3])+127)/255;
         }
         const unsigned count=(x1-x0)*(y1-y0);
-        auto *pixel=output+(size_t(y)*w+x)*channels;
+        auto *pixel=output+size_t(y)*stride+x*channels;
         for(int c=0;c<3;c++)pixel[c]=(unsigned char)((sum[c]+count/2)/count);
         if(channels==4)pixel[3]=255;
     }
+}
+
+struct ProfileFrame {int source,delay;};
+
+static std::vector<ProfileFrame> profileTimeline(const ProfileImageSource &image){
+    std::vector<int> ends;
+    int total=0;
+    for(int delay:image.delays){
+        total+=std::clamp(delay,20,1000);
+        ends.push_back(total);
+    }
+    constexpr int max=BT4_PROFILE_ANIMATION_FRAMES;
+    const int step=std::max(40,(total+max-1)/max);
+    std::vector<ProfileFrame> frames;
+    if(ends.size()<=max && std::all_of(image.delays.begin(),image.delays.end(),[](int ms){return ms>=40;})){
+        for(size_t i=0;i<ends.size();++i)
+            frames.push_back({int(i),ends[i]-(i?ends[i-1]:0)});
+        return frames;
+    }
+    for(int time=0;time<total;time+=step){
+        const int length=std::min(step,total-time);
+        const int frame=int(std::upper_bound(ends.begin(),ends.end(),time+length/2)-ends.begin());
+        if(!frames.empty()&&(frame==frames.back().source||length<20))frames.back().delay+=length;
+        else frames.push_back({frame,length});
+    }
+    return frames;
+}
+
+static void profileAtlas(const ProfileImageSource &image,const std::vector<ProfileFrame> &frames,
+                         unsigned char *pixels,int w,int h,int channels,float x,float y,float zoom){
+    const int columns=std::min(int(frames.size()),BT4_PROFILE_ANIMATION_COLUMNS);
+    const int stride=w*columns*channels;
+    for(size_t i=0;i<frames.size();++i){
+        auto *cell=pixels+size_t(i/columns)*h*stride+(i%columns)*w*channels;
+        profileCrop(image,cell,w,h,channels,x,y,zoom,frames[i].source,stride);
+    }
+}
+
+static Dj encodeProfileAnimation(const ProfileImageSource &source,float x,float y,float zoom){
+    const auto frames=profileTimeline(source);
+    if(frames.size()<2)return {};
+    const bool banner=source.kind=="banner_motion";
+    const int columns=std::min(int(frames.size()),BT4_PROFILE_ANIMATION_COLUMNS);
+    const int rows=(int(frames.size())+columns-1)/columns;
+    constexpr size_t maxJpeg=870000;
+    const auto append=[](void *context,void *data,int size){
+        auto &bytes=*static_cast<std::vector<unsigned char> *>(context);
+        const auto *first=static_cast<const unsigned char *>(data);
+        if(bytes.size()<=maxJpeg)bytes.insert(bytes.end(),first,first+std::min<size_t>(size,maxJpeg+1-bytes.size()));
+    };
+    for(int resolution:{192,160,128,96}){
+        const int w=banner?resolution*2:resolution,h=banner?resolution/2:resolution;
+        std::vector<unsigned char> pixels(size_t(w)*h*columns*rows*3);
+        profileAtlas(source,frames,pixels.data(),w,h,3,x,y,zoom);
+        for(int quality:{90,82,72,62}){
+            std::vector<unsigned char> jpeg;
+            if(stbi_write_jpg_to_func(append,&jpeg,w*columns,h*rows,3,pixels.data(),quality)&&
+               !jpeg.empty()&&jpeg.size()<=maxJpeg){
+                Dj delays=Dj::array();
+                for(const auto &frame:frames)delays.push_back(frame.delay);
+                return {{"width",w},{"height",h},{"delays",std::move(delays)},{"atlas",profileBase64(jpeg.data(),jpeg.size())}};
+            }
+        }
+    }
+    return {};
 }
 
 static int profileFrameDuration(const ProfileImageSource &source,int from,int until){
@@ -225,8 +291,9 @@ static std::string profileAvatarDetail(const ProfileImageSource &source,float px
     return {};
 }
 
-static bool profileDecodeAvatar(const std::string &encoded,unsigned char *rgba,int *w,int *h){
-    if(encoded.empty()||encoded.size()>4*((profileAvatarWireBytes+2)/3)||encoded.size()%4)return false;
+static bool profileDecodeImage(const std::string &encoded,unsigned char *rgba,int *w,int *h,
+                               size_t maxBytes,int atlasWidth=0,int atlasHeight=0){
+    if(encoded.empty()||encoded.size()>4*((maxBytes+2)/3)||encoded.size()%4)return false;
     std::vector<unsigned char> data;
     data.reserve(encoded.size()/4*3);
     unsigned group=0,bits=0;
@@ -241,14 +308,19 @@ static bool profileDecodeAvatar(const std::string &encoded,unsigned char *rgba,i
     const bool png=data.size()>8&&!memcmp(data.data(),"\x89PNG\r\n\x1a\n",8);
     const bool jpeg=data.size()>3&&data[0]==0xff&&data[1]==0xd8&&data[2]==0xff;
     int width=0,height=0,channels=0;
-    if((!png&&!jpeg)||data.size()>profileAvatarWireBytes||
+    if((!png&&!jpeg)||data.size()>maxBytes||
        !stbi_info_from_memory(data.data(),int(data.size()),&width,&height,&channels)||
-       width!=height||width<1||width>BT4_PROFILE_AVATAR_MAX)return false;
+       (atlasWidth?(width!=atlasWidth||height!=atlasHeight):
+                   (width!=height||width<1||width>BT4_PROFILE_AVATAR_MAX)))return false;
     unsigned char *decoded=stbi_load_from_memory(data.data(),int(data.size()),&width,&height,&channels,4);
     if(!decoded)return false;
     memcpy(rgba,decoded,size_t(width)*height*4);
     stbi_image_free(decoded);*w=width;*h=height;
     return true;
+}
+
+static bool profileDecodeAvatar(const std::string &encoded,unsigned char *rgba,int *w,int *h){
+    return profileDecodeImage(encoded,rgba,w,h,profileAvatarWireBytes);
 }
 
 static Dj encodeProfileImage(const ProfileImageSource &source,float x=0.5f,float y=0.5f,float zoom=1.0f){
@@ -270,6 +342,10 @@ static Dj encodeProfileImage(const ProfileImageSource &source,float x=0.5f,float
     }
     Dj body={{"kind",source.kind},{"frames",std::move(frames)},{"delays",std::move(timing)}};
     if(!detail.empty())body["detail"]=std::move(detail);
+    if(source.kind=="motion"||source.kind=="banner_motion"){
+        auto animation=encodeProfileAnimation(source,x,y,zoom);
+        if(!animation.is_null())body["animation"]=std::move(animation);
+    }
     return body;
 }
 

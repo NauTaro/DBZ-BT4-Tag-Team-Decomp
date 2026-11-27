@@ -1,5 +1,5 @@
 import {ONLINE_SCHEMA} from './online_schema.mjs';
-import {activateExistingDonors,getProfileMedia,ownProfileCard,profileCard,saveProfileMedia} from './online_profile_cards.mjs';
+import {activateExistingDonors,getProfileMedia,ownProfileCard,profileAnimationRequestLimit,profileCard,saveProfileMedia} from './online_profile_cards.mjs';
 import {migrateCharacters,characterSelection,saveRankedCharacters,mirrorRanked,reportOnlineMatch} from './online_characters.mjs';
 import {advanceRankedMonth,rankedCollection,rankedMonthAt,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
 import {claimRankedRock,claimQuickRock,RANKED_ROCK_WIRE,rollRankedRock,rollQuickRock} from './ranked_rocks.mjs';
@@ -317,7 +317,8 @@ export class OnlineCore {
     command(user,op,a={}){
         this.events=[];
         if(!UUID.test(user)||!this.one('SELECT id FROM online_users WHERE id=?',user))error('AUTH_REQUIRED');
-        if(!a||typeof a!=='object'||Array.isArray(a)||bytes(JSON.stringify(a))>18000)error('BAD_REQUEST');
+        const limit=op==='profile_media_save'&&a?.animation!==undefined?profileAnimationRequestLimit:18000;
+        if(!a||typeof a!=='object'||Array.isArray(a)||bytes(JSON.stringify(a))>limit)error('BAD_REQUEST');
         if(op==='profile_card_get')return ownProfileCard(this,user);
         if(op==='profile_media_get')return getProfileMedia(this,user,a);
         if(op==='profile_card_save'||op==='profile_media_save'){
