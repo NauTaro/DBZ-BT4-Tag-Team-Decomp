@@ -50,6 +50,7 @@
 #include "bundled_mods_r58_tag_hotfix2.h"
 #include "bundled_modern_hud_hotfix3.h"
 #include "tag_hud.h"
+#include "../../../include/hud_placement.h"
 
 extern unsigned gPortVBlanks;                     /* plat_stub.c */
 extern volatile int gUiPresentW, gUiPresentH;     /* gs_draw.c: the game's picture in the window */
@@ -802,7 +803,6 @@ static int l_hud_actor_anchor(lua_State *L){
     if((c=hud_cmd(MODS_CMD_ACTOR_ANCHOR))!=NULL){c->i0=pane;c->i1=actor;c->f[0]=num(L,3);c->f[1]=num(L,4);}
     return 0;
 }
-#include "hud_placement.h"
 static int l_hud_unanchor(lua_State *L){hud_cmd(MODS_CMD_UNANCHOR);return 0;}
 static int l_hud_place(lua_State *L) {
     static const struct { const char *name; int group; } groups[] = {
