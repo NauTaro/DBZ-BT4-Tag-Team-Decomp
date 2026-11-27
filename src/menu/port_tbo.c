@@ -256,6 +256,7 @@ extern void Port_TagModeOptions(int,int);
 extern int Port_TagFreeForAll(void),Port_TagQueueWaiting(int);
 extern void Port_NetRulesSet(int type, int dp, int time);
 extern const char *Port_NetNameGet(void);
+extern void Port_UiProfileHeader(const char *name, f32 left, f32 top, f32 right, f32 bottom);
 extern void Port_NetNameSave(const char *name);
 extern int Port_LobbyStartCode(int host, const char *code);
 extern const char *Port_NetLanAddress(void);                        /* this PC's address on its own network, "" not known */
@@ -5878,7 +5879,8 @@ static void Tb_Draw(void) {
         break;
     }
     Tb_PageIn(0);
-    if(!sTagHomeEntry)Ps_Panel(TBO_KIT_WINDOW, 300.0f+Tb_TagCardShift(), 10.0f, 504.0f+Tb_TagCardShift(), 44.0f, 0x80);
+    if(!sTagHomeEntry&&sTb->mode!=TB_PROFILE&&sTb->mode!=TB_NAME)
+        Ps_Panel(TBO_KIT_WINDOW, 300.0f+Tb_TagCardShift(), 10.0f, 504.0f+Tb_TagCardShift(), 44.0f, 0x80);
     {   /* the game's box with the hosts' line (the buttons under it: Tb_DrawText); in a lobby what happened last */
         u16 *box = NULL;
 
@@ -6013,7 +6015,12 @@ static void Tb_DrawText(void) {
     }
     /* (no status and no title under it: "ONLINE" was not whether the game is connected, and the title is the
        screen's heading) */
-    if(!sTagHomeEntry){
+    if(!sTagHomeEntry&&(sTb->mode==TB_PROFILE||sTb->mode==TB_NAME)){
+        Port_UiProfileHeader(Port_NetNameGet(),Ps_X(300.0f),Ps_Y(10.0f),Ps_X(504.0f),Ps_Y(44.0f));
+    }else{
+        Port_UiProfileHeader(NULL,0,0,0,0);
+    }
+    if(!sTagHomeEntry&&sTb->mode!=TB_PROFILE&&sTb->mode!=TB_NAME){
         Bt4RankedView ranked;Tb_RankedUiView(&ranked);
         if(ranked.dragonBalls)Tb_DragonBall(327+Tb_TagCardShift(),27,8.5f,ranked.dragonBalls,1);
         Ps_TextRaw(322.0f+Tb_TagCardShift()+(ranked.dragonBalls?20:0), Ps_TextTop(27.0f, 0.6f), (char *)Port_NetNameGet(), 0.6f, 166.0f-(ranked.dragonBalls?20:0), 1);

@@ -3180,6 +3180,40 @@ struct OnlineBanner {
 };
 static std::mutex sBannerLock;
 static OnlineBanner sBanner;
+struct ProfileHeader {
+    char name[32]={};
+    float left=0,top=0,right=0,bottom=0;
+    Uint64 seen=0;
+};
+static ProfileHeader sProfileHeader;
+extern "C" void Port_UiProfileHeader(const char *name,float left,float top,float right,float bottom) {
+    std::lock_guard<std::mutex> guard(sBannerLock);
+    if(!name){sProfileHeader={};return;}
+    SDL_strlcpy(sProfileHeader.name,name,sizeof(sProfileHeader.name));
+    sProfileHeader.left=left;sProfileHeader.top=top;
+    sProfileHeader.right=right;sProfileHeader.bottom=bottom;
+    sProfileHeader.seen=SDL_GetTicks();
+}
+static void profile_header_draw(const ProfileHeader &header) {
+    static Uint64 nextRequest=0;
+    Bt4ProfileCard card={};
+    if(getenv("BT4_RENDER_TEST")){
+        if(getenv("BT4_RANKED_PREVIEW_LOCAL")) {
+            SDL_strlcpy(card.avatar,"preview-local",sizeof(card.avatar));
+            card.nameColor=5;card.background=6;card.decoration=1;
+        }
+    } else {
+        const int state=Port_ProfileCardView(&card);
+        if(state<=0&&SDL_GetTicks()>=nextRequest){
+            Port_ProfileCardRequest(nullptr);
+            nextRequest=SDL_GetTicks()+10000;
+        }
+    }
+    const float sx=gUiPresentW/512.0f,sy=gUiPresentH/448.0f;
+    profile_card_draw(ImGui::GetBackgroundDrawList(),
+        ImVec2(gUiPresentX+header.left*sx,gUiPresentY+header.top*sy),
+        (header.right-header.left)*sx,(header.bottom-header.top)*sy,header.name,card);
+}
 struct RankedToast {Uint64 started=0;int rating=0,delta=0;};
 static RankedToast sRankedToast;
 extern "C" void Port_UiRankedSettlement(int rating,int delta) {
@@ -3807,14 +3841,17 @@ static bool frame_build(void) {
     bool chat = online && (sChat || chat_recent());
     OnlineBanner bannerState;
     RankedToast rankedToast;
+    ProfileHeader profileHeader;
     {
         std::lock_guard<std::mutex> guard(sBannerLock);
         if (sBanner.until && SDL_GetTicks()>=sBanner.until) sBanner={};
         bannerState=sBanner;
         rankedToast=sRankedToast;
+        profileHeader=sProfileHeader;
     }
     bool tagMenu = sReady && sTagMenuOpen;
-    const bool rankedPreview=sReady&&getenv("BT4_RENDER_TEST")&&getenv("BT4_RANKED_PREVIEW_LOCAL");
+    const bool rankedPreview=sReady&&getenv("BT4_RENDER_TEST")&&getenv("BT4_RANKED_PREVIEW_LOCAL")&&!getenv("BT4_RENDER_TBO");
+    const bool profileHeaderOn=sReady&&profileHeader.seen&&SDL_GetTicks()-profileHeader.seen<250&&gUiPresentW>0&&gUiPresentH>0;
     bool updateAvailable=updLine[0]!=0;
     extern int gPortMenuMode;
     if(PortHud_Hidden() && !gPortMenuMode)meter=names=chat=bars=notice=false;
@@ -3846,7 +3883,7 @@ static bool frame_build(void) {
     meter_count();
     sBuilt = false;
     UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit);
-    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !showTagCard && !showTagEncounter && !showRankedToast && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods && !rankedPreview)) {
+    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !showTagCard && !showTagEncounter && !showRankedToast && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods && !rankedPreview && !profileHeaderOn)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -3893,6 +3930,7 @@ static bool frame_build(void) {
     if (bars) {
         bars_draw();
     }
+    if (profileHeaderOn) profile_header_draw(profileHeader);
     if(mods)ModsUi_Draw(); // The player's Hide HUD choice also hides script overlays.
     if (sOpen) {
         if (hudPlacementOpen) {
