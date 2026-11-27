@@ -3,7 +3,8 @@ import './online_characters.test.mjs';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {OnlineCore,seasonAt,clientAtLeast} from '../online_core.mjs';
-import {fulfillProfilePass,grantProfilePass,passDurationMs} from '../online_profile_cards.mjs';
+import {activateExistingDonors,fulfillProfilePass,grantProfilePass,officialDonorLifetime,revokeProfilePass} from '../online_profile_cards.mjs';
+const month = 30 * 24 * 60 * 60 * 1000;
 import {applyProfileWebhook,profileCheckout,verifyProfileWebhook} from '../online_profile_checkout.mjs';
 import {kofiCheckout,kofiEnabled} from '../online_profile_kofi.mjs';
 import {createHmac} from 'node:crypto';
@@ -48,33 +49,45 @@ test('RGB name and banner colors can be saved while older clients receive preset
 });
 
 test('a complimentary pass enables premium without creating a payment',()=>{
-    const f=fixture(), user=f.user('CompPass'), expires=f.c.now()+2*passDurationMs;
+    const f=fixture(), user=f.user('CompPass'), expires=f.c.now()+2*month;
     assert.equal(grantProfilePass(f.c,{user_id:user,until_ms:expires}).premium_until,expires);
     assert.equal(f.c.one('SELECT COUNT(*) n FROM online_profile_payments').n,0);
     assert.equal(f.invoke(user,'profile_card_save',{card:{decoration:2}}).decoration,2);
     const paid={user_id:user,payment_id:'paid_comp_pass',amount_minor:300,currency:'usd',paid_at:f.c.now()};
-    assert.equal(fulfillProfilePass(f.c,paid).premium_until,expires);
-    f.tick(2*passDurationMs);
+    assert.equal(fulfillProfilePass(f.c,paid).premium_until,officialDonorLifetime);
+    revokeProfilePass(f.c,paid.payment_id);
+    assert.equal(f.invoke(user,'profile_card_get').premium_until,expires);
+    f.tick(2*month);
     assert.equal(f.invoke(user,'profile_card_get').premium,false);
 });
 
-test('a verified three-dollar receipt grants exactly thirty days and retries do not extend it',()=>{
+test('a verified three-dollar receipt grants lifetime access and retries are idempotent',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo');
     const paidAt=f.c.now();
     const receipt={user_id:a,payment_id:'payment_123',amount_minor:300,currency:'usd',paid_at:paidAt};
     assert.throws(()=>fulfillProfilePass(f.c,{...receipt,amount_minor:99}),/BAD_PROFILE_PAYMENT/);
-    assert.equal(fulfillProfilePass(f.c,receipt).premium_until,paidAt+passDurationMs);
-    assert.equal(fulfillProfilePass(f.c,receipt).premium_until,paidAt+passDurationMs);
+    assert.equal(fulfillProfilePass(f.c,receipt).premium_until,officialDonorLifetime);
+    assert.equal(fulfillProfilePass(f.c,receipt).premium_until,officialDonorLifetime);
     assert.throws(()=>fulfillProfilePass(f.c,{...receipt,user_id:b}),/BAD_PROFILE_PAYMENT/);
     f.invoke(a,'profile_card_save',{card:{name_color:5,background:2,decoration:1}});
-    f.tick(passDurationMs-1);
+    f.tick(12*month);
     assert.equal(f.invoke(a,'profile_card_get').decoration,1);
-    f.tick(1);
     assert.deepEqual(f.invoke(a,'profile_card_get'),{
-        name_color:5,background:2,decoration:0,premium:false,media:{},premium_until:paidAt+passDurationMs
+        name_color:5,background:2,decoration:1,premium:true,media:{},premium_until:officialDonorLifetime
     });
     assert.equal(f.invoke(b,'profile_card_get').premium,false);
     assert.equal(fulfillProfilePass(f.c,{...receipt,payment_id:'payment_456',paid_at:f.c.now()}).decoration,1);
+});
+test('existing verified receipts activate lifetime access and refunded receipts stay inactive',()=>{
+    const f=fixture(), paid=f.user('Paid'), refunded=f.user('Refunded');
+    f.c.run('INSERT INTO online_profile_payments VALUES(?,?,?)','legacy_paid',paid,f.c.now());
+    f.c.run('INSERT INTO online_profile_payments VALUES(?,?,?)','legacy_refund',refunded,f.c.now());
+    revokeProfilePass(f.c,'legacy_refund');
+    f.tick(2*month);
+    activateExistingDonors(f.c);
+    activateExistingDonors(f.c);
+    assert.equal(f.invoke(paid,'profile_card_get').premium_until,officialDonorLifetime);
+    assert.equal(f.invoke(refunded,'profile_card_get').premium,false);
 });
 test('profile media is fetched on demand, scoped to a room, and follows pass expiration',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo'),outside=f.user('Charlie');
@@ -89,7 +102,7 @@ test('profile media is fetched on demand, scoped to a room, and follows pass exp
     const guest=f.invoke(b,'join',{...profile,code:room.code});
     assert.deepEqual(guest.members[0].card.media,{avatar:common});
     assert.equal(f.invoke(b,'profile_media_get',{id:common}).frames[0],avatar);
-    fulfillProfilePass(f.c,{user_id:a,payment_id:'motion_123',amount_minor:300,currency:'usd',paid_at:f.c.now()});
+    grantProfilePass(f.c,{user_id:a,until_ms:f.c.now()+month});
     const animated=f.invoke(a,'profile_media_save',motion).media.motion;
     const cover=f.invoke(a,'profile_media_save',{kind:'banner',frames:[banner],delays:[100]}).media.banner;
     const animatedCover=f.invoke(a,'profile_media_save',{...motion,kind:'banner_motion'}).media.banner_motion;
@@ -97,7 +110,7 @@ test('profile media is fetched on demand, scoped to a room, and follows pass exp
     assert.equal(f.invoke(b,'profile_media_get',{id:cover}).frames[0],banner);
     assert.equal(f.invoke(b,'profile_media_get',{id:animatedCover}).kind,'banner_motion');
     assert.throws(()=>f.invoke(outside,'profile_media_get',{id:animated}),/PROFILE_MEDIA_UNAVAILABLE/);
-    f.tick(passDurationMs);
+    f.tick(month);
     assert.deepEqual(f.invoke(a,'profile_card_get').media,{avatar:common});
     assert.throws(()=>f.invoke(a,'profile_media_get',{id:cover}),/PROFILE_MEDIA_UNAVAILABLE/);
     assert.throws(()=>f.invoke(a,'profile_media_get',{id:animatedCover}),/PROFILE_MEDIA_UNAVAILABLE/);
@@ -169,7 +182,7 @@ test('checkout uses the authenticated account and the webhook requires signed pa
     assert.equal(f.invoke(a,'profile_card_get').premium,false);
     assert.equal(applyProfileWebhook(f.c,env,verified),true);
     assert.equal(applyProfileWebhook(f.c,env,verified),true);
-    assert.equal(f.invoke(a,'profile_card_get').premium_until,ts*1000+passDurationMs);
+    assert.equal(f.invoke(a,'profile_card_get').premium_until,officialDonorLifetime);
     assert.equal(applyProfileWebhook(f.c,env,{...event({refunded:true}),type:'charge.refunded'}),true);
     assert.equal(f.invoke(a,'profile_card_get').premium,false);
     assert.equal(applyProfileWebhook(f.c,env,verified),true);
@@ -212,7 +225,8 @@ test('Ko-fi purchase activates only the linked profile and each order is usable 
     const html=await page.text();
     assert.match(html,/https:\/\/ko-fi\.com\/nautaro/);
     assert.ok(html.includes(code));
-    assert.ok(html.includes('pago único de 3 USD'));
+    assert.ok(html.includes('donación única de 3 USD'));
+    assert.ok(html.includes('Donador oficial de BT4'));
     const event={verification_token:env.KOFI_PROFILE_TOKEN,type:'Donation',is_subscription_payment:false,
         kofi_transaction_id:'2b4e4eb0-002d-4f84-8af1-8c69198a1da2',timestamp:new Date(f.c.now()).toISOString(),
         amount:'3.00',currency:'USD',message:code};
@@ -226,13 +240,13 @@ test('Ko-fi purchase activates only the linked profile and each order is usable 
         assert.equal(f.invoke(a,'profile_card_get').premium,false);
     }
     assert.equal((await send({})).status,200);
-    assert.equal(f.invoke(a,'profile_card_get').premium_until,f.c.now()+passDurationMs);
+    assert.equal(f.invoke(a,'profile_card_get').premium_until,officialDonorLifetime);
     assert.equal(f.invoke(b,'profile_card_get').premium,false);
     assert.equal((await coordinator.fetch(new Request(order.url))).status,404);
     f.tick(5000);
     assert.equal((await send({})).status,200);
     assert.equal((await send({kofi_transaction_id:'second-charge',timestamp:new Date(f.c.now()).toISOString()})).status,200);
-    assert.equal(f.invoke(a,'profile_card_get').premium_until,f.c.now()-5000+passDurationMs);
+    assert.equal(f.invoke(a,'profile_card_get').premium_until,officialDonorLifetime);
     const second=kofiCheckout(f.c,env,b);
     f.tick(86400001);
     assert.equal((await send({kofi_transaction_id:'expired-charge',message:second.url.split('/').pop(),

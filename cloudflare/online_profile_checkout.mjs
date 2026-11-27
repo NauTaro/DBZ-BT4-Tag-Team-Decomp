@@ -17,7 +17,7 @@ export async function profileCheckout(env,user,request=fetch) {
         mode:'payment',success_url:returnUrl,cancel_url:returnUrl,client_reference_id:user,
         'adaptive_pricing[enabled]':'false','payment_method_types[0]':'card',
         'line_items[0][price_data][currency]':'usd','line_items[0][price_data][unit_amount]':String(profilePassPrice),
-        'line_items[0][price_data][product_data][name]':'BT4 profile pass (30 days)',
+        'line_items[0][price_data][product_data][name]':'BT4 Official Donor (lifetime)',
         'line_items[0][quantity]':'1','metadata[product]':product,
         'payment_intent_data[metadata][product]':product
     });

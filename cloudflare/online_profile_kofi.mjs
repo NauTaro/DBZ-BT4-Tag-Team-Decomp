@@ -21,11 +21,11 @@ export function kofiCheckout(core, env, user) {
 export function kofiPage(core, code, language) {
     if (!codePattern.test(code) || !core.one('SELECT code FROM online_profile_kofi_orders WHERE code=? AND expires>=? AND payment_id IS NULL', code, core.now())) return null;
     const es = /^es\b/i.test(language);
-    const title = es ? 'Pase de perfil BT4' : 'BT4 Profile Pass';
+    const title = es ? 'Donador oficial de BT4' : 'BT4 Official Donor';
     const price = profilePassPrice / 100;
     const instructions = es
-        ? `Copiá este código como mensaje privado al enviar un pago único de ${price} USD. Después, volvé al juego y elegí Actualizar pase.`
-        : `Copy this code into the private message on a one-time USD ${price} payment. Then return to the game and select Refresh pass.`;
+        ? `Copiá este código en el mensaje privado de tu donación única de ${price} USD. Tendrás acceso permanente a GIFs, banners y decoraciones. Después, volvé al juego y elegí Actualizar estado.`
+        : `Copy this code into the private message of your one-time USD ${price} donation. You'll get lifetime access to GIFs, banners, and decorations. Then return to the game and select Refresh status.`;
     const label = es ? 'Abrir Ko-fi de NauTaro' : 'Open NauTaro on Ko-fi';
     return new Response(`<!doctype html><html lang="${es?'es':'en'}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font:1rem/1.6 system-ui;background:#12202e;color:#f4f6f8;margin:0;padding:2rem}main{max-width:34rem;margin:8vh auto}input,a{font:inherit;padding:.7rem;color:#161616;background:#fff;border:0;border-radius:.3rem}input{width:17rem;max-width:90%}a{display:inline-block;margin-top:1rem;background:#ffd783;text-decoration:none}</style><main><h1>${title}</h1><p>${instructions}</p><input aria-label="${es?'Código de compra':'Purchase code'}" readonly value="${code}"><br><a href="${recipient}" rel="noreferrer">${label}</a></main></html>`, {
         headers: {'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store', 'Referrer-Policy':'no-referrer',

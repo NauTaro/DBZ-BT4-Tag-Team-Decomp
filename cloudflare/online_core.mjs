@@ -1,5 +1,5 @@
 import {ONLINE_SCHEMA} from './online_schema.mjs';
-import {getProfileMedia,ownProfileCard,profileCard,saveProfileMedia} from './online_profile_cards.mjs';
+import {activateExistingDonors,getProfileMedia,ownProfileCard,profileCard,saveProfileMedia} from './online_profile_cards.mjs';
 import {migrateCharacters,characterSelection,saveRankedCharacters,mirrorRanked,reportOnlineMatch} from './online_characters.mjs';
 import {advanceRankedMonth,rankedCollection,rankedMonthAt,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
 import {claimRankedRock,claimQuickRock,RANKED_ROCK_WIRE,rollRankedRock,rollQuickRock} from './ranked_rocks.mjs';
@@ -24,6 +24,7 @@ export class OnlineCore {
     constructor(sql,now=()=>Date.now(),uuid=()=>crypto.randomUUID()){
         this.sql=sql;this.now=now;this.uuid=uuid;this.events=[];
         sql.exec('PRAGMA foreign_keys=ON');sql.exec(ONLINE_SCHEMA);migrateCharacters(sql);
+        activateExistingDonors(this);
     }
     rows(q,...args){return [...this.sql.exec(q,...args)];}
     one(q,...args){return this.rows(q,...args)[0];}

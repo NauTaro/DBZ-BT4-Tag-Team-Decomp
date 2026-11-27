@@ -540,7 +540,15 @@ static void profile_card_editor(const char *name,float u,bool &open) {
     Bt4ProfileCard current={};
     const int state=Port_ProfileCardView(&current);
     if(state==BT4_CARD_EMPTY)Port_ProfileCardRequest(nullptr);
-    if(state==BT4_CARD_READY&&(state!=previous||draft.premium!=current.premium))draft=current;
+    if(state==BT4_CARD_READY){
+        if(state!=previous||draft.premium!=current.premium)draft=current;
+        else{
+            SDL_strlcpy(draft.avatar,current.avatar,sizeof(draft.avatar));
+            SDL_strlcpy(draft.motion,current.motion,sizeof(draft.motion));
+            SDL_strlcpy(draft.banner,current.banner,sizeof(draft.banner));
+            SDL_strlcpy(draft.bannerMotion,current.bannerMotion,sizeof(draft.bannerMotion));
+        }
+    }
     previous=state;
     if(state==BT4_CARD_LOADING||state==BT4_CARD_EMPTY){
         ImGui::TextUnformatted(profile_label("Loading profile…", "Cargando perfil…", "Carregando perfil…"));
@@ -642,18 +650,18 @@ static void profile_card_editor(const char *name,float u,bool &open) {
         profile_card_draw(ImGui::GetWindowDrawList(),ImGui::GetCursorScreenPos(),size.x,size.y,name,draft);
         ImGui::Dummy(size);
         ImGui::TextColored(ImVec4(0.99f,0.81f,0.39f,1),"%s",current.premium?
-            profile_label("Profile pass active","Pase de perfil activo","Passe de perfil ativo"):
+            profile_label("Official Donor","Donador oficial","Doador oficial"):
             profile_label("Free profile","Perfil gratuito","Perfil gratuito"));
-        if (!current.premium) ImGui::TextWrapped("%s",profile_label("The pass unlocks GIFs, banners and decorations.",
-            "El pase habilita GIFs, banners y decoraciones.","O passe libera GIFs, banners e decorações."));
+        if (!current.premium) ImGui::TextWrapped("%s",profile_label("Become an Official Donor to unlock GIFs, custom banners and decorations for life.",
+            "Conviértete en Donador oficial para desbloquear GIFs, banners personalizados y decoraciones de por vida.","Torne-se um Doador oficial para liberar GIFs, banners personalizados e decorações para sempre."));
         if (current.checkout&&!current.premium) {
             char url[2048]={};
             const int checkout=Port_ProfileCheckout(0,url,sizeof(url));
             ImGui::BeginDisabled(checkout==1);
-            if (ImGui::Button(profile_label("30 days · USD 3","30 días · 3 USD","30 dias · US$ 3")))
+            if (ImGui::Button(profile_label("Donate USD 3 once","Donar 3 USD una vez","Doar US$ 3 uma vez")))
                 Port_ProfileCheckout(1,nullptr,0);
             ImGui::SameLine();
-            if (ImGui::Button(profile_label("Refresh pass","Actualizar pase","Atualizar passe"))) {
+            if (ImGui::Button(profile_label("Refresh status","Actualizar estado","Atualizar status"))) {
                 Port_ProfileCardRequest(nullptr);
                 previous=1;
             }

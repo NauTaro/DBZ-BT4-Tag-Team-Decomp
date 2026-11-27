@@ -1,5 +1,5 @@
 export const profilePassPrice = 300;
-export const passDurationMs = 30 * 24 * 60 * 60 * 1000;
+export const officialDonorLifetime = Number.MAX_SAFE_INTEGER;
 const formats = {avatar:[2048,1],motion:[2048,6],banner:[8192,1],banner_motion:[2048,6]};
 const matchId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 
@@ -161,11 +161,19 @@ export function fulfillProfilePass(core, purchase) {
 }
 
 function refreshPassExpiry(core,user) {
-    const latest=core.one(`SELECT MAX(paid_at) AS paid_at FROM online_profile_payments p WHERE p.user_id=?
-        AND NOT EXISTS(SELECT 1 FROM online_profile_refunds r WHERE r.payment_id=p.payment_id)`,user)?.paid_at;
+    const paid=core.one(`SELECT 1 FROM online_profile_payments p WHERE p.user_id=?
+        AND NOT EXISTS(SELECT 1 FROM online_profile_refunds r WHERE r.payment_id=p.payment_id) LIMIT 1`,user);
     const grant=core.one('SELECT until_ms FROM online_profile_grants WHERE user_id=?',user)?.until_ms ?? 0;
     core.run(`INSERT INTO online_profile_cards(user_id,premium_until) VALUES(?,?)
-        ON CONFLICT(user_id) DO UPDATE SET premium_until=excluded.premium_until`,user,Math.max(grant,latest?latest+passDurationMs:0));
+        ON CONFLICT(user_id) DO UPDATE SET premium_until=excluded.premium_until`,user,paid?officialDonorLifetime:grant);
+}
+
+export function activateExistingDonors(core) {
+    core.run(`INSERT INTO online_profile_cards(user_id,premium_until)
+        SELECT DISTINCT p.user_id,? FROM online_profile_payments p
+        WHERE NOT EXISTS(SELECT 1 FROM online_profile_refunds r WHERE r.payment_id=p.payment_id)
+        ON CONFLICT(user_id) DO UPDATE SET premium_until=excluded.premium_until
+        WHERE online_profile_cards.premium_until<>excluded.premium_until`,officialDonorLifetime);
 }
 
 export function grantProfilePass(core,{user_id,until_ms}={}) {

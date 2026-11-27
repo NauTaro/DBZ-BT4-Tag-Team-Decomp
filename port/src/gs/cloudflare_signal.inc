@@ -168,14 +168,16 @@ static int cloudEntry(void*){
             if(job.expires&&now>=job.expires){complete(job,Sj{{"error","TIMEOUT"}});continue;}
             if(bt4route::admission(job.op)&&Update_OnlineRequired()){complete(job,Sj{{"error","UPDATE_REQUIRED"}});continue;}
             if(bt4route::admission(job.op))job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",2}};
-            if(httpFallback){
+            const bool profileWrite=job.op=="profile_card_save"||job.op=="profile_media_save";
+            if(httpFallback||profileWrite){
                 Sj body;identityReady=cloudAuthenticate();bool ok=identityReady&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
                 if(!ok&&lastHttpStatus==401&&body.is_object()&&str(body,"error")=="AUTH_REQUIRED"){
                     identities[2].access.clear();identities[2].renewAt=0;
                     identityReady=cloudAuthenticate();ok=identityReady&&http("/v5/api",{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
                 }
                 if(!ok&&!body.is_object())body={{"error","SIGNALING_UNAVAILABLE"}};
-                complete(job,body);state.status=ok?1:-1;
+                complete(job,body);
+                if(!profileWrite)state.status=ok?1:-1;
             }else{
             socket->text(Sj{{"op",job.op},{"args",job.args},{"serial",job.serial},{"consumer",job.consumer}}.dump());
             if(diagnostics)fprintf(stderr,"bt4: Cloudflare command=%s consumer=%d serial=%u\n",job.op.c_str(),job.consumer,job.serial);
