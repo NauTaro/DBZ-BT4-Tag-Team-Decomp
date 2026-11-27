@@ -1971,7 +1971,9 @@ static void Tb_HubUpdate(s32 live) {
     if (!live) {
         return;
     }
-    if (PortTbo_CommunityTake() || (pad->gamePressed & PADG_SQUARE)) {
+    if (PortTbo_CommunityTake() || (pad->gamePressed & PADG_SELECT)) {
+        if (getenv("BT4_RENDER_TEST") && getenv("BT4_TBO_COMMUNITY_INPUT_TEST"))
+            fprintf(stderr, "bt4 community: select=%d\n", (pad->gamePressed & PADG_SELECT) != 0);
         Snd_PlaySe(1, 1);
         PortTbo_OpenCommunity();
         return;
@@ -2570,8 +2572,9 @@ static f32 Tb_HubBadgeWidth(void){
     f32 width=Ps_TextWidth("SOON",0.34f)+12.0f;
     return width<40?40:width>90?90:width;
 }
+#define TB_MOST_WANTED_WIDTH 154.0f
 static f32 Tb_MostWantedLeft(void){
-    return 512.0f-Ps_Left()-159.0f;
+    return 512.0f-Ps_Left()-5.0f-TB_MOST_WANTED_WIDTH;
 }
 
 static void Tb_DrawHub(void) {
@@ -2583,7 +2586,7 @@ static void Tb_DrawHub(void) {
     f32 hostX=panel-36.0f;
     if(hostX>396.0f)hostX=396.0f;
     Tb_Hosts(TBO_HOSTS_MIC_WAVE, hostX - slide * 0.6f, 350.0f, panel<390.0f?196.0f:262.0f);
-    Ps_Panel(TBO_KIT_WINDOW,panel,59.0f,panel+154.0f,265.0f,0x80);
+    Ps_Panel(TBO_KIT_WINDOW,panel,59.0f,panel+TB_MOST_WANTED_WIDTH,265.0f,0x80);
     Ps_Pill(TBO_KIT_SEL,panel+5.0f,64.0f,panel+149.0f,87.0f,0x80);
     for(i=0;i<10;++i){
         f32 y=108.0f+15.0f*i;
@@ -6015,7 +6018,8 @@ static void Tb_DrawText(void) {
        screen's heading) */
     if(!sTagHomeEntry){
         const s32 full=sTb->mode==TB_PROFILE||sTb->mode==TB_NAME;
-        const f32 right=full?512.0f-Ps_Left()-16.0f:504.0f+Tb_TagCardShift();
+        const f32 right=sTb->mode==TB_HUB?Tb_MostWantedLeft()+TB_MOST_WANTED_WIDTH:
+                        full?512.0f-Ps_Left()-16.0f:504.0f+Tb_TagCardShift();
         const f32 width=full?196.0f:204.0f;
         Bt4RankedView ranked;
         Tb_RankedUiView(&ranked);
@@ -6076,15 +6080,20 @@ static void Tb_DrawCommunityButton(s32 live) {
     const char *original = "Join our Discord Server!";
     char label[96];
     extern int Port_TrLine(const char *original, char *out, int size);
+    extern int PortInput_XboxGlyphs(int player);
+    const char *shortcut = PortInput_XboxGlyphs(0) ? "VIEW" : "SELECT";
     if (!Port_TrLine(original, label, sizeof(label)))
         Ps_Copy(label, PortOnline_Text(original), sizeof(label));
 
     const f32 textWidth = Ps_MsgWidthLiteral(label, 1.0f);
     const f32 scale = textWidth * 0.90f > 140.0f ? 140.0f / textWidth : 0.90f;
     const f32 right = 512.0f - Ps_Left() - 12.0f;
-    const f32 left = right - (textWidth * scale + 46.0f);
+    const f32 shortcutScale = 0.55f;
+    const f32 shortcutTextWidth = Ps_MsgWidthLiteral(shortcut, 1.0f) * shortcutScale;
+    const f32 shortcutLeft = right - shortcutTextWidth - 12.0f;
+    const f32 left = shortcutLeft - (textWidth * scale + 33.0f);
     const f32 top = 413.0f, bottom = 437.0f, center = (top + bottom) * 0.5f;
-    const f32 emblemX = left + 11.0f, labelX = left + 25.0f, hintX = right - 8.0f;
+    const f32 emblemX = left + 11.0f, labelX = left + 25.0f;
     const f32 underlineEnd = labelX + textWidth * scale;
     const u32 gold = Ps_Rgba(0xFF, 0xC4, 0x68, 0x5A), clearGold = Ps_Rgba(0xFF, 0xC4, 0x68, 0);
 
@@ -6095,7 +6104,9 @@ static void Tb_DrawCommunityButton(s32 live) {
     Ps_MsgLiteral(labelX, center - (PS_MSG_BASE - PS_MSG_CAP * 0.5f) * scale, label, scale, 0x80);
     Ps_Quad(labelX, center + 8.5f, underlineEnd, center + 8.5f,
             underlineEnd, center + 9.1f, labelX, center + 9.1f, gold, clearGold, clearGold, gold);
-    Ps_Icon(Ps_ButtonPic(1), hintX, center, 14.0f, 0x62);
+    Ps_Pill(TBO_KIT_STEEL, shortcutLeft, center - 6.0f, right, center + 6.0f, 0x75);
+    Ps_MsgLiteral(shortcutLeft + 6.0f, center - (PS_MSG_BASE - PS_MSG_CAP * 0.5f) * shortcutScale,
+                  shortcut, shortcutScale, 0x80);
     Ps_PromptsDrawAt(left - 9.0f);
     PortTbo_CommunityBounds(live && !sTb->leaving, Ps_X(left), Ps_Y(top), Ps_X(right), Ps_Y(bottom));
 }
@@ -6273,8 +6284,10 @@ s32 PortTbo_Run(void) {
                 fprintf(stderr,"tag menu: join returned=%d section=%d row=%d\n",sTb->mode==TB_TAG,sTb->tagSection,sTb->tagCur);
             }
         }
-        if (communityTest && live && sTb->mode == TB_HUB && sTb->frames == 45)
-            gPad[0].gamePressed |= PADG_SQUARE;
+        if (communityTest && live && sTb->mode == TB_HUB) {
+            if (sTb->frames == 35) gPad[0].gamePressed |= PADG_SQUARE;
+            if (sTb->frames == 45) gPad[0].gamePressed |= PADG_SELECT;
+        }
         if(live&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST")&&sTb->mode==TB_RANKED){
             if(sTb->frames==45)gPad[0].gameRepeat|=PADG_DOWN;
             if(sTb->frames==50)gPad[0].gamePressed|=PADG_CROSS;
