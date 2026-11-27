@@ -1,3 +1,17 @@
+# BT4decomp 0.1.39.6 R3 1.3
+
+- Fixed a crash when opening Tenkaichi Budokai Online if the game could not allocate memory to load fighter names.
+
+<!-- bt4-update:en
+- Fixed a crash when opening Tenkaichi Budokai Online if fighter names could not be loaded due to insufficient game memory.
+-->
+<!-- bt4-update:es
+- Corregimos un cierre al abrir Tenkaichi Budokai Online cuando faltaba memoria interna del juego para cargar los nombres de los luchadores.
+-->
+<!-- bt4-update:pt
+- Corrigimos um encerramento ao abrir o Tenkaichi Budokai Online quando faltava memória interna do jogo para carregar os nomes dos lutadores.
+-->
+
 # BT4decomp 0.1.39.6 R3 1.2
 
 - New profile photos appear sharper. Ranked match cards now show a larger portrait, the player's nickname, and their points, wins, and losses.

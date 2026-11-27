@@ -29,6 +29,11 @@ void *Bpe_Decode(void *src, void *dst, s32 *rawSize) {
         buf = dst;
     } else {
         buf = Heap_Alloc(size, 0x20, 0, HEAP_ANY);
+#ifdef PORT
+        if (buf == NULL) {
+            return NULL;
+        }
+#endif
     }
     out = buf;
     in = src;
