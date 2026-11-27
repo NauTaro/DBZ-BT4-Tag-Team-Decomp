@@ -23,7 +23,7 @@ class TransportFallbackTests(unittest.TestCase):
 #include "JSON_HEADER"
 using Sj=nlohmann::json;using Uint64=uint64_t;
 #define BT4_CANONICAL_VERSION "0.1.39.6-R1.5"
-struct Job{int consumer=4;unsigned serial=1;std::string op="nickname_get";Sj args=Sj::object();unsigned session=0;Uint64 notBefore=0;};
+struct Job{int consumer=4;unsigned serial=1;std::string op="nickname_get";Sj args=Sj::object();unsigned session=0;Uint64 notBefore=0,expires=0;};
 struct State{std::mutex lock;bool quit=false;unsigned realtime=0;std::deque<Job> jobs;std::array<unsigned,6> sessions={};std::string roomGeneration;std::deque<std::string> releasedGenerations;int status=0;void *wake=nullptr;}state;
 struct Identity{std::string access="cached";Uint64 renewAt=840000;};static std::array<Identity,3> identities;
 static Uint64 clockNow=0,rateUntil=0;static int sockets=0,authCalls=0,replies=0,mode=0;static long lastHttpStatus=0;static bool forced=false;
@@ -33,17 +33,40 @@ static const char *SDL_getenv(const char *name){return forced&&!strcmp(name,"BT4
 static void SDL_WaitSemaphoreTimeout(void*,int){clockNow+=20;if(clockNow>125000)state.quit=true;}
 static void wake(void*){}
 static std::string str(const Sj &j,const char *k){auto i=j.find(k);return i!=j.end()&&i->is_string()?i->get<std::string>():std::string();}
-static bool emit(int,const Sj &event){assert(event["body"]["state"]=="ready");++replies;state.quit=true;return true;}
+static bool emit(int,const Sj &event){
+ if(event["event"]=="bt4.ready")return true;
+ if(mode==2)assert(event["body"]["premium"]==false);
+ else assert(event["body"]["state"]=="ready");
+ ++replies;state.quit=true;return true;
+}
 static int Update_OnlineRequired(){return 0;}static void Update_SetOnlineRequired(int){}
 namespace bt4route{static bool admission(const std::string &op){return op=="create"||op=="join"||op=="queue"||op=="ranked_queue";}}
 static bool cloudAuthenticate(){++authCalls;if(clockNow<rateUntil){lastHttpStatus=429;return false;}identities[2].access="renewed";identities[2].renewAt=clockNow+840000;lastHttpStatus=200;return true;}
-static bool http(const std::string &,const Sj &request,bool,Sj &answer,bool=false,const char *=nullptr,const std::string *=nullptr){assert(request["op"]=="nickname_get");answer={{"state","ready"},{"name","Fixture"}};return true;}
+static bool http(const std::string &,const Sj &request,bool,Sj &answer,bool=false,const char *=nullptr,const std::string *=nullptr){
+ if(mode==2){
+  assert(request["op"]=="profile_media_save");
+  assert(request["args"]["frames"][0].get<std::string>().size()==17600);
+  answer={{"premium",false}};
+ }else{
+  assert(request["op"]=="nickname_get");
+  answer={{"state","ready"},{"name","Fixture"}};
+ }
+ return true;
+}
 struct VoiceWsMessage{bool binary=false;std::vector<unsigned char> bytes;};
 struct VoiceWs{
  int status;
- VoiceWs(const std::string &,const std::string &,int,const std::string &,bool,void(*)(void*),void*):status(mode==1?1:-1){++sockets;}
- void text(const std::string &){}
- bool read(VoiceWsMessage &){status=-1;return false;}
+ bool delivered=false;
+ VoiceWs(const std::string &,const std::string &,int,const std::string &,bool,void(*)(void*),void*):status(mode>=1?1:-1){++sockets;}
+ void text(const std::string &message){if(mode==2)assert(Sj::parse(message)["op"]=="authenticate");}
+ bool read(VoiceWsMessage &packet){
+  if(mode!=2){status=-1;return false;}
+  if(delivered)return false;
+  delivered=true;
+  const std::string ready=R"({"event":"bt4.ready","body":{}})";
+  packet.bytes.assign(ready.begin(),ready.end());
+  return true;
+ }
 };
 PRODUCTION_ENTRY
 static void reset(int m,bool force=false){state.quit=false;state.realtime=0;state.jobs={Job{}};state.sessions={};state.roomGeneration.clear();state.releasedGenerations.clear();clockNow=rateUntil=0;sockets=authCalls=replies=0;mode=m;forced=force;identities={};identities[2].access="cached";}
@@ -52,6 +75,12 @@ int main(){
  reset(1);cloudEntry(nullptr);assert(replies==1&&sockets==1&&authCalls<=3&&clockNow<5000);
  reset(0,true);cloudEntry(nullptr);assert(replies==1&&sockets==0);
  reset(0,true);rateUntil=60000;cloudEntry(nullptr);assert(replies==1&&sockets==0&&authCalls<=3&&clockNow>=60000);
+ reset(2);
+ state.jobs.front().op="profile_media_save";
+ state.jobs.front().args={{"frames",Sj::array({std::string(17600,'A')})}};
+ state.jobs.front().expires=19000;
+ cloudEntry(nullptr);
+ assert(replies==1&&sockets==1&&clockNow<1000);
  puts("PASS: blocked upgrades, failed socket authentication, HTTPS-only operation and bounded rate-limit retries");
 }
 '''.replace('"JSON_HEADER"','"'+(ROOT/'port/third_party/voice/json.hpp').as_posix()+'"').replace('PRODUCTION_ENTRY',entry).replace('const char *=nullptr','const char *host=nullptr').replace('const std::string *=nullptr','const std::string *token=nullptr')
