@@ -42,6 +42,29 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Decode a short emote without creating a device or a miniaudio engine. */
+int PortMa_DecodeEmote(const char *path, unsigned rate, int16_t **pcm) {
+    ma_decoder decoder;
+    ma_decoder_config config = ma_decoder_config_init(ma_format_s16, 1, rate);
+    ma_uint64 length = 0, read = 0;
+    int16_t *data = NULL;
+
+    *pcm = NULL;
+    if (ma_decoder_init_file(path, &config, &decoder) != MA_SUCCESS) return 0;
+    if (ma_decoder_get_length_in_pcm_frames(&decoder, &length) == MA_SUCCESS &&
+        length && length <= 60u * rate) {
+        data = malloc((size_t)length * sizeof(*data));
+        if (data) ma_decoder_read_pcm_frames(&decoder, data, length, &read);
+    }
+    ma_decoder_uninit(&decoder);
+    if (!read) {
+        free(data);
+        return 0;
+    }
+    *pcm = data;
+    return (int)read;
+}
+
 /* Lossless disc cache: decoder only, with no second audio device, gain, rate
  * conversion or engine. snd_adx.c owns playback, pan, loops and time stretch. */
 void *PortPcm_Open(const char *path,unsigned channels,unsigned rate,unsigned long long samples){

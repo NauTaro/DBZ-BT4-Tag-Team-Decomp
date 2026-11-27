@@ -116,6 +116,7 @@ typedef struct Player {
 } Player;
 
 static Player sPlayers[MAX_PLAYERS];
+static int sEmotePausesMusic;
 extern int gPortMusicFollows; /* (below, with the volumes) */
 
 /* plat_sndstate.c: which players exist and, counted in vertical blanks, what they report: the part of this that is
@@ -667,6 +668,8 @@ static void start(Player *p, const char *path) {
                 return; /* (PortMa_Start said why) */
             }
             PortMa_SetPan(p->ma, p->pan[0], p->pan[1]);
+            if (p == sPlayers && (p->paused || sEmotePausesMusic))
+                PortMa_Pause(p->ma, 1);
             p->stat = ADXT_STAT_PLAYING;
             apply_volume(p);
             if (getenv("BT3_SND_VERBOSE") != NULL) {
@@ -743,7 +746,7 @@ static void start(Player *p, const char *path) {
     p->stat = ADXT_STAT_PLAYING;
     apply_volume(p);
     SDL_SetAudioStreamGetCallback(p->stream, feed, p);
-    if (!SDL_BindAudioStream(sDevice, p->stream)) {
+    if (!(p == sPlayers && sEmotePausesMusic) && !SDL_BindAudioStream(sDevice, p->stream)) {
         fprintf(stderr, "bt3: sound stream: %s\n", SDL_GetError());
     }
 }
@@ -875,7 +878,7 @@ void ADXT_Pause(void *adxt, int sw) {
     }
     if (p->ma != NULL) {
         p->paused = sw != 0;
-        PortMa_Pause(p->ma, p->paused);
+        PortMa_Pause(p->ma, p->paused || (p == sPlayers && sEmotePausesMusic));
     }
     else if (p->stream != NULL) {
         SDL_LockAudioStream(p->stream);
@@ -887,6 +890,23 @@ void ADXT_Pause(void *adxt, int sw) {
     } else {
         p->paused = sw != 0;
     }
+}
+
+void Port_EmotePauseMusic(int paused) {
+    if (sEmotePausesMusic == paused) return;
+    sEmotePausesMusic = paused;
+    Player *music = &sPlayers[0];
+    if (music->ma) {
+        PortMa_Pause(music->ma, music->paused || paused);
+    } else if (music->stream) {
+        /* Preserve queued samples, the decode cursor and native pause state. */
+        if (paused)
+            SDL_UnbindAudioStream(music->stream);
+        else if (!SDL_BindAudioStream(sDevice, music->stream))
+            fprintf(stderr, "bt4: restore battle music: %s\n", SDL_GetError());
+    }
+    if (getenv("BT3_SND_VERBOSE"))
+        fprintf(stderr, "bt4: emote battle music paused=%d cursor=%u\n", paused, music->pos);
 }
 
 void ADXT_SetOutVol(void *adxt, int vol) {

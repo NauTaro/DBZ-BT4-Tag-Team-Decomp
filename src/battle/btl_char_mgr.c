@@ -415,11 +415,10 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
     BtlChar_PoseToObj(chr, 1);
     BtlObjPose_CalcMatrices(obj);
 #ifdef PORT
-    if (!Bt4BodyChange_OnModelLoaded(chr)
+    if (Bt4BodyChange_OnModelLoaded(chr)) return;
 #ifdef BT4_TAG_TEAM_EXPANDED
-        && !TagFusion_OnModelLoaded(chr)
+    if (!TagFusion_OnModelLoaded(chr))
 #endif
-    )
 #endif
     switch (BtlAct_GetCurrent(chr)) {
     case 0xEC:
@@ -1476,6 +1475,7 @@ void BtlChar_AllocAll(s32 count) {
 /* Frees the roster. */
 void BtlChar_FreeAll(void) {
 #ifdef PORT
+    Bt4BodyChange_Reset();
     Bt3Gameplay_EndMatch();
 #endif
     Heap_Free(gBtlChars->unkC);

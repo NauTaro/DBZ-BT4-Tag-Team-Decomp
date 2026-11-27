@@ -47,7 +47,7 @@ typedef struct BtlChangeReq {
     /* 0x14 */ s32 animChara;  /* -1 for kind 1 */
     /* 0x18 */ s32 unk18;      /* -1 for kind 1 */
     /* 0x1C */ s32 voiceChara; /* -1 for kind 1 */
-    /* 0x20 */ s32 slot;       /* kind 1 only; 0 for kind 0 */
+    /* 0x20 */ s32 slot;       /* kind 1 object slot, or a body exchange marker for kind 0 */
 } BtlChangeReq; /* 0x24 */
 
 typedef struct BtlChangeQueue {

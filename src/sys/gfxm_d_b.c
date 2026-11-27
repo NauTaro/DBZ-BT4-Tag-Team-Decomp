@@ -18,6 +18,7 @@
 #include "battle/btl_obj.h"
 #include "battle/btl_cam.h"
 #include "battle/emotes.h"
+#include "battle/bt4_body_change.h"
 
 void BtlObjDraw_DrawModel(BtlObj *obj);
 void BtlObjDraw_DrawModelFade(BtlObj *obj);
@@ -43,6 +44,7 @@ static void ObjDraw_PortIdentity(BtlObj *obj) {
 static void DrawBattleModel(BtlObj *obj, void (*draw)(BtlObj *)) {
 #ifdef PORT
     f32 frame;
+    if (obj->type == BTL_OBJ_TYPE_CHARA && Bt4BodyChange_HideModel(obj->id)) return;
     const int selected = obj->type == BTL_OBJ_TYPE_CHARA ? BtlEmote_Pose(obj->id, &frame) : 0;
     if (selected) {
         extern void BtlObjEmote_Draw(BtlObj *, void (*)(BtlObj *), int, f32);
@@ -132,6 +134,9 @@ void BtlObjDraw_DrawShadows(s32 count) {
 
         mask = 0;
         obj = (BtlObj *)((u8 *)node + 0x10);
+#ifdef PORT
+        if (obj->type == BTL_OBJ_TYPE_CHARA && Bt4BodyChange_HideModel(obj->id)) continue;
+#endif
         state = &obj->state;
         for (i = 0; i < count; i++) {
             if (BtlObjDraw_IsInList(i, obj)) {

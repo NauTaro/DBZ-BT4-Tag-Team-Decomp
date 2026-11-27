@@ -209,6 +209,12 @@ static const char *f1_text(const char *english) {
         {"Controls", "Controles", "Controles"},
         {"Cheats", "Trucos", "Trapaças"},
         {"Emote", "Emote", "Emote"},
+        {"Emotes", "Emotes", "Emotes"},
+        {"Empty", "Vacío", "Vazio"},
+        {"Left stick · Release L1", "Stick izquierdo · Suelta L1", "Analógico esquerdo · Solte L1"},
+        {"Left stick · Release LB", "Stick izquierdo · Suelta LB", "Analógico esquerdo · Solte LB"},
+        {"While idle, hold L1, choose with the left stick and release L1. Move to cancel.", "En reposo, mantén L1, elige con el stick izquierdo y suelta L1. Muévete para cancelar.", "Parado, segure L1, selecione com o analógico esquerdo e solte L1. Mova-se para cancelar."},
+        {"While idle, hold LB, choose with the left stick and release LB. Move to cancel.", "En reposo, mantén LB, elige con el stick izquierdo y suelta LB. Muévete para cancelar.", "Parado, segure LB, selecione com o analógico esquerdo e solte LB. Mova-se para cancelar."},
         {"Original taunt", "Burla original", "Provocação original"},
         {"Hold L1 and press Circle while idle. Move to cancel.", "Mantén L1 y pulsa Círculo en reposo. Muévete para cancelar.", "Segure L1 e aperte Círculo parado. Mova-se para cancelar."},
         {"Hold LB and press B while idle. Move to cancel.", "Mantén LB y pulsa B en reposo. Muévete para cancelar.", "Segure LB e aperte B parado. Mova-se para cancelar."},
@@ -2701,18 +2707,85 @@ static void tech_tab(void) {
     ImGui::TextDisabled("BT3 PS2 Port Gameplay Source v0.3.1 | Z Counter 2 v0.9.0 | Bombardment v2.2");
 }
 
-static void cheats_tab(void) {
-    {
-        const char *const emotes[] = {
-            f1_text("Original taunt"),
+static const char *const kEmoteNames[] = {
+            "Original taunt",
             "01  Fortnite Dance", "02  Gamna Style", "03  Pose 1", "04  Dance 01", "05  Celebración",
             "06  Dance 02", "07  Twerk", "08  Twerk 2", "09  Habilidad 1", "10  Habilidad 2",
             "11  Pose 2", "12  Pose 3", "13  Pose 4", "14  Burla", "15  Dance 03",
             "16  Dance 04", "17  Dance 05", "18  Pose 5", "19  Habilidad 3", "20  Muerte",
             "21  Bingo 01", "22  Bingo 02", "23  Female Standing Pose",
-            "24  Dancing", "25  Step Hip Hop Dance", "26  Silly Dancing", "27  Rumba Dancing"
-        };
-        static_assert(IM_ARRAYSIZE(emotes) == BTL_EMOTE_COUNT + 1, "One label per emote");
+            "24  Dancing", "25  Step Hip Hop Dance", "26  Silly Dancing", "27  Rumba Dancing",
+            "28  Celebrate Me"
+};
+static_assert(IM_ARRAYSIZE(kEmoteNames) == BTL_EMOTE_COUNT + 1, "One label per emote");
+
+extern "C" int PortInput_EmoteWheelView(int pad, int *slots, int *selected, int *split);
+
+struct EmoteWheelView {
+    int slots[BTL_EMOTE_SLOTS], selected, split;
+    bool visible;
+};
+
+static void draw_emote_wheel(const EmoteWheelView &wheel, int pad) {
+    if (!wheel.visible) return;
+    auto *draw = ImGui::GetForegroundDrawList();
+    ImFont *font = ImGui::GetFont();
+    const float scale = std::clamp(gUiPresentH / 760.f, .52f, 1.65f);
+    const ImVec2 center(gUiPresentX + gUiPresentW * (wheel.split ? (pad ? .75f : .25f) : .5f),
+                        gUiPresentY + gUiPresentH * .54f);
+    const float halfWidth = wheel.split ? gUiPresentW * .24f : gUiPresentW * .46f;
+    const ImU32 white = IM_COL32(236, 249, 252, 255);
+    const ImU32 muted = IM_COL32(151, 184, 198, 255);
+    const ImU32 gold = IM_COL32(255, 216, 129, 255);
+    auto point = [&](float a, float r) {
+        return ImVec2(center.x + cosf(a)*r*scale, center.y + sinf(a)*r*scale);
+    };
+    auto label = [&](const char *name, ImVec2 at, float size, ImU32 color, bool box) {
+        const float px = size * scale;
+        ImVec2 measure = font->CalcTextSizeA(px, FLT_MAX, 0.f, name);
+        const float travel = std::max(0.f, halfWidth-measure.x*.5f-8.f);
+        at.x = std::clamp(at.x, center.x-travel, center.x+travel);
+        const ImVec2 origin(at.x-measure.x*.5f, at.y-measure.y*.5f);
+        if (box) {
+            const ImVec2 a(origin.x-10.f*scale, origin.y-4.f*scale);
+            const ImVec2 b(origin.x+measure.x+10.f*scale, origin.y+measure.y+4.f*scale);
+            draw->AddRectFilled(a,b,IM_COL32(10,29,40,239),5.f*scale);
+            draw->AddRect(a,b,color == gold ? gold : IM_COL32(67,113,130,200),5.f*scale);
+        }
+        draw->AddText(font,px,origin,color,name);
+    };
+    draw->AddCircleFilled(center, 98.f*scale, IM_COL32(3,14,23,218), 60);
+    draw->AddCircle(center, 98.f*scale, IM_COL32(117,171,188,230), 60, 1.5f*scale);
+    for (int slot=0; slot<BTL_EMOTE_SLOTS; ++slot) {
+        const bool picked = wheel.selected == slot;
+        const float angle = (slot-1)*1.5707963268f;
+        ImVec2 sector[26];
+        for (int i=0; i<=12; ++i) {
+            const float turn = angle-.744f+1.488f*i/12.f;
+            sector[i] = point(turn, 92.f);
+            sector[25-i] = point(turn, 40.f);
+        }
+        draw->AddConcavePolyFilled(sector, IM_ARRAYSIZE(sector),
+            picked ? IM_COL32(139,95,37,253) : IM_COL32(26,66,83,235));
+        draw->AddPolyline(sector,IM_ARRAYSIZE(sector),picked ? gold : IM_COL32(62,112,130,235),
+                          ImDrawFlags_Closed,picked ? 2.f*scale : scale);
+        draw->AddTriangleFilled(point(angle,79.f),point(angle-.13f,60.f),point(angle+.13f,60.f),
+                                picked ? gold : wheel.slots[slot] ? white : muted);
+        const char *name = wheel.slots[slot] ? kEmoteNames[wheel.slots[slot]]+4 : f1_text("Empty");
+        label(name, point(angle, slot & 1 ? 156.f : 112.f), 17.f,
+              picked ? gold : wheel.slots[slot] ? white : muted, true);
+    }
+    draw->AddCircle(center, 35.f*scale, IM_COL32(83,134,150,255), 32, scale);
+    label(f1_text("Emotes"),center,17.f,white,false);
+    label(f1_text(PortInput_XboxGlyphs(pad) ? "Left stick · Release LB" : "Left stick · Release L1"),
+          ImVec2(center.x,center.y+143.f*scale),15.f,white,true);
+}
+
+static void cheats_tab(void) {
+    {
+        const char *emotes[BTL_EMOTE_COUNT + 1];
+        memcpy(emotes, kEmoteNames, sizeof(emotes));
+        emotes[0] = f1_text(emotes[0]);
         const char *const slots[] = {"Up / default", "Right", "Down", "Left"};
         ImGui::TextUnformatted(f1_text("Emote"));
         for (int slot = 0; slot < BTL_EMOTE_SLOTS; ++slot) {
@@ -2725,8 +2798,8 @@ static void cheats_tab(void) {
             }
         }
         ImGui::TextWrapped("%s", f1_text(PortInput_XboxGlyphs(0) ?
-            "While idle, hold LB, aim with the right stick and press B. Move to cancel." :
-            "While idle, hold L1, aim with the right stick and press Circle. Move to cancel."));
+            "While idle, hold LB, choose with the left stick and release LB. Move to cancel." :
+            "While idle, hold L1, choose with the left stick and release L1. Move to cancel."));
         ImGui::Separator();
     }
     {
@@ -3904,10 +3977,19 @@ static bool frame_build(void) {
     if(PortHud_Hidden() && !gPortMenuMode)voice=banner=saving=false;
     if(PortHud_Hidden() && !gPortMenuMode)watched=false;
     bool mods = sReady && Mods_HudActive() && !PortHud_Hidden();
+    EmoteWheelView wheels[2] = {};
+    bool emoteWheel = false;
+    if (sReady && !sOpen && !sQuit && !sChat && gUiPresentW > 0 && gUiPresentH > 0) {
+        for (int pad=0; pad<2; ++pad) {
+            auto &wheel = wheels[pad];
+            wheel.visible = PortInput_EmoteWheelView(pad,wheel.slots,&wheel.selected,&wheel.split);
+            emoteWheel |= wheel.visible;
+        }
+    }
     meter_count();
     sBuilt = false;
     UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit);
-    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !showTagCard && !showTagEncounter && !showRankedToast && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods && !rankedPreview && !profileHeaderOn)) {
+    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !showTagCard && !showTagEncounter && !showRankedToast && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods && !rankedPreview && !profileHeaderOn && !emoteWheel)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -4068,6 +4150,7 @@ static bool frame_build(void) {
             }
         }
     }
+    for (int pad=0; pad<2; ++pad) draw_emote_wheel(wheels[pad],pad);
     voice_indicator_draw();
     ImGui::Render();
     return true;

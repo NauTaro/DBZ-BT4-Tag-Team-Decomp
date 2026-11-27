@@ -551,6 +551,10 @@ static int pad_read(int socket, unsigned char *data) {
         PORT_HOST static int said = 0;
         Port_StateTouch(data, 18);
         if (fread(data, 1, 18, sPadPlay) == 18) {
+            if (getenv("BT4_RENDER_TEST") && getenv("BT4_EMOTE_WHEEL_TEST")) {
+                extern void PortInput_EmoteWheelTestPad(int, unsigned char *);
+                PortInput_EmoteWheelTestPad(socket, data);
+            }
             return 18;
         }
         if (!said) {

@@ -476,8 +476,9 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
         extern s32 BtlAct_GetCurrent(BtlInputChr *);
         extern s32 BtlSeq_GetState(void);
         const s32 live = active && !chr->injectOn && !BattleReplay_IsActive() && BtlSeq_GetState() == 3;
-        const s32 selected = live ? (TagBattle_Network() ? TagBattle_NetPad(chr->player)[BTL_EMOTE_PAD_BYTE] :
-                                     BtlChar_GetPad(chr)->data[BTL_EMOTE_PAD_BYTE]) : 0;
+        const s32 tag = TagBattle_Network();
+        const s32 selected = live ? BtlEmote_Decode(tag ? TagBattle_NetPad(chr->player) :
+                                                  BtlChar_GetPad(chr)->data, tag) : 0;
         const s32 idle = live && BtlAct_GetCurrent(chr) == 0x0B;
         if (BtlEmote_Input(BattleSide_GetObjId(chr->player), buttons, idle, selected)) {
             /* The emote chord replaces only the manual taunt when an emote is equipped. */

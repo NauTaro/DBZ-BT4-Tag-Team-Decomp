@@ -23,6 +23,10 @@
  * The structs are this file's views; the sprite / node layouts agree with include/battle/hud_a.h.
  */
 
+#ifdef PORT
+#include "battle/bt4_body_change.h"
+#endif
+
 #define HUDG_PAUSED() (Battle_GetWork()->flags & 0x100)
 
 #define HUDG_HP_BAR 10000      /* health per bar */
@@ -45,7 +49,9 @@ typedef struct HudBRes {
 
 /* The side's fighter object as BtlCtrl_GetObj returns it: only what the face drawing reads. */
 typedef struct HudBObj {
-    /* 0x000 */ u8 unk0[0x50];
+    /* 0x000 */ u8 unk0[0x10];
+    /* 0x010 */ s32 id;
+    /* 0x014 */ u8 unk14[0x3C];
     /* 0x050 */ HudBRes *faceRes; /* sheet of the face picture; NULL: no face drawn */
     /* 0x054 */ u8 unk54[0xA40 - 0x54];
     /* 0xA40 */ u32 unkA40;       /* bit 0x40000: the face is tinted (0x80, 0x50, 0x70) */
@@ -1017,6 +1023,12 @@ void HudGauge_DrawFace(HudBGroup *node) {
     u32 i;
     HudBSprite *spr;
 
+#ifdef PORT
+    if (Bt4BodyChange_HideModel(gHudGauge->obj[gHudGauge->side]->id)) {
+        gHudGauge->faceRes[gHudGauge->side] = NULL;
+        return;
+    }
+#endif
     gHudGauge->faceRes[gHudGauge->side] = gHudGauge->obj[gHudGauge->side]->faceRes;
     if (gHudGauge->faceRes[gHudGauge->side] != NULL) {
         HudGauge_ClearFaceTexMark();

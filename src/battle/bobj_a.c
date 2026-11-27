@@ -633,16 +633,11 @@ typedef struct BtlEmoteDrawNode {
     Mtx44 parent;
 } BtlEmoteDrawNode;
 
-static void BtlObjEmote_Sample(BobjAnim *motion, BobjBone *bone, const BobjPart *part,
+static void BtlObjEmote_Sample(BobjAnim *motion, BobjBone *bone,
                               f32 frame, f32 hipScale, Vec4 *pos, Quat *rot) {
     u16 cursor = 0;
     BobjTrack *track;
 
-    if (bone->id >= BOBJ_NODE_MAX || !motion->track[bone->id]) {
-        *pos = part->pos;
-        *rot = part->rot;
-        return;
-    }
     track = TRACK_AT(motion, motion->track[bone->id]);
     if (BOBJ_TRACK_ROT_ONLY(track)) {
         *pos = bone->rest;
@@ -666,14 +661,15 @@ void BtlObjEmote_Draw(BobjObj *obj, void (*draw)(BobjObj *), int selected, f32 e
     BobjAnim *motion = (BobjAnim *)kBattleEmotes[selected - 1].data;
     const f32 frame = fmodf(elapsed, (f32)motion->length);
     const f32 t = frame / 6.0f;
-    const f32 mix = t < 1.0f ? t * t * (3.0f - 2.0f * t) : 1.0f;
+    const s32 bakedLoop = selected == BTL_EMOTE_CELEBRATE_ME && elapsed >= motion->length;
+    const f32 mix = t < 1.0f && !bakedLoop ? t * t * (3.0f - 2.0f * t) : 1.0f;
     const BobjBone *hip = obj->mdl.nodes ? BtlObj_FindBound(obj, 2) : NULL;
     s32 count = 0;
     s32 depth = 0;
-    s32 valid = obj->mdl.nodes != NULL && hip != NULL;
-    f32 hipScale = valid ? hip->rest.y / -10.09f : 1.0f;
+    s32 valid = obj->mdl.nodes != NULL;
+    f32 hipScale = hip ? hip->rest.y / -10.09f : 1.0f;
 
-    if (hipScale < 0.3f || hipScale > 4.0f) hipScale = 1.0f;
+    if (!(hipScale > 0.0f)) hipScale = 1.0f;
     transforms[0] = obj->xf.mtx;
     for (bone = obj->mdl.nodes; valid; bone = (BobjBone *)((u8 *)bone + bone->next)) {
         BobjPart *part = BtlObj_GetNode(obj, bone->id);
@@ -686,17 +682,24 @@ void BtlObjEmote_Draw(BobjObj *obj, void (*draw)(BobjObj *), int selected, f32 e
             break;
         }
         saved[count++] = (BtlEmoteDrawNode){part, part->mtx, part->parent};
-        BtlObjEmote_Sample(motion, bone, part, frame, hipScale, &pos, &rot);
-        if (mix < 1.0f) {
-            Vec4 fromPos = part->pos;
-            Quat fromRot = part->rot;
-            if (elapsed >= motion->length) {
-                BtlObjEmote_Sample(motion, bone, part, (f32)motion->length, hipScale, &fromPos, &fromRot);
+        if (bone->id >= BOBJ_NODE_MAX || !motion->track[bone->id]) {
+            /* Keep native facial and accessory motion on joints the emote
+               doesn't animate, including the extra nodes on giant bodies. */
+            BtlObjPose_GetNodeMtx(obj, &local, part);
+            pos = part->pos;
+        } else {
+            BtlObjEmote_Sample(motion, bone, frame, hipScale, &pos, &rot);
+            if (mix < 1.0f) {
+                Vec4 fromPos = part->pos;
+                Quat fromRot = part->rot;
+                if (elapsed >= motion->length) {
+                    BtlObjEmote_Sample(motion, bone, (f32)motion->length, hipScale, &fromPos, &fromRot);
+                }
+                Vec4_Lerp(&pos, &pos, &fromPos, mix);
+                Quat_Slerp(&rot, &fromRot, &rot, mix);
             }
-            Vec4_Lerp(&pos, &pos, &fromPos, mix);
-            Quat_Slerp(&rot, &fromRot, &rot, mix);
+            Quat_ToMtx(&local, &rot);
         }
-        Quat_ToMtx(&local, &rot);
         Vec3_Copy((Vec4 *)local.m[3], &pos);
         part->parent = transforms[depth];
         Mtx_Mul(&part->mtx, &part->parent, &local);

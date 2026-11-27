@@ -78,7 +78,8 @@ void BtlChange_Update(void) {
 }
 
 /* Queues a character model change (transformation, fusion, member switch) for a player. */
-s32 BtlChange_TryRequestChara(s32 player, s32 chara, s32 costume, s32 variant, s32 animChara, s32 unk18, s32 voiceChara) {
+static s32 requestChara(s32 player, s32 chara, s32 costume, s32 variant, s32 animChara,
+                        s32 unk18, s32 voiceChara, s32 slot) {
     BtlChangeReq *req = BtlChange_Alloc();
 
     if (req != NULL) {
@@ -90,14 +91,39 @@ s32 BtlChange_TryRequestChara(s32 player, s32 chara, s32 costume, s32 variant, s
         req->unk18 = unk18;
         req->voiceChara = voiceChara;
         req->kind = BTL_CHANGE_KIND_CHARA;
-        req->slot = 0;
+        req->slot = slot;
         return 1;
     }
     return 0;
 }
+s32 BtlChange_TryRequestChara(s32 player, s32 chara, s32 costume, s32 variant, s32 animChara, s32 unk18, s32 voiceChara) {
+    return requestChara(player,chara,costume,variant,animChara,unk18,voiceChara,0);
+}
 void BtlChange_RequestChara(s32 player, s32 chara, s32 costume, s32 variant, s32 animChara, s32 unk18, s32 voiceChara) {
     BtlChange_TryRequestChara(player,chara,costume,variant,animChara,unk18,voiceChara);
 }
+
+#ifdef PORT
+enum { BODY_REQUEST_SLOT = -1 };
+
+s32 BtlChange_RequestBody(s32 player, s32 chara, s32 costume, s32 variant) {
+    return requestChara(player,chara,costume,variant,chara,chara,chara,BODY_REQUEST_SLOT);
+}
+
+s32 BtlChange_IsBodyFor(s32 player) {
+    const BtlChangeReq *request = gBtlChars->change.cur;
+    return request && request->player == player && request->kind == BTL_CHANGE_KIND_CHARA &&
+           request->slot == BODY_REQUEST_SLOT;
+}
+
+s32 BtlChange_PendingFor(s32 player) {
+    const BtlChangeQueue *queue = &gBtlChars->change;
+    if (queue->cur && queue->cur->player == player) return 1;
+    for (s32 i=queue->read;i!=queue->write;i=(i+1)%BTL_CHANGE_RING)
+        if (queue->req[i].player == player) return 1;
+    return 0;
+}
+#endif
 
 /* Queues the load of an extra object for a player. */
 void BtlChange_RequestObject(s32 player, s32 id, s32 costume, s32 variant, s32 slot) {

@@ -215,6 +215,8 @@ static s32 TagOnline_Tick(void){
         packet[BTL_EMOTE_PAD_BYTE]=pad->data[BTL_EMOTE_PAD_BYTE];
         {u32 raw=pad->held|sTagOnlinePressed;
             packet[17]=(raw&PAD_R3?1:0)|(raw&PAD_L2?2:0)|(raw&PAD_SELECT?4:0)|(raw&PAD_CROSS?8:0)|(raw&PAD_L3?16:0);}
+        if (pad->data[BTL_EMOTE_PAD_FLAGS] & BTL_EMOTE_PAD_VARIANT)
+            packet[BTL_EMOTE_PAD_FLAGS] |= BTL_EMOTE_TAG_VARIANT;
         if(sTagOnlinePausePending||(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)){memset(packet,0,sizeof(packet));packet[4]=packet[5]=127;}
         if(!sTagOnlinePausePending&&!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU)&&getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_ONLINE_TEST")){
             u32 n=sTagOnlineFrame,held=0;packet[4]=packet[5]=127;

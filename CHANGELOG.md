@@ -8,21 +8,30 @@
 - Player cards stay visible on the Modern HUD. Show or hide player cards and their ping separately in F1 → UI.
 - Open F1 → UI → Customize HUD to move battle HUD elements, including online profile cards and Tag Team indicators. Your layout saves when you release an element.
 - Added the BT4 unlock code to the main menu. Hold L1 + R1 and enter ↘, Triangle, ↙, Triangle, ↑ on the D-pad.
+- Equip up to four emotes in **F1 → Cheats**. Stand still, hold **L1 / LB** to open the wheel, choose with the left stick and release to play. All playable characters can use the wheel. Move to cancel.
+- Added Celebrate Me and audio for Celebrate Me and Gangnam Style. Nearby players can hear these tracks, and battle music resumes when the emote ends.
+- Ginyu's Body Change now swaps both fighters and their outfits together. Both players return to combat with control of their new fighter.
 
 <!-- bt4-update:en
 - Sharper profile photos and expanded Ranked match cards with points, wins, and losses.
 - Move battle HUD elements from F1 → UI → Customize HUD.
 - The original BT4 unlock code is now available from the main menu.
+- Hold L1 / LB while standing still to open the emote wheel. Select with the left stick and release to play.
+- Fixed the online fighter swap after Ginyu's Body Change.
 -->
 <!-- bt4-update:es
 - Fotos de perfil más nítidas y tarjetas de Ranked con puntos, victorias y derrotas.
 - Mueve los elementos de combate desde F1 → UI → Personalizar HUD.
 - El truco de desbloqueo de BT4 ya está disponible en el menú principal.
+- Mantén L1 / LB sin moverte para abrir la rueda de emotes. Elige con la palanca izquierda y suelta para usarlo.
+- Corregido el intercambio de luchadores al usar el Cambio de cuerpo de Ginyu en línea.
 -->
 <!-- bt4-update:pt
 - Fotos de perfil mais nítidas e cartões ranqueados com pontos, vitórias e derrotas.
 - Mova os elementos de combate em F1 → UI → Personalizar HUD.
 - O código de desbloqueio de BT4 está disponível no menu principal.
+- Segure L1 / LB sem se mover para abrir a roda de emotes. Use o analógico esquerdo para escolher e solte para executar.
+- Corrigida a troca de lutadores ao usar a Troca de Corpo do Ginyu online.
 -->
 
 # BT4decomp 0.1.39.6 R3 1.1

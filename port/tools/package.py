@@ -269,6 +269,13 @@ def take_goku_costumes(out):
         shutil.copy2(source / filename, target / filename)
 
 
+def take_emote_audio(out):
+    target = out / "tbo" / "emote-audio"
+    target.mkdir(parents=True, exist_ok=True)
+    for clip in (ROOT / "port" / "assets" / "emote-audio").glob("[0-9][0-9].mp3"):
+        shutil.copy2(clip, target / clip.name)
+
+
 def main_win():
     """BT3_CC=win64: bt3.exe (cross-built or built in MSYS2), BT4decomp-setup.exe (port/setup/build.sh win), SDL3.dll."""
     import toolchain
@@ -310,6 +317,7 @@ def main_win():
     take_tbo_art(out, lic)
     take_jiren_voice(out)
     take_goku_costumes(out)
+    take_emote_audio(out)
     (out / "textures").mkdir()
     (out / "textures/README.txt").write_text(TEXTURES_NOTE.replace("\n", "\r\n"))
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
@@ -365,6 +373,7 @@ def main():
 
     take_fonts(OUT, lic)
     take_tbo_art(OUT, lic)
+    take_emote_audio(OUT)
     (OUT / "textures").mkdir()
     (OUT / "textures/README.txt").write_text(TEXTURES_NOTE)
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):

@@ -15,6 +15,7 @@
 #include "plat_stages.h"
 #include "plat_songs.h"
 #include "port_addr.h"
+#include "../../include/battle/emotes.h"
 
 extern void Battle_ClearWork(void);
 extern int BattleReplay_Load(void *buf, int size);
@@ -507,21 +508,29 @@ void Port_Trace(unsigned vblanks) {
             fprintf(stderr,"tag ownership: frame=%u local=%d view=%d actor=%d chara=%d hp=%d pair=%d camera=%d model=%d\n",vblanks,TagBattle_LocalActor(),view,a,member[0],BtlCharApi_GetHp(a),TagBattle_Pair(a),TagBattle_CameraActor(view),*(int GAME_PTR)(obj+0xC));
         }
     }
-    /* Snapshot positions for audio outside the rollback heap. No network or
-     * device operation runs here, and lobby voice keeps its normal level. */
+    /* Snapshot positions for audio outside the rollback heap. Lobby voice
+     * keeps its normal level. */
     {
         extern int Port_NetActive(void),Port_NetView(void),TagBattle_Active(void),TagBattle_Count(void),TagBattle_ViewActor(void);
+        extern int Battle_IsSplitScreen(void);
         extern void PortVoice_World(int,int,int,const float *);
         extern int BattleSide_GetObjId(int);
         extern void BtlCharApi_GetBasePos(int,float *);
         extern void PortAudio_World(int,int,int,int,const float *,const int *);
+        extern void PortAudio_Emotes(int,const int *,const float *,const float *,int,int);
         float positions[40]={0};int alive[10]={0};int count=0,mode=0,listener=0,secondListener=-1,a;
+        int emoteIds[10];
+        float emoteFrames[10];
+        const int emotesActive=gBtlSeq&&gBtlSeq->state==3&&BtlEmote_AudioActive();
+        extern void PortInput_EmoteWheelSeats(int);
+        PortInput_EmoteWheelSeats(emotesActive ? BtlEmote_WheelSeats() : 0);
         if(gBtlSeq&&gBtlSeq->state==3){
             if(TagBattle_Active()){mode=2;count=TagBattle_Count();listener=TagBattle_ViewActor();}
             else if(Port_NetActive()){mode=1;count=2;listener=Port_NetView();}
+            else if(emotesActive){count=2;secondListener=Battle_IsSplitScreen()?1:-1;}
 #ifdef BT4_TAG_TEAM_EXPANDED
             if(mode==2){
-                extern int Battle_IsSplitScreen(void),Port_TagOfflineMode(void),TagBattle_SplitViewActor(int);
+                extern int Port_TagOfflineMode(void),TagBattle_SplitViewActor(int);
                 if(Port_TagOfflineMode()==2&&Battle_IsSplitScreen()){
                     listener=TagBattle_SplitViewActor(0);
                     secondListener=TagBattle_SplitViewActor(1);
@@ -530,8 +539,19 @@ void Port_Trace(unsigned vblanks) {
 #endif
             for(a=0;a<count;++a){int object=BattleSide_GetObjId(a);BtlCharApi_GetBasePos(object,positions+a*4);alive[a]=BtlCharApi_GetHp(object)>0;}
         }
-        PortVoice_World(mode,listener,count,positions);
+        PortVoice_World(mode,listener,mode?count:0,positions);
         PortAudio_World(mode==2,listener,secondListener,count,positions,alive);
+        if (!emotesActive) {
+            PortAudio_Emotes(0,NULL,NULL,NULL,0,-1);
+        } else {
+            for (a=0;a<count;++a) {
+                float frame;
+                int emote=alive[a]?BtlEmote_Pose(BattleSide_GetObjId(a),&frame):0;
+                emoteIds[a]=emote;
+                emoteFrames[a]=emote?frame:-1.f;
+            }
+            PortAudio_Emotes(count,emoteIds,emoteFrames,positions,listener,secondListener);
+        }
     }
     if ((getenv("BT4_TAG_ACTOR_TEST") != NULL || getenv("BT4_TAG_LOCAL_TEST") != NULL) && gBtlSeq != NULL && gBtlSeq->state >= 2 && vblanks % 120 == 0) {
         extern int TagBattle_Count(void),TagBattle_Team(int),TagBattle_Target(int), BtlAiMgr_GetLevel(int side);
@@ -742,6 +762,20 @@ void Port_Trace(unsigned vblanks) {
         int support=getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_SUPPORT_ACTOR")?atoi(getenv("BT4_TEST_SUPPORT_ACTOR")):(actor==0?2:0);
         unsigned char GAME_PTR other = simultaneous?BtlChar_Get(support):chr;
         int tick = BtlSeq_GetClock()[0];
+        const int bodyTest = getenv("BT4_RENDER_TEST") && getenv("BT4_BODY_CHANGE_TRACE");
+        extern int Bt4BodyChange_Active(int), Port_NetActive(void);
+        extern int BtlCharApi_GetChara(int), BattleSide_GetObjId(int);
+        if (bodyTest && started && Bt4BodyChange_Active(actor) &&
+            BtlCharApi_GetChara(BattleSide_GetObjId(0)) == BtlCharApi_GetChara(BattleSide_GetObjId(1))) {
+            static int interrupted;
+            if (getenv("BT4_BODY_CHANGE_INTERRUPT") && !interrupted) {
+                /* Reproduce a native transition cutting the waiting actor's
+                   action after the first model has already been published. */
+                interrupted = 1;
+                BtlAct_Request(BtlChar_Get(1),0x0B);
+                fprintf(stderr,"body exchange fixture: interrupted second actor\n");
+            }
+        }
         if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_CONTACT")&&!started&&tick>=100){
             extern void BtlChar_Place(void *,const float *,const float *,int);
             extern int BtlStage_FindZoneNear(int,const float *);
@@ -773,6 +807,10 @@ void Port_Trace(unsigned vblanks) {
             int slot = atoi(getenv("BT4_TEST_TECH"));
             int GAME_PTR gauge = BtlMember_GetActiveGauge(chr);
             int act = getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_ACTION")?(int)strtol(getenv("BT4_TEST_ACTION"),NULL,0):BtlAct_GetTechniqueAction(chr, slot);
+            if (bodyTest) {
+                gauge[0]=8000;
+                BtlMember_GetActiveGauge(BtlChar_Get(victim))[0]=32000;
+            }
             gauge[3] = gauge[4];
             if (getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_BEAM_DEFENSE")) {
                 int GAME_PTR defense = BtlMember_GetActiveGauge(BtlChar_Get(victim));
@@ -799,7 +837,6 @@ void Port_Trace(unsigned vblanks) {
         }
         if (started && *(int GAME_PTR)(chr+0x948) >= 0x106 && *(int GAME_PTR)(chr+0x948) <= 0x126) entered = 1;
         if(started&&getenv("BT4_TEST_ACTION")&&*(int GAME_PTR)(chr+0x948)>=0xB4&&*(int GAME_PTR)(chr+0x948)<=0xBF)entered=1;
-        extern int Bt4BodyChange_Active(int);
         if (entered && !Bt4BodyChange_Active(actor) && !Bt4BodyChange_Active(victim) && vblanks-began > 180 && *(int GAME_PTR)(chr+0x948) < 0xFD && *(int GAME_PTR)(other+0x948) < 0xFD && (!getenv("BT4_TEST_ACTION")||*(int GAME_PTR)(chr+0x948)<0xB4||*(int GAME_PTR)(chr+0x948)>0xBF)) {
             if(!recovered){recovered=vblanks;fprintf(stderr,"bt4: tech recovered vb=%u\n",vblanks);}
             if(getenv("BT4_TAG_OWNERSHIP_TEST")&&vblanks-recovered<120)return;
@@ -807,6 +844,32 @@ void Port_Trace(unsigned vblanks) {
                 int GAME_PTR defense = BtlMember_GetActiveGauge(BtlChar_Get(victim));
                 if (vblanks - recovered < 90) return;
                 fprintf(stderr, "beam fixture: end hp=%d blast=%d\n", defense[0], defense[5]);
+            }
+            if (bodyTest) {
+                if (vblanks - recovered < 30) return;
+                int a=BattleSide_GetObjId(actor), b=BattleSide_GetObjId(victim);
+                static int targetHp, loggedHit;
+                if (!targetHp) {
+                    const int ca=BtlCharApi_GetChara(a), cb=BtlCharApi_GetChara(b);
+                    extern int BtlChar_IsFree(void *);
+                    const int freeA=BtlChar_IsFree(chr), freeB=BtlChar_IsFree(BtlChar_Get(victim));
+                    fprintf(stderr,"body exchange fixture: characters=%d,%d hp=%d,%d actionable=%d,%d\n",
+                            ca,cb,BtlCharApi_GetHp(a),BtlCharApi_GetHp(b),freeA,freeB);
+                    if (ca!=31||cb!=86||!freeA||!freeB) exit(3);
+                    targetHp=BtlCharApi_GetHp(b);
+                    extern void BtlChar_Place(void *,const float *,const float *,int);
+                    extern int BtlStage_FindZoneNear(int,const float *);
+                    float from[4]={0,-12,-5,1}, to[4]={0,-12,5,1}, forward[4]={0}, backward[4]={0,3.14159265f};
+                    BtlChar_Place(chr,from,forward,BtlStage_FindZoneNear(-1,from));
+                    BtlChar_Place(BtlChar_Get(victim),to,backward,BtlStage_FindZoneNear(-1,to));
+                    BtlAct_Request(chr,0x44);
+                } else if (BtlCharApi_GetHp(b)<targetHp) {
+                    if (!loggedHit) fprintf(stderr,"body exchange fixture: post-exchange hit=%d\n",targetHp-BtlCharApi_GetHp(b));
+                    loggedHit=1;
+                } else if (vblanks-recovered>180) {
+                    exit(3);
+                }
+                if (Port_NetActive() || !loggedHit) return;
             }
             fprintf(stderr,"bt4: tech end action=%x tick=%d\n",*(int GAME_PTR)(chr+0x948),tick);
             if(simultaneous)fprintf(stderr,"bt4: concurrent tech complete actors=0,2\n");

@@ -15028,6 +15028,8 @@ static const unsigned char kBattleEmote27[12676] =
     "\x84\x87\xf5\x38\xd4\x04\xd8\x61\x85\x53\x93\x38\xbb\x04\x38\x67\x85\x8f\x90\x38\x00\x00\x06\x00\x08\x00\x0b\x00\x0d\x00\x0f\x00"
     "\x13\x00\x15\x00\x18\x00\x20\x00\x24\x00\x27\x00\x2c\x00\x2e\x00\x2f\x00\x31\x00\x35\x00\x36\x00\x38\x00\x3b\x00\x42\x00\x44\x00"
     "\x47\x00\x00\x00";
+#include "battle_emote_celebrate_me.inc"
+
 static const struct { const unsigned char *data; s32 size; } kBattleEmotes[BTL_EMOTE_COUNT] = {
     { kBattleEmote01, sizeof(kBattleEmote01) },
     { kBattleEmote02, sizeof(kBattleEmote02) },
@@ -15056,4 +15058,5 @@ static const struct { const unsigned char *data; s32 size; } kBattleEmotes[BTL_E
     { kBattleEmote25, sizeof(kBattleEmote25) },
     { kBattleEmote26, sizeof(kBattleEmote26) },
     { kBattleEmote27, sizeof(kBattleEmote27) },
+    { kBattleEmoteCelebrateMe, sizeof(kBattleEmoteCelebrateMe) },
 };

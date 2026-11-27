@@ -1195,6 +1195,105 @@ static void press_age(int socket, unsigned btn) {
     prev[socket] = btn;
 }
 
+typedef struct {
+    uint64_t since;
+    int held, preparing, open, selected, consumeStick;
+    int slots[BTL_EMOTE_SLOTS];
+} EmoteWheel;
+
+static EmoteWheel sEmoteWheel[2];
+static SDL_SpinLock sEmoteWheelLock;
+static SDL_AtomicInt sEmoteWheelSeats;
+
+void PortInput_EmoteWheelSeats(int mask) {
+    SDL_SetAtomicInt(&sEmoteWheelSeats, mask);
+}
+
+int PortInput_EmoteWheelView(int pad, int *slots, int *selected, int *split) {
+    const int mask = SDL_GetAtomicInt(&sEmoteWheelSeats);
+    const EmoteWheel *wheel = &sEmoteWheel[pad];
+    SDL_LockSpinlock(&sEmoteWheelLock);
+    const int visible = wheel->open && (mask & (1 << pad));
+    if (visible) {
+        memcpy(slots, wheel->slots, sizeof(wheel->slots));
+        *selected = wheel->selected;
+        *split = (mask & 4) != 0;
+    }
+    SDL_UnlockSpinlock(&sEmoteWheelLock);
+    return visible;
+}
+
+static int emote_slot(int x, int y, int threshold) {
+    x -= 128;
+    y -= 128;
+    if (abs(x) < threshold && abs(y) < threshold) return -1;
+    return abs(x) > abs(y) ? (x > 0 ? 1 : 3) : (y > 0 ? 2 : 0);
+}
+
+static int emote_wheel(int pad, unsigned *buttons, unsigned char *x, unsigned char *y, int focused) {
+    EmoteWheel *wheel = &sEmoteWheel[pad];
+    const int allowed = focused && (SDL_GetAtomicInt(&sEmoteWheelSeats) & (1 << pad));
+    const int holding = (*buttons & B_L1) != 0;
+    const int other = (*buttons & ~B_L1) != 0;
+    const int direction = emote_slot(*x, *y, 54);
+    int chosen = 0;
+    SDL_LockSpinlock(&sEmoteWheelLock);
+    if (wheel->consumeStick && (*buttons & (B_START | B_SELECT) || !focused ||
+                               emote_slot(*x, *y, 33) < 0))
+        wheel->consumeStick = 0;
+
+    if (allowed && holding && !wheel->held && !other) {
+        wheel->preparing = 0;
+        wheel->selected = -1;
+        for (int slot = 0; slot < BTL_EMOTE_SLOTS; ++slot) {
+            const int id = Port_Setting(kBattleEmoteSettings[slot], 0);
+            wheel->slots[slot] = id >= 1 && id <= BTL_EMOTE_COUNT ? id : 0;
+            wheel->preparing |= wheel->slots[slot] != 0;
+        }
+        wheel->since = SDL_GetTicks();
+    }
+    if (!allowed || other) {
+        wheel->open = wheel->preparing = 0;
+    } else if (holding && wheel->preparing) {
+        if (SDL_GetTicks() - wheel->since >= 150) {
+            wheel->open = 1;
+            if (direction >= 0) wheel->selected = direction;
+            *buttons &= ~B_L1;
+        }
+        *x = *y = 128;
+    } else if (!holding) {
+        if (wheel->open && wheel->selected >= 0) {
+            chosen = wheel->slots[wheel->selected];
+            if (chosen) {
+                *buttons |= B_L1 | B_CIRCLE;
+                wheel->consumeStick = emote_slot(*x, *y, 33) >= 0;
+                *x = *y = 128;
+            }
+        }
+        wheel->open = wheel->preparing = 0;
+    }
+    if (wheel->consumeStick) *x = *y = 128;
+    wheel->held = holding;
+    SDL_UnlockSpinlock(&sEmoteWheelLock);
+    return chosen;
+}
+
+static void set_emote_report(unsigned char *data, int emote) {
+    data[BTL_EMOTE_PAD_BYTE] = emote == BTL_EMOTE_CELEBRATE_ME ? BTL_EMOTE_LEGACY_FALLBACK : emote;
+    if (emote == BTL_EMOTE_CELEBRATE_ME)
+        data[BTL_EMOTE_PAD_FLAGS] |= BTL_EMOTE_PAD_VARIANT;
+}
+
+/* Hidden render fixtures play raw controller reports through the same wheel. */
+void PortInput_EmoteWheelTestPad(int socket, unsigned char *data) {
+    if (socket < 0 || socket > 1) return;
+    unsigned btn = ~(data[0] | ((unsigned)data[1] << 8)) & 0xffff;
+    int emote = emote_wheel(socket, &btn, &data[4], &data[5], 1);
+    data[0] = (unsigned char)~btn;
+    data[1] = (unsigned char)(~btn >> 8);
+    if (emote) set_emote_report(data, emote);
+}
+
 int Port_PadRead(int socket, unsigned char *data) {
     unsigned btn = 0;
     unsigned char rx = 0x80, ry = 0x80, lx = 0x80, ly = 0x80;
@@ -1301,6 +1400,8 @@ int Port_PadRead(int socket, unsigned char *data) {
             fprintf(stderr, "sticks: the game's pad 1 has left %+.4f %+.4f, right %+.4f %+.4f, held %08X\n", f[0], f[1], f[2], f[3], held);
         }
     }
+    const int focused = !gPortOverlayOpen && !gPortInputCapture && !gPortChatTyping && !PortSpectator_ConsumesInput();
+    int emote = emote_wheel(socket, &btn, &lx, &ly, focused);
     clash_stick(socket, &btn, lx, ly);
     clash_square(socket, &btn, &lx, &ly);
     press_age(socket, btn);
@@ -1309,30 +1410,23 @@ int Port_PadRead(int socket, unsigned char *data) {
     if(socket==0 && PortSpectator_ConsumesInput()) {
         btn=PortSpectator_FilterButtons(btn);rx=ry=lx=ly=0x80;
     }
-    int emote = 0;
     {
         extern int PortMods_InBattle(void);
         if (PortMods_InBattle() && !PortSpectator_ConsumesInput()) {
-            int slot = 0;
             if ((btn & (B_L1 | B_CIRCLE)) == (B_L1 | B_CIRCLE)) {
-                int x = (int)rx - 128, y = (int)ry - 128;
-                if (abs(x) > 52 || abs(y) > 52) {
-                    slot = abs(x) > abs(y) ? (x > 0 ? 1 : 3) : (y > 0 ? 2 : 0);
+                if (!emote) {
+                    const int slot = emote_slot(rx, ry, 53);
+                    emote = Port_Setting(kBattleEmoteSettings[slot >= 0 ? slot : 0], 0);
+                    if (emote < 1 || emote > BTL_EMOTE_COUNT) emote = 0;
                 }
+                if (emote) rx = ry = 0x80;
             }
-            emote = Port_Setting(kBattleEmoteSettings[slot], 0);
-            if (emote < 1 || emote > BTL_EMOTE_COUNT)
-                emote = 0;
-            if (emote && (btn & (B_L1 | B_CIRCLE)) == (B_L1 | B_CIRCLE))
-                rx = ry = 0x80;
         }
     }
     memset(data, 0, 18);
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);
     data[2] = rx; data[3] = ry; data[4] = lx; data[5] = ly;
-    /* This byte travels in rollback histories and in spectator recordings. */
-    data[BTL_EMOTE_PAD_BYTE] = (unsigned char)emote;
     {
         extern int PortMods_InBattle(void), Port_TagBattleRenderActive(void);
         const int tag = Port_TagBattleRenderActive() && PortMods_InBattle() && !PortSpectator_ConsumesInput();
@@ -1341,8 +1435,7 @@ int Port_PadRead(int socket, unsigned char *data) {
             float axes[2]; int dir;
             unsigned char b[2]={rx,ry};
             game_stick(b,axes,&dir);
-            /* Byte 17 is otherwise unused by this port. It travels with the
-               original pad report, including rollback input history. */
+            /* Bits 0 to 2 carry the target direction, with bit 7 for validity. */
             data[17]=(unsigned char)(0x80 | (dir && !sTargetLatch[socket] ? dir : 0));
             sTargetLatch[socket]=dir!=0;
             data[2]=data[3]=0x80;
@@ -1359,5 +1452,7 @@ int Port_PadRead(int socket, unsigned char *data) {
         } else sTagTargetDpadHeld[socket] = 0;
         if (tag) data[17] |= (unsigned char)(method << 4);
     }
+    /* Both the fallback emote and its variant travel in rollback histories. */
+    set_emote_report(data, emote);
     return 18;
 }
