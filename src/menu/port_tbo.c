@@ -6016,7 +6016,9 @@ static void Tb_DrawText(void) {
     /* (no status and no title under it: "ONLINE" was not whether the game is connected, and the title is the
        screen's heading) */
     if(!sTagHomeEntry&&(sTb->mode==TB_PROFILE||sTb->mode==TB_NAME)){
-        Port_UiProfileHeader(Port_NetNameGet(),(s32)Ps_X(300.0f),(s32)Ps_Y(10.0f),(s32)Ps_X(504.0f),(s32)Ps_Y(74.0f));
+        const f32 right=512.0f-Ps_Left()-16.0f;
+        Port_UiProfileHeader(Port_NetNameGet(),(s32)Ps_X(right-196.0f),(s32)Ps_Y(14.0f),
+                            (s32)Ps_X(right),(s32)Ps_Y(79.0f));
     }else{
         Port_UiProfileHeader(NULL,0,0,0,0);
     }

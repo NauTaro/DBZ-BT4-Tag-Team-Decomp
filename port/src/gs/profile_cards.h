@@ -9,8 +9,11 @@ typedef struct {
     int hasRankedRecord, rankedWins, rankedLosses;
     unsigned nameRgb;
     int hasNameRgb;
+    unsigned bannerRgb;
+    int hasBannerRgb;
 } Bt4ProfileCard;
-#define BT4_PROFILE_PIXEL_CAPACITY (80 * 80 * 4)
+#define BT4_PROFILE_AVATAR_MAX 320
+#define BT4_PROFILE_PIXEL_CAPACITY (BT4_PROFILE_AVATAR_MAX * BT4_PROFILE_AVATAR_MAX * 4)
 void Port_ProfileCardForPlayer(const char *name, Bt4ProfileCard *out);
 void Port_ProfileCardForTagPlayer(const char *name, Bt4ProfileCard *out);
 int Port_ProfileCardView(Bt4ProfileCard *out);

@@ -13,6 +13,11 @@
 #define STBI_NO_FAILURE_STRINGS
 #define STBI_MAX_DIMENSIONS 2048
 #include "../../third_party/stb/stb_image.h"
+// Same upstream revision as the private decoder.
+#define STB_IMAGE_WRITE_STATIC
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STBI_WRITE_NO_STDIO
+#include "../../third_party/stb/stb_image_write.h"
 
 static std::string profileBase64(const unsigned char *data,size_t length){
     constexpr char alphabet[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -150,10 +155,91 @@ static void profileImageDimensions(const std::string &kind,int &w,int &h){
     h=kind=="avatar"?80:kind=="banner_motion"?16:32;
 }
 
+static constexpr size_t profileAvatarWireBytes=11200;
+
+static void profileCrop(const ProfileImageSource &source,unsigned char *output,int w,int h,int channels,
+                        float px,float py,float zoom){
+    const int width=std::max(1,int(std::min(source.width,source.height*w/h)/zoom));
+    const int height=std::max(1,int(std::min(source.height,source.width*h/w)/zoom));
+    const int left=int((source.width-width)*px),top=int((source.height-height)*py);
+    for(int y=0;y<h;++y)for(int x=0;x<w;++x){
+        const int x0=x*width/w,x1=std::max(x0+1,(x+1)*width/w);
+        const int y0=y*height/h,y1=std::max(y0+1,(y+1)*height/h);
+        unsigned sum[3]={};
+        for(int sy=y0;sy<y1;++sy)for(int sx=x0;sx<x1;++sx){
+            const auto *p=&source.pixels[(size_t(top+sy)*source.width+left+sx)*4];
+            for(int c=0;c<3;c++)sum[c]+=(p[c]*p[3]+35*(255-p[3])+127)/255;
+        }
+        const unsigned count=(x1-x0)*(y1-y0);
+        auto *pixel=output+(size_t(y)*w+x)*channels;
+        for(int c=0;c<3;c++)pixel[c]=(unsigned char)((sum[c]+count/2)/count);
+        if(channels==4)pixel[3]=255;
+    }
+}
+
+static std::string profileAvatarDetail(const ProfileImageSource &source,float px,float py,float zoom){
+    const int crop=std::max(1,int(std::min(source.width,source.height)/zoom));
+    int previous=0;
+    for(int limit:{BT4_PROFILE_AVATAR_MAX,256,192,128}){
+        const int side=std::min(crop,limit);
+        if(side==previous)continue;
+        previous=side;
+        std::vector<unsigned char> image(size_t(side)*side*3);
+        profileCrop(source,image.data(),side,side,3,px,py,zoom);
+        auto append=[](void *context,void *data,int size){
+            auto &bytes=*static_cast<std::vector<unsigned char> *>(context);
+            const auto *first=static_cast<const unsigned char *>(data);
+            if(bytes.size()<=profileAvatarWireBytes)
+                bytes.insert(bytes.end(),first,first+std::min<size_t>(size,profileAvatarWireBytes+1-bytes.size()));
+        };
+        std::vector<unsigned char> bytes;
+        if(stbi_write_png_to_func(append,&bytes,side,side,3,image.data(),side*3)&&
+           !bytes.empty()&&bytes.size()<=profileAvatarWireBytes)return profileBase64(bytes.data(),bytes.size());
+        for(int quality:{93,86,78,68}){
+            bytes.clear();
+            if(stbi_write_jpg_to_func(append,&bytes,side,side,3,image.data(),quality)&&
+               !bytes.empty()&&bytes.size()<=profileAvatarWireBytes)return profileBase64(bytes.data(),bytes.size());
+        }
+        if(side==crop&&side<=128)break;
+    }
+    return {};
+}
+
+static bool profileDecodeAvatar(const std::string &encoded,unsigned char *rgba,int *w,int *h){
+    if(encoded.empty()||encoded.size()>4*((profileAvatarWireBytes+2)/3)||encoded.size()%4)return false;
+    std::vector<unsigned char> data;
+    data.reserve(encoded.size()/4*3);
+    unsigned group=0,bits=0;
+    for(unsigned char c:encoded){
+        if(c=='=')break;
+        const int value=c>='A'&&c<='Z'?c-'A':c>='a'&&c<='z'?c-'a'+26:
+                        c>='0'&&c<='9'?c-'0'+52:c=='+'?62:c=='/'?63:-1;
+        if(value<0)return false;
+        group=(group<<6)|(unsigned)value;bits+=6;
+        if(bits>=8){bits-=8;data.push_back((unsigned char)(group>>bits));}
+    }
+    const bool png=data.size()>8&&!memcmp(data.data(),"\x89PNG\r\n\x1a\n",8);
+    const bool jpeg=data.size()>3&&data[0]==0xff&&data[1]==0xd8&&data[2]==0xff;
+    int width=0,height=0,channels=0;
+    if((!png&&!jpeg)||data.size()>profileAvatarWireBytes||
+       !stbi_info_from_memory(data.data(),int(data.size()),&width,&height,&channels)||
+       width!=height||width<1||width>BT4_PROFILE_AVATAR_MAX)return false;
+    unsigned char *decoded=stbi_load_from_memory(data.data(),int(data.size()),&width,&height,&channels,4);
+    if(!decoded)return false;
+    memcpy(rgba,decoded,size_t(width)*height*4);
+    stbi_image_free(decoded);*w=width;*h=height;
+    return true;
+}
+
 static Dj encodeProfileImage(const ProfileImageSource &source,float x=0.5f,float y=0.5f,float zoom=1.0f){
     if(source.pixels.empty())return {};
     int w,h;
     profileImageDimensions(source.kind,w,h);
+    std::string detail;
+    if(source.kind=="avatar"){
+        detail=profileAvatarDetail(source,x,y,zoom);
+        if(!detail.empty())w=h=32; // leave room for the original client’s thumbnail
+    }
     Dj frames=Dj::array(),timing=Dj::array();
     const int count=int(source.delays.size()),selected=std::min(count,6);
     for(int i=0;i<selected;++i){
@@ -164,7 +250,9 @@ static Dj encodeProfileImage(const ProfileImageSource &source,float x=0.5f,float
                                       source.width,source.height,w,h,x,y,zoom));
         timing.push_back(std::clamp(duration,100,1000));
     }
-    return {{"kind",source.kind},{"frames",std::move(frames)},{"delays",std::move(timing)}};
+    Dj body={{"kind",source.kind},{"frames",std::move(frames)},{"delays",std::move(timing)}};
+    if(!detail.empty())body["detail"]=std::move(detail);
+    return body;
 }
 
 static Dj profileImage(const char *filename,const std::string &kind){

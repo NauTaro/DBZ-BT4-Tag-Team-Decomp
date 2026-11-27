@@ -41,6 +41,11 @@ Bt4ProfileCard profileCard(const Dj &card){
         result.nameRgb=rgb->get<unsigned>();
         result.hasNameRgb=1;
     }
+    const auto bannerRgb=card.find("banner_rgb");
+    if(bannerRgb!=card.end()&&bannerRgb->is_number_unsigned()&&bannerRgb->get<unsigned>()<=0xffffff){
+        result.bannerRgb=bannerRgb->get<unsigned>();
+        result.hasBannerRgb=1;
+    }
     const auto media=card.find("media");
     if(media!=card.end()&&media->is_object()){
         auto copy=[&](char (&out)[37],const char *kind){
@@ -930,6 +935,7 @@ extern "C" void Port_ProfileCardRequest(const Bt4ProfileCard *card){
     if(card){
         args["card"]={{"name_color",card->nameColor},{"background",card->background},{"decoration",card->decoration}};
         if(card->hasNameRgb)args["card"]["name_rgb"]=card->nameRgb;
+        if(card->hasBannerRgb)args["card"]["banner_rgb"]=card->bannerRgb;
     }
     cardRequest=profileRequest(card?"profile_card_save":"profile_card_get",args.dump().c_str());
     cardDeadline=SDL_GetTicks()+ProfileTimeout;
@@ -968,10 +974,10 @@ extern "C" int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char
     std::lock_guard<std::mutex> guard(profileDraftLock);
     if(profileDraft.pixels.empty())return 0;
     const bool banner=profileDraft.kind=="banner"||profileDraft.kind=="banner_motion";
-    *width=banner?256:128;
-    *height=banner?64:128;
-    const auto data=profileResize(profileDraft.pixels.data(),profileDraft.width,profileDraft.height,*width,*height,x,y,zoom);
-    return profilePixels(data,rgba,size_t(*width)*(*height)*4);
+    *width=BT4_PROFILE_AVATAR_MAX;
+    *height=banner?BT4_PROFILE_AVATAR_MAX/4:BT4_PROFILE_AVATAR_MAX;
+    profileCrop(profileDraft,rgba,*width,*height,4,x,y,zoom);
+    return 1;
 }
 extern "C" int Port_ProfileDraftUpload(float x,float y,float zoom){
     Dj args;
@@ -992,8 +998,10 @@ extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *w
         if(!path)return 0;
         const Dj body=profileImage(path,"avatar");
         if(body.is_null())return 0;
-        profileImageDimensions("avatar",*width,*height);
         *count=1;delays[0]=100;
+        if(body.contains("detail"))
+            return profileDecodeAvatar(body["detail"].get_ref<const std::string &>(),pixels,width,height);
+        profileImageDimensions("avatar",*width,*height);
         return profilePixels(body["frames"][0].get_ref<const std::string &>(),pixels,size_t(*width)*(*height)*4);
     }
     std::lock_guard<std::mutex> guard(rankedLock);
@@ -1006,12 +1014,18 @@ extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *w
         entry=std::prev(profileMedia.end());
     }
     if(now>=entry->until&&entry->body.is_null()){
-        entry->request=profileRequest("profile_media_get",Dj{{"id",id},{"hd",true}}.dump().c_str());
+        entry->request=profileRequest("profile_media_get",Dj{{"id",id},{"hd",true},{"detail",true}}.dump().c_str());
         entry->until=now+15000;
     }
     if(entry->body.is_null())return 0;
     const auto &body=entry->body;
     const std::string kind=text(body,"kind");
+    const auto detail=body.find("detail");
+    if(kind=="avatar"&&detail!=body.end()&&detail->is_string()&&
+       profileDecodeAvatar(detail->get_ref<const std::string &>(),pixels,width,height)){
+        *count=1;delays[0]=100;
+        return 1;
+    }
     int w,h;
     profileImageDimensions(kind,w,h);
     const auto frames=body.find("frames"),timing=body.find("delays");

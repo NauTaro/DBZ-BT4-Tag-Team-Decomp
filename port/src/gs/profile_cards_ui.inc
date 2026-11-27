@@ -61,14 +61,15 @@ static const ProfileTexture *profile_texture(const char *id) {
         if (entry.used<slot->used) slot=&entry;
     }
     if (slot->used==now) return nullptr;
-    uint8_t pixels[BT4_PROFILE_PIXEL_CAPACITY];
+    uint8_t *pixels=(uint8_t *)malloc(BT4_PROFILE_PIXEL_CAPACITY);
+    if(!pixels)return nullptr;
     int width=0,height=0,count=0,delays[6]={};
-    if (!Port_ProfileMediaRead(id,pixels,&width,&height,&count,delays)) return nullptr;
+    if (!Port_ProfileMediaRead(id,pixels,&width,&height,&count,delays)) {
+        free(pixels);
+        return nullptr;
+    }
     const size_t bytes=size_t(width)*height*count*4;
-    uint8_t *upload=(uint8_t *)malloc(bytes);
-    if (!upload) return nullptr;
-    memcpy(upload,pixels,bytes);
-    SDL_GPUTexture *texture=make_strip(upload,bytes,width,height,count);
+    SDL_GPUTexture *texture=make_strip(pixels,bytes,width,height,count);
     if (!texture) return nullptr;
     Ui_TextureFree(slot->texture);
     *slot={};
@@ -103,6 +104,59 @@ static ImU32 profile_name_ink(const Bt4ProfileCard &card) {
     if(!card.hasNameRgb)return profileNameColors[card.nameColor];
     return IM_COL32((card.nameRgb>>16)&255,(card.nameRgb>>8)&255,card.nameRgb&255,255);
 }
+static ImU32 profile_banner_ink(const Bt4ProfileCard &card) {
+    if(!card.hasBannerRgb)return profileBannerColors[card.background];
+    return IM_COL32((card.bannerRgb>>16)&255,(card.bannerRgb>>8)&255,card.bannerRgb&255,255);
+}
+static bool profile_color_edit(const char *id,ImU32 ink,unsigned &color) {
+    const ImVec4 current=ImGui::ColorConvertU32ToFloat4(ink);
+    float rgb[]={current.x,current.y,current.z};
+    if(!ImGui::ColorEdit3(id,rgb,ImGuiColorEditFlags_DisplayRGB|ImGuiColorEditFlags_Uint8))return false;
+    const ImU32 packed=ImGui::ColorConvertFloat4ToU32(ImVec4(rgb[0],rgb[1],rgb[2],1));
+    color=((packed&255)<<16)|(packed&0xff00)|((packed>>16)&255);
+    return true;
+}
+static void profile_header_card(ImDrawList *dl,ImVec2 p,float w,float h,const char *name,const Bt4ProfileCard &card) {
+    const float photo=h*0.92f, radius=h*0.09f;
+    const ImVec2 end(p.x+w,p.y+h), face(p.x+h*0.04f,p.y+h*0.04f);
+    const ImVec2 faceEnd(face.x+photo,face.y+photo);
+    dl->AddRectFilled(ImVec2(p.x+h*0.08f,p.y+h*0.10f),end,IM_COL32(8,18,31,115),radius);
+    dl->AddRectFilled(p,ImVec2(end.x-h*0.05f,end.y-h*0.06f),IM_COL32(12,27,43,250),radius);
+    const ImVec2 bannerStart(faceEnd.x+h*0.10f,p.y+h*0.12f),bannerEnd(end.x-h*0.12f,end.y-h*0.13f);
+    dl->AddRectFilled(bannerStart,bannerEnd,profile_banner_ink(card),radius*0.75f);
+    const auto *banner=profile_texture(card.bannerMotion);
+    if(!banner)banner=profile_texture(card.banner);
+    if(banner)profile_image_draw(dl,*banner,bannerStart,bannerEnd,radius*0.75f,IM_COL32_WHITE);
+    dl->AddRectFilled(bannerStart,bannerEnd,IM_COL32(6,13,25,105),radius*0.75f);
+    dl->AddRectFilled(face,faceEnd,IM_COL32(27,48,68,255),radius);
+    const auto *avatar=profile_texture(card.motion);
+    if(!avatar)avatar=profile_texture(card.avatar);
+    auto *font=Ui_FontBold();
+    if(!font)font=ImGui::GetFont();
+    if(avatar)profile_image_draw(dl,*avatar,face,faceEnd,radius,IM_COL32_WHITE);
+    else{
+        const char initial[]={*name>=32&&*name<127?*name:'?',0};
+        const float size=h*0.39f;
+        const float width=font->CalcTextSizeA(size,FLT_MAX,0,initial).x;
+        dl->AddText(font,size,ImVec2(face.x+(photo-width)/2,face.y+(photo-size)/2),profile_name_ink(card),initial);
+    }
+    const ImU32 accent=card.premium?IM_COL32(251,215,140,255):IM_COL32(151,216,228,255);
+    dl->AddRect(face,faceEnd,accent,radius,0,fmaxf(1,h*0.014f));
+    const ImVec2 textStart(bannerStart.x+h*0.12f,bannerStart.y),textEnd(bannerEnd.x-h*0.1f,bannerEnd.y);
+    const float size=h*0.34f, y=(textStart.y+textEnd.y-size)*0.5f;
+    const char *endName=nullptr;
+    font->CalcTextSizeA(size,fmaxf(0,textEnd.x-textStart.x-(card.decoration?h*0.20f:0)),0,name,nullptr,&endName);
+    if(endName&&endName>name){
+        dl->AddText(font,size,ImVec2(textStart.x,y+1),IM_COL32(0,0,0,220),name,endName);
+        dl->AddText(font,size,ImVec2(textStart.x,y),profile_name_ink(card),name,endName);
+    }
+    if(card.decoration){
+        const ImVec2 center(textEnd.x-h*0.10f,(bannerStart.y+bannerEnd.y)/2);
+        const float r=h*0.07f;
+        dl->AddQuadFilled(ImVec2(center.x,center.y-r),ImVec2(center.x+r,center.y),
+                         ImVec2(center.x,center.y+r),ImVec2(center.x-r,center.y),accent);
+    }
+}
 static void profile_card_draw(ImDrawList *dl, ImVec2 p, float w, float h, const char *name, const Bt4ProfileCard &card,
                               float nameScale=0.48f) {
     const ImU32 ink = profile_name_ink(card);
@@ -110,7 +164,7 @@ static void profile_card_draw(ImDrawList *dl, ImVec2 p, float w, float h, const 
     const float cut=h*0.17f;
     profile_frame(dl,p,bottom,cut,IM_COL32(9,32,40,255),IM_COL32(4,17,24,255),h*0.06f);
     const ImVec2 inner(p.x+h*0.05f,p.y+h*0.05f),end(bottom.x-h*0.05f,bottom.y-h*0.05f);
-    profile_frame(dl,inner,end,cut*0.78f,profileBannerColors[card.background],IM_COL32(163,217,217,230),h*0.023f);
+    profile_frame(dl,inner,end,cut*0.78f,profile_banner_ink(card),IM_COL32(163,217,217,230),h*0.023f);
     const auto *banner=profile_texture(card.bannerMotion);
     if(!banner)banner=profile_texture(card.banner);
     if (banner)
@@ -204,7 +258,7 @@ static void profile_combat_card(ImDrawList *dl, float anchor, float y, float wid
                       IM_COL32(43,66,81,240),IM_COL32(43,66,81,240),
                       IM_COL32(17,28,43,240),IM_COL32(17,28,43,240));
     const ImVec2 ribbonStart(bandLeft+h*0.15f,y+h*0.77f),ribbonEnd(bandRight-h*0.15f,y+h*0.86f);
-    dl->AddRectFilled(ribbonStart,ribbonEnd,profileBannerColors[card.background]);
+    dl->AddRectFilled(ribbonStart,ribbonEnd,profile_banner_ink(card));
     const auto *banner=profile_texture(card.bannerMotion);
     if (!banner) banner=profile_texture(card.banner);
     if (banner) {
@@ -224,7 +278,7 @@ static void profile_combat_card(ImDrawList *dl, float anchor, float y, float wid
         profile_image_draw(dl,*photo,ImVec2(avatar.x-radius,cy-radius),
                            ImVec2(avatar.x+radius,cy+radius),radius,IM_COL32_WHITE);
     } else {
-        dl->AddCircleFilled(avatar,radius,profileBannerColors[card.background]);
+        dl->AddCircleFilled(avatar,radius,profile_banner_ink(card));
         dl->AddCircleFilled(ImVec2(avatar.x,cy-h*0.08f),h*0.09f,silver);
         dl->AddRectFilled(ImVec2(avatar.x-h*0.15f,cy+h*0.043f),
                           ImVec2(avatar.x+h*0.15f,cy+h*0.18f),silver,h*0.06f);
@@ -239,7 +293,7 @@ static void profile_combat_card(ImDrawList *dl, float anchor, float y, float wid
     const float badgeLeft=mirror?x+h*0.10f:right-h*0.10f-badgeWidth;
     const float nameLeft=mirror?x+(showLatency?h*0.25f+badgeWidth:h*0.25f):x+h*1.16f;
     const float nameRight=mirror?right-h*1.16f:right-(showLatency?h*0.25f+badgeWidth:h*0.25f);
-    const float nameSize=h*0.49f;
+    const float nameSize=h*0.56f;
     const char *nameEnd=nullptr;
     const ImVec2 nameExtent=font->CalcTextSizeA(nameSize,nameRight-nameLeft,0,name,nullptr,&nameEnd);
     if (nameEnd && nameEnd>name) {
@@ -257,21 +311,22 @@ static void profile_combat_card(ImDrawList *dl, float anchor, float y, float wid
     if (ping>=0) SDL_snprintf(latency,sizeof(latency),"%d ms",ping);
     else SDL_strlcpy(latency,"-- ms",sizeof(latency));
     const ImVec2 badgeMin(badgeLeft,y+h*0.24f),badgeMax(badgeLeft+badgeWidth,y+h*0.79f);
-    profile_frame(dl,badgeMin,badgeMax,h*0.095f,IM_COL32(251,236,202,255),IM_COL32(125,91,54,255),h*0.034f);
-    const ImU32 tone=ping<0?IM_COL32(110,114,120,255):ping<85?IM_COL32(47,119,66,255):
-                     ping<150?IM_COL32(155,94,23,255):IM_COL32(169,57,42,255);
+    dl->AddRectFilled(badgeMin,badgeMax,IM_COL32(12,27,41,254),h*0.11f);
+    dl->AddRect(badgeMin,badgeMax,IM_COL32(165,207,221,224),h*0.11f,0,fmaxf(1,h*0.03f));
+    const ImU32 tone=ping<0?IM_COL32(151,167,183,255):ping<85?IM_COL32(117,235,160,255):
+                     ping<150?IM_COL32(255,213,127,255):IM_COL32(255,142,142,255);
     const float dotX=badgeLeft+h*0.23f,dotY=(badgeMin.y+badgeMax.y)*0.5f;
     dl->AddCircleFilled(ImVec2(dotX,dotY),h*0.065f,tone,10);
-    const float pingSize=h*0.37f;
+    const float pingSize=h*0.43f;
     const float available=badgeWidth-h*0.47f;
     const float measured=font->CalcTextSizeA(pingSize,FLT_MAX,0,latency).x;
     const float fit=measured>available?pingSize*available/measured:pingSize;
     dl->AddText(font,fit,ImVec2(badgeLeft+h*0.38f+(available-fminf(measured,available))*0.5f,dotY-fit*0.50f),
-                IM_COL32(37,30,26,255),latency);
+                IM_COL32(239,251,255,255),latency);
 }
 
 static void profile_duel_cards_draw(float x,float y,float w,float h,float narrow,bool centered,bool team,bool modernHud,
-                                    const char *left,const char *right,int leftPing=-1,int rightPing=-1) {
+                                    const char *left,const char *right,int leftPing,int rightPing,bool latency,bool preview=false) {
     const float sx=w/512.0f,sy=h/448.0f;
     const float in=centered?256.0f+(106.0f-256.0f)*narrow:106.0f*narrow;
     const float width=fminf(111.0f*sx,fmaxf(0.0f,(249.0f-in)*sx));
@@ -280,15 +335,17 @@ static void profile_duel_cards_draw(float x,float y,float w,float h,float narrow
     ImDrawList *dl=ImGui::GetBackgroundDrawList();
     if (*left) {
         Bt4ProfileCard card={};
-        Port_ProfileCardForPlayer(left,&card);
+        if(preview)SDL_strlcpy(card.avatar,"preview-local",sizeof(card.avatar));
+        else Port_ProfileCardForPlayer(left,&card);
         const ImVec2 p=hud_placement_position(HUD_PLACE_ONLINE_1,ImVec2(x+in*sx,cardY),sx,sy);
-        profile_combat_card(dl,p.x,p.y,width,23.0f*sy,left,card,false,leftPing);
+        profile_combat_card(dl,p.x,p.y,width,23.0f*sy,left,card,false,leftPing,latency);
     }
     if (*right) {
         Bt4ProfileCard card={};
-        Port_ProfileCardForPlayer(right,&card);
+        if(preview)SDL_strlcpy(card.avatar,"preview-rival",sizeof(card.avatar));
+        else Port_ProfileCardForPlayer(right,&card);
         const ImVec2 p=hud_placement_position(HUD_PLACE_ONLINE_2,ImVec2(x+(512.0f-in)*sx,cardY),sx,sy);
-        profile_combat_card(dl,p.x,p.y,width,23.0f*sy,right,card,true,rightPing);
+        profile_combat_card(dl,p.x,p.y,width,23.0f*sy,right,card,true,rightPing,latency);
     }
 }
 
@@ -297,7 +354,7 @@ static void profile_ranked_encounter(ImDrawList *dl, ImVec2 p, float u, const ch
     profile_frame(dl,p,ImVec2(p.x+285*u,p.y+154*u),11*u,
                   IM_COL32(9,29,43,253),IM_COL32(87,154,169,255),1.5f*u);
     const ImVec2 photo(p.x+23*u,p.y+11*u), end(photo.x+108*u,photo.y+108*u);
-    dl->AddRectFilled(photo,end,profileBannerColors[card.background],8*u);
+    dl->AddRectFilled(photo,end,profile_banner_ink(card),8*u);
     const ProfileTexture *image=profile_texture(card.motion);
     if(!image)image=profile_texture(card.avatar);
     if(image)profile_image_draw(dl,*image,photo,end,8*u,IM_COL32_WHITE);
@@ -352,7 +409,7 @@ static void profile_crop_editor(float u) {
     update|=dragged;
     dragged=false;
     if (!texture||update) {
-        auto *rgba=(uint8_t *)malloc(128*128*4);
+        auto *rgba=(uint8_t *)malloc(BT4_PROFILE_PIXEL_CAPACITY);
         if(rgba&&Port_ProfileDraftPreview(x,y,zoom,rgba,&w,&h)) {
             auto *replacement=make_strip(rgba,size_t(w)*h*4,w,h,1);
             if(replacement){Ui_TextureFree(texture);texture=replacement;}
@@ -496,22 +553,21 @@ static void profile_card_editor(const char *name,float u,bool &open) {
         ImGui::TextUnformatted(profile_label("Name color","Color del nombre","Cor do nome"));
         ImGui::SameLine(172*u);
         ImGui::SetNextItemWidth(-1);
-        const ImVec4 ink=ImGui::ColorConvertU32ToFloat4(profile_name_ink(draft));
-        float rgb[]={ink.x,ink.y,ink.z};
-        if(ImGui::ColorEdit3("##name-rgb",rgb,ImGuiColorEditFlags_DisplayRGB|ImGuiColorEditFlags_Uint8)){
-            const ImU32 color=ImGui::ColorConvertFloat4ToU32(ImVec4(rgb[0],rgb[1],rgb[2],1));
-            draft.hasNameRgb=1;
-            draft.nameRgb=((color&255)<<16)|(color&0xff00)|((color>>16)&255);
-        }
+        if(profile_color_edit("##name-rgb",profile_name_ink(draft),draft.nameRgb))draft.hasNameRgb=1;
+        ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(profile_label("Banner color","Color del banner","Cor do banner"));
-        ImGui::SameLine();ImGui::TextDisabled("%s",backgrounds[draft.background]);
+        ImGui::SameLine(172*u);
+        ImGui::SetNextItemWidth(-1);
+        if(profile_color_edit("##banner-rgb",profile_banner_ink(draft),draft.bannerRgb))draft.hasBannerRgb=1;
         for(int i=0;i<8;++i){
             if(i)ImGui::SameLine(0,5*u);
             ImGui::PushID(i);
             const ImVec4 color=ImGui::ColorConvertU32ToFloat4(profileBannerColors[i]);
-            if(ImGui::ColorButton(backgrounds[i],color,ImGuiColorEditFlags_NoTooltip,ImVec2(23*u,23*u)))draft.background=i;
+            if(ImGui::ColorButton(backgrounds[i],color,ImGuiColorEditFlags_NoTooltip,ImVec2(23*u,23*u))){
+                draft.background=i;draft.hasBannerRgb=0;
+            }
             if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",backgrounds[i]);
-            if(draft.background==i)ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),ImGui::GetItemRectMax(),
+            if(!draft.hasBannerRgb&&draft.background==i)ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),ImGui::GetItemRectMax(),
                 IM_COL32(255,218,111,255),3*u,0,2*u);
             ImGui::PopID();
         }

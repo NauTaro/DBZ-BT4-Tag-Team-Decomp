@@ -93,6 +93,7 @@ int Port_NetStats(int *out);                   // gs/net.c: the meter's numbers 
 void Port_NetAutomaticOptions(void);
 int Port_NetTimingStats(int *out);
 int Port_TagNetwork(void),Port_TagPing(void),Port_TagLocalBattle(void);
+int TagBattle_LocalActor(void);
 int Port_TagPhase(void),Port_TagCount(void),Port_TagCPU(int seat),Port_TagTeam(int seat);
 const char *Port_TagPlayerName(int seat);
 int Port_LobbyOther(void);
@@ -2537,6 +2538,16 @@ static void update_prompt_draw(void) {
 static void ui_tab(PortVideo &v) {
     if (ImGui::Button(profile_label("Customize HUD","Personalizar HUD","Personalizar HUD")))
         hudPlacementOpen=true;
+    bool showCards=Port_Setting("hud_online_cards",1)!=0;
+    if(ImGui::Checkbox(profile_label("Online player cards","Tarjetas de jugadores online","Cartões de jogadores online"),&showCards)){
+        Port_SettingSave("hud_online_cards",showCards);
+        Port_SettingsWrite();
+    }
+    bool showPing=Port_Setting("hud_online_ping",1)!=0;
+    if(ImGui::Checkbox(profile_label("Ping on player cards","Ping en las tarjetas","Ping nos cartões"),&showPing)){
+        Port_SettingSave("hud_online_ping",showPing);
+        Port_SettingsWrite();
+    }
     {
         static const char *const names[] = {"Espa\xC3\xB1ol", "English", "Portugu\xC3\xAAs"};
         int language = f1_language();
@@ -3211,9 +3222,9 @@ static void profile_header_draw(const ProfileHeader &header) {
         }
     }
     const float sx=gUiPresentW/512.0f,sy=gUiPresentH/448.0f;
-    profile_card_draw(ImGui::GetBackgroundDrawList(),
+    profile_header_card(ImGui::GetBackgroundDrawList(),
         ImVec2(gUiPresentX+header.left*sx,gUiPresentY+header.top*sy),
-        (header.right-header.left)*sx,(header.bottom-header.top)*sy,header.name,card,0.34f);
+        (header.right-header.left)*sx,(header.bottom-header.top)*sy,header.name,card);
 }
 struct RankedToast {Uint64 started=0;int rating=0,delta=0;};
 static RankedToast sRankedToast;
@@ -3828,9 +3839,18 @@ static bool frame_build(void) {
     bool overlay = nameOn || songOn;
     bool meter = sReady && meter_on();
     // the players' names under the gauges of an online fight
-    bool names = sReady && Port_NetActive() && BtlChar_FindByObjId(0) != NULL && (Port_NetName(0)[0] != '\0' || Port_NetName(1)[0] != '\0');
+    FpState fightHud={};
+    const bool showCards=Port_Setting("hud_online_cards",1)!=0;
+    const bool showCardPing=Port_Setting("hud_online_ping",1)!=0;
+    // Modern HUD suppresses native gauge draws. Use the same battle snapshot as its Lua HUD.
+    static FpState lastFightHud={};
+    if(PortPanels_Read(&fightHud))lastFightHud=fightHud;
+    const bool onlineHudVisible=!gPortMenuMode&&lastFightHud.gauges;
+    const bool combatPreview=getenv("BT4_RENDER_TEST")&&getenv("BT4_PROFILE_COMBAT_PREVIEW");
+    bool names = sReady && showCards && onlineHudVisible &&
+                 (combatPreview || (Port_NetActive()&&(Port_NetName(0)[0]!='\0'||Port_NetName(1)[0]!='\0')));
     TagHudState tagCards={};
-    const bool showTagCard=sReady&&!names&&Port_TagNetwork()&&!PortHud_Hidden()&&
+    const bool showTagCard=sReady&&showCards&&onlineHudVisible&&!names&&Port_TagNetwork()&&!PortHud_Hidden()&&
         PortPanels_TagRead(&tagCards)&&tagCards.count>0;
     const int tagPhase=Port_TagNetwork()?Port_TagPhase():TT_CLOSED;
     const bool showTagEncounter=sReady&&!sOpen&&(tagPhase==TT_LOADING||tagPhase==TT_ARMED);
@@ -3851,7 +3871,7 @@ static bool frame_build(void) {
         profileHeader=sProfileHeader;
     }
     bool tagMenu = sReady && sTagMenuOpen;
-    const bool rankedPreview=sReady&&getenv("BT4_RENDER_TEST")&&getenv("BT4_RANKED_PREVIEW_LOCAL")&&!getenv("BT4_RENDER_TBO");
+    const bool rankedPreview=sReady&&!combatPreview&&getenv("BT4_RENDER_TEST")&&getenv("BT4_RANKED_PREVIEW_LOCAL")&&!getenv("BT4_RENDER_TBO");
     const bool profileHeaderOn=sReady&&profileHeader.seen&&SDL_GetTicks()-profileHeader.seen<250&&gUiPresentW>0&&gUiPresentH>0;
     bool updateAvailable=updLine[0]!=0;
     extern int gPortMenuMode;
@@ -3954,7 +3974,7 @@ static bool frame_build(void) {
     if (chat) {
         chat_draw();
     }
-    if (names && GsDraw_HudShown() && gUiPresentW > 0 && gUiPresentH > 0) { // (with the HUD: not over an intro)
+    if (names && gUiPresentW > 0 && gUiPresentH > 0) {
         // Under each side's health bar (the game's 512 x 448 page: the bars end at about y 50). The left place is
         // side 0's, or this player's own side when the HUD's sides are swapped.
         int type,dp,timeLimit;
@@ -3962,11 +3982,14 @@ static bool frame_build(void) {
         const float narrow=Port_IsWide()?1333.333f/(float)Port_AspectMilli():1.0f;
         const int swap=Port_HudSwap();
         int ping[2];
-        Port_NetHudLatency(ping);
+        if(combatPreview){ping[0]=36;ping[1]=82;}
+        else Port_NetHudLatency(ping);
         profile_duel_cards_draw(gUiPresentX,gUiPresentY,gUiPresentW,gUiPresentH,narrow,Port_HudLayout()==2,
-                                type!=0,Port_ModernHudActive()!=0,Port_NetName(swap),Port_NetName(swap^1),ping[swap],ping[swap^1]);
+                                type!=0,Port_ModernHudActive()!=0,
+                                combatPreview?"NauTaro":Port_NetName(swap),
+                                combatPreview?"Astra":Port_NetName(swap^1),ping[swap],ping[swap^1],showCardPing,combatPreview);
     }
-    if (showTagCard&&GsDraw_HudShown()&&gUiPresentW>0&&gUiPresentH>0) {
+    if (showTagCard&&gUiPresentW>0&&gUiPresentH>0) {
         const float sx=gUiPresentW/512.0f,sy=gUiPresentH/448.0f;
         ImDrawList *dl=ImGui::GetBackgroundDrawList();
         for (int pane=0;pane<(tagCards.split?2:1);++pane) {
@@ -3978,7 +4001,8 @@ static bool frame_build(void) {
             Port_ProfileCardForTagPlayer(name,&card);
             const ImVec2 p=hud_placement_position(HUD_PLACE_TAG_ONLINE_1+pane,
                 ImVec2(gUiPresentX+(pane?278:58)*sx,gUiPresentY+(tagCards.split?51:76)*sy),sx,sy);
-            profile_combat_card(dl,p.x,p.y,88*sx,19*sy,name,card,false,-1,false);
+            const bool ownPing=showCardPing&&actor==TagBattle_LocalActor()&&Port_TagPing()>=0;
+            profile_combat_card(dl,p.x,p.y,(ownPing?110:88)*sx,19*sy,name,card,false,ownPing?Port_TagPing():-1,ownPing);
         }
     }
     if (tagMenu)tag_menu_draw();

@@ -31,16 +31,20 @@ test('card customizations follow the account and expose cosmetics without paymen
     f.invoke(a,'profile_card_save',{card:{background:3}});
     assert.equal(f.c.events.find(event=>event.user===b).body.members[0].card.background,3);
 });
-test('any RGB name color can be saved and legacy clients still receive a preset',()=>{
+test('RGB name and banner colors can be saved while older clients receive presets',()=>{
     const f=fixture(), player=f.user('ColorTest'), observer=f.user('ColorPeer');
     const rgb=0x075ab3;
     assert.throws(()=>f.invoke(player,'profile_card_save',{card:{name_rgb:0x1000000}}),/BAD_PROFILE_CARD/);
-    const card=f.invoke(player,'profile_card_save',{card:{name_rgb:rgb}});
+    const card=f.invoke(player,'profile_card_save',{card:{name_rgb:rgb,banner_rgb:0x263c4a}});
     assert.equal(card.name_rgb,rgb);
     assert.equal(card.name_color,0);
+    assert.equal(card.banner_rgb,0x263c4a);
+    assert.equal(card.background,0);
     const room=f.invoke(player,'create',profile);
     const peer=f.invoke(observer,'join',{...profile,code:room.code});
     assert.equal(peer.members.find(m=>m.name==='ColorTest').card.name_rgb,rgb);
+    assert.equal(peer.members.find(m=>m.name==='ColorTest').card.banner_rgb,0x263c4a);
+    assert.equal(f.invoke(player,'profile_card_save',{card:{background:3}}).banner_rgb,undefined);
 });
 
 test('a complimentary pass enables premium without creating a payment',()=>{
@@ -108,6 +112,20 @@ test('large profile photos retain detail for new clients and keep legacy clients
     assert.equal(legacy.length,2048);
     assert.equal(legacy[0],162);
     assert.equal(legacy[1],163);
+});
+
+test('optional full-color avatar detail stays inside the wire limit and is negotiated separately',()=>{
+    const f=fixture(), user=f.user('FullColor');
+    const frames=[Buffer.alloc(2048).toString('base64')];
+    const original='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const oversized=Buffer.from(original,'base64');
+    oversized.writeUInt32BE(321,16);oversized.writeUInt32BE(321,20);
+    const avatar={kind:'avatar',frames,delays:[100]};
+    assert.throws(()=>f.invoke(user,'profile_media_save',{...avatar,detail:oversized.toString('base64')}),/BAD_PROFILE_MEDIA/);
+    const id=f.invoke(user,'profile_media_save',{...avatar,detail:original}).media.avatar;
+    assert.equal(f.invoke(user,'profile_media_get',{id,detail:true}).detail,original);
+    assert.equal(f.invoke(user,'profile_media_get',{id,hd:true}).detail,undefined);
+    assert.deepEqual(f.invoke(user,'profile_media_get',{id}).frames,frames);
 });
 
 test('the shared avatar slot switches between GIF and static images and removal clears both',()=>{
