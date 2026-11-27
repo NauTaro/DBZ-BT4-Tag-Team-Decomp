@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS online_sessions(hash TEXT PRIMARY KEY, user_id TEXT N
 CREATE INDEX IF NOT EXISTS online_sessions_expiry ON online_sessions(expires);
 CREATE TABLE IF NOT EXISTS online_names(user_id TEXT PRIMARY KEY REFERENCES online_users(id), name TEXT NOT NULL, normalized TEXT NOT NULL UNIQUE);
 CREATE TABLE IF NOT EXISTS online_profile_cards(user_id TEXT PRIMARY KEY REFERENCES online_users(id),name_color INTEGER NOT NULL DEFAULT 0,background INTEGER NOT NULL DEFAULT 0,decoration INTEGER NOT NULL DEFAULT 0,premium_until INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS online_profile_grants(user_id TEXT PRIMARY KEY REFERENCES online_users(id),until_ms INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS online_profile_payments(payment_id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES online_users(id),paid_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS online_profile_payments_user ON online_profile_payments(user_id);
 CREATE TABLE IF NOT EXISTS online_profile_refunds(payment_id TEXT PRIMARY KEY);

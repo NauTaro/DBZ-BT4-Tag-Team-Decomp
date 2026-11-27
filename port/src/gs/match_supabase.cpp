@@ -36,6 +36,11 @@ Bt4ProfileCard profileCard(const Dj &card){
     Bt4ProfileCard result={int(std::min(7u,number(card,"name_color"))),int(std::min(7u,number(card,"background"))),
                           jsonFlag(card,"premium")?int(std::min(6u,number(card,"decoration"))):0,jsonFlag(card,"premium"),
                           jsonFlag(card,"checkout_available"),{},{},{},{}};
+    const auto rgb=card.find("name_rgb");
+    if(rgb!=card.end()&&rgb->is_number_unsigned()&&rgb->get<unsigned>()<=0xffffff){
+        result.nameRgb=rgb->get<unsigned>();
+        result.hasNameRgb=1;
+    }
     const auto media=card.find("media");
     if(media!=card.end()&&media->is_object()){
         auto copy=[&](char (&out)[37],const char *kind){
@@ -922,7 +927,10 @@ extern "C" void Port_ProfileCardRequest(const Bt4ProfileCard *card){
     profileRoute();
     if(cardRequest)return;
     Dj args=Dj::object();
-    if(card)args["card"]={{"name_color",card->nameColor},{"background",card->background},{"decoration",card->decoration}};
+    if(card){
+        args["card"]={{"name_color",card->nameColor},{"background",card->background},{"decoration",card->decoration}};
+        if(card->hasNameRgb)args["card"]["name_rgb"]=card->nameRgb;
+    }
     cardRequest=profileRequest(card?"profile_card_save":"profile_card_get",args.dump().c_str());
     cardDeadline=SDL_GetTicks()+ProfileTimeout;
     cardState=cardRequest?1:-1;

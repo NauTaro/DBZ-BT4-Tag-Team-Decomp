@@ -4,7 +4,7 @@ import {verifyAccess,legacyProof,legacyBootstrap,createSession,sha256} from './o
 import {roomTurn} from './online_turn.mjs';
 import {importRows} from './online_migration.mjs';
 import {launchRanked,resetRanked,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
-import {fulfillProfilePass} from './online_profile_cards.mjs';
+import {fulfillProfilePass,grantProfilePass} from './online_profile_cards.mjs';
 import {applyProfileWebhook,profileCheckout,profileCheckoutEnabled,verifyProfileWebhook} from './online_profile_checkout.mjs';
 
 import {applyKofiPayment,kofiCheckout,kofiEnabled,kofiPage} from './online_profile_kofi.mjs';
@@ -177,6 +177,11 @@ export class OnlineCoordinator {
                     if(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET))
                         return json({error:'AUTH_REQUIRED'},401);
                     return json(this.ctx.storage.transactionSync(()=>fulfillProfilePass(this.core,body)));
+                }
+                if(path==='/v5/admin/profile-grant'&&request.method==='POST'){
+                    if(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET))
+                        return json({error:'AUTH_REQUIRED'},401);
+                    return json(this.ctx.storage.transactionSync(()=>grantProfilePass(this.core,body)));
                 }
                 if(path==='/v5/admin/profile-media-remove'&&request.method==='POST'){
                     if(!this.env.ADMIN_SECRET||!safeEqual(bearer(request),this.env.ADMIN_SECRET))

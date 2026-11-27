@@ -2,6 +2,7 @@
 
 - New profile photos appear sharper. Ranked match cards now show a larger portrait, the player's nickname, and their points, wins, and losses.
 - Your personalized card now appears at the top of the Profile screen.
+- Choose any RGB color for your online name.
 - Open F1 → UI → Customize HUD to move battle HUD elements, including online profile cards and Tag Team indicators. Your layout saves when you release an element.
 - Added the BT4 unlock code to the main menu. Hold L1 + R1 and enter ↘, Triangle, ↙, Triangle, ↑ on the D-pad.
 

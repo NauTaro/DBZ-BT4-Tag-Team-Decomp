@@ -3,7 +3,7 @@ import './online_characters.test.mjs';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {OnlineCore,seasonAt,clientAtLeast} from '../online_core.mjs';
-import {fulfillProfilePass,passDurationMs} from '../online_profile_cards.mjs';
+import {fulfillProfilePass,grantProfilePass,passDurationMs} from '../online_profile_cards.mjs';
 import {applyProfileWebhook,profileCheckout,verifyProfileWebhook} from '../online_profile_checkout.mjs';
 import {kofiCheckout,kofiEnabled} from '../online_profile_kofi.mjs';
 import {createHmac} from 'node:crypto';
@@ -31,6 +31,29 @@ test('card customizations follow the account and expose cosmetics without paymen
     f.invoke(a,'profile_card_save',{card:{background:3}});
     assert.equal(f.c.events.find(event=>event.user===b).body.members[0].card.background,3);
 });
+test('any RGB name color can be saved and legacy clients still receive a preset',()=>{
+    const f=fixture(), player=f.user('ColorTest'), observer=f.user('ColorPeer');
+    const rgb=0x075ab3;
+    assert.throws(()=>f.invoke(player,'profile_card_save',{card:{name_rgb:0x1000000}}),/BAD_PROFILE_CARD/);
+    const card=f.invoke(player,'profile_card_save',{card:{name_rgb:rgb}});
+    assert.equal(card.name_rgb,rgb);
+    assert.equal(card.name_color,0);
+    const room=f.invoke(player,'create',profile);
+    const peer=f.invoke(observer,'join',{...profile,code:room.code});
+    assert.equal(peer.members.find(m=>m.name==='ColorTest').card.name_rgb,rgb);
+});
+
+test('a complimentary pass enables premium without creating a payment',()=>{
+    const f=fixture(), user=f.user('CompPass'), expires=f.c.now()+2*passDurationMs;
+    assert.equal(grantProfilePass(f.c,{user_id:user,until_ms:expires}).premium_until,expires);
+    assert.equal(f.c.one('SELECT COUNT(*) n FROM online_profile_payments').n,0);
+    assert.equal(f.invoke(user,'profile_card_save',{card:{decoration:2}}).decoration,2);
+    const paid={user_id:user,payment_id:'paid_comp_pass',amount_minor:300,currency:'usd',paid_at:f.c.now()};
+    assert.equal(fulfillProfilePass(f.c,paid).premium_until,expires);
+    f.tick(2*passDurationMs);
+    assert.equal(f.invoke(user,'profile_card_get').premium,false);
+});
+
 test('a verified three-dollar receipt grants exactly thirty days and retries do not extend it',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo');
     const paidAt=f.c.now();

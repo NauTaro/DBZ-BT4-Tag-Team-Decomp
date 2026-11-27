@@ -16,8 +16,10 @@ export function profileMedia(core, user, premium) {
 
 export function profileCard(row, now) {
     const premium = (row?.premium_until ?? 0) > now;
+    const name = row?.name_color ?? 0;
     return {
-        name_color: row?.name_color ?? 0,
+        name_color: name < 8 ? name : 0,
+        ...(name >= 0x1000000 ? {name_rgb:name - 0x1000000} : {}),
         background: row?.background ?? 0,
         decoration: premium ? (row?.decoration ?? 0) : 0,
         premium
@@ -29,9 +31,9 @@ export function ownProfileCard(core, user, changes) {
     const premium = (row?.premium_until ?? 0) > core.now();
     if (changes !== undefined) {
         if (!changes || typeof changes !== 'object' || Array.isArray(changes) ||
-            Object.keys(changes).some(key => !['name_color','background','decoration'].includes(key)))
+            Object.keys(changes).some(key => !['name_color','name_rgb','background','decoration'].includes(key)))
             throw new Error('BAD_PROFILE_CARD');
-        for (const [key, limit] of [['name_color', 7], ['background', 7], ['decoration', 6]]) {
+        for (const [key, limit] of [['name_color', 7], ['name_rgb', 0xffffff], ['background', 7], ['decoration', 6]]) {
             if (Object.hasOwn(changes, key) &&
                 (!Number.isInteger(changes[key]) || changes[key] < 0 || changes[key] > limit))
                 throw new Error('BAD_PROFILE_CARD');
@@ -40,7 +42,8 @@ export function ownProfileCard(core, user, changes) {
         core.run(`INSERT INTO online_profile_cards(user_id,name_color,background,decoration) VALUES(?,?,?,?)
             ON CONFLICT(user_id) DO UPDATE SET name_color=excluded.name_color,
             background=excluded.background,decoration=excluded.decoration`, user,
-            changes.name_color ?? row?.name_color ?? 0, changes.background ?? row?.background ?? 0,
+            changes.name_rgb===undefined ? (changes.name_color ?? row?.name_color ?? 0) : 0x1000000+changes.name_rgb,
+            changes.background ?? row?.background ?? 0,
             changes.decoration ?? row?.decoration ?? 0);
         return ownProfileCard(core, user);
     }
@@ -134,8 +137,18 @@ export function fulfillProfilePass(core, purchase) {
 function refreshPassExpiry(core,user) {
     const latest=core.one(`SELECT MAX(paid_at) AS paid_at FROM online_profile_payments p WHERE p.user_id=?
         AND NOT EXISTS(SELECT 1 FROM online_profile_refunds r WHERE r.payment_id=p.payment_id)`,user)?.paid_at;
+    const grant=core.one('SELECT until_ms FROM online_profile_grants WHERE user_id=?',user)?.until_ms ?? 0;
     core.run(`INSERT INTO online_profile_cards(user_id,premium_until) VALUES(?,?)
-        ON CONFLICT(user_id) DO UPDATE SET premium_until=excluded.premium_until`,user,latest?latest+passDurationMs:0);
+        ON CONFLICT(user_id) DO UPDATE SET premium_until=excluded.premium_until`,user,Math.max(grant,latest?latest+passDurationMs:0));
+}
+
+export function grantProfilePass(core,{user_id,until_ms}={}) {
+    if(typeof user_id!=='string'||!core.one('SELECT id FROM online_users WHERE id=?',user_id)||
+       !Number.isSafeInteger(until_ms)||until_ms<=core.now())throw new Error('BAD_PROFILE_GRANT');
+    core.run(`INSERT INTO online_profile_grants(user_id,until_ms) VALUES(?,?)
+        ON CONFLICT(user_id) DO UPDATE SET until_ms=MAX(until_ms,excluded.until_ms)`,user_id,until_ms);
+    refreshPassExpiry(core,user_id);
+    return ownProfileCard(core,user_id);
 }
 
 export function revokeProfilePass(core,payment) {

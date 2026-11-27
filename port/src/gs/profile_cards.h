@@ -7,6 +7,8 @@ typedef struct {
     int nameColor, background, decoration, premium, checkout;
     char avatar[37], motion[37], banner[37], bannerMotion[37];
     int hasRankedRecord, rankedWins, rankedLosses;
+    unsigned nameRgb;
+    int hasNameRgb;
 } Bt4ProfileCard;
 #define BT4_PROFILE_PIXEL_CAPACITY (80 * 80 * 4)
 void Port_ProfileCardForPlayer(const char *name, Bt4ProfileCard *out);

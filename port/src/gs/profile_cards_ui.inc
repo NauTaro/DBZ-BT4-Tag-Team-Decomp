@@ -99,8 +99,12 @@ static constexpr ImU32 profileNameColors[] = {
         IM_COL32(201, 246, 151, 255), IM_COL32(241, 182, 255, 255), IM_COL32(255, 233, 152, 255),
         IM_COL32(255, 168, 166, 255), IM_COL32(202, 218, 232, 255)
 };
+static ImU32 profile_name_ink(const Bt4ProfileCard &card) {
+    if(!card.hasNameRgb)return profileNameColors[card.nameColor];
+    return IM_COL32((card.nameRgb>>16)&255,(card.nameRgb>>8)&255,card.nameRgb&255,255);
+}
 static void profile_card_draw(ImDrawList *dl, ImVec2 p, float w, float h, const char *name, const Bt4ProfileCard &card) {
-    const ImU32 ink = profileNameColors[card.nameColor];
+    const ImU32 ink = profile_name_ink(card);
     const ImVec2 bottom(p.x + w, p.y + h);
     const float cut=h*0.17f;
     profile_frame(dl,p,bottom,cut,IM_COL32(9,32,40,255),IM_COL32(4,17,24,255),h*0.06f);
@@ -242,7 +246,7 @@ static void profile_combat_card(ImDrawList *dl, float anchor, float y, float wid
         const float nameY=cy-nameSize*0.45f;
         dl->PushClipRect(ImVec2(nameLeft,y),ImVec2(nameRight,y+h),true);
         dl->AddText(font,nameSize,ImVec2(nameX,nameY+h*0.045f),IM_COL32(2,10,22,240),name,nameEnd);
-        dl->AddText(font,nameSize,ImVec2(nameX,nameY),profileNameColors[card.nameColor],name,nameEnd);
+        dl->AddText(font,nameSize,ImVec2(nameX,nameY),profile_name_ink(card),name,nameEnd);
         dl->PopClipRect();
     }
     if (!showLatency)
@@ -298,12 +302,12 @@ static void profile_ranked_encounter(ImDrawList *dl, ImVec2 p, float u, const ch
     if(image)profile_image_draw(dl,*image,photo,end,8*u,IM_COL32_WHITE);
     else {
         char initial[]={*name>=32&&*name<127?*name:'?',0};
-        dl->AddText(font,42*u,ImVec2(photo.x+39*u,photo.y+31*u),profileNameColors[card.nameColor],initial);
+        dl->AddText(font,42*u,ImVec2(photo.x+39*u,photo.y+31*u),profile_name_ink(card),initial);
     }
     dl->AddRect(photo,end,IM_COL32(235,197,107,255),8*u,0,1.4f*u);
     const float size=18*u, textWidth=font->CalcTextSizeA(size,FLT_MAX,0,name).x;
     dl->PushClipRect(ImVec2(p.x+8*u,p.y+121*u),ImVec2(p.x+146*u,p.y+149*u),true);
-    dl->AddText(font,size,ImVec2(p.x+fmaxf(8*u,77*u-textWidth/2),p.y+128*u),profileNameColors[card.nameColor],name);
+    dl->AddText(font,size,ImVec2(p.x+fmaxf(8*u,77*u-textWidth/2),p.y+128*u),profile_name_ink(card),name);
     dl->PopClipRect();
     const char *labels[]={
         profile_label("Ranked points","Puntos Ranked","Pontos ranqueados"),
@@ -455,12 +459,6 @@ static void profile_card_editor(const char *name,float u,bool &open) {
         if (ImGui::Button(profile_label("Try again", "Reintentar", "Tentar novamente"))) Port_ProfileCardRequest(nullptr);
         return;
     }
-    const char *nameColors[] = {
-        profile_label("White","Blanco","Branco"), profile_label("Orange","Naranja","Laranja"),
-        profile_label("Blue","Azul","Azul"), profile_label("Green","Verde","Verde"),
-        profile_label("Purple","Morado","Roxo"), profile_label("Yellow","Amarillo","Amarelo"),
-        profile_label("Red","Rojo","Vermelho"), profile_label("Gray","Gris","Cinza")
-    };
     const char *backgrounds[] = {
         profile_label("Red","Rojo","Vermelho"), profile_label("Blue","Azul","Azul"),
         profile_label("Purple","Morado","Roxo"), profile_label("Green","Verde","Verde"),
@@ -493,7 +491,17 @@ static void profile_card_editor(const char *name,float u,bool &open) {
             ImGui::SetNextItemWidth(-1);
             ImGui::Combo(id,value,items,count);
         };
-        combo("##name-color",profile_label("Name color","Color del nombre","Cor do nome"),&draft.nameColor,nameColors,8);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(profile_label("Name color","Color del nombre","Cor do nome"));
+        ImGui::SameLine(172*u);
+        ImGui::SetNextItemWidth(-1);
+        const ImVec4 ink=ImGui::ColorConvertU32ToFloat4(profile_name_ink(draft));
+        float rgb[]={ink.x,ink.y,ink.z};
+        if(ImGui::ColorEdit3("##name-rgb",rgb,ImGuiColorEditFlags_DisplayRGB|ImGuiColorEditFlags_Uint8)){
+            const ImU32 color=ImGui::ColorConvertFloat4ToU32(ImVec4(rgb[0],rgb[1],rgb[2],1));
+            draft.hasNameRgb=1;
+            draft.nameRgb=((color&255)<<16)|(color&0xff00)|((color>>16)&255);
+        }
         ImGui::TextUnformatted(profile_label("Banner color","Color del banner","Cor do banner"));
         ImGui::SameLine();ImGui::TextDisabled("%s",backgrounds[draft.background]);
         for(int i=0;i<8;++i){
