@@ -171,16 +171,17 @@ static void profileImageDimensions(const std::string &kind,int &w,int &h){
 static constexpr size_t profileAvatarWireBytes=11200;
 
 static void profileCrop(const ProfileImageSource &source,unsigned char *output,int w,int h,int channels,
-                        float px,float py,float zoom){
+                        float px,float py,float zoom,int frame=0){
     const int width=std::max(1,int(std::min(source.width,source.height*w/h)/zoom));
     const int height=std::max(1,int(std::min(source.height,source.width*h/w)/zoom));
     const int left=int((source.width-width)*px),top=int((source.height-height)*py);
+    const auto *framePixels=source.pixels.data()+size_t(frame)*source.width*source.height*4;
     for(int y=0;y<h;++y)for(int x=0;x<w;++x){
         const int x0=x*width/w,x1=std::max(x0+1,(x+1)*width/w);
         const int y0=y*height/h,y1=std::max(y0+1,(y+1)*height/h);
         unsigned sum[3]={};
         for(int sy=y0;sy<y1;++sy)for(int sx=x0;sx<x1;++sx){
-            const auto *p=&source.pixels[(size_t(top+sy)*source.width+left+sx)*4];
+            const auto *p=framePixels+(size_t(top+sy)*source.width+left+sx)*4;
             for(int c=0;c<3;c++)sum[c]+=(p[c]*p[3]+35*(255-p[3])+127)/255;
         }
         const unsigned count=(x1-x0)*(y1-y0);
@@ -188,6 +189,12 @@ static void profileCrop(const ProfileImageSource &source,unsigned char *output,i
         for(int c=0;c<3;c++)pixel[c]=(unsigned char)((sum[c]+count/2)/count);
         if(channels==4)pixel[3]=255;
     }
+}
+
+static int profileFrameDuration(const ProfileImageSource &source,int from,int until){
+    int duration=0;
+    for(int j=from;j<until;++j) duration+=std::clamp(source.delays[j],20,1000);
+    return std::clamp(duration,100,1000);
 }
 
 static std::string profileAvatarDetail(const ProfileImageSource &source,float px,float py,float zoom){
@@ -257,11 +264,9 @@ static Dj encodeProfileImage(const ProfileImageSource &source,float x=0.5f,float
     const int count=int(source.delays.size()),selected=std::min(count,6);
     for(int i=0;i<selected;++i){
         const int from=i*count/selected,until=(i+1)*count/selected;
-        int duration=0;
-        for(int j=from;j<until;++j) duration+=std::clamp(source.delays[j],20,1000);
         frames.push_back(profileResize(source.pixels.data()+size_t(from)*source.width*source.height*4,
                                       source.width,source.height,w,h,x,y,zoom));
-        timing.push_back(std::clamp(duration,100,1000));
+        timing.push_back(profileFrameDuration(source,from,until));
     }
     Dj body={{"kind",source.kind},{"frames",std::move(frames)},{"delays",std::move(timing)}};
     if(!detail.empty())body["detail"]=std::move(detail);

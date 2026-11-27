@@ -25,7 +25,7 @@ int Port_ProfileMediaSave(const char *kind, const char *path);
 int Port_ProfileMediaRead(const char *id, unsigned char pixels[BT4_PROFILE_PIXEL_CAPACITY], int *width, int *height, int *count, int delays[6]);
 int Port_ProfileDraftFile(const char *kind,const char *path);
 int Port_ProfileDraftRoster(int character);
-int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height);
+int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height,int *count,int delays[6]);
 int Port_ProfileDraftUpload(float x,float y,float zoom);
 void Port_ProfileDraftReset(void);
 int Port_ProfilePortraitPath(int chara,char *out,int capacity);

@@ -3810,6 +3810,7 @@ static bool frame_build(void) {
         gPortNetMenuRequest = 0;
         net_open();
         if (sProfileEditor) {
+            sProfileReloadAppearance=true;
             Port_ProfileCheckout(-1,nullptr,0);
             Port_ProfileCardRequest(nullptr);
         }

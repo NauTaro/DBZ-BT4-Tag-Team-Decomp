@@ -990,13 +990,20 @@ extern "C" int Port_ProfileDraftRoster(int character){
     profileDraft=std::move(image);
     return 1;
 }
-extern "C" int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height){
+extern "C" int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height,int *count,int delays[6]){
     std::lock_guard<std::mutex> guard(profileDraftLock);
     if(profileDraft.pixels.empty())return 0;
     const bool banner=profileDraft.kind=="banner"||profileDraft.kind=="banner_motion";
-    *width=BT4_PROFILE_AVATAR_MAX;
-    *height=banner?BT4_PROFILE_AVATAR_MAX/4:BT4_PROFILE_AVATAR_MAX;
-    profileCrop(profileDraft,rgba,*width,*height,4,x,y,zoom);
+    const int frames=int(profileDraft.delays.size());
+    *count=std::min(frames,6);
+    *width=(*count>1)?128:BT4_PROFILE_AVATAR_MAX;
+    *height=banner?*width/4:*width;
+    const size_t stride=size_t(*width)*(*height)*4;
+    for(int i=0;i<*count;++i){
+        const int from=i*frames/(*count),until=(i+1)*frames/(*count);
+        profileCrop(profileDraft,rgba+i*stride,*width,*height,4,x,y,zoom,from);
+        delays[i]=profileFrameDuration(profileDraft,from,until);
+    }
     return 1;
 }
 extern "C" int Port_ProfileDraftUpload(float x,float y,float zoom){

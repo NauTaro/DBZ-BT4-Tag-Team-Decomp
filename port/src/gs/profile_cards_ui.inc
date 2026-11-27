@@ -400,12 +400,12 @@ static const char *profile_donors_only() {
 }
 static void profile_crop_editor(float u) {
     static float x=0.5f,y=0.5f,zoom=1.0f;
-    static SDL_GPUTexture *texture=nullptr;
-    static int w=0,h=0;
+    static ProfileTexture preview;
+    static int w=0;
     static unsigned sequence=0;
     const unsigned current=sProfileCropSequence.load();
     if(sequence!=current) {
-        sequence=current;Ui_TextureFree(texture);texture=nullptr;
+        sequence=current;Ui_TextureFree(preview.texture);preview={};
         x=0.5f;y=sRosterCrop?0.08f:0.5f;zoom=sRosterCrop?1.65f:1.0f;
     }
     ImGui::TextUnformatted(profile_label("Frame your image","Encuadra tu imagen","Enquadre sua imagem"));
@@ -420,18 +420,20 @@ static void profile_crop_editor(float u) {
     static bool dragged=false;
     update|=dragged;
     dragged=false;
-    if (!texture||update) {
+    if (!preview.texture||update) {
         auto *rgba=(uint8_t *)malloc(BT4_PROFILE_PIXEL_CAPACITY);
-        if(rgba&&Port_ProfileDraftPreview(x,y,zoom,rgba,&w,&h)) {
-            auto *replacement=make_strip(rgba,size_t(w)*h*4,w,h,1);
-            if(replacement){Ui_TextureFree(texture);texture=replacement;}
+        ProfileTexture next;
+        int width=0;
+        if(rgba&&Port_ProfileDraftPreview(x,y,zoom,rgba,&width,&next.height,&next.count,next.delays)) {
+            next.texture=make_strip(rgba,size_t(width)*next.height*next.count*4,width,next.height,next.count);
+            if(next.texture){Ui_TextureFree(preview.texture);preview=next;w=width;}
         }else free(rgba);
     }
-    if(texture) {
-        const float width=fminf((w>h?340:150)*u,ImGui::GetContentRegionAvail().x);
-        const ImVec2 p=ImGui::GetCursorScreenPos(),viewport(width,width*h/w);
+    if(preview.texture) {
+        const float width=fminf((w>preview.height?340:150)*u,ImGui::GetContentRegionAvail().x);
+        const ImVec2 p=ImGui::GetCursorScreenPos(),viewport(width,width*preview.height/w);
         ImGui::InvisibleButton("##drag-photo",viewport);
-        ImGui::GetWindowDrawList()->AddImage(ImTextureRef((ImTextureID)(intptr_t)texture),p,ImGui::GetItemRectMax());
+        profile_image_draw(ImGui::GetWindowDrawList(),preview,p,ImGui::GetItemRectMax(),0,IM_COL32_WHITE);
         if(ImGui::IsItemActive()&&ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
             const ImVec2 delta=ImGui::GetIO().MouseDelta;
             x=fminf(1.0f,fmaxf(0.0f,x-delta.x/viewport.x));
@@ -533,23 +535,18 @@ static void profile_media_control(const char *kind,const char *label,const char 
     ImGui::PopID();
 }
 
+static bool sProfileReloadAppearance=true;
+
 static void profile_card_editor(const char *name,float u,bool &open) {
     if(sProfilePicker==2){profile_crop_editor(u);return;}
     static Bt4ProfileCard draft={};
-    static int previous=0;
     Bt4ProfileCard current={};
     const int state=Port_ProfileCardView(&current);
     if(state==BT4_CARD_EMPTY)Port_ProfileCardRequest(nullptr);
-    if(state==BT4_CARD_READY){
-        if(state!=previous||draft.premium!=current.premium)draft=current;
-        else{
-            SDL_strlcpy(draft.avatar,current.avatar,sizeof(draft.avatar));
-            SDL_strlcpy(draft.motion,current.motion,sizeof(draft.motion));
-            SDL_strlcpy(draft.banner,current.banner,sizeof(draft.banner));
-            SDL_strlcpy(draft.bannerMotion,current.bannerMotion,sizeof(draft.bannerMotion));
-        }
+    if(state==BT4_CARD_READY&&(sProfileReloadAppearance||draft.premium!=current.premium)){
+        draft=current;
+        sProfileReloadAppearance=false;
     }
-    previous=state;
     if(state==BT4_CARD_LOADING||state==BT4_CARD_EMPTY){
         ImGui::TextUnformatted(profile_label("Loading profile…", "Cargando perfil…", "Carregando perfil…"));
         return;
@@ -663,7 +660,6 @@ static void profile_card_editor(const char *name,float u,bool &open) {
             ImGui::SameLine();
             if (ImGui::Button(profile_label("Refresh status","Actualizar estado","Atualizar status"))) {
                 Port_ProfileCardRequest(nullptr);
-                previous=1;
             }
             ImGui::EndDisabled();
             if (checkout<0||(checkout==2&&!SDL_OpenURL(url)))
@@ -687,7 +683,6 @@ static void profile_card_editor(const char *name,float u,bool &open) {
     ImGui::BeginDisabled(sProfilePicker==1||state==BT4_CARD_SAVING);
     if (ImGui::Button(save,ImVec2(buttonWidth,0))) {
         Port_ProfileCardRequest(&draft);
-        previous=1;
     }
     ImGui::EndDisabled();
     ImGui::PopStyleColor(4);

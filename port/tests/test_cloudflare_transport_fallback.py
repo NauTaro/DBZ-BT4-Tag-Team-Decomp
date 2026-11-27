@@ -36,6 +36,10 @@ static std::string str(const Sj &j,const char *k){auto i=j.find(k);return i!=j.e
 static bool emit(int,const Sj &event){
  if(event["event"]=="bt4.ready")return true;
  if(mode==2)assert(event["body"]["premium"]==false);
+ else if(mode==3){
+  const auto &frames=event["body"]["frames"];
+  assert(frames.size()==6&&frames[0]!=frames[1]&&event.dump().size()>16384);
+ }
  else assert(event["body"]["state"]=="ready");
  ++replies;state.quit=true;return true;
 }
@@ -47,6 +51,11 @@ static bool http(const std::string &,const Sj &request,bool,Sj &answer,bool=fals
   assert(request["op"]=="profile_media_save");
   assert(request["args"]["frames"][0].get<std::string>().size()==17600);
   answer={{"premium",false}};
+ }else if(mode==3){
+  assert(request["op"]=="profile_media_get"&&request["args"]["detail"]==true);
+  auto frames=Sj::array();
+  for(int i=0;i<6;++i)frames.push_back(std::string(2732,char('A'+i)));
+  answer={{"kind","motion"},{"frames",frames},{"delays",{100,100,100,100,100,100}}};
  }else{
   assert(request["op"]=="nickname_get");
   answer={{"state","ready"},{"name","Fixture"}};
@@ -58,9 +67,9 @@ struct VoiceWs{
  int status;
  bool delivered=false;
  VoiceWs(const std::string &,const std::string &,int,const std::string &,bool,void(*)(void*),void*):status(mode>=1?1:-1){++sockets;}
- void text(const std::string &message){if(mode==2)assert(Sj::parse(message)["op"]=="authenticate");}
+ void text(const std::string &message){if(mode>=2)assert(Sj::parse(message)["op"]=="authenticate");}
  bool read(VoiceWsMessage &packet){
-  if(mode!=2){status=-1;return false;}
+  if(mode<2){status=-1;return false;}
   if(delivered)return false;
   delivered=true;
   const std::string ready=R"({"event":"bt4.ready","body":{}})";
@@ -79,6 +88,11 @@ int main(){
  state.jobs.front().op="profile_media_save";
  state.jobs.front().args={{"frames",Sj::array({std::string(17600,'A')})}};
  state.jobs.front().expires=19000;
+ cloudEntry(nullptr);
+ assert(replies==1&&sockets==1&&clockNow<1000);
+ reset(3);
+ state.jobs.front().op="profile_media_get";
+ state.jobs.front().args={{"detail",true}};
  cloudEntry(nullptr);
  assert(replies==1&&sockets==1&&clockNow<1000);
  puts("PASS: blocked upgrades, failed socket authentication, HTTPS-only operation and bounded rate-limit retries");
