@@ -27,6 +27,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1388,6 +1389,13 @@ static void upgrade_bundled_text(const char *source, const char *folder, char **
     char path[512], *replacement;
     long count = 0;
     int match = !strcmp(folder,"skill_list") && *size == sizeof(kSkillList0394) && !memcmp(*text,kSkillList0394,*size);
+    if (!strcmp(folder,"modern_hud") && *size==32853) {
+        /* Stock R3/R3.1 script as shipped. Leave player-edited scripts alone. */
+        uint64_t hash=UINT64_C(14695981039346656037);
+        for (long i=0;i<*size;i++)
+            hash=(hash^(unsigned char)(*text)[i])*UINT64_C(1099511628211);
+        match=hash==UINT64_C(0xb99d1ee247555951);
+    }
     struct Stock { const char *name; const unsigned char *data; long size; } stock[] = {
         {"modern_hud", kR2_modern_hud, sizeof(kR2_modern_hud)},
         {"modern_hud", kPublicR58_modern_hud, sizeof(kPublicR58_modern_hud)-1},
