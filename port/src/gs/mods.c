@@ -802,7 +802,30 @@ static int l_hud_actor_anchor(lua_State *L){
     if((c=hud_cmd(MODS_CMD_ACTOR_ANCHOR))!=NULL){c->i0=pane;c->i1=actor;c->f[0]=num(L,3);c->f[1]=num(L,4);}
     return 0;
 }
+#include "hud_placement.h"
 static int l_hud_unanchor(lua_State *L){hud_cmd(MODS_CMD_UNANCHOR);return 0;}
+static int l_hud_place(lua_State *L) {
+    static const struct { const char *name; int group; } groups[] = {
+        {"gauges",HUD_PLACE_GAUGE_1},{"team",HUD_PLACE_TEAM_1},{"combo",HUD_PLACE_COMBO_1},
+        {"clock",HUD_PLACE_CLOCK},{"tag_gauges",HUD_PLACE_TAG_GAUGE_1},
+        {"tag_allies",HUD_PLACE_TAG_ALLIES_1},{"tag_clock",HUD_PLACE_TAG_CLOCK}
+    };
+    int group=HUD_PLACE_NONE;
+    if(!lua_isnoneornil(L,1)){
+        const char *name=luaL_checkstring(L,1);
+        const int player=(int)luaL_optinteger(L,2,1);
+        if(player<1||player>2)return luaL_argerror(L,2,"expected player 1 or 2");
+        for(size_t i=0;i<sizeof(groups)/sizeof(groups[0]);i++){
+            if(strcmp(name,groups[i].name)!=0)continue;
+            group=groups[i].group;
+            if(group!=HUD_PLACE_CLOCK&&group!=HUD_PLACE_TAG_CLOCK)group+=player-1;
+            break;
+        }
+    }
+    ModsCmd *c=hud_cmd(MODS_CMD_HUD_PLACEMENT);
+    if(c)c->i0=group;
+    return 0;
+}
 static int l_hud_hide_game(lua_State *L) {
     int n = lua_gettop(L), k;
     for (k = 1; k <= n; k++) {
@@ -853,6 +876,7 @@ static void push_hud(lua_State *L) {
                                    {"path", l_hud_path}, {"text", l_hud_text}, {"image", l_hud_image},
                                    {"portrait", l_hud_portrait}, {"clip", l_hud_clip}, {"unclip", l_hud_unclip},
                                     {"actor_anchor", l_hud_actor_anchor}, {"unanchor", l_hud_unanchor},
+                                    {"place", l_hud_place},
                                    {"band", l_hud_band}, {"glow", l_hud_glow},
                                    {"hide_game", l_hud_hide_game}, {NULL, NULL}};
     lua_getfield(L, LUA_REGISTRYINDEX, "bt3_hud");

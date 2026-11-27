@@ -76,6 +76,17 @@ test('profile media is fetched on demand, scoped to a room, and follows pass exp
     assert.throws(()=>f.invoke(a,'profile_media_get',{id:animatedCover}),/PROFILE_MEDIA_UNAVAILABLE/);
     assert.deepEqual(f.invoke(a,'profile_media_save',{kind:'avatar',remove:true}).media,{});
 });
+test('large profile photos retain detail for new clients and keep legacy clients compatible',()=>{
+    const f=fixture(), user=f.user('HiRes');
+    const photo=Buffer.from(Uint8Array.from({length:12800},(_,i)=>i%251)).toString('base64');
+    const id=f.invoke(user,'profile_media_save',{kind:'avatar',frames:[photo],delays:[100]}).media.avatar;
+    assert.equal(f.invoke(user,'profile_media_get',{id,hd:true}).frames[0],photo);
+    const legacy=Buffer.from(f.invoke(user,'profile_media_get',{id}).frames[0],'base64');
+    assert.equal(legacy.length,2048);
+    assert.equal(legacy[0],162);
+    assert.equal(legacy[1],163);
+});
+
 test('the shared avatar slot switches between GIF and static images and removal clears both',()=>{
     const f=fixture(),user=f.user('Avatar');
     const frame=Buffer.alloc(2048,23).toString('base64');
@@ -295,15 +306,17 @@ test('ranked rating tolerance increases gradually after both players have waited
     assert.equal(f.invoke(b,'ranked_queue',args).members.length,2);
 });
 
-test('ranked rooms return the rating of the two competitors only',()=>{
+test('ranked rooms return the rating and record of the two competitors only',()=>{
     const f=fixture(),{a,b,id}=rankedPair(f);
-    f.c.run("UPDATE ranked_players SET rating=1499 WHERE user_id=?",a);
+    f.c.run("UPDATE ranked_players SET rating=1499,wins=15,losses=4 WHERE user_id=?",a);
     f.c.run("UPDATE ranked_players SET rating=0 WHERE user_id=?",b);
     const room=f.invoke(a,'get');
     assert.deepEqual(room.members.map(m=>m.rating).sort((x,y)=>x-y),[0,1499]);
+    assert.deepEqual(room.members.map(m=>[m.rating,m.wins,m.losses]).sort((x,y)=>x[0]-y[0]),[[0,0,0],[1499,15,4]]);
     const observer=f.user('Observer');
     const casual=f.invoke(observer,'create',profile);
     assert.equal(casual.members[0].rating,undefined);
+    assert.equal(casual.members[0].wins,undefined);
     assert.equal(room.generation,id);
 });
 test('a quitter loses points, the connected player gains, and repeated settlement is idempotent',()=>{

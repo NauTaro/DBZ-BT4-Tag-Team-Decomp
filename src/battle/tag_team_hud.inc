@@ -1,3 +1,4 @@
+#include "hud_placement.h"
 /* GPL-3.0-or-later. The Tag Team HUD uses one active-fighter card per local
  * viewport. Other fighters are shown as a short roster and a world target. */
 #include "battle/hud_a.h"
@@ -387,47 +388,51 @@ static void TagHud_DevLayout(s32 view,s32 target,s32 count,s32 split){
         for (s32 player = 0; player < 2; ++player) {
             const s32 actor = TagBattle_SplitViewActor(player);
             const f32 edge = player ? 256 : left;
-            TagHud_NativeGauge(actor,player?512-left-8:edge+8,8,.60f,0,player!=0);
-            if(BtlSeq_IsFighting())TagHud_FloatingAllies(player,actor,count);
+            HudPlaceDraw(HUD_PLACE_TAG_GAUGE_1+player, TagHud_NativeGauge(actor,player?512-left-8:edge+8,8,.60f,0,player!=0));
+            if(BtlSeq_IsFighting())HudPlaceDraw(HUD_PLACE_TAG_ALLIES_1+player, TagHud_FloatingAllies(player,actor,count));
             if (!BtlSeq_IsFighting()) continue;
             if (TagBattle_SplitSpectating(player)) {
                 char label[100];
                 s32 progress, total, helpers;
                 const char *key = actor == player ? "Right stick: rotate camera" : "Watching an ally";
                 Ps_Copy(label, (char *)PortOnline_Text(key), sizeof(label));
+                Port_GsMarker(HUD_PLACEMENT_MARKER + HUD_PLACE_TAG_SPECTATOR);
                 TagHud_Label(edge + 8, 104, label, .43f, 190, TagHud_Color(238, 248, 251));
                 TagHud_Key(edge+15,123,"L1",0,TagHud_Color(217,244,255));
                 TagHud_Key(edge+35,123,"R1",0,TagHud_Color(217,244,255));
                 Ps_Copy(label, (char *)PortOnline_Text("Switch fighter"), sizeof(label));
                 TagHud_Label(edge+49,118,label,.40f,145,TagHud_Color(217,244,255));
+                Port_GsMarker(HUD_PLACEMENT_MARKER);
                 if (TagRevive_Hud(player, &progress, &total, &helpers) && total > 0) {
                     Ps_Copy(label, (char *)PortOnline_Text("Revive"), sizeof(label));
+                    Port_GsMarker(HUD_PLACEMENT_MARKER + HUD_PLACE_TAG_REVIVAL);
                     TagHud_Label(edge + 8, 134, label, .40f, 76, TagHud_Color(195, 255, 211));
                     TagHud_Fill(edge + 85, 139, 64, 3, (f32)progress / total, TagHud_Color(84, 237, 139));
+                    Port_GsMarker(HUD_PLACEMENT_MARKER);
                 }
             } else {
-                TagHud_Assist(player, edge + 8, 244);
+                HudPlaceDraw(HUD_PLACE_TAG_ASSIST_1+player, TagHud_Assist(player, edge + 8, 244));
             }
         }
         if(gHud->flags&HUD_SHOW_TIMER){
             char time[16];s32 seconds=BtlSeq_GetTimeLeft();
             if(seconds<0)Ps_Copy(time,"\xE2\x88\x9E",sizeof(time));else snprintf(time,sizeof(time),"%d",seconds);
             Port_GsMarker(0x74);
-            Ps_Align(1);TagHud_Label(256,8,time,.92f,60,TagHud_Color(217,244,255));Ps_Align(0);
+            Ps_Align(1);HudPlaceDraw(HUD_PLACE_TAG_CLOCK, TagHud_Label(256,8,time,.92f,60,TagHud_Color(217,244,255)));Ps_Align(0);
             Port_GsMarker(0x75);
         }
         return;
     }
-    TagHud_NativeGauge(view,left+8,8,.86f,0,0);
-    TagHud_NativeAllies(view,count,left,0);
-    TagHud_Radar(view,count,right);
+    HudPlaceDraw(HUD_PLACE_TAG_GAUGE_1, TagHud_NativeGauge(view,left+8,8,.86f,0,0));
+    HudPlaceDraw(HUD_PLACE_TAG_ALLIES_1, TagHud_NativeAllies(view,count,left,0));
+    HudPlaceDraw(HUD_PLACE_TAG_RADAR, TagHud_Radar(view,count,right));
     if(gHud->flags&HUD_SHOW_TIMER){
         char time[16];s32 seconds=BtlSeq_GetTimeLeft();
         if(seconds<0)Ps_Copy(time,"\xE2\x88\x9E",sizeof(time));else snprintf(time,sizeof(time),"%d",seconds);
-        Ps_Align(2);TagHud_Label(right-75,9,time,1.03f,55,TagHud_Color(217,244,255));Ps_Align(0);
+        Ps_Align(2);HudPlaceDraw(HUD_PLACE_TAG_CLOCK, TagHud_Label(right-75,9,time,1.03f,55,TagHud_Color(217,244,255)));Ps_Align(0);
     }
-    if(BtlSeq_IsFighting())TagHud_Target(view,target);
-    if(!TagBattle_Spectating() || TagFusion_Absent(TagBattle_LocalActor()))TagHud_Assist(view,left+8,244);
+    if(BtlSeq_IsFighting())HudPlaceDraw(HUD_PLACE_TAG_TARGET, TagHud_Target(view,target));
+    if(!TagBattle_Spectating() || TagFusion_Absent(TagBattle_LocalActor()))HudPlaceDraw(HUD_PLACE_TAG_ASSIST_1, TagHud_Assist(view,left+8,244));
 }
 /* Project the cylinder from the fallen actor's world coordinates in the active
  * native camera. Its size follows the fighter, not the output resolution. */
@@ -499,21 +504,21 @@ void TagBattle_DrawRoster(void){
     left=Ps_Left();
 #ifdef BT4_TAG_TEAM_EXPANDED
     TagHud_DevLayout(view,target,count,split);
-    if(!split&&BtlSeq_IsFighting())TagHud_Revival(view,count);
+    if(!split&&BtlSeq_IsFighting())HudPlaceDraw(HUD_PLACE_TAG_REVIVAL, TagHud_Revival(view,count));
     return;
 #endif
-    TagHud_Card(view,left+10,12,split?"Player 1":TagBattle_Spectating()?"Spectating":"Fighter");
-    TagHud_Allies(view,count,left+10,406,0);
+    HudPlaceDraw(HUD_PLACE_TAG_GAUGE_1, TagHud_Card(view,left+10,12,split?"Player 1":TagBattle_Spectating()?"Spectating":"Fighter"));
+    HudPlaceDraw(HUD_PLACE_TAG_ALLIES_1, TagHud_Allies(view,count,left+10,406,0));
 #ifdef BT4_TAG_TEAM_EXPANDED
-    if(!TagBattle_Spectating())TagHud_Assist(view,left+10,66);
+    if(!TagBattle_Spectating())HudPlaceDraw(HUD_PLACE_TAG_ASSIST_1, TagHud_Assist(view,left+10,66));
 #endif
     if(split){
-        TagHud_Card(1,512-left-138,12,"Player 2");
-        TagHud_Allies(1,count,512-left-34,406,1);
+        HudPlaceDraw(HUD_PLACE_TAG_GAUGE_2, TagHud_Card(1,512-left-138,12,"Player 2"));
+        HudPlaceDraw(HUD_PLACE_TAG_ALLIES_2, TagHud_Allies(1,count,512-left-34,406,1));
     }else if(BtlSeq_IsFighting()){
-        TagHud_Target(view,target);
+        HudPlaceDraw(HUD_PLACE_TAG_TARGET, TagHud_Target(view,target));
         if(TagBattle_Spectating())
-            TagHud_Label(left+10,386,"L1 / R1  SWITCH FIGHTER",.43f,170,TagHud_Color(236,247,251));
+            HudPlaceDraw(HUD_PLACE_TAG_SPECTATOR, TagHud_Label(left+10,386,"L1 / R1  SWITCH FIGHTER",.43f,170,TagHud_Color(236,247,251)));
     }
-    if(gHud->flags&HUD_SHOW_TIMER)TagHud_Clock(view,count,split);
+    if(gHud->flags&HUD_SHOW_TIMER)HudPlaceDraw(HUD_PLACE_TAG_CLOCK, TagHud_Clock(view,count,split));
 }

@@ -1,4 +1,5 @@
 #include "common.h"
+#include "hud_placement.h"
 #include "battle/hud_e.h"
 #include "battle/battle.h"
 #include "battle/btl_seq.h"
@@ -1138,7 +1139,7 @@ void HudPrompt_DrawNames(void) {
                 extern s32 TagBattle_Active(void),Battle_IsSplitScreen(void);
                 if(TagBattle_Active()&&!Battle_IsSplitScreen())x+=160;
 #endif
-                BtlText_DrawEntryName(x, pos->y, idx, HUD_SCR(i), alpha);
+                HudPlaceDraw(HUD_PLACE_PROMPT_1+i, BtlText_DrawEntryName(x, pos->y, idx, HUD_SCR(i), alpha));
             }
         }
     }

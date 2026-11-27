@@ -1,4 +1,5 @@
 #include "common.h"
+#include "hud_placement.h"
 #include "battle/hud_c.h"
 #include "battle/battle.h"
 #include "sys/randf.h"
@@ -769,7 +770,7 @@ void HudCombo_DrawText(void) {
                     x=120;y=111+side*19;align=0;Port_GsMarker(PORT_2D_LEFT);
                 }
 #endif
-                BtlText_DrawEntryName(x,y,gHudCombo->text[side],align,alpha);
+                HudPlaceDraw(HUD_PLACE_COMBO_1+side, BtlText_DrawEntryName(x,y,gHudCombo->text[side],align,alpha));
             }
         }
     }

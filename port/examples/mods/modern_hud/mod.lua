@@ -334,7 +334,14 @@ local function draw_reserves(hud, side, right, f)
     end
 end
 
+local function draw_movable(hud, group, side, draw, ...)
+    if hud.place then hud.place(group, side) end
+    draw(hud, ...)
+    if hud.place then hud.place() end
+end
+
 local function draw_side(hud, side, right, f, an, now)
+    if hud.place then hud.place(f.actor and "tag_gauges" or "gauges", side) end
     local v = view(right)
     local hpMax = (f.hp_max or 0) > 0 and f.hp_max or 10000
     local hp = min(max(f.hp or 0, 0), hpMax)
@@ -475,7 +482,9 @@ local function draw_side(hud, side, right, f, an, now)
     end
 
     draw_stats(hud, v, f, an, dt)
+    if hud.place then hud.place("combo", side) end
     draw_combo(hud, f.actor and view(right,0,150*U) or v, f, an, now)
+    if hud.place then hud.place() end
     if hpMax > 70000 then
         hud.text(v.X(210),v.Y(104),tostring(hp).." / "..tostring(hpMax),rgba(225,245,255,1),20*U,"left")
     end
@@ -571,13 +580,13 @@ return {
                     if ally and ally.found and not ally.absorbed and (ally.hp or 0)>0 then
                         viewportX=anchor.x*hud.w-407*.16*(hud.h/448)*.5
                         hud.actor_anchor(paneIndex,anchor.actor,anchor.x*hud.w,anchor.y*hud.h)
-                        draw_tag_ally(hud,ally,anchor.y*hud.h,scale,false,true)
+                        draw_movable(hud,"tag_allies",paneIndex,draw_tag_ally,ally,anchor.y*hud.h,scale,false,true)
                         hud.unanchor()
                     end
                 end
             end
             viewportX=0
-            if drawTimer then draw_timer(hud, game.timer, now) end
+            if drawTimer then draw_movable(hud,"tag_clock",1,draw_timer,game.timer,now) end
             lastTime = now
             return
         end
@@ -591,7 +600,9 @@ return {
                 draw_side(hud,1,false,f,anim[1],now)
                 local allies={}
                 for _,a in ipairs(tag.actors) do if a.actor~=tag.view and a.team==0 and a.found and not a.absorbed then allies[#allies+1]=a end end
-                for i,a in ipairs(allies) do draw_tag_ally(hud,a,hud.h-(#allies-i+1)*104*U,U) end
+                for i,a in ipairs(allies) do
+                    draw_movable(hud,"tag_allies",1,draw_tag_ally,a,hud.h-(#allies-i+1)*104*U,U)
+                end
             end
             -- The shared native Tag layer owns its radar, target and corner timer.
             lastTime=now
@@ -604,12 +615,12 @@ return {
                 if f then
                     U,W,viewportX=base*.65,hud.w*.5,(pane-1)*hud.w*.5
                     draw_side(hud,pane,pane==2,f,anim[pane],now)
-                    draw_reserves(hud,pane,pane==2,f)
+                    draw_movable(hud,"team",pane,draw_reserves,pane,pane==2,f)
                 end
             end
             U,W,viewportX=base,hud.w,0
             hud.hide_game("team")
-            if drawTimer then draw_timer(hud,game.timer,now) end
+            if drawTimer then draw_movable(hud,"clock",1,draw_timer,game.timer,now) end
             return
         end
         local swap = game.swapped and 1 or 0
@@ -622,10 +633,10 @@ return {
                     f = setmetatable({ hud_hits = 0, hud_damage = -1, hit_seq = anim[side].hitSeq, message_seq = anim[side].msgSeq }, { __index = f })
                 end
                 draw_side(hud, side, place == 1, f, anim[side], now)
-                draw_reserves(hud, side, place == 1, f)
+                draw_movable(hud,"team",side,draw_reserves,side,place==1,f)
             end
         end
-        if drawTimer then draw_timer(hud, game.timer, now) end
+        if drawTimer then draw_movable(hud,"clock",1,draw_timer,game.timer,now) end
         lastTime = now
     end,
 }

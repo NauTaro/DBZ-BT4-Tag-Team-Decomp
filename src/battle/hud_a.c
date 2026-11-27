@@ -1,5 +1,6 @@
 extern int TagBattle_Active(void);
 #include "common.h"
+#include "hud_placement.h"
 extern s32 TagBattle_Count(void),TagBattle_Target(s32 actor);
 #include "battle/hud_a.h"
 #include "battle/battle.h"
@@ -645,7 +646,7 @@ void Hud_Draw(void) {
 #endif
     if (Battle_GetMode() == 7) {
         HudNode_Update(gHud->caption);
-        HudNode_Draw(gHud->caption, 0);
+        HudPlaceDraw(HUD_PLACE_CAPTION, HudNode_Draw(gHud->caption, 0));
     } else if (BtlGame_IsReplay()) {
         switch (gHud->replayMode) {
             case 0:
@@ -686,56 +687,56 @@ void Hud_Draw(void) {
                     HudNode_Update(gHud->notice);
                 }
                 HudNode_Update(gHud->caption);
-                HudNode_Draw(gHud->caption, 0);
+                HudPlaceDraw(HUD_PLACE_CAPTION, HudNode_Draw(gHud->caption, 0));
                 break;
             case 1:
                 if (gHud->flags & HUD_SHOW_GAUGES) {
                     HudTeam_SelectSide(0);
                     HudNode_Update(gHud->team);
-                    HudNode_Draw(gHud->team, 0);
+                    HudPlaceDraw(HUD_PLACE_TEAM_1, HudNode_Draw(gHud->team, 0));
                     HudTeam_SelectSide(1);
                     HudNode_Update(gHud->team);
-                    HudNode_Draw(gHud->team, 0);
+                    HudPlaceDraw(HUD_PLACE_TEAM_2, HudNode_Draw(gHud->team, 0));
                 }
                 if (gHud->flags & HUD_SHOW_GAUGES) {
                     HudGfx_ClearAlpha();
                     HudGauge_SelectSide(0);
                     HudNode_Update(gHud->gauge);
-                    HudNode_Draw(gHud->gauge, 0);
+                    HudPlaceDraw(HUD_PLACE_GAUGE_1, HudNode_Draw(gHud->gauge, 0));
                     HudGfx_ClearAlpha();
                     HudGauge_SelectSide(1);
                     HudNode_Update(gHud->gauge);
-                    HudNode_Draw(gHud->gauge, 0);
+                    HudPlaceDraw(HUD_PLACE_GAUGE_2, HudNode_Draw(gHud->gauge, 0));
                 } else {
                     HudNotice_ShowReplayMark(0);
                 }
                 if (gHud->flags & HUD_SHOW_TIMER) {
                     HudNode_Update(gHud->timer);
-                    HudNode_Draw(gHud->timer, 0);
+                    HudPlaceDraw(HUD_PLACE_CLOCK, HudNode_Draw(gHud->timer, 0));
                 }
                 if (gHud->flags & HUD_SHOW_PROMPT) {
                     HudPrompt_SelectSide(0);
                     HudNode_Update(gHud->prompt);
-                    HudNode_Draw(gHud->prompt, 0);
+                    HudPlaceDraw(HUD_PLACE_PROMPT_1, HudNode_Draw(gHud->prompt, 0));
                     if (Battle_IsSplitScreen()) {
                         HudPrompt_SelectSide(1);
                         HudNode_Update(gHud->prompt);
-                        HudNode_Draw(gHud->prompt, 0);
+                        HudPlaceDraw(HUD_PLACE_PROMPT_2, HudNode_Draw(gHud->prompt, 0));
                     }
                     HudPrompt_DrawNames();
                 }
                 if (gHud->flags & HUD_SHOW_COMBO) {
                     HudCombo_SelectSide(0);
                     HudNode_Update(gHud->combo);
-                    HudNode_Draw(gHud->combo, 0);
+                    HudPlaceDraw(HUD_PLACE_COMBO_1, HudNode_Draw(gHud->combo, 0));
                     HudCombo_SelectSide(1);
                     HudNode_Update(gHud->combo);
-                    HudNode_Draw(gHud->combo, 0);
+                    HudPlaceDraw(HUD_PLACE_COMBO_2, HudNode_Draw(gHud->combo, 0));
                     HudCombo_DrawText();
                 }
                 if (gHud->flags & HUD_SHOW_NOTICE) {
                     HudNode_Update(gHud->notice);
-                    HudNode_Draw(gHud->notice, 0);
+                    HudPlaceDraw(HUD_PLACE_NOTICE, HudNode_Draw(gHud->notice, 0));
                 }
                 HudNode_Update(gHud->caption);
                 break;
@@ -784,56 +785,56 @@ void Hud_Draw(void) {
             if (gHud->flags & HUD_SHOW_GAUGES) {
                 HudTeam_SelectSide(0);
                 HudNode_Update(gHud->team);
-                HudNode_Draw(gHud->team, 0);
+                HudPlaceDraw(HUD_PLACE_TEAM_1, HudNode_Draw(gHud->team, 0));
                 HudTeam_SelectSide(1);
                 HudNode_Update(gHud->team);
-                HudNode_Draw(gHud->team, 0);
+                HudPlaceDraw(HUD_PLACE_TEAM_2, HudNode_Draw(gHud->team, 0));
             }
         }
         if ((gHud->flags & HUD_SHOW_GAUGES)&&!TagBattle_Active()) {
             HudGfx_ClearAlpha();
             HudGauge_SelectSide(0);
             HudNode_Update(gHud->gauge);
-            HudNode_Draw(gHud->gauge, 0);
+            HudPlaceDraw(HUD_PLACE_GAUGE_1, HudNode_Draw(gHud->gauge, 0));
             HudGfx_ClearAlpha();
             HudGauge_SelectSide(1);
             HudNode_Update(gHud->gauge);
-            HudNode_Draw(gHud->gauge, 0);
+            HudPlaceDraw(HUD_PLACE_GAUGE_2, HudNode_Draw(gHud->gauge, 0));
         }
         if ((gHud->flags & HUD_SHOW_TIMER)&&!TagBattle_Active()) {
             HudNode_Update(gHud->timer);
-            HudNode_Draw(gHud->timer, 0);
+            HudPlaceDraw(HUD_PLACE_CLOCK, HudNode_Draw(gHud->timer, 0));
         }
         if (gHud->flags & HUD_SHOW_PROMPT) {
             HudPrompt_SelectSide(0);
             HudNode_Update(gHud->prompt);
-            HudNode_Draw(gHud->prompt, 0);
+            HudPlaceDraw(HUD_PLACE_PROMPT_1, HudNode_Draw(gHud->prompt, 0));
             if (Battle_IsSplitScreen()) {
                 HudPrompt_SelectSide(1);
                 HudNode_Update(gHud->prompt);
-                HudNode_Draw(gHud->prompt, 0);
+                HudPlaceDraw(HUD_PLACE_PROMPT_2, HudNode_Draw(gHud->prompt, 0));
             }
             HudPrompt_DrawNames();
         }
         if (gHud->flags & HUD_SHOW_COMBO) {
             HudCombo_SelectSide(0);
             HudNode_Update(gHud->combo);
-            HudNode_Draw(gHud->combo, 0);
+            HudPlaceDraw(HUD_PLACE_COMBO_1, HudNode_Draw(gHud->combo, 0));
             HudCombo_SelectSide(1);
             HudNode_Update(gHud->combo);
-            HudNode_Draw(gHud->combo, 0);
+            HudPlaceDraw(HUD_PLACE_COMBO_2, HudNode_Draw(gHud->combo, 0));
             HudCombo_DrawText();
         }
         if (gHud->flags & HUD_SHOW_NOTICE) {
             HudNode_Update(gHud->notice);
-            HudNode_Draw(gHud->notice, 0);
+            HudPlaceDraw(HUD_PLACE_NOTICE, HudNode_Draw(gHud->notice, 0));
         }
     }
 #ifdef PORT
     {
         extern void PortTbo_SparSign(void); /* menu/port_tbo.c: Train While Waiting's sign over its sparring fight */
 
-        PortTbo_SparSign();
+        HudPlaceDraw(HUD_PLACE_SPARRING, PortTbo_SparSign());
     }
 #endif
     {

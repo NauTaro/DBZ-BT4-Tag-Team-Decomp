@@ -58,12 +58,13 @@ export function saveProfileMedia(core,user,{kind,frames,delays,remove}) {
     }
     const card=ownProfileCard(core,user);
     if (kind!=='avatar'&&!card.premium) throw new Error('PROFILE_PASS_REQUIRED');
-    const [bytes,maxFrames]=formats[kind];
+    const [standardBytes,maxFrames]=formats[kind];
     if (!Array.isArray(frames)||frames.length<1||frames.length>maxFrames||
         !Array.isArray(delays)||delays.length!==frames.length)
         throw new Error('BAD_PROFILE_MEDIA');
     for (let i=0;i<frames.length;i++) {
         const frame=frames[i],delay=delays[i];
+        const bytes=kind==='avatar'&&typeof frame==='string'&&frame.length===17068?12800:standardBytes;
         if (typeof frame!=='string'||frame.length!==4*Math.ceil(bytes/3)||!/^[A-Za-z0-9+/]+={1,2}$/.test(frame)||
             atob(frame).length!==bytes||!Number.isInteger(delay)||delay<100||delay>1000)
             throw new Error('BAD_PROFILE_MEDIA');
@@ -83,7 +84,7 @@ export function saveProfileMedia(core,user,{kind,frames,delays,remove}) {
     return ownProfileCard(core,user);
 }
 
-export function getProfileMedia(core,user,{id}) {
+export function getProfileMedia(core,user,{id,hd}) {
     if (typeof id!=='string'||!matchId.test(id)) throw new Error('BAD_PROFILE_MEDIA');
     const row=core.one(`SELECT media.user_id,media.kind,media.body,c.premium_until FROM (
             SELECT user_id,kind,body FROM online_profile_media WHERE id=?
@@ -95,7 +96,20 @@ export function getProfileMedia(core,user,{id}) {
             WHERE a.user_id=? AND b.user_id=media.user_id AND r.expires>?
         ))`,id,id,user,user,core.now());
     if (!row || (row.kind!=='avatar' && !(row.premium_until>core.now()))) throw new Error('PROFILE_MEDIA_UNAVAILABLE');
-    return {id,...JSON.parse(row.body)};
+    const media=JSON.parse(row.body);
+    if(row.kind==='avatar'&&hd!==true&&media.frames[0].length===17068){
+        const high=atob(media.frames[0]);
+        let low='';
+        for(let y=0;y<32;y++){
+            const sy=Math.floor((y+0.5)*80/32);
+            for(let x=0;x<32;x++){
+                const sx=Math.floor((x+0.5)*80/32), offset=(sy*80+sx)*2;
+                low+=high.slice(offset,offset+2);
+            }
+        }
+        media.frames[0]=btoa(low);
+    }
+    return {id,...media};
 }
 
 // This operation is called only by the administrator after verifying a paid purchase.

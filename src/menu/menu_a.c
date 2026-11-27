@@ -13,6 +13,38 @@ extern void Port_NetLeave(void);
 #ifdef PORT
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
+extern void McFlow_StartAutoSave(void), Save_UnlockFromMenu(SaveData *);
+void MainMenu_StartBallLoops(void);
+static s32 sUnlockStep, sUnlockSaving;
+
+static s32 MainMenu_UnlockInput(void) {
+    static const u32 sequence[]={PAD_DOWN|PAD_RIGHT,PAD_TRIANGLE,PAD_DOWN|PAD_LEFT,PAD_TRIANGLE,PAD_UP};
+    const s32 count=sizeof(sequence)/sizeof(sequence[0]);
+    const u32 shoulders=PAD_L1|PAD_R1;
+    const u32 buttons=0xffffu&~shoulders;
+    if ((gPad[0].held&shoulders)!=shoulders) {
+        sUnlockStep=0;
+        return 0;
+    }
+    const u32 down=gPad[0].held&buttons;
+    const u32 pressed=gPad[0].pressed&buttons;
+    if (!pressed || sUnlockStep>=count) return 1;
+    if (down==sequence[sUnlockStep]) {
+        if (++sUnlockStep==count) {
+            const s32 haveBalls=(gSaveData->unlockFlags&0x7f)==0x7f;
+            Save_UnlockFromMenu(gSaveData);
+            if (getenv("BT4_RENDER_TEST")) fprintf(stderr,"bt4: main menu unlock code accepted\n");
+            if (!haveBalls) MainMenu_StartBallLoops();
+            Snd_PlaySe(1,1);
+            McFlow_Init(1);
+            McFlow_StartAutoSave();
+            sUnlockSaving=1;
+        }
+    } else if (down&~sequence[sUnlockStep]) {
+        sUnlockStep=down==sequence[0]?1:0;
+    }
+    return 1;
+}
 #endif
 
 /* The screen's work (overlay .data, 0x3B0E80). */
@@ -656,6 +688,7 @@ void MainMenu_Input(s32 *result) {
         return;
     }
 #ifdef PORT
+    if (MainMenu_UnlockInput()) return;
     {   /* In a lobby (joined from the Dragon Net Battle window, or back here after its match): its screen, in
            Tenkaichi Budokai Online (menu/port_tbo.c; port/src/gs/net_lobby.c) */
         extern int Port_LobbyWantsScreen(void);
@@ -792,6 +825,9 @@ s32 MainMenu_Run(s32 section) {
     }
 #endif
     MainMenu_Init(section);
+#ifdef PORT
+    sUnlockStep=sUnlockSaving=0;
+#endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         Gfx_BeginFrame();
@@ -835,6 +871,13 @@ s32 MainMenu_Run(s32 section) {
             MainMenu_Update();
         }
         MainMenu_Draw();
+#ifdef PORT
+        const s32 savingAtStart=sUnlockSaving;
+        if (sUnlockSaving && !McFlow_Update()) {
+            McFlow_Term();
+            sUnlockSaving=0;
+        }
+#endif
         ColorFade_Draw();
         Gfx_EndFrame(1);
         Dma_Flush();
@@ -868,6 +911,9 @@ s32 MainMenu_Run(s32 section) {
                 gProgress->mainMenuItem = MAINMENU_CUR(gMainMenu);
             }
         } else {
+#ifdef PORT
+            if (savingAtStart) continue;
+#endif
             MainMenu_Input(&result);
         }
     }

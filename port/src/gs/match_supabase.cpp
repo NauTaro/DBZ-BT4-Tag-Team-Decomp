@@ -543,6 +543,12 @@ extern "C" void Port_ProfileCardForPlayer(const char *name,Bt4ProfileCard *out){
         if(text(member,"name")!=name||text(member,"role")!="player")continue;
         const auto card=member.find("card");
         if(card!=member.end()&&card->is_object())*out=profileCard(*card);
+        const auto wins=member.find("wins"), losses=member.find("losses");
+        if(d.ranked&&wins!=member.end()&&losses!=member.end()&&wins->is_number_unsigned()&&losses->is_number_unsigned()){
+            out->rankedWins=int(std::min(1000000u,wins->get<unsigned>()));
+            out->rankedLosses=int(std::min(1000000u,losses->get<unsigned>()));
+            out->hasRankedRecord=1;
+        }
         break;
     }
 }
@@ -973,6 +979,15 @@ extern "C" void Port_ProfileDraftReset(){
 }
 extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *width,int *height,int *count,int delays[6]){
     if(!id||!*id)return 0;
+    if(getenv("BT4_RENDER_TEST")&&(!strcmp(id,"preview-local")||!strcmp(id,"preview-rival"))){
+        const char *path=getenv(!strcmp(id,"preview-local")?"BT4_RANKED_PREVIEW_LOCAL":"BT4_RANKED_PREVIEW_RIVAL");
+        if(!path)return 0;
+        const Dj body=profileImage(path,"avatar");
+        if(body.is_null())return 0;
+        profileImageDimensions("avatar",*width,*height);
+        *count=1;delays[0]=100;
+        return profilePixels(body["frames"][0].get_ref<const std::string &>(),pixels,size_t(*width)*(*height)*4);
+    }
     std::lock_guard<std::mutex> guard(rankedLock);
     const Uint64 now=SDL_GetTicks();
     profileRoute();profilePump(now);
@@ -983,7 +998,7 @@ extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *w
         entry=std::prev(profileMedia.end());
     }
     if(now>=entry->until&&entry->body.is_null()){
-        entry->request=profileRequest("profile_media_get",Dj{{"id",id}}.dump().c_str());
+        entry->request=profileRequest("profile_media_get",Dj{{"id",id},{"hd",true}}.dump().c_str());
         entry->until=now+15000;
     }
     if(entry->body.is_null())return 0;
@@ -994,6 +1009,8 @@ extern "C" int Port_ProfileMediaRead(const char *id,unsigned char *pixels,int *w
     const auto frames=body.find("frames"),timing=body.find("delays");
     if(frames==body.end()||!frames->is_array()||frames->empty()||frames->size()>((kind=="motion"||kind=="banner_motion")?6u:1u)||
        timing==body.end()||!timing->is_array()||timing->size()!=frames->size())return 0;
+    if(kind=="avatar"&&(*frames)[0].is_string()&&(*frames)[0].get_ref<const std::string &>().size()==2732)
+        w=h=32;
     const size_t frameBytes=size_t(w)*h*4;
     for(size_t i=0;i<frames->size();++i){
         if(!(*frames)[i].is_string()||!(*timing)[i].is_number_unsigned()||

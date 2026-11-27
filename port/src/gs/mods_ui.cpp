@@ -264,6 +264,7 @@ static void portrait_face(ImDrawList *dl, SDL_GPUTexture *tex, const ModsCmd &c,
 }
 
 #include "tag_hud.h"
+#include "hud_placement.h"
 void ModsUi_Draw(void) {
     if (gUiPresentW <= 0 || gUiPresentH <= 0 || !Mods_HudRead(&sDraw)) {
         return;
@@ -277,16 +278,24 @@ void ModsUi_Draw(void) {
     // (a picture that changed shape since the scripts drew: their layout keeps its own width, centred)
     float ox = (float)gUiPresentX + ((float)gUiPresentW - sDraw.w * k) * 0.5f, oy = (float)gUiPresentY;
     const float baseOx=ox,baseOy=oy;
+    float offsetX=0,offsetY=0;
     bool anchorVisible=true;
     ImFont *game = Ui_FontBold() != NULL ? Ui_FontBold() : ImGui::GetFont(), *ui = ImGui::GetFont();
     ImVec2 c0((float)gUiPresentX, oy), c1((float)(gUiPresentX + gUiPresentW), oy + (float)gUiPresentH);
     int clips = 0;
-    auto P = [&](float x, float y) { return ImVec2(ox + x * k, oy + y * k); };
+    auto P = [&](float x, float y) { return ImVec2(ox + offsetX + x * k, oy + offsetY + y * k); };
     static ImVec2 pts[MODS_HUD_POINTS];
 
     dl->PushClipRect(c0, c1, true);
     for (int i = 0; i < sDraw.count; i++) {
         const ModsCmd &c = sDraw.cmd[i];
+        if(c.kind==MODS_CMD_HUD_PLACEMENT){
+            int x=0,y=0;
+            if(c.i0)Port_HudGetOffset(c.i0,&x,&y);
+            offsetX=x*gUiPresentW/512.0f;
+            offsetY=y*gUiPresentH/448.0f;
+            continue;
+        }
         if(c.kind==MODS_CMD_ACTOR_ANCHOR){
             float x,y;
             anchorVisible=Port_TagRenderAllyAnchor(c.i0,c.i1,&x,&y)!=0;

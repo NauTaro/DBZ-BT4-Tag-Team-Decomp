@@ -51,7 +51,7 @@ export class OnlineCore {
         const r=this.one('SELECT * FROM online_rooms WHERE id=?',m.room);
         const ranked=r.wire.startsWith('ranked-v1:');
         const members=this.rows(`SELECT m.peer,m.name,m.role,m.udp,c.name_color,c.background,c.decoration,c.premium_until
-            ,p.rating
+            ,p.rating,p.wins,p.losses
             ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='avatar') avatar
             ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='motion') motion
             ,(SELECT id FROM online_profile_media WHERE user_id=m.user_id AND kind='banner') banner
@@ -69,8 +69,8 @@ export class OnlineCore {
             ...(quick?{quick_rock_seed:quick.seed}:{}),
             rules:r.rules,host:1,self:m.peer,capacity:r.capacity,joinable:!!r.joinable,expires_at:new Date(r.expires).toISOString(),
             members:members.map(member=>{
-                const {peer,name,role,avatar,motion,banner,banner_motion,rating}=member;
-                const entry={peer,name,role,...(ranked&&role==='player'&&Number.isInteger(rating)?{rating}:{})};
+                const {peer,name,role,avatar,motion,banner,banner_motion,rating,wins,losses}=member;
+                const entry={peer,name,role,...(ranked&&role==='player'&&Number.isInteger(rating)?{rating,wins,losses}:{})};
                 if(member.name_color==null&&!avatar)return entry;
                 const card=profileCard(member,now);
                 card.media={...(avatar?{avatar}:{}),...(card.premium&&motion?{motion}:{}),...(card.premium&&banner?{banner}:{}),

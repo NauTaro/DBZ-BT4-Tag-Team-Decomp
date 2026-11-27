@@ -74,6 +74,7 @@ enum {
     MODS_CMD_UNCLIP,
     MODS_CMD_ACTOR_ANCHOR, /* i0 pane, i1 actor, f0/f1 original anchor in HUD units */
     MODS_CMD_UNANCHOR,
+    MODS_CMD_HUD_PLACEMENT,
 };
 #define MODS_F_CLOSED 1
 #define MODS_F_FLIP 2

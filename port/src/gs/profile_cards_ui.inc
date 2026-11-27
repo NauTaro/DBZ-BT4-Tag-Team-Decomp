@@ -61,7 +61,7 @@ static const ProfileTexture *profile_texture(const char *id) {
         if (entry.used<slot->used) slot=&entry;
     }
     if (slot->used==now) return nullptr;
-    uint8_t pixels[24576];
+    uint8_t pixels[BT4_PROFILE_PIXEL_CAPACITY];
     int width=0,height=0,count=0,delays[6]={};
     if (!Port_ProfileMediaRead(id,pixels,&width,&height,&count,delays)) return nullptr;
     const size_t bytes=size_t(width)*height*count*4;
@@ -276,12 +276,48 @@ static void profile_duel_cards_draw(float x,float y,float w,float h,float narrow
     if (*left) {
         Bt4ProfileCard card={};
         Port_ProfileCardForPlayer(left,&card);
-        profile_combat_card(dl,x+in*sx,cardY,width,23.0f*sy,left,card,false,leftPing);
+        const ImVec2 p=hud_placement_position(HUD_PLACE_ONLINE_1,ImVec2(x+in*sx,cardY),sx,sy);
+        profile_combat_card(dl,p.x,p.y,width,23.0f*sy,left,card,false,leftPing);
     }
     if (*right) {
         Bt4ProfileCard card={};
         Port_ProfileCardForPlayer(right,&card);
-        profile_combat_card(dl,x+(512.0f-in)*sx,cardY,width,23.0f*sy,right,card,true,rightPing);
+        const ImVec2 p=hud_placement_position(HUD_PLACE_ONLINE_2,ImVec2(x+(512.0f-in)*sx,cardY),sx,sy);
+        profile_combat_card(dl,p.x,p.y,width,23.0f*sy,right,card,true,rightPing);
+    }
+}
+
+static void profile_ranked_encounter(ImDrawList *dl, ImVec2 p, float u, const char *name, int rating, const Bt4ProfileCard &card) {
+    ImFont *font=ImGui::GetFont();
+    profile_frame(dl,p,ImVec2(p.x+285*u,p.y+154*u),11*u,
+                  IM_COL32(9,29,43,253),IM_COL32(87,154,169,255),1.5f*u);
+    const ImVec2 photo(p.x+23*u,p.y+11*u), end(photo.x+108*u,photo.y+108*u);
+    dl->AddRectFilled(photo,end,profileBannerColors[card.background],8*u);
+    const ProfileTexture *image=profile_texture(card.motion);
+    if(!image)image=profile_texture(card.avatar);
+    if(image)profile_image_draw(dl,*image,photo,end,8*u,IM_COL32_WHITE);
+    else {
+        char initial[]={*name>=32&&*name<127?*name:'?',0};
+        dl->AddText(font,42*u,ImVec2(photo.x+39*u,photo.y+31*u),profileNameColors[card.nameColor],initial);
+    }
+    dl->AddRect(photo,end,IM_COL32(235,197,107,255),8*u,0,1.4f*u);
+    const float size=18*u, textWidth=font->CalcTextSizeA(size,FLT_MAX,0,name).x;
+    dl->PushClipRect(ImVec2(p.x+8*u,p.y+121*u),ImVec2(p.x+146*u,p.y+149*u),true);
+    dl->AddText(font,size,ImVec2(p.x+fmaxf(8*u,77*u-textWidth/2),p.y+128*u),profileNameColors[card.nameColor],name);
+    dl->PopClipRect();
+    const char *labels[]={
+        profile_label("Ranked points","Puntos Ranked","Pontos ranqueados"),
+        profile_label("Wins","Victorias","Vitórias"),
+        profile_label("Losses","Derrotas","Derrotas")
+    };
+    const int values[]={rating,card.hasRankedRecord?card.rankedWins:-1,card.hasRankedRecord?card.rankedLosses:-1};
+    for(int i=0;i<3;i++){
+        const float y=p.y+(16+i*42)*u;
+        char value[24]="—";
+        if(values[i]>=0)SDL_snprintf(value,sizeof(value),"%d",values[i]);
+        dl->AddText(font,13*u,ImVec2(p.x+153*u,y),IM_COL32(173,214,224,255),labels[i]);
+        dl->AddText(font,21*u,ImVec2(p.x+153*u,y+14*u),i?IM_COL32(236,249,255,255):IM_COL32(255,221,145,255),value);
+        if(i<2) dl->AddLine(ImVec2(p.x+153*u,y+38*u),ImVec2(p.x+267*u,y+38*u),IM_COL32(73,122,145,200));
     }
 }
 

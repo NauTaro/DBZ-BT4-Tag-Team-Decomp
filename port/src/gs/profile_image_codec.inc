@@ -146,8 +146,8 @@ static ProfileImageSource loadProfileImage(const char *filename,const std::strin
 }
 
 static void profileImageDimensions(const std::string &kind,int &w,int &h){
-    w=kind=="banner"?128:kind=="banner_motion"?64:32;
-    h=kind=="banner_motion"?16:32;
+    w=kind=="avatar"?80:kind=="banner"?128:kind=="banner_motion"?64:32;
+    h=kind=="avatar"?80:kind=="banner_motion"?16:32;
 }
 
 static Dj encodeProfileImage(const ProfileImageSource &source,float x=0.5f,float y=0.5f,float zoom=1.0f){

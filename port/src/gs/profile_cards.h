@@ -6,13 +6,15 @@ extern "C" {
 typedef struct {
     int nameColor, background, decoration, premium, checkout;
     char avatar[37], motion[37], banner[37], bannerMotion[37];
+    int hasRankedRecord, rankedWins, rankedLosses;
 } Bt4ProfileCard;
+#define BT4_PROFILE_PIXEL_CAPACITY (80 * 80 * 4)
 void Port_ProfileCardForPlayer(const char *name, Bt4ProfileCard *out);
 void Port_ProfileCardForTagPlayer(const char *name, Bt4ProfileCard *out);
 int Port_ProfileCardView(Bt4ProfileCard *out);
 void Port_ProfileCardRequest(const Bt4ProfileCard *card);
 int Port_ProfileMediaSave(const char *kind, const char *path);
-int Port_ProfileMediaRead(const char *id, unsigned char pixels[24576], int *width, int *height, int *count, int delays[6]);
+int Port_ProfileMediaRead(const char *id, unsigned char pixels[BT4_PROFILE_PIXEL_CAPACITY], int *width, int *height, int *count, int delays[6]);
 int Port_ProfileDraftFile(const char *kind,const char *path);
 int Port_ProfileDraftRoster(int character);
 int Port_ProfileDraftPreview(float x,float y,float zoom,unsigned char *rgba,int *width,int *height);

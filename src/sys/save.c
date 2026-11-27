@@ -8,51 +8,63 @@ extern void *memset(void *dst, s32 value, u32 size);
 
 extern void Progress_ClearSession(void); /* clears the per-session parts of gProgress */
 
-/* Debug (no callers): unlocks every character, stage, list entry and item, marks about half the items new, and gives 4,850,000 money. */
-void Save_UnlockAll(SaveData *opt) {
+static void Save_UnlockContent(SaveData *opt, s32 debug) {
     SaveSlot *slot = opt->slot;
     s32 i;
     s32 *v;
 
-    for (i = 0; i < SAVE_CHARA_WORDS; i++) {
+    for (i = 0; debug && i < SAVE_CHARA_WORDS; i++) {
         opt->charaBits[i] = 0;
     }
     for (i = 0; i < SAVE_CHARA_COUNT; i++) {
-        SAVE_CHARA_WORD(gSaveData, i) |= SAVE_CHARA_MASK(i);
+        SAVE_CHARA_WORD(opt, i) |= SAVE_CHARA_MASK(i);
     }
-    gSaveData->stageBits = 0;
     for (i = 0; i < SAVE_STAGE_COUNT; i++) {
-        gSaveData->stageBits |= 1LL << i;
+        opt->stageBits |= 1ULL << i;
     }
     for (i = 0; i < SAVE_BGM_LIST_COUNT; i++) {
         if (i >= SAVE_BGM_COUNT) {
             break;
         }
-        gSaveData->bgmBits |= 1 << i;
+        opt->bgmBits |= 1u << i;
     }
     for (i = 0; i < SAVE_FLAG8_COUNT; i++) {
-        gSaveData->unlockFlags |= 1 << i;
+        opt->unlockFlags |= 1 << i;
     }
     for (i = 0; i < SAVE_ITEM_COUNT; i++) {
         opt->item[i] |= SAVE_ITEM_OWNED;
-        if (Rand_Range(100) & 1) {
+        if (debug && (Rand_Range(100) & 1)) {
             opt->item[i] |= SAVE_ITEM_NEW;
         }
     }
-    opt->money = SAVE_MONEY_UNLOCK_ALL;
-    for (i = 0; i < SAVE_REC_COUNT; i++) {
+    if (debug || opt->money < SAVE_MONEY_UNLOCK_ALL) opt->money = SAVE_MONEY_UNLOCK_ALL;
+    for (i = 0; debug && i < SAVE_REC_COUNT; i++) {
         opt->rec[i].chara = -1;
     }
-    opt->unk20C = 20;
+    if (debug || opt->unk20C < 20) opt->unk20C = 20;
     opt->unk208 |= 1;
     for (i = 0; i < SAVE_SLOT_COUNT; i++) {
         slot[i].flags |= 3;
         v = opt->slot[i].val;
-        v[0] = 0xFFFF;
-        v[1] = 0xFFFF;
-        v[2] = 0xFFFF;
+        if (debug) {
+            v[0] = v[1] = v[2] = 0xFFFF;
+        } else {
+            v[0] |= 0xFFFF;
+            v[1] |= 0xFFFF;
+            v[2] |= 0xFFFF;
+        }
     }
 }
+
+void Save_UnlockAll(SaveData *opt) {
+    Save_UnlockContent(opt, 1);
+}
+
+#ifdef PORT
+void Save_UnlockFromMenu(SaveData *opt) {
+    Save_UnlockContent(opt, 0);
+}
+#endif
 
 /* Clears the block and writes a new save: starting characters/stages/items, default key assignment, volumes and flags. */
 void Save_SetDefaults(SaveData *opt) {

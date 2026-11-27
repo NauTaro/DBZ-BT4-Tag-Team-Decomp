@@ -29,6 +29,8 @@ extern "C" void GsDx9_StripTextureFree(void *);
 #include "ui.h"
 #include "../../../include/battle/emotes.h"
 #include "profile_cards.h"
+#include "hud_placement.h"
+#include <algorithm>
 #include "tag_hud.h"
 #include "../../include/tag_team.h"
 #include "presentation.h"
@@ -1330,7 +1332,9 @@ static void quick_status(int state, int &lastState, const char *name) {
     }
 }
 
+static ImVec2 hud_placement_position(int group,ImVec2 p,float sx,float sy);
 #include "profile_cards_ui.inc"
+#include "hud_placement_ui.inc"
 
 extern "C" void Port_UiOpenProfileCard(void) { gPortNetMenuRequest = 2; }
 
@@ -2531,6 +2535,8 @@ static void update_prompt_draw(void) {
 }
 
 static void ui_tab(PortVideo &v) {
+    if (ImGui::Button(profile_label("Customize HUD","Personalizar HUD","Personalizar HUD")))
+        hudPlacementOpen=true;
     {
         static const char *const names[] = {"Espa\xC3\xB1ol", "English", "Portugu\xC3\xAAs"};
         int language = f1_language();
@@ -3199,39 +3205,49 @@ extern "C" void Port_UiBanner(const char *text, int ms) {
     sBanner.until = ms > 0 ? SDL_GetTicks() + (Uint64)ms : 0;
 }
 
-static void encounter_draw(const OnlineBanner &encounter) {
+static void encounter_draw(const OnlineBanner &encounter,bool preview=false) {
     const ImVec2 screen=ImGui::GetIO().DisplaySize;
     ImDrawList *dl=ImGui::GetForegroundDrawList();
     const float width=fminf(screen.x * 0.90f, screen.y * 1.10f);
     const float unit=width / 720.0f;
     const float motion=fmaxf(0.0f,1.0f-float(SDL_GetTicks()-encounter.entrance)/240.0f);
-    const ImVec2 origin((screen.x-width)*0.5f,screen.y*0.44f-106.0f*unit+motion*motion*27.0f*unit);
+    const int ratings[]={preview?18720:Port_ProfileRankedRating(encounter.local),
+                         preview?28573:Port_ProfileRankedRating(encounter.rival)};
+    Bt4ProfileCard cards[2]={};
+    if(preview){
+        SDL_strlcpy(cards[0].avatar,"preview-local",sizeof(cards[0].avatar));
+        SDL_strlcpy(cards[1].avatar,"preview-rival",sizeof(cards[1].avatar));
+        cards[0].hasRankedRecord=cards[1].hasRankedRecord=1;
+        cards[0].rankedWins=142;cards[0].rankedLosses=37;
+        cards[1].rankedWins=208;cards[1].rankedLosses=49;
+        cards[0].nameColor=4;cards[1].nameColor=5;
+    }else if(ratings[0]>=0||ratings[1]>=0){
+        Port_ProfileCardForPlayer(encounter.local,&cards[0]);
+        Port_ProfileCardForPlayer(encounter.rival,&cards[1]);
+    }
+    const bool ranked=ratings[0]>=0||ratings[1]>=0;
+    const ImVec2 origin((screen.x-width)*0.5f,screen.y*0.44f-(ranked?151.0f:106.0f)*unit+motion*motion*27.0f*unit);
     if (!encounter.until)
         dl->AddRectFilledMultiColor(ImVec2(0,0),screen,IM_COL32(8,19,30,88),IM_COL32(8,19,30,88),
                                     IM_COL32(4,16,23,140),IM_COL32(4,16,23,140));
-    const int ratings[]={Port_ProfileRankedRating(encounter.local),Port_ProfileRankedRating(encounter.rival)};
-    const bool ranked=ratings[0]>=0||ratings[1]>=0;
-    profile_tbo_panel(dl,origin,ImVec2(origin.x+width,origin.y+(ranked?244:212)*unit),unit);
+    profile_tbo_panel(dl,origin,ImVec2(origin.x+width,origin.y+(ranked?300:212)*unit),unit);
     const char *title=encounter.rival[0]?profile_label("Match found","Rival encontrado","Adversário encontrado"):
         profile_label("Connecting to your rival…","Conectando con tu rival…","Conectando ao adversário…");
     profile_heading(dl,ImVec2(origin.x+22*unit,origin.y+21*unit),676*unit,44*unit,title);
     ImFont *font=ImGui::GetFont();
     const float cardShift=motion*motion*14*unit;
-    profile_card_player(dl,ImVec2(origin.x+26*unit+cardShift,origin.y+86*unit),285*unit,70*unit,encounter.local);
-    const ImVec2 vs(origin.x+360*unit,origin.y+121*unit);
+    const ImVec2 localPos(origin.x+26*unit+cardShift,origin.y+86*unit);
+    if(ranked)profile_ranked_encounter(dl,localPos,unit,encounter.local,ratings[0],cards[0]);
+    else profile_card_player(dl,localPos,285*unit,70*unit,encounter.local);
+    const ImVec2 vs(origin.x+360*unit,origin.y+(ranked?162:121)*unit);
     profile_frame(dl,ImVec2(vs.x-31*unit,vs.y-23*unit),ImVec2(vs.x+31*unit,vs.y+23*unit),10*unit,
                   IM_COL32(225,136,24,255),IM_COL32(255,226,131,255),2*unit);
     const float vsWidth=font->CalcTextSizeA(25*unit,FLT_MAX,0,"VS").x;
     dl->AddText(font,25*unit,ImVec2(vs.x-vsWidth*0.5f,vs.y-12.5f*unit),IM_COL32(39,23,12,255),"VS");
     const char *rival=encounter.rival[0]?encounter.rival:profile_label("Rival","Rival","Adversário");
-    profile_card_player(dl,ImVec2(origin.x+409*unit-cardShift,origin.y+86*unit),285*unit,70*unit,rival);
-    for(int i=0;i<2;++i)if(ratings[i]>=0){
-        char points[64];
-        SDL_snprintf(points,sizeof(points),profile_label("%d Ranked points","%d puntos de Ranked","%d pontos no Ranked"),ratings[i]);
-        const float size=17*unit,w=font->CalcTextSizeA(size,FLT_MAX,0,points).x;
-        const float center=origin.x+(i?551.5f:168.5f)*unit;
-        dl->AddText(font,size,ImVec2(center-w*0.5f,origin.y+165*unit),IM_COL32(255,224,148,255),points);
-    }
+    const ImVec2 rivalPos(origin.x+409*unit-cardShift,origin.y+86*unit);
+    if(ranked)profile_ranked_encounter(dl,rivalPos,unit,rival,ratings[1],cards[1]);
+    else profile_card_player(dl,rivalPos,285*unit,70*unit,rival);
     char detail[96]={};
     if (encounter.latency>=0)
         SDL_snprintf(detail,sizeof(detail),"%s%s%d ms",encounter.region,encounter.region[0]?"  |  ":"",encounter.latency);
@@ -3239,7 +3255,7 @@ static void encounter_draw(const OnlineBanner &encounter) {
     if (detail[0]) {
         const float size=17*unit;
         const float measured=font->CalcTextSizeA(size,FLT_MAX,0,detail).x;
-        const float y=origin.y+(ranked?200:168)*unit;
+        const float y=origin.y+(ranked?254:168)*unit;
         dl->AddRectFilled(ImVec2((screen.x-measured)*0.5f-14*unit,y),
                           ImVec2((screen.x+measured)*0.5f+14*unit,y+28*unit),IM_COL32(10,35,47,235),14*unit);
         dl->AddText(font,size,ImVec2((screen.x-measured)*0.5f,y+6*unit),IM_COL32(197,234,231,255),detail);
@@ -3798,6 +3814,7 @@ static bool frame_build(void) {
         rankedToast=sRankedToast;
     }
     bool tagMenu = sReady && sTagMenuOpen;
+    const bool rankedPreview=sReady&&getenv("BT4_RENDER_TEST")&&getenv("BT4_RANKED_PREVIEW_LOCAL");
     bool updateAvailable=updLine[0]!=0;
     extern int gPortMenuMode;
     if(PortHud_Hidden() && !gPortMenuMode)meter=names=chat=bars=notice=false;
@@ -3829,7 +3846,7 @@ static bool frame_build(void) {
     meter_count();
     sBuilt = false;
     UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit);
-    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !showTagCard && !showTagEncounter && !showRankedToast && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods)) {
+    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !showTagCard && !showTagEncounter && !showRankedToast && !bars && !chat && !banner && !ballNoticeOn && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods && !rankedPreview)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -3878,7 +3895,9 @@ static bool frame_build(void) {
     }
     if(mods)ModsUi_Draw(); // The player's Hide HUD choice also hides script overlays.
     if (sOpen) {
-        if (sNet&&sProfileEditor) {
+        if (hudPlacementOpen) {
+            hud_placement_editor();
+        } else if (sNet&&sProfileEditor) {
             build_profile_editor();
         } else if (sNet) {
             build_net();
@@ -3918,13 +3937,19 @@ static bool frame_build(void) {
             if (!name||!*name) continue;
             Bt4ProfileCard card={};
             Port_ProfileCardForTagPlayer(name,&card);
-            const float x=gUiPresentX+(pane?278:58)*sx;
-            const float y=gUiPresentY+(tagCards.split?51:76)*sy;
-            profile_combat_card(dl,x,y,88*sx,19*sy,name,card,false,-1,false);
+            const ImVec2 p=hud_placement_position(HUD_PLACE_TAG_ONLINE_1+pane,
+                ImVec2(gUiPresentX+(pane?278:58)*sx,gUiPresentY+(tagCards.split?51:76)*sy),sx,sy);
+            profile_combat_card(dl,p.x,p.y,88*sx,19*sy,name,card,false,-1,false);
         }
     }
     if (tagMenu)tag_menu_draw();
-    if (showTagEncounter) tag_encounter_draw();
+    if (rankedPreview) {
+        OnlineBanner example;
+        SDL_strlcpy(example.local,"TrunksGT",sizeof(example.local));
+        SDL_strlcpy(example.rival,"Astra",sizeof(example.rival));
+        example.latency=38;
+        encounter_draw(example,true);
+    } else if (showTagEncounter) tag_encounter_draw();
     else if (banner && bannerState.local[0]) encounter_draw(bannerState);
     else if (banner) online_message_draw(bannerState.text,0.46f,bannerState.until==0);
     if (ballNoticeOn) {

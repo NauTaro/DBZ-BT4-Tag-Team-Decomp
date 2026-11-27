@@ -41,6 +41,7 @@ static uint32_t sPresentationObject;
 #include "menu_labels.h"      /* European menu art and native language selector pictures */
 #include "mods.h"             /* the look script mods ask for (bt3.look) */
 #include "tag_menu_movie.h"
+#include "hud_placement.h"
 #include <math.h>
 
 /* Stage-name overlay: defined here (C) so both the renderer (gs_gpu.c) and the game's menu (menu_c_e.c) can
@@ -2124,6 +2125,7 @@ static int presentation_hud(void) {
 }
 extern int PortHud_Hidden(void);
 static int sHudScope;
+static int sHudPlacement;
 extern int Mods_HudHidden(void);
 void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     if(presentation_hud() && PortHud_Hidden())return;
@@ -2521,6 +2523,16 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
         }
     }
     d.hud = presentation_hud() ? (uint32_t)(gsAnchor + 1) : 0;
+    if (sHudPlacement && !gPortMenuMode && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
+        int x, y;
+        Port_HudGetOffset(sHudPlacement, &x, &y);
+        if (x || y) {
+            for (uint32_t i = d.first; i < gsVertCount; i++) {
+                gsVerts[i].x += (float)x;
+                gsVerts[i].y += (float)y;
+            }
+        }
+    }
     d.count = gsVertCount - d.first;
     if (lowres_now(d.target)) { /* into a work buffer at the PS2's resolution: its corner (target_lowres) */
         uint32_t k;
@@ -2894,6 +2906,10 @@ static void grade_add(void) {
 static ThaState sTagRenderAnchors;
 int Port_TagRenderAllyAnchor(int pane,int actor,float *x,float *y){return ThaGet(&sTagRenderAnchors,pane,actor,x,y);}
 void GsGpu_Native(int effect) {
+    if (effect >= HUD_PLACEMENT_MARKER && effect < HUD_PLACEMENT_MARKER + HUD_PLACE_COUNT) {
+        sHudPlacement = effect - HUD_PLACEMENT_MARKER;
+        return;
+    }
     if((effect&0xF0000000)==0x40000000){sPresentationObject=(uint32_t)effect&0x0FFFFFFF;return;}
     if(effect==0x70 || effect==0x71){
         sPresentationHudScope=effect==0x70;
