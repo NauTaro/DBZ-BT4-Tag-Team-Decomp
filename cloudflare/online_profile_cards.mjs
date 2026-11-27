@@ -1,7 +1,7 @@
 export const profilePassPrice = 300;
 export const officialDonorLifetime = Number.MAX_SAFE_INTEGER;
 const formats = {avatar:[2048,1],motion:[2048,6],banner:[8192,1],banner_motion:[2048,6]};
-export const profileAnimationRequestLimit = 1200000;
+export const profileAnimationRequestLimit = 2400000;
 const matchId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 
 export function profileMedia(core, user, premium) {
@@ -85,12 +85,12 @@ function validProfileAnimation(kind,animation) {
     if(!animation||typeof animation!=='object'||Array.isArray(animation))return false;
     const {width,height,delays,atlas}=animation;
     if(kind!=='motion'&&kind!=='banner_motion')return false;
-    if(![96,128,160,192].includes(kind==='motion'?width:width/2)||
+    if(![96,128,160,192,224,256].includes(kind==='motion'?width:width/2)||
        height!==(kind==='motion'?width:width/4))return false;
     if(!Array.isArray(delays)||delays.length<2||delays.length>120||
        delays.some(delay=>!Number.isInteger(delay)||delay<20||delay>240000)||
        delays.reduce((sum,delay)=>sum+delay,0)>240000)return false;
-    if(typeof atlas!=='string'||!atlas.length||atlas.length>1160000||atlas.length%4||
+    if(typeof atlas!=='string'||!atlas.length||atlas.length>2320000||atlas.length%4||
        !/^[A-Za-z0-9+/]+={0,2}$/.test(atlas))return false;
     const dimensions=jpegDimensions(atob(atlas));
     return dimensions!==null&&dimensions[0]===width*Math.min(8,delays.length)&&
@@ -151,7 +151,8 @@ export function getProfileMedia(core,user,{id,hd,detail,animation}) {
     if (!row || (row.kind!=='avatar' && !(row.premium_until>core.now()))) throw new Error('PROFILE_MEDIA_UNAVAILABLE');
     const media=JSON.parse(row.body);
     if(detail!==true)delete media.detail;
-    if(animation!==true)delete media.animation;
+    if(animation!==2&&(animation!==true||media.animation?.atlas.length>1160000||
+       media.animation?.width>(row.kind==='motion'?192:384)))delete media.animation;
     if(row.kind==='avatar'&&hd!==true&&media.frames[0].length===17068){
         const high=atob(media.frames[0]);
         let low='';

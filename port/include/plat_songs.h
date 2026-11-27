@@ -20,7 +20,6 @@
                                                                                     : PORT_SONG_BGM_FIRST + (n))
 
 int PortSongs_SelectorTrack(const int *ids, int count);
-int PortSongs_BattleTrack(void);
 void PortSongs_Init(void);
 void PortSongs_Refresh(void);       /* the select screens call it as they set up their music list: nothing to do now */
 int PortSongs_Count(void);

@@ -55,7 +55,7 @@ static int ShuffleTrack(const int *ids, int count, Uint64 *state, int *previous)
     return *previous = ids[index];
 }
 
-/* Menu previews and actual battles each remember their last track. */
+/* Avoid repeating the previous soundtrack in consecutive selectors. */
 int PortSongs_SelectorTrack(const int *ids, int count) {
     static Uint64 state;
     static int previous = -1;
@@ -65,14 +65,6 @@ int PortSongs_SelectorTrack(const int *ids, int count) {
     return track;
 }
 
-int PortSongs_BattleTrack(void) {
-    static Uint64 state;
-    static int previous = -1;
-    const int track = ShuffleTrack(NULL, 0, &state, &previous);
-    if (SDL_getenv("BT3_BGM_DEBUG"))
-        SDL_Log("Battle soundtrack: %d", track);
-    return track;
-}
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>

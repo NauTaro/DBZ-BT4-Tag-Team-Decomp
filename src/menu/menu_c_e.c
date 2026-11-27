@@ -8,6 +8,7 @@
 #include "plat_stages.h"  /* the manifest of added stages: their ids, names and file aliases */
 extern s32 ChrGrid_Random(const void *, s32, s32, s32 (*)(s32, s32), s32 *);
 #include "plat_songs.h"   /* the manifest of added songs (the music select) */
+#include "bt4_goku_costumes.h"
 #include <stdio.h>
 #include <stdlib.h>
 /* include/battle/view_a.h holds these, but pulling it in clashes with menu_d.h (MsgWin_Init); the values are
@@ -733,12 +734,6 @@ void CharSel_Init(s32 section) {
             gCharSel->stage->bgm = i;
         }
     }
-#ifdef PORT
-    /* Open the stage picker on its Random music entry. */
-    if (gCharSel->bgmCount > 0 && gCharSel->bgmIds[gCharSel->bgmCount - 1] == 0x18) {
-        gCharSel->stage->bgm = gCharSel->bgmCount - 1;
-    }
-#endif
     gCharSel->faceState = CHARSEL_LOAD_IDLE;
     for (i = 0; i < CHARSEL_SIDES; i++) {
 #ifdef PORT
@@ -789,6 +784,12 @@ void CharSel_Init(s32 section) {
 
 #ifdef PORT
     s32 track = PortSongs_SelectorTrack(gCharSel->bgmIds, gCharSel->bgmCount - 1);
+    for (i = 0; i < gCharSel->bgmCount; ++i) {
+        if (gCharSel->bgmIds[i] == track) {
+            gCharSel->stage->bgm = gCharSel->stage->bgmPlaying = i;
+            break;
+        }
+    }
     Bgm_Play(PORT_BGM_FILE(track));
 #else
     if (gCharSel->bgmIds[gCharSel->stage->bgmPlaying] == CHARSEL_BGM_RANDOM) {
@@ -1178,8 +1179,9 @@ void CharSel_Draw(void) {
             Flash_ClipSetFlags(f, &ref, 2, 0);
         }
         if (gCharSel->side[i]->chara >= 0) {
+            const s32 labelChara = Bt4_GokuOutfitLabelChara(gCharSel->side[i]->chara);
             *(void **)((u8 *)&gCharSel->costumeBox[i] + 4) =
-                (u8 *)gCharSel->costumeText + ((u32 *)gCharSel->costumeText)[1 + gCharSel->side[i]->chara];
+                (u8 *)gCharSel->costumeText + ((u32 *)gCharSel->costumeText)[1 + labelChara];
             Flash_FindLabel(f, NULL, "mc_color_name_text", &ref);
             if(gCharSel->side[i]->colorPlate>=0 && gCharSel->side[i]->colorPlate<gCharSel->colorCount[i]) {
                 u32 *row = *(u32 **)((u8 *)&gCharSel->costumeBox[i] + 4);
@@ -1410,7 +1412,15 @@ void CharSel_Input(s32 *running) {
         extern void Port_TagUiCapture(int index);
         gPad[0].gamePressed = gPad[0].gameRepeat = gPad[0].gameHeld = 0;
         if ((gCharSel->flags & CHARSEL_STAGE_PHASE) && !fixtureSelected) {
-            int wanted = getenv("BT4_MAP_SELECTOR_TEST") ? atoi(getenv("BT4_MAP_SELECTOR_TEST")) : 0;
+            const char *map = getenv("BT4_MAP_SELECTOR_TEST");
+            const char *song = getenv("BT4_MAP_SELECTOR_SONG");
+            int wanted = map ? atoi(map) : 0;
+            if (map && !strcmp(map, "default")) {
+                if (gCharSel->stage->stage != CHARSEL_STAGE_RANDOM) exit(4);
+                fprintf(stderr, "map selector fixture: Random highlighted, preset song=%d\n",
+                        gCharSel->bgmIds[gCharSel->stage->bgmPlaying]);
+                wanted = gCharSel->stage->stage;
+            }
             for (j = 0; j < gCharSel->stageCount; ++j) {
                 if (gCharSel->stageIds[j] == wanted) {
                     CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_off_start");
@@ -1427,10 +1437,21 @@ void CharSel_Input(s32 *running) {
                     break;
                 }
             }
+            if (song && fixtureSelected) {
+                for (j = 0; j < gCharSel->bgmCount; ++j) {
+                    if (gCharSel->bgmIds[j] != atoi(song)) continue;
+                    gCharSel->stage->bgm = gCharSel->stage->bgmPlaying = j;
+                    fprintf(stderr, "map selector fixture: confirmed song=%d\n", atoi(song));
+                    break;
+                }
+                if (j == gCharSel->bgmCount) exit(5);
+            }
         }
         if (costumeOnly && gCharSel->side[0]->state == CHARSEL_ST_COLOR) {
             if (++costumeTick == 60) Port_TagUiCapture(21);
         } else if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
+            if (fixtureSelected && getenv("BT4_MAP_SELECTOR_SONG") && fixtureTick >= 150 &&
+                !(gCharSel->flags & CHARSEL_LEAVING)) gPad[0].gamePressed = PADG_CROSS;
             if(fixtureSelected&&getenv("BT4_MAP_BROWSE_TEST")&&fixtureTick>=170&&(fixtureTick-170)%40==0){
                 int step=(fixtureTick-170)/40;
                 gPad[0].gameRepeat=step<10?2:step<20?1:step<40?4:8;
@@ -2080,6 +2101,17 @@ void CharSel_Input(s32 *running) {
                 /* both sides are done: on to the stage */
                 Flash_GotoLabel(&gCharSel->flash[0], "fl_map", 1);
                 IconWin_Open();
+#ifdef PORT
+                for (j = 0; j < gCharSel->stageCount; ++j) {
+                    if (gCharSel->stageIds[j] != CHARSEL_STAGE_RANDOM) continue;
+                    gCharSel->stage->col = j % STGGRID_COLS;
+                    gCharSel->stage->row = j / STGGRID_COLS;
+                    gCharSel->stage->stage = CHARSEL_STAGE_RANDOM;
+                    CharSel_SetStageChips();
+                    CharSel_RequestStage();
+                    break;
+                }
+#endif
                 CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_on_start");
                 gCharSel->flags |= CHARSEL_STAGE_PHASE;
                 gCharSel->stage->state = CHARSEL_ST_STAGE;

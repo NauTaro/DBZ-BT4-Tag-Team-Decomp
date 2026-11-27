@@ -101,6 +101,17 @@ static s32 Bt4_Costumes(s32 chara) {
 }
 s32 Bt4_ModelFile(s32 chara, s32 costume, s32 damaged) {
     s32 i, file = 0x1612;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (Bt4_GokuSharedOutfits(chara) && costume >= 0 && costume < BT4_GOKU_OUTFIT_COUNT &&
+        Bt4_ExtraFormsAllowed() && Port_GokuCostumesReady()) {
+        if (chara == BT4_GOKU_INSTINCT_SIGN || chara == BT4_GOKU_MASTERED_INSTINCT)
+            return BT4_GOKU_COSTUME_FILE_FIRST + costume * 4 +
+                   (chara == BT4_GOKU_MASTERED_INSTINCT ? 2 : 0) + (damaged != 0);
+        if (chara > BT4_GOKU_END)
+            return BT4_GOKU_COSTUME_FILE_FIRST + BT4_GOKU_COSTUME_SUPER_FIRST +
+                   (chara - BT4_GOKU_END - 1) * BT4_GOKU_OUTFIT_COUNT * 2 + costume * 2 + (damaged != 0);
+    }
+#endif
     for (i = 0; i < chara; i++) file += 2 * Bt4_Costumes(i);
     return file + costume + (damaged ? Bt4_Costumes(chara) : 0);
 }
@@ -113,6 +124,9 @@ s32 Bt4_CharaFromModelFile(s32 id) {
         s32 outfit = (id - BT4_GOKU_COSTUME_FILE_FIRST) / 4;
         s32 source = outfit < 6 ? 0 : outfit < 10 ? 1 : 2;
         s32 target = ((id - BT4_GOKU_COSTUME_FILE_FIRST) / 2) % 2;
+        if (id >= BT4_GOKU_COSTUME_FILE_FIRST + BT4_GOKU_COSTUME_SUPER_FIRST)
+            return BT4_GOKU_END + 1 + (id - BT4_GOKU_COSTUME_FILE_FIRST - BT4_GOKU_COSTUME_SUPER_FIRST) /
+                   (BT4_GOKU_OUTFIT_COUNT * 2);
         return forms[target + (target >= source)];
     }
 #endif

@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include "bt4_goku_costumes.h"
+#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -167,6 +168,11 @@ int ADXF_GetPtStat(int ptid) {
     return sPartDir[ptid & 7][0] != '\0' ? STAT_READEND : STAT_STOP;
 }
 
+void Port_GokuCostumePath(const char *relative, char *path, unsigned capacity) {
+    const char *base = SDL_GetBasePath();
+    snprintf(path, capacity, "%s%s", base ? base : "", relative);
+}
+
 int Port_GokuCostumesReady(void) {
     static int ready;
     int index;
@@ -175,10 +181,11 @@ int Port_GokuCostumesReady(void) {
         return ready > 0;
     }
     for (index = 0; index < BT4_GOKU_COSTUME_FILE_COUNT; ++index) {
-        char path[96];
+        char relative[96], path[512];
         FILE *file;
 
-        snprintf(path, sizeof(path), BT4_GOKU_COSTUME_PATH "%02d.bin", index);
+        snprintf(relative, sizeof(relative), BT4_GOKU_COSTUME_PATH "%02d.bin", index);
+        Port_GokuCostumePath(relative, path, sizeof(path));
         file = fopen(path, "rb");
         if (file == NULL) {
             ready = -1;

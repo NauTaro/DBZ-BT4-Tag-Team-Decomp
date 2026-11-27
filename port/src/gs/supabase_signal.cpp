@@ -113,7 +113,9 @@ struct State {
 static void wake(void*){if(state.wake)SDL_SignalSemaphore(state.wake);}
 static bool emit(int consumer,const Sj &j){
     if(consumer<0||consumer>5)return false;
-    std::string body=j.dump();if(body.size()>24576)return false;
+    const bool animation=consumer==4&&j.value("event","")=="reply"&&j.contains("body")&&j["body"].contains("animation");
+    const size_t limit=animation?BT4_PROFILE_MEDIA_EVENT_CAP-1:24576;
+    std::string body=j.dump();if(body.size()>limit)return false;
     std::lock_guard<std::mutex> g(state.lock);
     if(!(state.consumers&(1u<<consumer)))return true;
     if(state.events[consumer].size()>=128){state.status=-1;return false;}

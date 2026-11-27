@@ -34,7 +34,7 @@ FILE *Port_FileOpenHost(const char *rel, char *path, size_t n) {
     FILE *fp = NULL;
 
     if (strncmp(rel, BT4_GOKU_COSTUME_PATH, sizeof(BT4_GOKU_COSTUME_PATH) - 1) == 0) {
-        snprintf(path, n, "%s", rel);
+        Port_GokuCostumePath(rel, path, n);
         return fopen(path, "rb");
     }
 

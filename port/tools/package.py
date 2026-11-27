@@ -261,7 +261,10 @@ def take_goku_costumes(out):
     source = ROOT / "port" / "assets" / "goku-costumes"
     target = out / "tbo" / "goku-costumes"
     target.mkdir(parents=True, exist_ok=True)
-    for index in range(56):
+    header = (ROOT / "port/include/bt4_goku_costumes.h").read_text(encoding="utf-8")
+    count = int(next(line.split()[-1] for line in header.splitlines()
+                     if line.startswith("#define BT4_GOKU_COSTUME_FILE_COUNT ")))
+    for index in range(count):
         filename = f"{index:02d}.bin"
         shutil.copy2(source / filename, target / filename)
 

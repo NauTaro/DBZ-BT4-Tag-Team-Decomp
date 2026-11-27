@@ -234,17 +234,17 @@ static Dj encodeProfileAnimation(const ProfileImageSource &source,float x,float 
     const bool banner=source.kind=="banner_motion";
     const int columns=std::min(int(frames.size()),BT4_PROFILE_ANIMATION_COLUMNS);
     const int rows=(int(frames.size())+columns-1)/columns;
-    constexpr size_t maxJpeg=870000;
+    constexpr size_t maxJpeg=BT4_PROFILE_ANIMATION_JPEG_CAP;
     const auto append=[](void *context,void *data,int size){
         auto &bytes=*static_cast<std::vector<unsigned char> *>(context);
         const auto *first=static_cast<const unsigned char *>(data);
         if(bytes.size()<=maxJpeg)bytes.insert(bytes.end(),first,first+std::min<size_t>(size,maxJpeg+1-bytes.size()));
     };
-    for(int resolution:{192,160,128,96}){
+    for(int resolution:{BT4_PROFILE_ANIMATION_SIDE,224,192,160,128,96}){
         const int w=banner?resolution*2:resolution,h=banner?resolution/2:resolution;
         std::vector<unsigned char> pixels(size_t(w)*h*columns*rows*3);
         profileAtlas(source,frames,pixels.data(),w,h,3,x,y,zoom);
-        for(int quality:{90,82,72,62}){
+        for(int quality:{94,88,80,72,62}){
             std::vector<unsigned char> jpeg;
             if(stbi_write_jpg_to_func(append,&jpeg,w*columns,h*rows,3,pixels.data(),quality)&&
                !jpeg.empty()&&jpeg.size()<=maxJpeg){

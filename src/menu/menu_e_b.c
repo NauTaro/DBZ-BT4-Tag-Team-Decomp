@@ -13,6 +13,7 @@ static void TeamSel_TagDrawFilter(void);
 #include "battle/col_c.h" /* FontStyle / FONT_ALIGN_* / FONT_SHADOW_*, for the names of added songs */
 extern s32 ChrGrid_Random(const void *, s32, s32, s32 (*)(s32, s32), s32 *);
 #include "plat_songs.h"   /* the songs added from outside the disc (the music select) */
+#include "bt4_goku_costumes.h"
 /* The port's song-name overlay (port/src/gs/ui.cpp / gs_draw.c), as the duel's select uses it (menu_c_e.c). */
 extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
 extern volatile int gUiSongIdx, gUiSongReady, gUiSongLit;
@@ -459,6 +460,21 @@ void TeamSel_RequestStage(void) {
 #endif
 }
 
+#ifdef PORT
+static void TeamSel_SelectRandomStage(void) {
+    s32 i;
+    for (i = 0; i < gTeamSel->stageCount; ++i) {
+        if (gTeamSel->stageIds[i] != TS_STAGE_RANDOM) continue;
+        gTeamSel->stage->col = i % TS_STAGE_COLS;
+        gTeamSel->stage->row = i / TS_STAGE_COLS;
+        gTeamSel->stage->stage = TS_STAGE_RANDOM;
+        TeamSel_SetStageChips();
+        TeamSel_RequestStage();
+        break;
+    }
+}
+#endif
+
 /* Sends the clip of one chip or plate of a movie to a label; `kind` says which clip and from which cursor. */
 void TeamSel_ClipGoto(s32 flash, s32 side, s32 kind, char *label) {
     MFlashRef ref;
@@ -835,12 +851,6 @@ void TeamSel_Init(s32 section) {
             gTeamSel->stage->bgmCursor = i;
         }
     }
-#ifdef PORT
-    /* Open the stage picker on its Random music entry. */
-    if (gTeamSel->bgmCount > 0 && gTeamSel->bgmIds[gTeamSel->bgmCount - 1] == 0x18) {
-        gTeamSel->stage->bgmCursor = gTeamSel->bgmCount - 1;
-    }
-#endif
     gTeamSel->faceState = TEAMSEL_LOAD_IDLE;
     if (gTeamSel->battleType == 2) {
         switch (gTeamSel->dpLevel) {
@@ -912,6 +922,12 @@ void TeamSel_Init(s32 section) {
     gTeamSel->stageBuf = 1;
 #ifdef PORT
     s32 track = PortSongs_SelectorTrack(gTeamSel->bgmIds, gTeamSel->bgmCount - 1);
+    for (i = 0; i < gTeamSel->bgmCount; ++i) {
+        if (gTeamSel->bgmIds[i] == track) {
+            gTeamSel->stage->bgm = gTeamSel->stage->bgmCursor = i;
+            break;
+        }
+    }
     Bgm_Play(PORT_BGM_FILE(track));
 #else
     if (gTeamSel->bgmIds[gTeamSel->stage->bgm] == TS_BGM_RANDOM) {
@@ -1270,8 +1286,9 @@ void TeamSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
         if (gTeamSel->side[i]->chara >= 0) {
+            const s32 labelChara = Bt4_GokuOutfitLabelChara(gTeamSel->side[i]->chara);
             *(void **)((u8 *)&gTeamSel->costumeBox[i] + 4) =
-                (u8 *)gTeamSel->costumeText + ((u32 *)gTeamSel->costumeText)[1 + gTeamSel->side[i]->chara];
+                (u8 *)gTeamSel->costumeText + ((u32 *)gTeamSel->costumeText)[1 + labelChara];
             Flash_FindLabel(flash, NULL, "mc_color_name_text", &ref);
             if(gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color>=0 && gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color<gTeamSel->colorCount[i]) {
                 u32 *row = *(u32 **)((u8 *)&gTeamSel->costumeBox[i] + 4);
@@ -2311,6 +2328,9 @@ f32 TeamSel_Input(s32 *result) {
                     /* both teams are complete: on to the stage */
                     Flash_GotoLabel(&gTeamSel->flash[0], "fl_map", 1);
                     IconWin_Open();
+#ifdef PORT
+                    TeamSel_SelectRandomStage();
+#endif
                     TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_STAGE_CHIP, "fl_on_start");
                     gTeamSel->flags |= TEAMSEL_STAGE;
                     gTeamSel->faceMask = 1;

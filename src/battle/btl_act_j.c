@@ -3,6 +3,7 @@
 #include "battle/btl_act_j.h"
 #ifdef BT4_TAG_TEAM_EXPANDED
 #include "battle/tag_team_native.h"
+#include "bt4_goku_costumes.h"
 #endif
 
 /*
@@ -300,21 +301,17 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
 #ifdef BT4_TAG_TEAM_EXPANDED
     {
         extern s32 Bt4_ExtraTransformTarget(void *chr, s32 slot);
-        extern s32 BattleSide_GetMemberChara(s32 side, s32 member);
-        extern s32 BattleSide_GetMemberCostume(s32 side, s32 member);
-        extern s32 BtlSide_GetActiveMember(s32 side);
         extern s32 ChrTbl_WrapCostume(s32 chara, s32 *costume);
         const s32 source = BtlMember_GetActive(chr)->chara;
         const s32 extra = Bt4_ExtraTransformTarget(chr, index);
 
-        if (extra == BT4_GOKU_END) {
-            const s32 member = BtlSide_GetActiveMember(chr->player);
-            if (BattleSide_GetMemberChara(chr->player, member) == BT4_GOKU_END) {
-                chr->form.costume = BattleSide_GetMemberCostume(chr->player, member);
-            } else {
-                /* The base roster has a DB Super gi and no Capsule Corp. gi. */
-                chr->form.costume = chr->form.costume == 2 ? 3 : 0;
-            }
+        if (Bt4_ExtraFormsAllowed() && Bt4_GokuSharedOutfits(source) && Bt4_GokuSharedOutfits(chara) &&
+            Port_GokuCostumesReady()) {
+            chr->form.unk28 = chr->form.costume;
+            if (unk24 >= 0x100) chr->form.unk24 = unk24 + chr->form.costume;
+            customOutfit = 1;
+        } else if (extra == BT4_GOKU_END) {
+            chr->form.costume = chr->form.costume == 2 ? 3 : 0;
         } else if (extra == BT4_GOKU_MASTERED_INSTINCT || extra == BT4_GOKU_INSTINCT_SIGN) {
             static const u8 gi[] = {1, 1, 2, 2, 2, 1};
             const s32 outfit = chr->form.costume;
@@ -324,8 +321,8 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
         } else if (extra == BT4_ZAMASU_FUSED) {
             chr->form.costume = BT4_ZAMASU_GIANT_OUTFIT;
         }
-        if (extra >= 0 || (Bt4_ExtraFormsAllowed() && source == BT4_GOKU_INSTINCT_SIGN &&
-                           chara == BT4_GOKU_MASTERED_INSTINCT)) {
+        if (!customOutfit && (extra >= 0 || (Bt4_ExtraFormsAllowed() && source == BT4_GOKU_INSTINCT_SIGN &&
+                           chara == BT4_GOKU_MASTERED_INSTINCT))) {
             ChrTbl_WrapCostume(chara, &chr->form.costume);
             chr->form.variant = 0;
             chr->form.unk28 = chr->form.costume;

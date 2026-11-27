@@ -163,6 +163,7 @@ static void TeamSel_TagOpenMap(void){
         }
     }
     Flash_GotoLabel(&gTeamSel->flash[0],"fl_map",1);IconWin_Open();
+    TeamSel_SelectRandomStage();
     TeamSel_ClipGoto(0,0,TEAMSEL_CLIP_STAGE_CHIP,"fl_on_start");
     gTeamSel->flags|=TEAMSEL_STAGE;gTeamSel->faceMask=1;
     gTeamSel->stage->state=TEAMSEL_STAGE_GRID;

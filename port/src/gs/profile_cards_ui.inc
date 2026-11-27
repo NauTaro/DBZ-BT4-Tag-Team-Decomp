@@ -80,7 +80,7 @@ static const ProfileTexture *profile_texture(const char *id) {
     slot->used=now;
     size_t bytes=0;
     for(const auto &entry:cache)bytes+=entry.bytes;
-    while(bytes>112u*1024*1024){
+    while(bytes>160u*1024*1024){
         ProfileTexture *old=nullptr;
         for(auto &entry:cache)
             if(entry.texture&&entry.used!=now&&(!old||entry.used<old->used))old=&entry;

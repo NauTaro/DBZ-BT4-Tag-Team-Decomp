@@ -646,13 +646,9 @@ void Battle_ResetWork(void) {
     BattleResult_Clear();
     BtlEvent_Reset();
 #ifdef PORT
-    s32 bgm = Battle_GetBgm();
-    const s32 mode = Battle_GetMode();
-    if (mode >= 0 && mode <= 6 && mode != 1 && !Battle_GetSetup()->script && Port_TestBgm() < 0) {
-        /* Keep the local song choice out of the match state and story cues. */
-        bgm = PortSongs_BattleTrack();
-    }
-    Bgm_Play(PORT_BGM_FILE(bgm));
+    if (getenv("BT3_BGM_DEBUG"))
+        fprintf(stderr, "Battle selected soundtrack: %d\n", Battle_GetBgm());
+    Bgm_Play(PORT_BGM_FILE(Battle_GetBgm()));
 #else
     Bgm_Play(Battle_GetBgm() + 0x816);
 #endif
