@@ -22,5 +22,5 @@ if env.get('BT3_SDL3'):
 else:flags=shlex.split(subprocess.check_output(['pkg-config','--cflags','--libs','sdl3'],text=True))
 host=out/('camera-host.exe' if os.name=='nt' else 'camera-host')
 subprocess.run(prefix+[os.environ.get('CC','cc'),'-std=c99','-Wall','-Wextra','-Wno-unused-function',
-                       str(Path(__file__).with_name('test_host.c')),*flags,'-lm','-o',str(host)],check=True)
+                       '-I'+str(root/'port/include'),str(Path(__file__).with_name('test_host.c')),*flags,'-lm','-o',str(host)],check=True)
 subprocess.run(prefix+[str(host)],check=True)

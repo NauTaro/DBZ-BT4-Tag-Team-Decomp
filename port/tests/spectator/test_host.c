@@ -12,6 +12,9 @@ void Port_SettingSave(const char *name,int value) {
 }
 void Port_SettingsWrite(void) { writes++; }
 void PortInput_Spectator(float *axes) { int i;input_reads++;for(i=0;i<7;i++)axes[i]=0;axes[0]=.5f; }
+static int recording;
+int Port_ReplayVideoStart(void) { return recording=1; }
+void Port_ReplayVideoStop(void) { recording=0; }
 #include "../../src/gs/spectator_camera.c"
 int main(void) {
     float eye[4]={0,-20,-100,1},rot[4]={0,0,0,1},targets[8]={-20,-10,0,10,20,-10,0,10};
@@ -40,5 +43,14 @@ int main(void) {
     PortSpectator_SetMode(0);assert(Port_Setting("spectator_camera",-1)==0);
     assert(!PortSpectator_Camera(eye,rot,targets,2,.517f,1.777f,result_eye,result_rot,&zoom));
     assert(writes>0);puts("PASS: R7 setting migration; persistent mode/target/speed/zoom; rollback skips all camera input/state; F1 input isolation; Start/Select passthrough; pause navigation; camera reset; battle cleanup.");
+    const Bt4DiosHud hud={{"First","Second"},{42,78}};
+    Bt4DiosHud read={0};
+    Port_DiosViewerBegin(&hud,1);
+    assert(Port_DiosViewerReadHud(&read)&&read.ping[1]==78&&!strcmp(read.names[0],"First"));
+    assert(!recording);
+    Port_DiosViewerStartVideo();
+    assert(recording);
+    Port_DiosViewerEnd();
+    assert(!recording&&!Port_DiosViewerReadHud(&read));
     return 0;
 }
