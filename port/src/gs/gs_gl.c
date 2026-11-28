@@ -13,6 +13,7 @@
  * The GL floor is 3.3 core.
  */
 #include <SDL3/SDL.h>
+#include "bt4_replay_video.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -1171,6 +1172,20 @@ static void frame_end(void) {
         free(wp);
     }
     Ui_DrawGL(); /* the overlay, over the presented picture */
+    if (Port_ReplayVideoDue()) {
+        int w, h;
+        if (SDL_GetWindowSizeInPixels(sWindow, &w, &h) && w > 1 && h > 1) {
+            uint8_t *pixels = malloc((size_t)w*h*4);
+            if (pixels) {
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+                glReadBuffer(GL_BACK);
+                glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+                Port_ReplayVideoFrame(pixels, w, h, w*4, 0, 1);
+                free(pixels);
+            }
+        }
+    }
     /* Same isolated UI capture hook as the SDL GPU backend, after mod HUDs. */
     {
         static int captured;

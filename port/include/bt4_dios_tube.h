@@ -4,11 +4,16 @@
 enum { BT4_DIOS_LIMIT = 10 };
 enum { BT4_DIOS_MAX_FRAMES = 9000, BT4_DIOS_INPUT_BYTES = 12 * BT4_DIOS_MAX_FRAMES };
 enum { BT4_DIOS_RANDOM_WORDS = 627 };
+typedef struct Bt4DiosHud {
+    char names[2][97];
+    int ping[2];
+} Bt4DiosHud;
 enum { BT4_DIOS_GIF_W = 160, BT4_DIOS_GIF_H = 90, BT4_DIOS_GIF_FPS = 30,
        BT4_DIOS_GIF_FRAMES = 10*BT4_DIOS_GIF_FPS, BT4_DIOS_GIF_WIRE = 3400000 };
 typedef struct Bt4DiosReplay {
     int stage, fighters[2][2], frames, trackFrames[2], time, hasRandom;
     unsigned random[BT4_DIOS_RANDOM_WORDS];
+    Bt4DiosHud hud;
     unsigned char inputs[BT4_DIOS_INPUT_BYTES];
 } Bt4DiosReplay;
 typedef struct Bt4DiosEntry {
@@ -30,7 +35,9 @@ void Port_DiosTubeFetch(const char *id);
 int Port_DiosTubeTake(Bt4DiosReplay *result);
 void Port_DiosTubeCancel(void);
 void Port_DiosTubeViewed(void);
-void Port_DiosViewerBegin(void);
+void Port_DiosViewerBegin(const Bt4DiosHud *hud, int exportVideo);
+void Port_DiosViewerStartVideo(void);
+int Port_DiosViewerReadHud(Bt4DiosHud *hud);
 int Port_DiosViewerActive(void);
 void Port_DiosViewerEnd(void);
 void Port_DiosViewerToggleCamera(void);

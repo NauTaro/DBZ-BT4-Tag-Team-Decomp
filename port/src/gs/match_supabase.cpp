@@ -78,6 +78,7 @@ struct Discovery {
     bool ranked=false,sawFight=false,reportPending=false;
     unsigned outcomeTick=0,reportSerial=0;int outcomeBits=0,reportState=0;
     int resultRating=0,resultDelta=0;
+    int replayPing=-1;
     Uint64 reportAt=0;Dj report,characters;
     unsigned rockCandidate=0,rockCandidateTick=0;
     bool rockSubmitted=false,quick=false,rockRoundEnded=false;
@@ -507,6 +508,7 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     d.quick=role==3&&!d.ranked;
     d.outcomeTick=d.reportSerial=0;d.outcomeBits=d.reportState=0;d.reportAt=0;d.report=Dj();d.characters=Dj();clipEpoch=0;
     d.resultRating=d.resultDelta=0;
+    d.replayPing=-1;
     char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.content=hash;d.wire="bt4-duel-"+std::to_string(protocol);
     if(d.ranked){
         d.wire+=":result2";
@@ -709,6 +711,7 @@ extern "C" int Port_RankedResult(int *rating,int *delta){
 }
 extern "C" const void *BattleReplay_RankedInputs(void);
 extern "C" int BattleReplay_RankedField(int);
+extern "C" void Port_NetHudLatency(int *);
 
 static Dj rankedReplayRecord(const std::string &id){
     const auto *data=static_cast<const unsigned char *>(BattleReplay_RankedInputs());
@@ -737,6 +740,7 @@ static Dj rankedReplayRecord(const std::string &id){
                                   Dj::array({BattleReplay_RankedField(3),BattleReplay_RankedField(4)})})},
             {"frames",frames},{"tracks",Dj::array({counts[0],counts[1]})},{"inputs",profileBase64(bytes.data(),bytes.size())},
             {"time",BattleReplay_RankedField(5)},{"random",profileBase64(snapshot,sizeof(snapshot))},
+            {"ping",d.replayPing},
             {"stats",{{"hits",stats[0]},{"zCounters",stats[1]},{"longestCombo",stats[2]}}}};
 }
 
@@ -761,6 +765,10 @@ extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsign
         return;
     }
     if(battleState==3){
+        int ping[2];
+        Port_NetHudLatency(ping);
+        const unsigned seat=number(d.descriptor,"self");
+        if(seat>=1&&seat<=2&&ping[seat-1]>=0&&ping[seat-1]<5000)d.replayPing=ping[seat-1];
         if(!d.sawFight){
             watchFight();
             if(diosTubeRecording())beginClip();
@@ -944,6 +952,21 @@ bool decodeDiosReplay(const Dj &body) {
         for(unsigned item=0;item<2;++item)diosReplay.fighters[side][item]=pair[item].get<int>();
     }
     diosReplay.stage=stage->get<int>();diosReplay.frames=frames->get<int>();
+    diosReplay.hud={};
+    diosReplay.hud.ping[0]=diosReplay.hud.ping[1]=-1;
+    for(int row=0;row<diosCatalog.count;++row){
+        const auto &entry=diosCatalog.entries[row];
+        if(diosFetchId!=entry.id)continue;
+        for(int side=0;side<2;++side)
+            SDL_strlcpy(diosReplay.hud.names[side],entry.players[side],sizeof(diosReplay.hud.names[side]));
+        break;
+    }
+    const auto pings=body.find("pings");
+    if(pings!=body.end()&&pings->is_array()&&pings->size()==2)
+        for(int side=0;side<2;++side){
+            const auto &ping=(*pings)[side];
+            if(ping.is_number_unsigned()&&ping.get<double>()<5000)diosReplay.hud.ping[side]=ping.get<int>();
+        }
     const auto tracks=body.find("tracks");
     for (unsigned side=0;side<2;++side) {
         diosReplay.trackFrames[side]=diosReplay.frames;

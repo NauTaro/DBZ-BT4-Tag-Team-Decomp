@@ -31,6 +31,10 @@ extern void HudSprite_Draw(HudSprite *spr, HudRes *res, s32 additive);
 
 /* Draws the pulsing sprite (not during a replay) and the top sprite. */
 void HudCaption_Draw(void) {
+#ifdef PORT
+    extern int Port_DiosViewerActive(void);
+    if (Port_DiosViewerActive()) return;
+#endif
     if (!BtlGame_IsReplay()) {
         HudSprite_Draw(&gHudCaption->sprites[2], gHudCaption->res, 0);
     }

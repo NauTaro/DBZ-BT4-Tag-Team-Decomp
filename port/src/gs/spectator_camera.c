@@ -1,6 +1,8 @@
 /* Host-only presentation state: not serialized, hashed or replayed by netcode. */
 #include "presentation.h"
 #include "spectator_camera.h"
+#include "bt4_dios_tube.h"
+#include "bt4_replay_video.h"
 #include <SDL3/SDL.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,9 +14,37 @@ static SpecCamera sCamera;
 static int sReset,sSeenReset,sCount=2,sInputActive,sLastZoom=100,sZoomHeld;
 static Uint64 sLastTick;
 static int sDiosViewer, sDiosFreeCamera, sDiosZoom;
-void Port_DiosViewerBegin(void) { sDiosViewer=1;sDiosFreeCamera=0;sDiosZoom=100; }
+static int sDiosExportVideo;
+static SDL_SpinLock sDiosHudLock;
+static Bt4DiosHud sDiosHud;
+void Port_DiosViewerBegin(const Bt4DiosHud *hud, int exportVideo) {
+    SDL_LockSpinlock(&sDiosHudLock);
+    sDiosHud=*hud;
+    sDiosViewer=1;
+    SDL_UnlockSpinlock(&sDiosHudLock);
+    sDiosFreeCamera=0;sDiosZoom=100;
+    sDiosExportVideo=exportVideo;
+}
+void Port_DiosViewerStartVideo(void) {
+    if(sDiosExportVideo)Port_ReplayVideoStart();
+    sDiosExportVideo=0;
+}
+int Port_DiosViewerReadHud(Bt4DiosHud *hud) {
+    SDL_LockSpinlock(&sDiosHudLock);
+    const int active=sDiosViewer;
+    if(active)*hud=sDiosHud;
+    SDL_UnlockSpinlock(&sDiosHudLock);
+    return active;
+}
 int Port_DiosViewerActive(void) { return sDiosViewer; }
-void Port_DiosViewerEnd(void) { sDiosViewer=sDiosFreeCamera=0;PortSpectator_EndBattle(); }
+void Port_DiosViewerEnd(void) {
+    Port_ReplayVideoStop();
+    SDL_LockSpinlock(&sDiosHudLock);
+    sDiosViewer=0;
+    SDL_UnlockSpinlock(&sDiosHudLock);
+    sDiosFreeCamera=0;
+    PortSpectator_EndBattle();
+}
 void Port_DiosViewerToggleCamera(void) { sDiosFreeCamera=!sDiosFreeCamera;__atomic_add_fetch(&sReset,1,__ATOMIC_RELAXED); }
 int PortSpectator_Mode(void) {
     if(sDiosViewer)return sDiosFreeCamera;
@@ -37,7 +67,7 @@ void PortSpectator_EndBattle(void) { sCamera.live=0;sLastTick=0;__atomic_store_n
 void PortSpectator_SetInputActive(int active) { __atomic_store_n(&sInputActive,active!=0,__ATOMIC_RELAXED); }
 int PortSpectator_ConsumesInput(void) { return __atomic_load_n(&sInputActive,__ATOMIC_RELAXED) && PortSpectator_Mode()!=0; }
 unsigned PortSpectator_FilterButtons(unsigned buttons) {
-    return PortSpectator_ConsumesInput()?buttons&(sDiosViewer?0x1009u:0x0009u):buttons;
+    return PortSpectator_ConsumesInput()?buttons&(sDiosViewer?0x21009u:0x0009u):buttons;
 }
 void PortSpectator_ResolveEye(const float *eye) { memcpy(sCamera.eye,eye,16); }
 int PortSpectator_Camera(const float *native_eye,const float *native_rot,const float *targets,int count,

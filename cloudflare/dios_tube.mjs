@@ -105,7 +105,7 @@ function savePreview(core,user,{id,gif}) {
 }
 
 function submitRecord(core,user,args) {
-    const {id,build,stage,fighters,frames,inputs,stats,random,time,tracks}=args;
+    const {id,build,stage,fighters,frames,inputs,stats,random,time,tracks,ping}=args;
     const bounded=(n,limit)=>Number.isInteger(n)&&n>=0&&n<=limit;
     if(typeof id!=='string'||id.length>63||typeof build!=='string'||!buildPattern.test(build)||
        !bounded(stage,34)||!Array.isArray(fighters)||fighters.length!==2||
@@ -114,19 +114,20 @@ function submitRecord(core,user,args) {
        !/^[A-Za-z0-9+/]+$/.test(inputs)||!stats||!bounded(stats.hits,1000)||
        !bounded(stats.zCounters,128)||!bounded(stats.longestCombo,100)||
        (tracks!==undefined&&(!Array.isArray(tracks)||tracks.length!==2||tracks.some(n=>!bounded(n,frames)||n<30)||Math.max(...tracks)!==frames))||
-       ((random!==undefined||time!==undefined)&&(!randomValid(random)||!bounded(time,7))))throw new Error('BAD_REPLAY_RECORD');
+       ((random!==undefined||time!==undefined)&&(!randomValid(random)||!bounded(time,7)))||
+       (ping!==undefined&&ping!==-1&&!bounded(ping,4999)))throw new Error('BAD_REPLAY_RECORD');
     const match=core.one(`SELECT a,b,winner,completed,void FROM ranked_matches WHERE id=?`,id);
     const {since,until}=diosTubeWindow(core.now());
     if(!match||![match.a,match.b].includes(user)||!match.winner||match.void||
        match.completed<since||match.completed>until||
        core.one('SELECT 1 FROM ranked_abandonments WHERE match_id=? AND confirmed IS NOT NULL',id))
         throw new Error('REPLAY_UNAVAILABLE');
-    const canonical=JSON.stringify({build,stage,fighters,frames,inputs,time,random,tracks,
+    const canonical=JSON.stringify({build,stage,fighters,frames,inputs,time,random,tracks,ping,
         stats:{hits:stats.hits,zCounters:stats.zCounters,longestCombo:stats.longestCombo}});
     core.run('INSERT OR IGNORE INTO dios_tube_records VALUES(?,?,?)',id,user,canonical);
     const records=core.rows('SELECT data FROM dios_tube_records WHERE match_id=?',id);
     if(records.length<2)return {state:'waiting'};
-    const [{stats:firstStats,...first},{stats:secondStats,...second}]=records.map(row=>JSON.parse(row.data));
+    const [{stats:firstStats,ping:firstPing,...first},{stats:secondStats,ping:secondPing,...second}]=records.map(row=>JSON.parse(row.data));
     if(JSON.stringify(first)!==JSON.stringify(second))return {state:'mismatch'};
     const history=core.rows('SELECT user_id,before_rating FROM ranked_history WHERE match_id=?',id);
     // Rollback can count an event twice in local telemetry. Use the lower observation.
@@ -180,10 +181,12 @@ export function diosTubeCommand(core,user,op,args) {
         return {id:args.id,gif};
     }
     if(op==='dios_tube_fetch'){
-        const row=core.one('SELECT data FROM dios_tube_records WHERE match_id=? LIMIT 1',args.id);
-        if(!row)throw new Error('REPLAY_UNAVAILABLE');
-        const {stats,...record}=JSON.parse(row.data);
-        return {id:args.id,...record};
+        const rows=core.rows(`SELECT r.data FROM dios_tube_records r JOIN ranked_matches m ON m.id=r.match_id
+            WHERE r.match_id=? ORDER BY CASE WHEN r.user_id=m.a THEN 0 ELSE 1 END`,args.id);
+        if(!rows.length)throw new Error('REPLAY_UNAVAILABLE');
+        const {stats,ping,...record}=JSON.parse(rows[0].data);
+        const pings=[ping,rows[1]&&JSON.parse(rows[1].data).ping].map(value=>Number.isInteger(value)&&value>=0?value:null);
+        return {id:args.id,...record,...(pings.some(value=>value!==null)?{pings}:{})};
     }
     if(op==='dios_tube_like'){
         if(typeof args.liked!=='boolean')throw new Error('BAD_REQUEST');

@@ -51,9 +51,9 @@ test('Dios Tube stores a replay only after the two ranked fighters submit matchi
         stats:{hits:32,zCounters:5,longestCombo:9}};
     assert.throws(()=>f.invoke(a,'dios_tube_submit',{...record,tracks:[29,32]}),/BAD_REPLAY_RECORD/);
     assert.throws(()=>f.invoke(c,'dios_tube_submit',record),/REPLAY_UNAVAILABLE/);
-    assert.equal(f.invoke(a,'dios_tube_submit',record).state,'waiting');
+    assert.equal(f.invoke(a,'dios_tube_submit',{...record,ping:42}).state,'waiting');
     assert.throws(()=>f.invoke(c,'dios_tube_fetch',{id}),/REPLAY_UNAVAILABLE/);
-    assert.equal(f.invoke(b,'dios_tube_submit',{...record,stats:{...record.stats,hits:36}}).state,'ready');
+    assert.equal(f.invoke(b,'dios_tube_submit',{...record,ping:78,stats:{...record.stats,hits:36}}).state,'ready');
     assert.equal(f.invoke(c,'dios_tube_list',{build:'0.1.39.6-R3.2'}).replays.length,0);
     assert.throws(()=>f.invoke(c,'dios_tube_fetch',{id,build:'0.1.39.6-R3.2'}),/REPLAY_UNAVAILABLE/);
     const first=f.invoke(c,'dios_tube_list').replays[0];
@@ -62,7 +62,7 @@ test('Dios Tube stores a replay only after the two ranked fighters submit matchi
     assert.equal(Object.hasOwn(first,'a'),false);
     assert.equal(Object.hasOwn(first,'b'),false);
     const {stats,...publicRecord}=record;
-    assert.deepEqual(f.invoke(c,'dios_tube_fetch',{id}),publicRecord);
+    assert.deepEqual(f.invoke(c,'dios_tube_fetch',{id}),{...publicRecord,pings:[42,78]});
 });
 test('card customizations follow the account and expose cosmetics without payment data',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo');
@@ -206,11 +206,14 @@ test('optional full-color avatar detail stays inside the wire limit and is negot
     assert.equal(f.invoke(user,'profile_media_get',{id,hd:true}).detail,undefined);
     assert.deepEqual(f.invoke(user,'profile_media_get',{id}).frames,frames);
     oversized.writeUInt32BE(768,16);oversized.writeUInt32BE(768,20);
-    const hdDetail=oversized.toString('base64');
+    const hdDetail=Buffer.concat([oversized,Buffer.alloc(95000-oversized.length)]).toString('base64');
     const hdUser=f.user('FullColorHD');
     const hdId=f.invoke(hdUser,'profile_media_save',{...avatar,detail:hdDetail}).media.avatar;
     assert.equal(f.invoke(hdUser,'profile_media_get',{id:hdId,detail:true}).detail,undefined);
     assert.equal(f.invoke(hdUser,'profile_media_get',{id:hdId,detail:2}).detail,hdDetail);
+    assert.throws(()=>f.invoke(hdUser,'profile_media_save',{
+        ...avatar,detail:Buffer.concat([oversized,Buffer.alloc(96001-oversized.length)]).toString('base64')
+    }),/BAD_PROFILE_MEDIA/);
 });
 
 test('the shared avatar slot switches between GIF and static images and removal clears both',()=>{

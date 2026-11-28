@@ -3,6 +3,7 @@ extern int TagBattle_Active(void);
 #include "common.h"
 #ifdef PORT
 #include "bt4_dios_tube.h"
+#include "bt4_replay_video.h"
 #endif
 #ifdef PORT
 #include "battle/bt4_balance.h"
@@ -1396,7 +1397,12 @@ s32 BtlSeqFight_Enter(BtlSeqWaitCtx *ctx) {
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_DIOS_CAPTURE_TEST"))Port_DiosCaptureTestBegin();
     if(Port_DiosViewerActive()){
         extern void Port_UiNotice(const char *);
-        Port_UiNotice("Start para pausar | Select para c\xC3\xA1mara libre | Tri\xC3\xA1ngulo para volver");
+        extern void Hud_SetReplayMode(s32);
+        Hud_SetReplayMode(1);
+        Port_DiosViewerStartVideo();
+        Port_UiNotice(Port_ReplayVideoAvailable()
+            ?"Start: pausa | Select: c\xC3\xA1mara libre | R2/RT: grabar MP4 | Tri\xC3\xA1ngulo: volver"
+            :"Start: pausa | Select: c\xC3\xA1mara libre | Tri\xC3\xA1ngulo: volver");
     }
 #endif
     if (Battle_GetMode() == 8) {
@@ -1420,6 +1426,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
             ++ticks;
             if(ticks==12)pressed=PADG_START;
             if(ticks==14)frozen=BtlSeq_GetClock()->ticks;
+            if(ticks==72){extern void Port_TagUiCapture(int);Port_TagUiCapture(1);}
             if(ticks==16)pressed=PADG_SELECT;
             if(ticks==30){
                 if(!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE)||BtlSeq_GetClock()->ticks!=frozen)exit(6);
@@ -1433,6 +1440,10 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
             }
         }
         if(pressed&PADG_SELECT)Port_DiosViewerToggleCamera();
+        if(pressed&PADG_R2){
+            if(Port_ReplayVideoActive())Port_ReplayVideoStop();
+            else Port_ReplayVideoStart();
+        }
         if(pressed&PADG_START){
             Battle_GetWork()->flags^=BATTLE_FLAG_PAUSE;
             if(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE)Adx_PauseSeVoice();
@@ -1440,6 +1451,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
             Snd_SetPause(4,(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE)!=0);
         }
         if(pressed&PADG_TRIANGLE){
+            Port_ReplayVideoStop();
             Battle_GetWork()->flags&=~BATTLE_FLAG_PAUSE;
             Adx_ResumeSeVoice();
             Snd_SetPause(4,0);

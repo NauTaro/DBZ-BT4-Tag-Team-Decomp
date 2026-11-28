@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <SDL3/SDL.h>
+#include "bt4_replay_video.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -197,13 +198,17 @@ void screenshot(int best){
 void window_shot(){
     static bool done;
     const char *at=getenv("BT4_DX9_WINDOWSHOT");
-    if(done||!getenv("BT4_RENDER_TEST")||!at||gPortVBlanks<(unsigned)atoi(at))return;
-    done=true;IDirect3DSurface9 *read=nullptr;int w=present.BackBufferWidth,h=present.BackBufferHeight;
+    const bool shot=!done&&getenv("BT4_RENDER_TEST")&&at&&gPortVBlanks>=(unsigned)atoi(at);
+    const bool video=Port_ReplayVideoDue();
+    if(!shot&&!video)return;
+    if(shot)done=true;
+    IDirect3DSurface9 *read=nullptr;int w=present.BackBufferWidth,h=present.BackBufferHeight;
     if(!DX(dev->CreateOffscreenPlainSurface(w,h,D3DFMT_A8R8G8B8,D3DPOOL_SYSTEMMEM,&read,nullptr)))return;
     if(!DX(dev->GetRenderTargetData(back,read))){drop(read);return;}D3DLOCKED_RECT lock={};
     if(!DX(read->LockRect(&lock,nullptr,D3DLOCK_READONLY))){drop(read);return;}
     char path[128];std::snprintf(path,sizeof(path),"port/build/shots/window_%05u.ppm",gGsFrame);
-    if(FILE *f=std::fopen(path,"wb")){
+    if(video)Port_ReplayVideoFrame(lock.pBits,w,h,lock.Pitch,1,0);
+    if(shot)if(FILE *f=std::fopen(path,"wb")){
         std::fprintf(f,"P6\n%d %d\n255\n",w,h);
         for(int y=0;y<h;y++)for(int x=0;x<w;x++){
             const unsigned char *p=(const unsigned char *)lock.pBits+y*lock.Pitch+x*4;unsigned char rgb[]={p[2],p[1],p[0]};std::fwrite(rgb,1,3,f);

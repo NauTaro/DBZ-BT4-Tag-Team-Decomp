@@ -223,6 +223,10 @@ void HudNotice_Show(s32 id) {
 
 /* Shows or hides the replay mark (sprite 15, texture 8, top centre). */
 void HudNotice_ShowReplayMark(s32 on) {
+#ifdef PORT
+    extern int Port_DiosViewerActive(void);
+    if (Port_DiosViewerActive()) on = 0;
+#endif
     HudSprite_Show(&gHudNotice->spr[HUD_NOTICE_SPR_REPLAY], on);
 }
 

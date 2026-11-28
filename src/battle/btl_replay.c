@@ -74,6 +74,10 @@ void BtlReplay_Play(BtlReplayChr *chr, u32 *buttons, u8 *stick) {
 
 /* Clears the replay viewer state. */
 void BtlReplay_ResetViewer(void) {
+#ifdef PORT
+    extern int Port_DiosViewerActive(void);
+    if (Port_DiosViewerActive()) gBtlReplayHudMode = 1;
+#endif
     if (gBtlChars != NULL) {
         *(u64 *)&gBtlChars->viewer = 0;
     }

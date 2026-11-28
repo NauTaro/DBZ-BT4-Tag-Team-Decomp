@@ -344,6 +344,7 @@ extern const char *Port_TagPlayerName(int seat), *Port_TagCode(void), *Port_TagE
 #define TB_ROOM_MENU 25
 #define TB_DIOS_TUBE 26
 #include "bt4_dios_tube.h"
+#include "bt4_replay_video.h"
 
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
@@ -537,6 +538,7 @@ static s32 sDiosTubeRow;
 static u32 sDiosTubeLikes;
 static Bt4DiosCatalog sDiosTubeCatalog;
 static s32 sDiosTubeFetching;
+static s32 sDiosTubeExport;
 
 static void Tb_DiosTubeMove(s32 count) {
     const u32 pressed=gPad[0].gamePressed;
@@ -5907,6 +5909,7 @@ static void Tb_DrawDiosTube(void) {
         if(sTb->frames>290)sDiosTubeLikes|=1u<<5;
     }
     if (sample) Ps_Text(334,70,"Demostraci\xC3\xB3n",.59f,150,2);
+    else if (Port_ReplayVideoAvailable()) Ps_Text(332,70,"R2 / RT  Guardar MP4",.59f,150,2);
     const s32 first=sDiosTubeRow<5?0:5;
     s32 playableClip[BT4_DIOS_LIMIT]={0};
     if(!sample&&!sTb->leaving)for(s32 i=0;i<BT4_DIOS_LIMIT;++i)
@@ -6530,11 +6533,11 @@ s32 PortTbo_Run(void) {
                                 Bt4DiosReplay *replay=Heap_Alloc(sizeof(*replay),0x40,0,2);
                                 if(replay){
                                     const s32 loaded=Port_DiosTubeTake(replay)==2&&Bt4_DiosTubePrepareReplay(replay);
+                                    if(loaded)Port_DiosViewerBegin(&replay->hud,sDiosTubeExport);
                                     Heap_Free(replay);
                                     if(loaded){
                                         if(diosSmoke)fprintf(stderr,"Dios Tube smoke: remote replay prepared and viewer launch requested\n");
                                         Port_DiosTubeViewed();
-                                        Port_DiosViewerBegin();
                                         sTb->train=PORT_TBO_DIOS_REPLAY;
                                         sTb->leaving=1;
                                         ColorFade_StartOut(0,0,0,20);
@@ -6560,12 +6563,15 @@ s32 PortTbo_Run(void) {
                             ++diosSmokeFrames;
                             if(diosSmokeFrames==30&&sDiosTubeCatalog.count>1&&(!getenv("BT4_DIOS_EXPECT_GIF")||getenv("BT4_DIOS_ALL_GIFS"))&&!getenv("BT4_DIOS_CAPTURE_TEST"))
                                 gPad[0].gameRepeat|=PADG_RIGHT;
-                            if(diosSmokeFrames==(getenv("BT4_DIOS_ALL_GIFS")?810:160))gPad[0].gamePressed|=PADG_CROSS;
+                            if(diosSmokeFrames==(getenv("BT4_DIOS_ALL_GIFS")?810:160))
+                                gPad[0].gamePressed|=getenv("BT4_DIOS_MP4_TEST")?PADG_R2:PADG_CROSS;
                         }
                         if(!sDiosTubeFetching)Tb_DiosTubeMove(sDiosTubeCatalog.count);
                         const Bt4DiosEntry *entry=&sDiosTubeCatalog.entries[sDiosTubeRow];
                         if(gPad[0].gamePressed & PADG_SQUARE) Port_DiosTubeLike(entry->id,!entry->liked);
-                        if(!sDiosTubeFetching&&(gPad[0].gamePressed & PADG_CROSS)){
+                        s32 exportPressed=Port_ReplayVideoAvailable()&&(gPad[0].gamePressed&PADG_R2);
+                        if(!sDiosTubeFetching&&((gPad[0].gamePressed&PADG_CROSS)||exportPressed)){
+                            sDiosTubeExport=exportPressed;
                             Port_DiosTubeFetch(entry->id);
                             sDiosTubeFetching=1;
                         }

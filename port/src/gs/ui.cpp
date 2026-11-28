@@ -29,6 +29,8 @@ extern "C" void GsDx9_StripTextureFree(void *);
 #include "ui.h"
 #include "../../../include/battle/emotes.h"
 #include "profile_cards.h"
+#include "bt4_dios_tube.h"
+#include "bt4_replay_video.h"
 #include "../../../include/hud_placement.h"
 #include <algorithm>
 #include "tag_hud.h"
@@ -3903,6 +3905,13 @@ static bool frame_build(void) {
     update_tick();
     char updLine[256];
     update_line(updLine, sizeof(updLine)); // (the update's line over the main menu and the online screens)
+    static int lastVideoStatus;
+    const int videoStatus = Port_ReplayVideoStatus();
+    if (videoStatus != lastVideoStatus) {
+        if (videoStatus == 3) set_notice("MP4 guardado en la carpeta replays", 5000);
+        if (videoStatus == -1) set_notice("No se pudo guardar el MP4", 5000);
+        lastVideoStatus = videoStatus;
+    }
     bool notice = sNotice[0] != '\0' && SDL_GetTicks() < sNoticeUntil;
     if (sNoticeNew) { // (set from the game's side: the time starts when it is first drawn)
         sNoticeNew = 0;
@@ -3923,8 +3932,11 @@ static bool frame_build(void) {
     if(PortPanels_Read(&fightHud))lastFightHud=fightHud;
     const bool onlineHudVisible=!gPortMenuMode&&lastFightHud.gauges;
     const bool combatPreview=getenv("BT4_RENDER_TEST")&&getenv("BT4_PROFILE_COMBAT_PREVIEW");
+    Bt4DiosHud replayHud={};
+    const bool replayCards=Port_DiosViewerReadHud(&replayHud)!=0;
     bool names = sReady && showCards && onlineHudVisible &&
-                 (combatPreview || (Port_NetActive()&&(Port_NetName(0)[0]!='\0'||Port_NetName(1)[0]!='\0')));
+                 (combatPreview || (replayCards&&(replayHud.names[0][0]||replayHud.names[1][0])) ||
+                  (Port_NetActive()&&(Port_NetName(0)[0]!='\0'||Port_NetName(1)[0]!='\0')));
     TagHudState tagCards={};
     const bool showTagCard=sReady&&showCards&&onlineHudVisible&&!names&&Port_TagNetwork()&&!PortHud_Hidden()&&
         PortPanels_TagRead(&tagCards)&&tagCards.count>0;
@@ -4062,17 +4074,19 @@ static bool frame_build(void) {
     if (names && gUiPresentW > 0 && gUiPresentH > 0) {
         // Under each side's health bar (the game's 512 x 448 page: the bars end at about y 50). The left place is
         // side 0's, or this player's own side when the HUD's sides are swapped.
-        int type,dp,timeLimit;
-        Port_NetRules(&type,&dp,&timeLimit);
+        int type=0,dp,timeLimit;
+        if(!replayCards)Port_NetRules(&type,&dp,&timeLimit);
         const float narrow=Port_IsWide()?1333.333f/(float)Port_AspectMilli():1.0f;
         const int swap=Port_HudSwap();
         int ping[2];
         if(combatPreview){ping[0]=36;ping[1]=82;}
+        else if(replayCards){ping[0]=replayHud.ping[0];ping[1]=replayHud.ping[1];}
         else Port_NetHudLatency(ping);
         profile_duel_cards_draw(gUiPresentX,gUiPresentY,gUiPresentW,gUiPresentH,narrow,Port_HudLayout()==2,
                                 type!=0,Port_ModernHudActive()!=0,
-                                combatPreview?"NauTaro":Port_NetName(swap),
-                                combatPreview?"Astra":Port_NetName(swap^1),ping[swap],ping[swap^1],showCardPing,combatPreview);
+                                combatPreview?"NauTaro":replayCards?replayHud.names[swap]:Port_NetName(swap),
+                                combatPreview?"Astra":replayCards?replayHud.names[swap^1]:Port_NetName(swap^1),
+                                ping[swap],ping[swap^1],showCardPing,combatPreview);
     }
     if (showTagCard&&gUiPresentW>0&&gUiPresentH>0) {
         const float sx=gUiPresentW/512.0f,sy=gUiPresentH/448.0f;
@@ -4120,7 +4134,8 @@ static bool frame_build(void) {
         }
         ImGui::End();
     }
-    if (notice) online_message_draw(sNotice,0.12f,false);
+    if (notice && !(replayCards && Port_ReplayVideoActive()))
+        online_message_draw(sNotice,replayCards?0.83f:0.12f,false);
     if (overlay && gUiPresentW > 0 && gUiPresentH > 0) {
         /* Each name's rectangle is in the game's 512x448 pixels: map it through the picture's rectangle in the
            window (the letterbox gs_gpu.c just blitted into). */

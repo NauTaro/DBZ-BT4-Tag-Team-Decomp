@@ -1,3 +1,22 @@
+# BT4decomp 0.1.39.6 R3 1.5
+
+- Save Dios Tube replays as MP4 on Windows. Press R2 or RT from the catalogue to start recording at the beginning of a fight.
+- Dios Tube replays show both players’ names and their recorded ping when available.
+- Restored saving and displaying high-resolution profile photos.
+
+<!-- bt4-update:en
+- Save Dios Tube replays as MP4 on Windows with R2 or RT.
+- Restored high-resolution profile photo uploads.
+-->
+<!-- bt4-update:es
+- Guarda repeticiones de Dios Tube en MP4 con R2 o RT en Windows.
+- Se corrigió la subida de fotos de perfil en alta resolución.
+-->
+<!-- bt4-update:pt
+- Salve replays do Dios Tube em MP4 com R2 ou RT no Windows.
+- Corrigido o envio de fotos de perfil em alta resolução.
+-->
+
 # BT4decomp 0.1.39.6 R3 1.4
 
 - Goku (End) keeps his chosen outfit and its battle damage through transformations. Fixed texture corruption when reloading larger models.

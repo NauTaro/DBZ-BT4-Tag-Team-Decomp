@@ -19,6 +19,7 @@
  * runs (replay validation) must not depend on a sound device.
  */
 #include <SDL3/SDL.h>
+#include "bt4_replay_video.h"
 #include "../../include/plat_songs.h"
 
 int Port_RosterRoll(int count) {
@@ -257,11 +258,12 @@ extern void PortPcm_Close(void *);
 
 /* Internal recording fixture: only this game's SDL mixer, never desktop audio. */
 static void SDLCALL bt4_record_audio(void *unused,const SDL_AudioSpec *spec,float *buffer,int bytes){
+    Port_ReplayVideoAudio(buffer,bytes,spec->freq,spec->channels);
+    if(!unused)return;
     static FILE *file;static int opened;extern unsigned gPortVBlanks;
     if(!opened){opened=1;file=fopen(getenv("BT4_TAG_AUDIO_FILE"),"wb");
         fprintf(stderr,"tag audio capture: first-ms=%llu blank=%u rate=%d channels=%d format=f32\n",(unsigned long long)SDL_GetTicks(),gPortVBlanks,spec->freq,spec->channels);}
     if(file){fwrite(buffer,1,bytes,file);fflush(file);}
-    (void)unused;
 }
 SDL_AudioDeviceID Port_AudioPeekDevice(void){return sDevice;}
 static int device(void) {
@@ -275,7 +277,8 @@ static int device(void) {
                 fprintf(stderr, "bt3: no sound device: %s\n", SDL_GetError());
             }
             else {
-                if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_AUDIO_FILE"))SDL_SetAudioPostmixCallback(sDevice,bt4_record_audio,NULL);
+                SDL_SetAudioPostmixCallback(sDevice,bt4_record_audio,
+                    getenv("BT4_RENDER_TEST") ? getenv("BT4_TAG_AUDIO_FILE") : NULL);
                 SDL_ResumeAudioDevice(sDevice);
                 fprintf(stderr, "bt3: sound: %s\n", SDL_GetCurrentAudioDriver());
             }

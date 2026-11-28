@@ -17,6 +17,7 @@
  */
 #include <pthread.h>
 #include <SDL3/SDL.h>
+#include "bt4_replay_video.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -2024,7 +2025,9 @@ static void vk_frame_end(void) {
                     file=tagShotFile;frame=1;gPortTagUiCaptureRequest=0;
                 }
             }
-            if (frame > 0 && gGsFrame >= (unsigned)frame) {
+            const int video = Port_ReplayVideoDue();
+            const int shot = frame > 0 && gGsFrame >= (unsigned)frame;
+            if ((video || shot) && sw && sh) {
                 SDL_GPUTextureCreateInfo ci;
                 SDL_GPUTransferBufferCreateInfo ti;
                 SDL_GPUTransferBuffer *tb;
@@ -2040,7 +2043,7 @@ static void vk_frame_end(void) {
                 FILE *fp;
                 Uint32 x, y;
 
-                frame = 0;
+                if (shot) frame = 0;
                 SDL_zero(ci);
                 ci.type = SDL_GPU_TEXTURETYPE_2D;
                 ci.format = fmt;
@@ -2050,7 +2053,9 @@ static void vk_frame_end(void) {
                 ci.layer_count_or_depth = 1;
                 ci.num_levels = 1;
                 tex = SDL_CreateGPUTexture(sDev, &ci);
+                if (!tex) goto replay_capture_done;
                 c2 = SDL_AcquireGPUCommandBuffer(sDev);
+                if (!c2) { SDL_ReleaseGPUTexture(sDev, tex); goto replay_capture_done; }
                 bl.destination.texture = tex;
                 SDL_BlitGPUTexture(c2, &bl);
                 Ui_DrawAgain(c2, tex);
@@ -2058,6 +2063,7 @@ static void vk_frame_end(void) {
                 ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
                 ti.size = sw * sh * 4;
                 tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
+                if (!tb) { SDL_CancelGPUCommandBuffer(c2); SDL_ReleaseGPUTexture(sDev, tex); goto replay_capture_done; }
                 SDL_zero(src);
                 src.texture = tex;
                 src.w = sw;
@@ -2069,10 +2075,12 @@ static void vk_frame_end(void) {
                 SDL_DownloadFromGPUTexture(cp, &src, &dst);
                 SDL_EndGPUCopyPass(cp);
                 fence = SDL_SubmitGPUCommandBufferAndAcquireFence(c2);
+                if (!fence) { SDL_ReleaseGPUTransferBuffer(sDev, tb); SDL_ReleaseGPUTexture(sDev, tex); goto replay_capture_done; }
                 SDL_WaitForGPUFences(sDev, true, &fence, 1);
                 SDL_ReleaseGPUFence(sDev, fence);
                 px = SDL_MapGPUTransferBuffer(sDev, tb, false);
-                fp = fopen(file, "wb");
+                if (video && px) Port_ReplayVideoFrame(px, sw, sh, sw*4, bgr, 0);
+                fp = shot ? fopen(file, "wb") : NULL;
                 if (fp != NULL && px != NULL) {
                     fprintf(fp, "P6\n%u %u\n255\n", sw, sh);
                     for (y = 0; y < sh; y++) {
@@ -2084,10 +2092,11 @@ static void vk_frame_end(void) {
                     }
                     fclose(fp);
                 }
-                SDL_UnmapGPUTransferBuffer(sDev, tb);
+                if (px) SDL_UnmapGPUTransferBuffer(sDev, tb);
                 SDL_ReleaseGPUTransferBuffer(sDev, tb);
                 SDL_ReleaseGPUTexture(sDev, tex);
             }
+replay_capture_done:;
         }
     }
     sEndT[4] = gpu_now();

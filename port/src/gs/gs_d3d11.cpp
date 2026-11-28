@@ -8,6 +8,7 @@
 #include <d3d11_1.h>
 #include <dxgi1_5.h>
 #include <SDL3/SDL.h>
+#include "bt4_replay_video.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -295,10 +296,15 @@ void screenshot(int best){
 }
 void window_shot(){
     static bool done;const char *request=getenv("BT3_UI_SHOT"),*path=request?strchr(request,':'):nullptr;
-    if(done||!path||atoi(request)<=0||gGsFrame<(unsigned)atoi(request))return;
-    done=true;Texture view;view.image=backImage;std::vector<uint8_t> pixels((size_t)swapW*swapH*4);
+    const bool shot=!done&&path&&atoi(request)>0&&gGsFrame>=(unsigned)atoi(request);
+    const bool video=Port_ReplayVideoDue();
+    if(!shot&&!video)return;
+    if(shot)done=true;
+    Texture view;view.image=backImage;std::vector<uint8_t> pixels((size_t)swapW*swapH*4);
     bool ok=read_texture(&view,pixels.data(),swapW,swapH,false);view.image=nullptr;
-    if(!ok)return;if(FILE *f=std::fopen(path+1,"wb")){std::fprintf(f,"P6\n%d %d\n255\n",swapW,swapH);
+    if(!ok)return;
+    if(video)Port_ReplayVideoFrame(pixels.data(),swapW,swapH,swapW*4,0,0);
+    if(shot)if(FILE *f=std::fopen(path+1,"wb")){std::fprintf(f,"P6\n%d %d\n255\n",swapW,swapH);
         for(int i=0;i<swapW*swapH;i++)std::fwrite(pixels.data()+i*4,1,3,f);std::fclose(f);}
 }
 bool swap_resize(int w,int h){
