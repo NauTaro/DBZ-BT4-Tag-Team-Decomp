@@ -8,6 +8,8 @@
 #define BT4_GOKU_COSTUME_FILE_COUNT 92
 #define BT4_GOKU_OUTFIT_COUNT 6
 #define BT4_GOKU_COSTUME_PATH "tbo/goku-costumes/"
+/* Wardrobe assets can exceed the original 0xE7000-byte model buffers. */
+#define BT4_WARDROBE_MODEL_CAPACITY 0x100000
 
 int Port_GokuCostumesReady(void);
 void Port_GokuCostumePath(const char *relative, char *path, unsigned capacity);

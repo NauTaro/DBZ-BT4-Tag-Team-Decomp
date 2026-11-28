@@ -1,4 +1,5 @@
 import {ONLINE_SCHEMA} from './online_schema.mjs';
+import {DIOS_TUBE_SCHEMA,diosTubeCommand,diosTubeRecordLimit,diosTubePreviewLimit,pruneDiosTubePreviews} from './dios_tube.mjs';
 import {activateExistingDonors,getProfileMedia,ownProfileCard,profileAnimationRequestLimit,profileCard,saveProfileMedia} from './online_profile_cards.mjs';
 import {migrateCharacters,characterSelection,saveRankedCharacters,mirrorRanked,reportOnlineMatch} from './online_characters.mjs';
 import {advanceRankedMonth,rankedCollection,rankedMonthAt,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
@@ -23,7 +24,7 @@ export function seasonAt(now){
 export class OnlineCore {
     constructor(sql,now=()=>Date.now(),uuid=()=>crypto.randomUUID()){
         this.sql=sql;this.now=now;this.uuid=uuid;this.events=[];
-        sql.exec('PRAGMA foreign_keys=ON');sql.exec(ONLINE_SCHEMA);migrateCharacters(sql);
+        sql.exec('PRAGMA foreign_keys=ON');sql.exec(ONLINE_SCHEMA);sql.exec(DIOS_TUBE_SCHEMA);migrateCharacters(sql);
         activateExistingDonors(this);
     }
     rows(q,...args){return [...this.sql.exec(q,...args)];}
@@ -89,6 +90,7 @@ export class OnlineCore {
     prune(){
         advanceRankedMonth(this);
         const now=this.now();for(const r of this.rows('SELECT id FROM online_rooms WHERE expires<=?',now))this.close(r.id);
+        pruneDiosTubePreviews(this,now);
         this.run('DELETE FROM ranked_disconnect_claims WHERE last_seen<?',now-300000);
         for(const [table,column] of [['online_queue','expires'],['online_signals','expires'],['online_presence','expires'],['online_sessions','expires']])this.run(`DELETE FROM ${table} WHERE ${column}<=?`,now);
         // Profiles, registered names, match results and rating history are never pruned.
@@ -317,8 +319,11 @@ export class OnlineCore {
     command(user,op,a={}){
         this.events=[];
         if(!UUID.test(user)||!this.one('SELECT id FROM online_users WHERE id=?',user))error('AUTH_REQUIRED');
-        const limit=op==='profile_media_save'&&a?.animation!==undefined?profileAnimationRequestLimit:18000;
+        const limit=op==='dios_tube_preview_save'?diosTubePreviewLimit+128:op==='dios_tube_submit'?diosTubeRecordLimit:op!=='profile_media_save'?18000
+            : a?.animation!==undefined?profileAnimationRequestLimit
+            : a?.kind==='avatar'&&typeof a?.detail==='string'?148000:18000;
         if(!a||typeof a!=='object'||Array.isArray(a)||bytes(JSON.stringify(a))>limit)error('BAD_REQUEST');
+        if(['dios_tube_list','dios_tube_like','dios_tube_view','dios_tube_submit','dios_tube_fetch','dios_tube_preview_get','dios_tube_preview_save'].includes(op))return diosTubeCommand(this,user,op,a);
         if(op==='profile_card_get')return ownProfileCard(this,user);
         if(op==='profile_media_get')return getProfileMedia(this,user,a);
         if(op==='profile_card_save'||op==='profile_media_save'){

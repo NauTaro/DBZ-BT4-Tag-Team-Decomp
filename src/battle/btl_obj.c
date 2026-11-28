@@ -26,6 +26,9 @@ extern int TagBattle_Active(void);
 #include "battle/tag_team_native.h"
 u8 *gTagCharaWork[10];
 #include "port_variant.h"
+#ifdef BT4_TAG_TEAM_EXPANDED
+#include "bt4_goku_costumes.h"
+#endif
 extern s32 Bt4_ModelFile(s32, s32, s32);
 #include "battle/btl_obj.h"
 #include "battle/battle.h"
@@ -1257,17 +1260,21 @@ void BtlRes_Init(s32 prealloc) {
     BtlResSlot *slot;
     BtlResFile *spare;
     s32 i;
+    s32 modelCapacity = BTL_RES_MODEL_SIZE;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (gPortVariant != 0) modelCapacity = BT4_WARDROBE_MODEL_CAPACITY;
+#endif
 
     BtlRes_TagDiscardReload();
     memset(res, 0, sizeof(BtlResWork));
     res->prealloc = prealloc;
     if (prealloc != 0) {
         for (i = 0; i < 3; i++) {
-            res->spare[i].buf = Heap_Alloc(BTL_RES_MODEL_SIZE, 0x40, 0, HEAP_ANY);
+            res->spare[i].buf = Heap_Alloc(modelCapacity, 0x40, 0, HEAP_ANY);
             res->spare[i].size = 0;
             res->spare[i].id = -1;
             res->spare[i].orig = res->spare[i].buf;
-            memset(res->spare[i].buf, 0, BTL_RES_MODEL_SIZE);
+            memset(res->spare[i].buf, 0, modelCapacity);
         }
         for (i = 0; i < BTL_RES_FIXED_MAX; i++) {
             slot = &res->fixed[i];

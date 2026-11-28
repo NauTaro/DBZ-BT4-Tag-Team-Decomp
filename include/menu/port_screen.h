@@ -7,6 +7,7 @@
  */
 #define MPROG_MODE_PORT_SCREEN 80 /* (the game's modes end at 70) */
 #define PORT_TBO_NATIVE_TRAINING 5
+#define PORT_TBO_DIOS_REPLAY 6
 #define PORT_TBO_OPEN_TAG 4 /* open the dedicated Tag Team menu from the online hub */
 
 enum {

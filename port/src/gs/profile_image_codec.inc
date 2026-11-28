@@ -168,7 +168,7 @@ static void profileImageDimensions(const std::string &kind,int &w,int &h){
     h=kind=="avatar"?80:kind=="banner_motion"?16:32;
 }
 
-static constexpr size_t profileAvatarWireBytes=11200;
+static constexpr size_t profileAvatarWireBytes=96000;
 
 static void profileCrop(const ProfileImageSource &source,unsigned char *output,int w,int h,int channels,
                         float px,float py,float zoom,int frame=0,int stride=0){
@@ -266,7 +266,7 @@ static int profileFrameDuration(const ProfileImageSource &source,int from,int un
 static std::string profileAvatarDetail(const ProfileImageSource &source,float px,float py,float zoom){
     const int crop=std::max(1,int(std::min(source.width,source.height)/zoom));
     int previous=0;
-    for(int limit:{BT4_PROFILE_AVATAR_MAX,256,192,128}){
+    for(int limit:{BT4_PROFILE_AVATAR_MAX,640,512,320,192,128}){
         const int side=std::min(crop,limit);
         if(side==previous)continue;
         previous=side;

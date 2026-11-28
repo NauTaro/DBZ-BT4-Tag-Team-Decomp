@@ -1184,6 +1184,56 @@ static void hud_geometry_audit(void) {
     for(k=0;k<2;++k)if(count[k])fprintf(log,"%u,%llu,%u,%u,%u,%.5f,%.5f,%.5f,%.5f,%016llx\n",present,(unsigned long long)gDrawStartNs,gGsFrame,k,count[k],box[k][0],box[k][1],box[k][2],box[k][3],(unsigned long long)signature[k]);
 }
 
+#include "../../include/bt4_dios_tube.h"
+
+static void dios_capture_gpu(int target){
+    static SDL_GPUTexture *small;
+    static SDL_GPUTransferBuffer *transfer;
+    static SDL_GPUFence *ready;
+    static Uint64 last;
+    static unsigned pendingEpoch;
+    if(ready){
+        if(!SDL_QueryGPUFence(sDev,ready))return;
+        SDL_ReleaseGPUFence(sDev,ready);ready=NULL;
+        const unsigned char *pixels=SDL_MapGPUTransferBuffer(sDev,transfer,false);
+        if(pixels){
+            Port_DiosCaptureFrame(pendingEpoch,pixels);
+            SDL_UnmapGPUTransferBuffer(sDev,transfer);
+        }
+    }
+    const unsigned epoch=Port_DiosCaptureEpoch();
+    const Uint64 now=SDL_GetTicks();
+    if(!epoch||target<0||!sTgCol[target]||now-last<1000/BT4_DIOS_GIF_FPS)return;
+    last=now;
+    if(!small){
+        SDL_GPUTextureCreateInfo info={0};
+        info.type=SDL_GPU_TEXTURETYPE_2D;info.format=SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        info.usage=SDL_GPU_TEXTUREUSAGE_COLOR_TARGET|SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        info.width=BT4_DIOS_GIF_W;info.height=BT4_DIOS_GIF_H;info.layer_count_or_depth=1;info.num_levels=1;
+        small=SDL_CreateGPUTexture(sDev,&info);
+    }
+    if(!transfer){
+        SDL_GPUTransferBufferCreateInfo info={0};
+        info.usage=SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;info.size=BT4_DIOS_GIF_W*BT4_DIOS_GIF_H*4;
+        transfer=SDL_CreateGPUTransferBuffer(sDev,&info);
+    }
+    if(!small||!transfer)return;
+    SDL_GPUCommandBuffer *cmd=SDL_AcquireGPUCommandBuffer(sDev);
+    if(!cmd)return;
+    SDL_GPUBlitInfo blit={0};
+    blit.source.texture=sTgCol[target];blit.source.w=512*SCALE;blit.source.h=448*SCALE;
+    blit.destination.texture=small;blit.destination.w=BT4_DIOS_GIF_W;blit.destination.h=BT4_DIOS_GIF_H;
+    blit.load_op=SDL_GPU_LOADOP_DONT_CARE;blit.filter=SDL_GPU_FILTER_LINEAR;
+    SDL_BlitGPUTexture(cmd,&blit);
+    SDL_GPUCopyPass *copy=SDL_BeginGPUCopyPass(cmd);
+    if(!copy){SDL_CancelGPUCommandBuffer(cmd);return;}
+    SDL_GPUTextureRegion source={0};source.texture=small;source.w=BT4_DIOS_GIF_W;source.h=BT4_DIOS_GIF_H;source.d=1;
+    SDL_GPUTextureTransferInfo dest={0};dest.transfer_buffer=transfer;
+    SDL_DownloadFromGPUTexture(copy,&source,&dest);
+    SDL_EndGPUCopyPass(copy);
+    pendingEpoch=epoch;ready=SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+}
+
 static void vk_frame_end(void) {
     hud_geometry_audit();
     fx_frame();
@@ -2241,6 +2291,7 @@ static void vk_frame_end(void) {
         }
 capture_done: ;
     }
+    if(!gPortResim)dios_capture_gpu(best);
     for (i = 0; i < gsTargetCount; i++) {
         gsTargets[i].draws = 0;
     }

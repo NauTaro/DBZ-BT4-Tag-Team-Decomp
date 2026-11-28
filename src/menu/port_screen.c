@@ -759,7 +759,7 @@ s32 PortScreen_Main(void) {
             if (result == 2 && TeamSel_TagRun(2)) { result=3; break; }
         } while (result == 2 || result == PORT_TBO_OPEN_TAG);
         Adx_StopAll();
-        if(result==3){gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;}
+        if(result==3||result==PORT_TBO_DIOS_REPLAY){gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;result=3;}
         else if(result==PORT_TBO_NATIVE_TRAINING){gProgress->mode=44;result=0;}
         else gProgress->mode = result ? 45 : 4; /* training, or back to the main menu */
         break;

@@ -76,6 +76,7 @@ static const char *const kRankedText[][3]={
 {"Pending","Pendiente","Pendente"},
 {"No Champion","Sin campe\xf3n","Sem campe\xe3o"},
 {"Ready Confirmed","Listo confirmado","Pronto confirmado"},
+{"Confirm Ready for your next match.","Marca Listo para tu pr\xf3ximo combate.","Marque Pronto para sua pr\xf3xima luta."},
 {"Confirm Ready within %d s","Confirma que est\xe1s listo en %d s","Confirme que est\xe1 pronto em %d s"},
 {"QUALIFIED","CLASIFICADO","CLASSIFICADO"},
 {"QUALIFIER","CLASIFICACIÓN","CLASSIFICAÇÃO"},

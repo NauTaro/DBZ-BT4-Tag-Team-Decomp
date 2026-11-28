@@ -700,9 +700,10 @@ s32 Battle_Load(void) {
     s32 actor;
     TagBattle_Prepare();
 #ifdef PORT
-    extern int Port_NetActive(void), Port_NetSpectating(void);
+    extern int Port_NetActive(void), Port_NetSpectating(void), Port_DiosViewerActive(void);
     sOnlineBalance = Battle_GetMode() == BTL_MODE_TRAINING || Port_NetActive() ||
-                     Port_NetSpectating() || TagBattle_Network();
+                     Port_NetSpectating() || TagBattle_Network() || Port_DiosViewerActive();
+    { extern void BattleReplay_DiosRandomAtLoad(void); BattleReplay_DiosRandomAtLoad(); }
 #endif
     BtlObj_Init(1);
     Gsc_InitDefault(gBtlScriptCommands);

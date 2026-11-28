@@ -19,6 +19,51 @@ function fixture(){
     return {c,db,user,invoke,tick:n=>now+=n,ids};
 }
 const profile={mode:'duel',wire:'test-v1',content:'abcd',rules:'S'};
+test('Dios Tube exposes the active top ten and deduplicates reactions',()=>{
+    const f=fixture(),a=f.user('DiosAlpha'),b=f.user('DiosBravo');
+    for(let i=0;i<11;++i){
+        const now=f.c.now(),id='replay-'+i;
+        f.c.run('INSERT INTO ranked_matches(id,season,a,b,admitted,seen_a,seen_b,completed,winner) VALUES(?,?,?,?,?,?,?,?,?)',
+            id,'test',a,b,now-10000,now,now,now,a);
+        f.c.run('INSERT INTO dios_tube_replays VALUES(?,?)',id,i);
+    }
+    const catalog=f.invoke(a,'dios_tube_list').replays;
+    assert.deepEqual(catalog.map(x=>x.id),Array.from({length:10},(_,i)=>'replay-'+(10-i)));
+    assert.equal(Object.hasOwn(catalog[0],'score'),false);
+    const id=catalog[0].id;
+    f.invoke(a,'dios_tube_like',{id,liked:true});
+    f.invoke(a,'dios_tube_like',{id,liked:true});
+    f.invoke(a,'dios_tube_view',{id});
+    f.invoke(a,'dios_tube_view',{id});
+    assert.deepEqual({...f.invoke(b,'dios_tube_view',{id})},{likes:1,views:2,liked:0});
+    assert.equal(f.invoke(a,'dios_tube_like',{id,liked:false}).likes,0);
+    assert.throws(()=>f.invoke(a,'dios_tube_view',{id:'replay-0'}),/REPLAY_UNAVAILABLE/);
+    f.tick(86400001);
+    assert.deepEqual(f.invoke(a,'dios_tube_list').replays,[]);
+});
+test('Dios Tube stores a replay only after the two ranked fighters submit matching inputs',()=>{
+    const f=fixture(),a=f.user('ReplayLeft'),b=f.user('ReplayRight'),c=f.user('ReplayOther');
+    const now=f.c.now(),id='agreed-replay';
+    f.c.run('INSERT INTO ranked_matches(id,season,a,b,admitted,seen_a,seen_b,completed,winner) VALUES(?,?,?,?,?,?,?,?,?)',
+        id,'test',a,b,now-10000,now,now,now,a);
+    const record={id,build:'0.1.39.6-R3.4',stage:4,fighters:[[86,0],[31,1]],frames:32,tracks:[30,32],time:4,
+        random:Buffer.alloc(627*4).toString('base64'),inputs:Buffer.alloc(32*12).toString('base64'),
+        stats:{hits:32,zCounters:5,longestCombo:9}};
+    assert.throws(()=>f.invoke(a,'dios_tube_submit',{...record,tracks:[29,32]}),/BAD_REPLAY_RECORD/);
+    assert.throws(()=>f.invoke(c,'dios_tube_submit',record),/REPLAY_UNAVAILABLE/);
+    assert.equal(f.invoke(a,'dios_tube_submit',record).state,'waiting');
+    assert.throws(()=>f.invoke(c,'dios_tube_fetch',{id}),/REPLAY_UNAVAILABLE/);
+    assert.equal(f.invoke(b,'dios_tube_submit',{...record,stats:{...record.stats,hits:36}}).state,'ready');
+    assert.equal(f.invoke(c,'dios_tube_list',{build:'0.1.39.6-R3.2'}).replays.length,0);
+    assert.throws(()=>f.invoke(c,'dios_tube_fetch',{id,build:'0.1.39.6-R3.2'}),/REPLAY_UNAVAILABLE/);
+    const first=f.invoke(c,'dios_tube_list').replays[0];
+    assert.equal(first.id,id);
+    assert.deepEqual([first.player_a,first.player_b],['ReplayLeft','ReplayRight']);
+    assert.equal(Object.hasOwn(first,'a'),false);
+    assert.equal(Object.hasOwn(first,'b'),false);
+    const {stats,...publicRecord}=record;
+    assert.deepEqual(f.invoke(c,'dios_tube_fetch',{id}),publicRecord);
+});
 test('card customizations follow the account and expose cosmetics without payment data',()=>{
     const f=fixture(),a=f.user('Alpha'),b=f.user('Bravo');
     assert.throws(()=>f.invoke(a,'profile_card_save',{card:{premium_until:99999}}),/BAD_PROFILE_CARD/);
@@ -153,13 +198,19 @@ test('optional full-color avatar detail stays inside the wire limit and is negot
     const frames=[Buffer.alloc(2048).toString('base64')];
     const original='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     const oversized=Buffer.from(original,'base64');
-    oversized.writeUInt32BE(321,16);oversized.writeUInt32BE(321,20);
+    oversized.writeUInt32BE(769,16);oversized.writeUInt32BE(769,20);
     const avatar={kind:'avatar',frames,delays:[100]};
     assert.throws(()=>f.invoke(user,'profile_media_save',{...avatar,detail:oversized.toString('base64')}),/BAD_PROFILE_MEDIA/);
     const id=f.invoke(user,'profile_media_save',{...avatar,detail:original}).media.avatar;
     assert.equal(f.invoke(user,'profile_media_get',{id,detail:true}).detail,original);
     assert.equal(f.invoke(user,'profile_media_get',{id,hd:true}).detail,undefined);
     assert.deepEqual(f.invoke(user,'profile_media_get',{id}).frames,frames);
+    oversized.writeUInt32BE(768,16);oversized.writeUInt32BE(768,20);
+    const hdDetail=oversized.toString('base64');
+    const hdUser=f.user('FullColorHD');
+    const hdId=f.invoke(hdUser,'profile_media_save',{...avatar,detail:hdDetail}).media.avatar;
+    assert.equal(f.invoke(hdUser,'profile_media_get',{id:hdId,detail:true}).detail,undefined);
+    assert.equal(f.invoke(hdUser,'profile_media_get',{id:hdId,detail:2}).detail,hdDetail);
 });
 
 test('the shared avatar slot switches between GIF and static images and removal clears both',()=>{

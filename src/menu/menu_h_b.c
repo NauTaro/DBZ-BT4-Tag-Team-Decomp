@@ -195,7 +195,7 @@ s32 CharRef_Run(s32 section) {
             if (++probe == 90) {
                 s32 chara = atoi(getenv("BT4_CHARREF_MODEL_TEST"));
                 s32 costume = getenv("BT4_CHARREF_COSTUME_TEST") ? atoi(getenv("BT4_CHARREF_COSTUME_TEST")) : 0;
-                ChrView_Show(chara, costume, 0);
+                ChrView_Show(chara, costume, getenv("BT4_CHARREF_DAMAGE_TEST") != NULL);
                 gCharRef->state = CHARREF_ST_VIEW_WAIT;
             }
             if (ChrView_IsVisible()) {

@@ -2,6 +2,9 @@ extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int)
 extern int TagBattle_Active(void);
 #include "common.h"
 #ifdef PORT
+#include "bt4_dios_tube.h"
+#endif
+#ifdef PORT
 #include "battle/bt4_balance.h"
 #endif
 #include "battle/btl_seq.h"
@@ -1388,6 +1391,14 @@ s32 BtlSeq_CheckBattleEnd(void) {
 s32 BtlSeqFight_Enter(BtlSeqWaitCtx *ctx) {
     Battle_GetWork()->flags &= ~BATTLE_FLAG_DEMO;
     Battle_GetWork()->flags &= ~BATTLE_FLAG_READY;
+#ifdef PORT
+    extern void Port_DiosCaptureTestBegin(void);
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_DIOS_CAPTURE_TEST"))Port_DiosCaptureTestBegin();
+    if(Port_DiosViewerActive()){
+        extern void Port_UiNotice(const char *);
+        Port_UiNotice("Start para pausar | Select para c\xC3\xA1mara libre | Tri\xC3\xA1ngulo para volver");
+    }
+#endif
     if (Battle_GetMode() == 8) {
         Hud_ShowAll(1);
     }
@@ -1402,6 +1413,41 @@ s32 BtlSeqFight_PreUpdate(BtlSeqWaitCtx *ctx) {
 /* State 3 update: opens / runs the pause menu, then checks for the end of the battle (-> 4, or 6 without a finish scene). */
 s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
 #ifdef PORT
+    if(Port_DiosViewerActive()){
+        u32 pressed=gPad[0].gamePressed;
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_DIOS_TUBE_CONTROL_TEST")){
+            static s32 ticks,frozen;
+            ++ticks;
+            if(ticks==12)pressed=PADG_START;
+            if(ticks==14)frozen=BtlSeq_GetClock()->ticks;
+            if(ticks==16)pressed=PADG_SELECT;
+            if(ticks==30){
+                if(!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE)||BtlSeq_GetClock()->ticks!=frozen)exit(6);
+                fprintf(stderr,"Dios Tube test: pause held the clock\n");
+                pressed=PADG_START;
+            }
+            if(ticks==80){
+                if(BtlSeq_GetClock()->ticks==frozen)exit(7);
+                fprintf(stderr,"Dios Tube test: playback resumed\n");
+                pressed=PADG_TRIANGLE;
+            }
+        }
+        if(pressed&PADG_SELECT)Port_DiosViewerToggleCamera();
+        if(pressed&PADG_START){
+            Battle_GetWork()->flags^=BATTLE_FLAG_PAUSE;
+            if(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE)Adx_PauseSeVoice();
+            else Adx_ResumeSeVoice();
+            Snd_SetPause(4,(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE)!=0);
+        }
+        if(pressed&PADG_TRIANGLE){
+            Battle_GetWork()->flags&=~BATTLE_FLAG_PAUSE;
+            Adx_ResumeSeVoice();
+            Snd_SetPause(4,0);
+            BattleResult_Set(BTL_RESULT_ABORT,0);
+            return 6;
+        }
+        return BtlSeq_CheckBattleEnd()?4:3;
+    }
     if(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_MENU_TEST")) {
         static s32 step;
         extern s32 PortHud_Hidden(void);
@@ -1548,10 +1594,11 @@ s32 BtlSeqReady_Exit(BtlSeqWaitCtx *ctx) {
 void BtlSeq_SetResultPad(void) {
 #ifdef PORT
     {
-        extern int Port_NetActive(void), Port_RankedActive(void);
-        if (Port_NetActive() && Port_RankedActive() && BattleResult_HasWinner()) {
-            /* Online has one physical pad per machine, but two shared pad slots. */
-            BtlPause_SetPad(BattleResult_GetWinnerSide());
+        extern int Port_NetActive(void), Port_RankedActive(void), Port_NetMe(void), Port_NetSpectating(void);
+        if (Port_NetActive() && Port_RankedActive() && !Port_NetSpectating()) {
+            /* Both Ranked result choices are local. The confirmed result
+               has already been sent before the menu opens. */
+            BtlPause_SetPad(Port_NetMe());
             return;
         }
     }
@@ -1575,7 +1622,11 @@ s32 BtlSeqEnd_Enter(BtlSeqWaitCtx *ctx) {
         extern void TagBattle_ResultBegin(void);
         TagBattle_ResultBegin();ctx->step=2;return 1;
     }
-    if (BattleResult_IsAborted()) {
+    if (BattleResult_IsAborted()
+#ifdef PORT
+        || Port_DiosViewerActive()
+#endif
+    ) {
         Fade_Start(0, 0, 1.0f);
         Ramp_Start(&ctx->timer, 1.2f, 0.0f, 1.0f);
         ctx->step = 1;

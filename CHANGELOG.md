@@ -1,3 +1,26 @@
+# BT4decomp 0.1.39.6 R3 1.4
+
+- Goku (End) keeps his chosen outfit and its battle damage through transformations. Fixed texture corruption when reloading larger models.
+- Tournament fighters can confirm Ready from the lobby or bracket. Fixed bracket synchronization in tournaments with more than eight entrants.
+- Ranked match cards can display each player's wins and losses when the server provides their record.
+- Celebrate Me's audio is louder in battle.
+- Dios Tube features up to ten Ranked duels from the last 24 hours. Browse looping highlights or watch the full fight with pause and free camera. The catalogue resets on Sundays at 23:59 Argentina time.
+
+<!-- bt4-update:en
+- Fixed damaged outfits for Goku (End) and Ready prompts in large tournaments.
+- Updated Ranked match cards and increased the Celebrate Me emote volume.
+- Watch Ranked highlights and full replays in Tenkaichi Budokai Online → Dios Tube.
+-->
+<!-- bt4-update:es
+- Corregidos los trajes dañados de Goku (Fin) y el botón Listo en torneos grandes.
+- Actualizadas las tarjetas de Clasificatorias y aumentado el volumen de Celebrate Me.
+- Mira las repeticiones completas en Tenkaichi Budokai Online → Dios Tube.
+-->
+<!-- bt4-update:pt
+- Corrigidos os trajes danificados de Goku (Fim) e o botão Pronto em torneios grandes.
+- Atualizados os cartões das ranqueadas e aumentado o volume do Celebrate Me.
+-->
+
 # BT4decomp 0.1.39.6 R3 1.3
 
 - Fixed a crash when opening Tenkaichi Budokai Online if the game could not allocate memory to load fighter names.

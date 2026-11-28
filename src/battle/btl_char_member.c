@@ -3,6 +3,9 @@
 #include "battle/bt4_private_balance.h"
 #include "battle/btl_char_member.h"
 #ifdef PORT
+#include "bt4_dios_tube.h"
+#endif
+#ifdef PORT
 #include "battle/tag_health_rule.h"
 #include <stdio.h>
 #endif
@@ -500,6 +503,9 @@ s32 BtlMember_Damage(BtlMemberChr *chr, s32 amount, s32 flags) {
             }
         } else {
             combo->hits++;
+#ifdef PORT
+            BattleReplay_RankedHit(combo->hits);
+#endif
             if (combo->hits == 1) {
                 combo->damage = amount;
             } else {

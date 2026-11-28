@@ -6,18 +6,27 @@
 #ifndef BT4_CLOUDFLARE_HOST
 #define BT4_CLOUDFLARE_HOST "bt4-online-v5.mellamannau22.workers.dev"
 #endif
-static constexpr const char *cloudHost=BT4_CLOUDFLARE_HOST;
-static constexpr const char *cloudUrl="https://" BT4_CLOUDFLARE_HOST;
+static bool cloudPreview(){
+#ifdef BT4_DEVELOPMENT_BUILD
+    const char *v=SDL_getenv("BT4_DIOS_TUBE_STAGING");
+    return v&&strcmp(v,"1")==0;
+#else
+    return false;
+#endif
+}
+#define BT4_DIOS_PREVIEW_HOST "bt4-online-diostube-preview.mellamannau22.workers.dev"
+static const char *const cloudHost=cloudPreview()?BT4_DIOS_PREVIEW_HOST:BT4_CLOUDFLARE_HOST;
+static const char *const cloudUrl=cloudPreview()?"https://" BT4_DIOS_PREVIEW_HOST:"https://" BT4_CLOUDFLARE_HOST;
 static bool cloudBackend(){const char *v=SDL_getenv("BT4_ONLINE_BACKEND");return !v||strcmp(v,"supabase");}
-static bool cloudStoreSession(const Sj &reply){
-    auto &i=identities[2];auto u=reply.find("user");
+static bool cloudStoreSession(const Sj &reply,Identity &i=identities[2]){
+    auto u=reply.find("user");
     auto access=str(reply,"access_token"),refresh=str(reply,"refresh_token");
     if(u==reply.end()||!u->is_object()||str(*u,"id").size()!=36||access.empty()||access.size()>8192||refresh.empty()||refresh.size()>1024)return false;
     i.access=std::move(access);i.refresh=std::move(refresh);i.user=str(*u,"id");i.renewAt=SDL_GetTicks()+840000;saveIdentityFor(i);return true;
 }
 static bool cloudAuthenticate(){
     auto &i=identities[2];if(!i.access.empty()&&SDL_GetTicks()<i.renewAt)return true;
-    if(!identitySlotFor(i,"cloudflare-v5"))return false;
+    if(!identitySlotFor(i,cloudPreview()?"cloudflare-v5-diostube-preview":"cloudflare-v5"))return false;
     Sj answer;
     const bool recovering=!i.refresh.empty();
     if(recovering){
@@ -28,6 +37,7 @@ static bool cloudAuthenticate(){
         if(lastHttpStatus!=401||!answer.is_object()||str(answer,"error")!="AUTH_REQUIRED")return false;
         i.access.clear();i.renewAt=0;
     }
+    if(cloudPreview())return http("/v5/auth/start",Sj::object(),false,answer,false,cloudHost)&&cloudStoreSession(answer);
     const int previous=activeProject;
     bool found=false,success=false;
     for(int project:{1,0}){
@@ -160,25 +170,31 @@ static int cloudEntry(void*){
         // A proxy may permit HTTPS but reject WebSocket upgrades. Retained
         // descriptors/signals make that fallback usable without lost offers.
         bool httpFallback=!ready&&identityReady&&!identities[2].access.empty()&&(forceHttp||now<httpOnlyUntil||now>=authAt+3000);
-        if((ready||httpFallback)&&pending.size()<24){std::lock_guard<std::mutex> guard(state.lock);
-            auto it=std::find_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.notBefore<=now;});
+        if(pending.size()<24){std::lock_guard<std::mutex> guard(state.lock);
+            auto it=std::find_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.notBefore<=now&&(ready||httpFallback);});
             if(it!=state.jobs.end()){job=std::move(*it);state.jobs.erase(it);have=true;}}
         if(have){
-            if(!current(job)&&job.op!="leave"&&job.op!="cancel"&&job.op!="ranked_report"&&job.op!="match_report")continue;
+            if(!current(job)&&job.op!="leave"&&job.op!="cancel"&&job.op!="ranked_report"&&job.op!="match_report"&&
+               job.op!="dios_tube_submit"&&job.op!="dios_tube_preview_save")continue;
             if(job.expires&&now>=job.expires){complete(job,Sj{{"error","TIMEOUT"}});continue;}
             if(bt4route::admission(job.op)&&Update_OnlineRequired()){complete(job,Sj{{"error","UPDATE_REQUIRED"}});continue;}
             if(bt4route::admission(job.op))job.args["_client"]={{"version",BT4_CANONICAL_VERSION},{"capability",2}};
             const bool profileTransfer=job.op=="profile_card_save"||job.op=="profile_media_save"||job.op=="profile_media_get";
-            if(httpFallback||profileTransfer){
-                const char *path=job.op=="profile_media_save"&&job.args.contains("animation")?"/v5/profile/media":"/v5/api";
+            const bool replayTransfer=job.op=="dios_tube_submit"||job.op=="dios_tube_fetch";
+            const bool clipTransfer=job.op=="dios_tube_preview_save"||job.op=="dios_tube_preview_get";
+            if(httpFallback||profileTransfer||replayTransfer||clipTransfer){
+                const char *path=clipTransfer?"/v5/dios-tube/preview":replayTransfer?"/v5/dios-tube/replay":
+                    job.op=="profile_media_save"&&(job.args.contains("animation")||job.args.contains("detail"))?"/v5/profile/media":"/v5/api";
                 Sj body;identityReady=cloudAuthenticate();bool ok=identityReady&&http(path,{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
                 if(!ok&&lastHttpStatus==401&&body.is_object()&&str(body,"error")=="AUTH_REQUIRED"){
                     identities[2].access.clear();identities[2].renewAt=0;
                     identityReady=cloudAuthenticate();ok=identityReady&&http(path,{{"op",job.op},{"args",job.args}},true,body,false,cloudHost,&identities[2].access);
                 }
                 if(!ok&&!body.is_object())body={{"error","SIGNALING_UNAVAILABLE"}};
+                if(diagnostics&&job.op.rfind("dios_tube_",0)==0)
+                    fprintf(stderr,"bt4: replay HTTPS operation=%s status=%ld success=%d\n",job.op.c_str(),lastHttpStatus,ok);
                 complete(job,body);
-                if(!profileTransfer)state.status=ok?1:-1;
+                if(!profileTransfer&&!replayTransfer&&!clipTransfer)state.status=ok?1:-1;
             }else{
             socket->text(Sj{{"op",job.op},{"args",job.args},{"serial",job.serial},{"consumer",job.consumer}}.dump());
             if(diagnostics)fprintf(stderr,"bt4: Cloudflare command=%s consumer=%d serial=%u\n",job.op.c_str(),job.consumer,job.serial);

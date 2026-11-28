@@ -342,6 +342,9 @@ extern const char *Port_TagPlayerName(int seat), *Port_TagCode(void), *Port_TagE
 #define TB_OPEN_ROOMS 23
 #define TB_ROOM_PRIVACY 24
 #define TB_ROOM_MENU 25
+#define TB_DIOS_TUBE 26
+#include "bt4_dios_tube.h"
+
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
@@ -354,7 +357,8 @@ extern const char *Port_TagPlayerName(int seat), *Port_TagCode(void), *Port_TagE
 #define HUB_TOURNAMENT 5
 #define HUB_PROFILE 6
 #define HUB_TRAINING 7
-#define HUB_COUNT 8
+#define HUB_DIOS_TUBE 8
+#define HUB_COUNT 9
 
 /* Create Room's rows */
 #define CR_METHOD 0
@@ -480,6 +484,8 @@ typedef struct TboScreen {
     s32 lbHostT;        /* frames since they began to go */
     s32 lbSeenState;    /* the lobby's state last frame (reached: the page's windows come in then) */
     u32 lbTourSeen;     /* the lobby's tournaments so far, as this page last saw (a new one: its bracket is shown) */
+    u32 lbReadyGen;
+    s32 lbReadyRound;
     s32 lbTournamentRequest;
     s32 brCur;          /* the bracket page's button under the cursor */
     s32 brPage;         /* -1 follows the match in focus */
@@ -514,9 +520,9 @@ static char *Tb_Fmt(char *format) {
     return Port_TrLine(format, buf[k], 160) ? buf[k] : format;
 }
 
-static char *sTbHubName[HUB_COUNT]={"Quick Match","Ranked","Create Match","Public Rooms","Tag Team","Tournament","Profile","Training"};
-static const s32 sTbHubReady[HUB_COUNT]={1,1,1,1,1,1,1,1};
-static char *sTbHubSay[HUB_COUNT]={
+static char *sTbHubName[]={"Quick Match","Ranked","Create Match","Public Rooms","Tag Team","Tournament","Profile","Training","Dios Tube"};
+static const s32 sTbHubReady[]={1,1,1,1,1,1,1,1,1};
+static char *sTbHubSay[]={
     "Search for an opponent in a public queue.",
     "View your competitive season, rating and the global leaderboard.",
     "Open a lobby, choose the rules and invite players or spectators.",
@@ -524,8 +530,27 @@ static char *sTbHubSay[HUB_COUNT]={
     "Build two teams for simultaneous battles with players and CPU fighters.",
     "Create an online tournament for up to 32 players. Follow the bracket and watch the matches.",
     "Set the name other players see.",
-    "Practice against the CPU and learn Tag Team mechanics."
+    "Practice against the CPU and learn Tag Team mechanics.",
+    "Consulta las mejores peleas de las ultimas 24 horas."
 };
+static s32 sDiosTubeRow;
+static u32 sDiosTubeLikes;
+static Bt4DiosCatalog sDiosTubeCatalog;
+static s32 sDiosTubeFetching;
+
+static void Tb_DiosTubeMove(s32 count) {
+    const u32 pressed=gPad[0].gamePressed;
+    const u32 repeat=gPad[0].gameRepeat;
+    const s32 old=sDiosTubeRow, page=old/5, slot=old%5;
+    if(pressed&(PADG_L1|PADG_R1))sDiosTubeRow=page?slot:5+slot;
+    else if(repeat&(PADG_RIGHT|PADG_RIGHT2))sDiosTubeRow=(old+1)%count;
+    else if(repeat&(PADG_LEFT|PADG_LEFT2))sDiosTubeRow=(old+count-1)%count;
+    else if(repeat&(PADG_UP|PADG_UP2|PADG_DOWN|PADG_DOWN2))
+        sDiosTubeRow=page*5+(slot<3?(slot==0?3:4):slot-2);
+    if(sDiosTubeRow>=count)sDiosTubeRow=pressed&(PADG_L1|PADG_R1)&&count<=5?old:count-1;
+    if(sDiosTubeRow!=old)Snd_PlaySe(1,0);
+}
+extern s32 Bt4_DiosTubePrepareReplay(const Bt4DiosReplay *source);
 static void Tb_LobbyOpen(void);
 static void Tb_LobbyCreate(s32 byCode,s32 listed);
 static void Tb_JoinTry(void);
@@ -2028,6 +2053,14 @@ static void Tb_HubUpdate(s32 live) {
             Snd_PlaySe(1, 1);
             sTb->prCur = 0;
             Tb_SetMode(TB_PROFILE);
+            break;
+        case HUB_DIOS_TUBE:
+            sDiosTubeRow=0;
+            sDiosTubeFetching=0;
+            Tb_SetMode(TB_DIOS_TUBE);
+            if(!getenv("BT4_RENDER_TEST"))
+                Port_DiosTubeCatalog(&sDiosTubeCatalog,1);
+            Snd_PlaySe(1,1);
             break;
         default:
             Snd_PlaySe(1, 2);
@@ -3762,12 +3795,14 @@ static void Tb_LobbyKeepRules(void) {
 /* The buttons on the right, by place (0 top left, 1 top right, 2 bottom left, 3 bottom right): LB_ACT_, 0 none. The
    owner has Start, Ready and Chat, and Bracket beside Chat while a tournament has one; a member Ready and Chat, and
    Bracket across the bottom row. */
+static s32 Tb_BrReadyBit(void);
 static s32 Tb_LobbyAct(s32 k) {
     static const s32 own[4] = {LB_ACT_START, LB_ACT_READY, LB_ACT_CHAT, LB_ACT_BRACKET};
     static const s32 member[4] = {LB_ACT_READY, LB_ACT_CHAT, LB_ACT_BRACKET, 0}; /* (leaving: triangle, with its yes / no) */
-    static const s32 ownTour[4] = {LB_ACT_START, LB_ACT_CHAT, LB_ACT_BRACKET, 0}; /* (Tournament: no Ready, the places say who plays) */
+    static const s32 ownTour[4] = {LB_ACT_START, LB_ACT_CHAT, LB_ACT_BRACKET, 0};
     static const s32 memberTour[4] = {LB_ACT_CHAT, LB_ACT_BRACKET, 0, 0};
     s32 act = sTbLv.mode ? (sTbLv.owner ? ownTour[k & 3] : memberTour[k & 3]) : sTbLv.owner ? own[k & 3] : member[k & 3];
+    if(sTbLv.mode&&k==(sTbLv.owner?3:2)&&Tb_BrReadyBit())return LB_ACT_READY;
 
     return act == LB_ACT_BRACKET && sTbLv.tour == 0 ? 0 : act;
 }
@@ -3787,6 +3822,7 @@ static char *Tb_LobbyActName(s32 act) {
     case LB_ACT_BRACKET:
         return "Bracket";
     case LB_ACT_READY:
+        if(v->mode)return v->tourReadySides&Tb_BrReadyBit()?"Ready Confirmed":"Ready";
         return v->me >= 0 && v->ready[v->me] ? "Not Ready" : "Ready";
     case LB_ACT_CHAT:
         return "Chat";
@@ -3840,9 +3876,9 @@ static void Tb_LobbyAction(s32 act) {
         Tb_LobbyStart();
         break;
     case LB_ACT_READY:
-        if (v->me >= 0) {
+        if (v->mode ? Tb_BrReadyBit()!=0 : v->me >= 0) {
             Snd_PlaySe(1, 1);
-            Port_LobbyDo(LOBBY_READY, v->ready[v->me] ? 0 : 1, 0);
+            Port_LobbyDo(LOBBY_READY, v->mode||!v->ready[v->me], 0);
         }
         break;
     case LB_ACT_CHAT:
@@ -4141,6 +4177,11 @@ static void Tb_LobbyUpdate(s32 live) {
             Tb_LobbyPopUpdate();
         }
         return;
+    }
+    if(Tb_BrReadyBit()&&!(v->tourReadySides&Tb_BrReadyBit())&&
+       (sTb->lbReadyGen!=v->tourGen||sTb->lbReadyRound!=v->tourCur)){
+        sTb->lbReadyGen=v->tourGen;sTb->lbReadyRound=v->tourCur;
+        sTb->lbCol=1;sTb->lbRight=LB_BTN+(v->owner?3:2);
     }
     if (sTb->lbPicked >= 0) {
         Ps_Prompt(0, "Move Here");
@@ -4938,7 +4979,7 @@ static s32 Tb_BrChoosing(void) {
 static s32 Tb_BrReadyBit(void) {
     PortLobbyView *v = &sTbLv;
     s32 m = v->tourCur;
-    if (m < 0 || v->phase || v->tourMe < 0 || v->tourReadySeconds == 0)
+    if (v->tour!=1 || m < 0 || m>=v->tourSize-1 || v->phase || v->tourMe < 0 || v->tourChoose>=0)
         return 0;
     return v->tourA[m] == v->tourMe ? 1 : v->tourB[m] == v->tourMe ? 2 : 0;
 }
@@ -5324,6 +5365,18 @@ static char *Tb_Help(void) {
         return sTbHubSay[sTb->hubCur];
     case TB_TRAINING:
         return sPracticeHelp[sPracticeRow];
+    case TB_DIOS_TUBE: {
+        if(sDiosTubeRow>=0&&sDiosTubeRow<sDiosTubeCatalog.count){
+            static char caption[TB_BOX_LINE];
+            const Bt4DiosEntry *fight=&sDiosTubeCatalog.entries[sDiosTubeRow];
+            snprintf(caption,sizeof(caption),"\xC2\xA1" "Disfrut\xC3\xA1 del combate de %s contra %s!",
+                     fight->players[0][0]?fight->players[0]:"Jugador 1",
+                     fight->players[1][0]?fight->players[1]:"Jugador 2");
+            return caption;
+        }
+        return "Mira los combates destacados de las ultimas 24 horas. "
+               "La cartelera se renueva el domingo a las 23:59 (hora argentina).";
+    }
     case TB_TUTORIAL:
         return sTutorialHelp[sTutorialRow];
     case TB_ROOM_MENU:
@@ -5439,6 +5492,14 @@ static char *Tb_Help(void) {
             return "Type a line for everyone in the lobby, then Done! Start sends it too.";
         }
         if (sTbLv.mode) {
+            if(Tb_BrReadyBit()&&!(sTbLv.tourReadySides&Tb_BrReadyBit())){
+                static char timer[96];
+                if(sTbLv.tourReadySeconds>0){
+                    snprintf(timer,sizeof(timer),Tb_Fmt("Confirm Ready within %d s"),sTbLv.tourReadySeconds);
+                    return timer;
+                }
+                return "Confirm Ready for your next match.";
+            }
             if (sTbLv.tour != 0) return "Open the bracket to see who's up next. Spectator slots can watch the match.";
             if (!sTbLv.owner) return "Players in numbered slots enter the draw. The other slots are for spectators.";
             return sTbLv.code[0] ? "Share the room code. Players in numbered slots enter the draw."
@@ -5454,7 +5515,7 @@ static char *Tb_Help(void) {
 }
 
 /* Each page's title (by TB_ mode), as its heading shows it and the screen reader says it. */
-static char *sTbTitle[] = {"Tenkaichi Budokai Online","New Lobby","Join","Searching","Profile","Profile","Quick Match","Train While Waiting","Tenkaichi Budokai Online","Tag Team","Tag Team Room","Lobby","Join by Address","Tournament","Ranked","Tag Team Settings", [TB_TAG_HEALTH] = "Fighter settings", [TB_TAG_RECOVERY] = "Recovery settings", [TB_TAG_FUSION] = "Cooperative fusion", [TB_TAG_BATTLE_RULES] = "Battle rules", [TB_TAG_SHARED] = "Tag Team Settings", [TB_TRAINING] = "Training", [TB_TUTORIAL] = "Tag Team Tutorial", [TB_OPEN_ROOMS] = "Public Rooms", [TB_ROOM_PRIVACY] = "Room Access", [TB_ROOM_MENU] = "Public Rooms"};
+static char *sTbTitle[] = {"Tenkaichi Budokai Online","New Lobby","Join","Searching","Profile","Profile","Quick Match","Train While Waiting","Tenkaichi Budokai Online","Tag Team","Tag Team Room","Lobby","Join by Address","Tournament","Ranked","Tag Team Settings", [TB_TAG_HEALTH] = "Fighter settings", [TB_TAG_RECOVERY] = "Recovery settings", [TB_TAG_FUSION] = "Cooperative fusion", [TB_TAG_BATTLE_RULES] = "Battle rules", [TB_TAG_SHARED] = "Tag Team Settings", [TB_TRAINING] = "Training", [TB_TUTORIAL] = "Tag Team Tutorial", [TB_OPEN_ROOMS] = "Public Rooms", [TB_ROOM_PRIVACY] = "Room Access", [TB_ROOM_MENU] = "Public Rooms", [TB_DIOS_TUBE] = "Dios Tube"};
 
 /* ---- the screen reader (port/src/gs/a11y.c; silent unless the player has it on). The game's own screens are read
    from their state by port/src/a11y_game.c; these pages say what they show themselves: the page's title as it opens,
@@ -5779,6 +5840,16 @@ static s32 Tb_HelpWrap(char *text,char lines[3][128],f32 scale,f32 width){
     return row+1;
 }
 static void Tb_DrawHelpCaption(void){
+    if(sTb->mode==TB_DIOS_TUBE&&sDiosTubeRow>=0&&sDiosTubeRow<sDiosTubeCatalog.count){
+        Bt4DiosEntry *fight=&sDiosTubeCatalog.entries[sDiosTubeRow];
+        Ps_Align(1);
+        Ps_Text(256,343,"Disfrut\xC3\xA1 del combate",.75f,215,2);
+        Ps_TextRaw(147,366,fight->players[0][0]?fight->players[0]:"Jugador 1",1.12f,160,1);
+        Ps_Text(256,368,"VS",.86f,35,2);
+        Ps_TextRaw(365,366,fight->players[1][0]?fight->players[1]:"Jugador 2",1.12f,160,3);
+        Ps_Align(0);
+        return;
+    }
     static char previous[TB_BOX_LINE],lines[3][128];
     static unsigned generation;
     static s32 count;
@@ -5809,6 +5880,71 @@ static void Tb_PageIn(s32 on) {
     Ps_SetShift(page&&!sTagHomeEntry ? (1.0f - Tb_In(0)) * -160.0f : 0.0f);
 }
 
+static s32 Tb_DiosTubeIsPreview(void) {
+    return getenv("BT4_RENDER_TEST") && getenv("BT4_DIOS_TUBE_PREVIEW");
+}
+
+static void Tb_DrawDiosTube(void) {
+    const int sample=Tb_DiosTubeIsPreview();
+    const s32 total=sample?10:sDiosTubeCatalog.count;
+    if(total){
+        Ps_Prompt(3,"Elegir combate");
+        Ps_Prompt(1,"Me gusta");
+        if(!sample)Ps_Prompt(0,sDiosTubeFetching?"Abriendo...":"Ver combate");
+    }
+    Ps_Prompt(2,"Volver");
+    Ps_Sprite(TBO_DIOS_STUDIO,Ps_Left(),60,512-Ps_Left(),324,0,0,1,1,PS_PLAIN,0x80);
+    Ps_Text(26,67,"Combates destacados",.88f,252,0);
+    if(!total){
+        const char *message=sDiosTubeCatalog.state<0?"El servidor de prueba no responde."
+            : sDiosTubeCatalog.state==0?"Consultando el catalogo...":"Aun no hay repeticiones disponibles.";
+        if(sDiosTubeCatalog.state<0)Ps_Prompt(0,"Reintentar");
+        Ps_Text(26,132,message,.77f,460,0);
+        return;
+    }
+    if(getenv("BT4_DIOS_TUBE_VIDEO")){
+        sDiosTubeRow=(sTb->frames/55)%10;
+        if(sTb->frames>290)sDiosTubeLikes|=1u<<5;
+    }
+    if (sample) Ps_Text(334,70,"Demostraci\xC3\xB3n",.59f,150,2);
+    const s32 first=sDiosTubeRow<5?0:5;
+    s32 playableClip[BT4_DIOS_LIMIT]={0};
+    if(!sample&&!sTb->leaving)for(s32 i=0;i<BT4_DIOS_LIMIT;++i)
+        playableClip[i]=Port_DiosPreviewSlot(i,i<total&&sDiosTubeCatalog.entries[i].hasPreview?sDiosTubeCatalog.entries[i].id:NULL);
+    for(s32 slot=0;slot<5;++slot){
+        const s32 i=first+slot, selected=i==sDiosTubeRow;
+        if(i>=total)break;
+        const s32 frame=(sTb->frames/5+i*7)%24;
+        const s32 bezel=selected?3:i%3;
+        const f32 x=26+156*(slot%3)+((slot>=3)?78:0);
+        const f32 y=89+112*(slot/3);
+        char count[64];
+        if(selected){
+            const u32 gold=Ps_Rgba(255,203,80,0x80),edge=Ps_Rgba(208,116,32,0x80);
+            Ps_Rect(x-4,y-3,x+153,y+110,gold,edge);
+            Ps_Rect(x-1,y,x+150,y+107,Ps_Rgba(24,21,31,0x80),Ps_Rgba(33,24,36,0x80));
+        }
+        if(sample)Ps_Sprite(TBO_DIOS_CLIPS,x+8,y+7,x+122,y+78,i*.1f,frame/24.0f,(i+1)*.1f,(frame+1)/24.0f,PS_PLAIN,0x80);
+        else if(playableClip[i]>0)Ps_Sprite(TBO_DIOS_GIF+i,x+8,y+7,x+122,y+78,0,0,1,1,PS_PLAIN,0x80);
+        else Ps_Rect(x+8,y+7,x+122,y+78,Ps_Rgba(14,19,33,0x80),Ps_Rgba(28,36,52,0x80));
+        Ps_Sprite(TBO_DIOS_CRT,x,y,x+149,y+91,bezel*.25f,0,(bezel+1)*.25f,1,PS_PLAIN,0x80);
+        if(!sample&&playableClip[i]<=0){
+            char *status=sDiosTubeCatalog.entries[i].hasPreview&&playableClip[i]==0?"Cargando vista previa":"Sin vista previa";
+            Ps_Align(1);
+            Ps_Text(x+65,y+36,status,.59f,100,4);
+            Ps_Align(0);
+        }
+        const s32 liked=sample?(sDiosTubeLikes>>i)&1:sDiosTubeCatalog.entries[i].liked;
+        Ps_Sprite(TBO_DIOS_BADGES,x+8,y+87,x+140,y+108,0,.5f,1,1,PS_PLAIN,0x80);
+        Ps_Sprite(TBO_DIOS_BADGES,x+23,y+90,x+38,y+104,liked/3.0f,0,(liked+1)/3.0f,.5f,PS_PLAIN,0x80);
+        Ps_Sprite(TBO_DIOS_BADGES,x+79,y+90,x+94,y+104,2/3.0f,0,1,.5f,PS_PLAIN,0x80);
+        snprintf(count,sizeof(count),"%d",sample?48-3*i+liked:sDiosTubeCatalog.entries[i].likes);
+        Ps_Text(x+42,y+90,count,.63f,37,selected);
+        snprintf(count,sizeof(count),"%d",sample?352-17*i:sDiosTubeCatalog.entries[i].views);
+        Ps_Text(x+98,y+90,count,.63f,34,selected);
+    }
+}
+
 static void Tb_Draw(void) {
     Tb_PageIn(1);
     if(sTagHomeEntry&&sTb->mode!=TB_TAG&&sTb->mode!=TB_TAG_OPTIONS&&sTb->mode!=TB_TAG_HEALTH&&sTb->mode!=TB_TAG_RECOVERY&&sTb->mode!=TB_TAG_FUSION&&sTb->mode!=TB_TAG_BATTLE_RULES&&sTb->mode!=TB_TAG_SHARED){
@@ -5821,6 +5957,9 @@ static void Tb_Draw(void) {
         break;
     case TB_RANKED:
         Tb_DrawRanked();
+        break;
+    case TB_DIOS_TUBE:
+        Tb_DrawDiosTube();
         break;
     case TB_TRAINING:
         Tb_TagOptionsPlate(sPracticeRow,PRACTICE_ROWS);break;
@@ -5950,6 +6089,8 @@ static void Tb_DrawText(void) {
         break;
     case TB_RANKED:
         Tb_DrawRankedText();
+        break;
+    case TB_DIOS_TUBE:
         break;
     case TB_TRAINING:
     case TB_TUTORIAL:
@@ -6113,9 +6254,11 @@ static void Tb_DrawCommunityButton(s32 live) {
 
 s32 PortTbo_Run(void) {
     const s32 communityTest = getenv("BT4_RENDER_TEST") && getenv("BT4_TBO_COMMUNITY_INPUT_TEST");
-    s32 train;
+    s32 train,diosSmokeFrames=0;
     static s32 returnTestRuns;
     s32 returnedTest=getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RETURN_TEST")&&returnTestRuns++;
+    const s32 fromDiosViewer=Port_DiosViewerActive();
+    if(fromDiosViewer)Port_DiosViewerEnd();
 
     sTb = Heap_Alloc(sizeof(TboScreen), 0x20, 0, 2);
     memset(sTb, 0, sizeof(TboScreen));
@@ -6140,6 +6283,13 @@ s32 PortTbo_Run(void) {
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_FFA_TEST")){sTb->tagFreeForAll=1;sTb->tagPreset=2;sTb->tagSetup=1;sTb->tagLeft=sTb->tagRight=3;}
     if (getenv("BT4_TAG_PREVIEW") != NULL) { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
     if (!Tb_TagPrivate()&&Port_TagCapacity() > 0) Tb_SetMode(TB_TAG_ROOM);
+    if(fromDiosViewer){
+        sTb->hubCur=HUB_DIOS_TUBE;sTb->hubY=Tb_HubRowY(HUB_DIOS_TUBE);
+        sDiosTubeFetching=0;Tb_SetMode(TB_DIOS_TUBE);
+        Port_DiosTubeCatalog(&sDiosTubeCatalog,1);
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_DIOS_TUBE_CONTROL_TEST"))
+            fprintf(stderr,"Dios Tube test: returned to catalogue\n");
+    }
     if(!Tb_TagPrivate()){
         Port_NetNameGet();
         if(!sTagHomeEntry&&!getenv("BT4_RENDER_TEST"))Port_OnlineNicknameBegin();
@@ -6175,6 +6325,10 @@ s32 PortTbo_Run(void) {
     if (getenv("BT4_RENDER_TBO") != NULL) {
         const char *which = getenv("BT4_RENDER_TBO");
         if(!strcmp(which,"tag-quick-wait")&&getenv("BT4_RENDER_TEST")){sTb->tagQuick=4;Tb_SetMode(TB_TAG_ROOM);}
+        else if (!strcmp(which,"dios-tube") && getenv("BT4_RENDER_TEST")) {
+            sDiosTubeRow=0;
+            Tb_SetMode(TB_DIOS_TUBE);
+        }
         else if (!strncmp(which,"ranked",6) && getenv("BT4_RENDER_TEST")) {
             sTb->rankedCur=0;
             sTb->rankedPage=!strcmp(which,"ranked-top")?1:!strcmp(which,"ranked-rules")?2:0;
@@ -6229,6 +6383,10 @@ s32 PortTbo_Run(void) {
             sTb->lbTourSeen = sTbLv.tourGen;
             sTb->lbHostPose = -1;
             Tb_SetMode(TB_LOBBY);
+        }
+        if(getenv("BT4_TOURNAMENT_GUEST_FIXTURE")){
+            if(sTbLv.owner||!Tb_BrReadyBit()||Tb_LobbyAct(2)!=LB_ACT_READY||Tb_BracketAct(0)!=BR_ACT_READY)exit(3);
+            fprintf(stderr,"tournament ready: guest action present in lobby and bracket\n");
         }
         if(getenv("BT4_TOURNAMENT_SELFTEST"))exit(0);
     }
@@ -6345,13 +6503,75 @@ s32 PortTbo_Run(void) {
             gPad[0].gamePressed=PADG_SQUARE;
         Ps_PromptsClear();
         Port_LobbyView(&sTbLv);
-        if ((getenv("BT4_RENDER_TBO")==NULL||communityTest||(getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST")))&&
+        const s32 diosSmoke=getenv("BT4_RENDER_TEST")&&getenv("BT4_DIOS_TUBE_NATIVE_SMOKE")&&sTb->mode==TB_DIOS_TUBE;
+        if ((getenv("BT4_RENDER_TBO")==NULL||communityTest||diosSmoke||(getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST")))&&
             (!sTagHomeEntry||!Tb_TagShellUpdate(live))) switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);
             break;
         case TB_RANKED:
             Tb_RankedUpdate(live);
+            break;
+        case TB_DIOS_TUBE:
+            if(live){
+                if(gPad[0].gamePressed & PADG_TRIANGLE){
+                    Port_DiosTubeCancel();
+                    Tb_SetMode(TB_HUB);
+                }
+                else if(Tb_DiosTubeIsPreview()){
+                    Tb_DiosTubeMove(10);
+                    if(gPad[0].gamePressed & PADG_SQUARE) sDiosTubeLikes^=1u<<sDiosTubeRow;
+                }else{
+                    if(sDiosTubeFetching){
+                        const s32 state=Port_DiosTubeTake(NULL);
+                        if(state!=1){
+                            sDiosTubeFetching=0;
+                            if(state==2){
+                                Bt4DiosReplay *replay=Heap_Alloc(sizeof(*replay),0x40,0,2);
+                                if(replay){
+                                    const s32 loaded=Port_DiosTubeTake(replay)==2&&Bt4_DiosTubePrepareReplay(replay);
+                                    Heap_Free(replay);
+                                    if(loaded){
+                                        if(diosSmoke)fprintf(stderr,"Dios Tube smoke: remote replay prepared and viewer launch requested\n");
+                                        Port_DiosTubeViewed();
+                                        Port_DiosViewerBegin();
+                                        sTb->train=PORT_TBO_DIOS_REPLAY;
+                                        sTb->leaving=1;
+                                        ColorFade_StartOut(0,0,0,20);
+                                        break;
+                                    }
+                                }
+                            }
+                            if(diosSmoke)fprintf(stderr,"Dios Tube smoke: replay launch failed, state %d\n",state);
+                            Tb_Note("No se pudo abrir esta repeticion.");
+                        }
+                    }
+                    char selectedId[sizeof(sDiosTubeCatalog.entries[0].id)]={0};
+                    if(sDiosTubeRow<sDiosTubeCatalog.count)
+                        memcpy(selectedId,sDiosTubeCatalog.entries[sDiosTubeRow].id,sizeof(selectedId));
+                    Port_DiosTubeCatalog(&sDiosTubeCatalog,0);
+                    for(s32 i=0;selectedId[0]&&i<sDiosTubeCatalog.count;++i)
+                        if(!strcmp(selectedId,sDiosTubeCatalog.entries[i].id)){sDiosTubeRow=i;break;}
+                    if(sDiosTubeCatalog.state<0&&(gPad[0].gamePressed & PADG_CROSS))
+                        Port_DiosTubeCatalog(&sDiosTubeCatalog,1);
+                    if(sDiosTubeRow>=sDiosTubeCatalog.count)sDiosTubeRow=0;
+                    if(sDiosTubeCatalog.count){
+                        if(diosSmoke && !fromDiosViewer){
+                            ++diosSmokeFrames;
+                            if(diosSmokeFrames==30&&sDiosTubeCatalog.count>1&&(!getenv("BT4_DIOS_EXPECT_GIF")||getenv("BT4_DIOS_ALL_GIFS"))&&!getenv("BT4_DIOS_CAPTURE_TEST"))
+                                gPad[0].gameRepeat|=PADG_RIGHT;
+                            if(diosSmokeFrames==(getenv("BT4_DIOS_ALL_GIFS")?810:160))gPad[0].gamePressed|=PADG_CROSS;
+                        }
+                        if(!sDiosTubeFetching)Tb_DiosTubeMove(sDiosTubeCatalog.count);
+                        const Bt4DiosEntry *entry=&sDiosTubeCatalog.entries[sDiosTubeRow];
+                        if(gPad[0].gamePressed & PADG_SQUARE) Port_DiosTubeLike(entry->id,!entry->liked);
+                        if(!sDiosTubeFetching&&(gPad[0].gamePressed & PADG_CROSS)){
+                            Port_DiosTubeFetch(entry->id);
+                            sDiosTubeFetching=1;
+                        }
+                    }
+                }
+            }
             break;
         case TB_TRAINING:
         case TB_TUTORIAL:
@@ -6467,7 +6687,7 @@ s32 PortTbo_Run(void) {
         Port_LobbyCancel();
     }
     train = sTb->train;
-    if (train == 2 || train == PORT_TBO_OPEN_TAG || train == PORT_TBO_NATIVE_TRAINING) { Heap_Free(sTb); sTb = NULL; Dma_ResetBuffers(); return train; }
+    if (train == 2 || train == PORT_TBO_OPEN_TAG || train == PORT_TBO_NATIVE_TRAINING || train == PORT_TBO_DIOS_REPLAY) { Heap_Free(sTb); sTb = NULL; Dma_ResetBuffers(); return train; }
     if (train) {
         static u8 noItems[0x10]; /* an empty set of Z items */
         s32 me = sTb->spMe;

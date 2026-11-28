@@ -5,6 +5,7 @@ import {roomTurn} from './online_turn.mjs';
 import {importRows} from './online_migration.mjs';
 import {launchRanked,resetRanked,rankedMonthEnd,monthlyRanked} from './ranked_seasons.mjs';
 import {fulfillProfilePass,grantProfilePass,profileAnimationRequestLimit} from './online_profile_cards.mjs';
+import {diosTubeRecordLimit,diosTubePreviewLimit} from './dios_tube.mjs';
 import {applyProfileWebhook,profileCheckout,profileCheckoutEnabled,verifyProfileWebhook} from './online_profile_checkout.mjs';
 
 import {applyKofiPayment,kofiCheckout,kofiEnabled,kofiPage} from './online_profile_kofi.mjs';
@@ -294,6 +295,16 @@ export class OnlineCoordinator {
                 return new Response(null,{status:101,webSocket:client});
             }
             const user=await this.user(request);if(!user)return json({error:'AUTH_REQUIRED'},401);
+            if(path==='/v5/dios-tube/replay'&&request.method==='POST'){
+                const body=await readJson(request,diosTubeRecordLimit+128);
+                if(body.op!=='dios_tube_submit'&&body.op!=='dios_tube_fetch')throw new Error('BAD_REQUEST');
+                return json(await this.execute(user,body.op,body.args));
+            }
+            if(path==='/v5/dios-tube/preview'&&request.method==='POST'){
+                const body=await readJson(request,diosTubePreviewLimit+256);
+                if(body.op!=='dios_tube_preview_save'&&body.op!=='dios_tube_preview_get')throw new Error('BAD_REQUEST');
+                return json(await this.execute(user,body.op,body.args));
+            }
             if(path==='/v5/profile/media'&&request.method==='POST'){
                 const body=await readJson(request,profileAnimationRequestLimit+128);
                 if(body.op!=='profile_media_save'&&body.op!=='profile_media_get')throw new Error('BAD_REQUEST');
@@ -302,7 +313,7 @@ export class OnlineCoordinator {
             const body=await readJson(request);
             if(path==='/v5/api'&&request.method==='POST')return json(await this.execute(user,body.op,body.args));
             return json({error:'BAD_REQUEST'},400);
-        }catch(e){const allowed=/^(AUTH_|BAD_|INVALID_|IMPORT|PROFILE_|MIGRATION_|NICKNAME_|NOT_|ROOM_|RATE_|ALREADY_|INCOMPATIBLE_|RANKED_|RESULT_|ACCOUNT_|UPDATE_)/.test(e.message);
+        }catch(e){const allowed=/^(AUTH_|BAD_|INVALID_|IMPORT|PROFILE_|MIGRATION_|NICKNAME_|NOT_|ROOM_|RATE_|ALREADY_|INCOMPATIBLE_|RANKED_|RESULT_|ACCOUNT_|UPDATE_|REPLAY_)/.test(e.message);
             return json({error:allowed?e.message:'SERVICE_UNAVAILABLE'},e.message==='AUTH_REQUIRED'?401:e.message==='RATE_LIMITED'?429:400);}
     }
     async webSocketMessage(ws,message){

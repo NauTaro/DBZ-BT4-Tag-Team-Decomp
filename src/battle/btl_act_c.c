@@ -1,6 +1,9 @@
 #include "common.h"
 #include "battle/bt4_private_balance.h"
 #include "battle/bt4_beam_parry.h"
+#ifdef PORT
+#include "bt4_dios_tube.h"
+#endif
 extern s32 TagBattle_Target(s32 actor);
 extern void Bt4_SpendTransformKi(void *chr, s32 amount);
 #include "battle/btl_act_c.h"
@@ -928,6 +931,9 @@ s32 BtlAct_Action39(Chr *chr, s32 phase) {
     if (phase == 0) {
         BtlAnim_Play(chr, 0xEC, 0.0f);
         /* BT4: successful Z-counter grants stock and one Ki bar (20000), capped by the member maximum. */
+#ifdef PORT
+        BattleReplay_RankedCounter();
+#endif
         {
             s32 *m = (s32 *)BtlMember_GetActive(chr);
             s32 stock = m[0x14/4] + 1;

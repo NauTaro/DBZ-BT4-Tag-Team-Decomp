@@ -92,7 +92,7 @@
 
 #define MAGIC 0x4E335442u
 enum { T_HELLO = 1, T_HELLO_ACK = 2, T_SPEC_HELLO = 20, T_SPEC_NO = 22, SPEC_NO_VERSION = 1 };
-enum { T_L_HELLO = 30, T_L_NO, T_L_STATE, T_L_ALIVE, T_L_GO, T_L_BACK, T_L_LEAVE, T_L_CLOSE, T_L_CHAT, T_L_SAID, T_L_INVITE, T_L_TOKEN, T_L_BRACKET };
+enum { T_L_HELLO = T_LOBBY_FIRST, T_L_NO, T_L_STATE, T_L_ALIVE, T_L_GO, T_L_BACK, T_L_LEAVE, T_L_CLOSE, T_L_CHAT, T_L_SAID, T_L_INVITE, T_L_TOKEN };
 enum { LOBBY_VERSION = 4, /* BT4: match packets through the owner for non-owner pairs. */ /* 2: STATE carries the member's nonce (its greeting's), which a member connecting asks for; 3: tournaments (the bracket in STATE, results in ALIVE, the rejoin token in HELLO, TOKEN) */ FP_MARK = 0x46505231, LOBBY_CAP = 0x4C4F4231 /* "1BOL": a game's 1v1 greeting says it knows lobbies */ };
 enum { LNO_VERSION = 1, LNO_DATA = 2, LNO_FULL = 3 };
 enum { CLOSE_CLOSED = 1, CLOSE_KICKED = 2 };
@@ -1423,6 +1423,29 @@ void Port_LobbyReviewFixture(int entrants){
         while(sL.t.state==1&&sL.t.cur>=0&&played<n){
             int m=sL.t.cur,a=t_part(m,0),b=t_part(m,1);
             if(a<0||b<0||a==b){fprintf(stderr,"tournament review FAILED: invalid pairing\n");exit(3);}
+            const uint64_t now=10*SEC;
+            if(sL.t.readySides||t_can_start())exit(3);
+            if(sL.t.size>LOBBY_CLASSIC_SLOTS){
+                uint8_t packet[BRACKET_BYTES];
+                const int wireEntrants=n<=LOBBY_TOUR_LEGACY?LOBBY_TOUR_LEGACY:TOUR;
+                bracket_put(packet,wireEntrants);
+                Tour expected=sL.t;
+                for(int side=0;side<2;++side){
+                    const int entrant=side?b:a;
+                    sL.myId=expected.id[entrant];
+                    sL.bracketSeq=0;
+                    memset(&sL.t,0,sizeof(sL.t));
+                    bracket_get(packet,BRACKET_BYTES_FOR(wireEntrants));
+                    view_update(1);
+                    if(sView.tourMe!=entrant||sView.tourCur!=m||sView.tourA[m]!=a||sView.tourB[m]!=b)exit(3);
+                }
+                sL.t=expected;sL.myId=sL.ownerId;
+            }
+            t_ready_set(t_ready_member(0),1,now); /* before the first timer packet */
+            t_ready_tick(now);
+            if(sL.t.readySides!=1||sL.t.readySeconds!=60||t_can_start())exit(3);
+            t_ready_set(t_ready_member(1),1,now+SEC);
+            if(!t_can_start())exit(3);
             sL.t.win[m]=a;sL.t.how[m]=HOW_PLAYED;++played;t_resolve();
         }
         if(sL.t.state!=2||sL.t.champ<0||sL.t.champ>=n||played!=n-1){fprintf(stderr,"tournament review FAILED: entrants=%d played=%d\n",n,played);exit(3);}
@@ -1445,6 +1468,11 @@ void Port_LobbyReviewFixture(int entrants){
         sL.t.win[m] = t_part(m, 0);
         sL.t.how[m] = HOW_PLAYED;
         t_resolve();
+    }
+    if(getenv("BT4_TOURNAMENT_GUEST_FIXTURE")){
+        t_ready_tick(now_ns());
+        sL.myId=sL.t.id[t_part(sL.t.cur,1)];
+        sL.on=2;
     }
     view_update(1);sReviewView=sView;sReviewActive=1;
     sL=saved;sTok=savedToken;
@@ -1474,7 +1502,7 @@ static int t_ready_open(void) {
 }
 
 static void t_ready_set(int member, int ready, uint64_t now) {
-    if (!ready || !t_ready_open() || !sL.t.readyDeadline || now >= sL.t.readyDeadline || sL.t.readySides == 3)
+    if (!ready || !t_ready_open() || (sL.t.readyDeadline && now >= sL.t.readyDeadline) || sL.t.readySides == 3)
         return;
     for (int side = 0; side < 2; ++side) {
         int bit = 1 << side;
@@ -3086,6 +3114,17 @@ static void script(void) {
                 ready += sL.ids[s] != 0 && sL.ready[s];
             }
             done = ready >= a;
+        } else if (strcmp(c,"tourready")==0 && getenv("BT4_RENDER_TEST")) {
+            done=0;
+            if(sL.t.state==1&&sL.t.cur>=0&&sL.t.readySeconds>0){
+                for(int side=0;side<2;++side){
+                    const int entrant=t_part(sL.t.cur,side);
+                    if(entrant>=0&&sL.t.id[entrant]==sL.myId){
+                        Port_LobbyDo(LOBBY_READY,1,0);
+                        done=1;
+                    }
+                }
+            }
         } else if (strncmp(c, "tour", 4) == 0) {
             Port_LobbyDo(LOBBY_TOUR_NEW, 0, 0);
         } else if (strncmp(c, "next", 4) == 0) {

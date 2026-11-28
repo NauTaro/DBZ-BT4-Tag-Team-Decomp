@@ -669,6 +669,8 @@ static void tag_movie_idle(void) {
     }
 }
 
+#include "../../include/bt4_dios_tube.h"
+
 static GsTex tbo_texture(uint32_t id) {
     char path[1024] = {0};
     SDL_Surface *png = NULL, *rgba = NULL;
@@ -681,6 +683,20 @@ static GsTex tbo_texture(uint32_t id) {
     GsTex *cached;
     unsigned char *missing;
     int languageArt = id >= TBO_LANG_BG && id <= TBO_LANG_ARROW_RIGHT;
+
+    if(id>=TBO_DIOS_GIF&&id<TBO_DIOS_GIF+BT4_DIOS_LIMIT){
+        const unsigned slot=id-TBO_DIOS_GIF;
+        static GsTex previews[BT4_DIOS_LIMIT];
+        static unsigned generations[BT4_DIOS_LIMIT],frames[BT4_DIOS_LIMIT];
+        static uint32_t pixels[BT4_DIOS_GIF_W*BT4_DIOS_GIF_H];
+        if(Port_DiosPreviewPixels(slot,&generations[slot],&frames[slot],pixels)){
+            if(!previews[slot])previews[slot]=sBackend->texCreate(BT4_DIOS_GIF_W,BT4_DIOS_GIF_H,GS_TEXFMT_RGBA8,1);
+            uint32_t *upload=previews[slot]?malloc(sizeof(pixels)):NULL;
+            if(upload){memcpy(upload,pixels,sizeof(pixels));sBackend->texUpload(previews[slot],0,BT4_DIOS_GIF_W,BT4_DIOS_GIF_H,GS_TEXFMT_RGBA8,upload,sizeof(pixels));}
+            else generations[slot]=0;
+        }
+        return previews[slot]?previews[slot]:gsWhite;
+    }
 
     if(id>=TBO_RANKED_BALL_BASE&&id<TBO_RANKED_BALL_BASE+8){
         unsigned ball=id-TBO_RANKED_BALL_BASE;

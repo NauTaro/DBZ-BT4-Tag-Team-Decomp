@@ -99,6 +99,10 @@ static s32 Bt4_Costumes(s32 chara) {
     ChrViewInfo *info = ChrView_GetCharaInfo(chara);
     return info != NULL ? *(u16 *)((u8 *)info + 0x28) : 0;
 }
+s32 Bt4_DiosTubeValidOutfit(s32 chara,s32 costume) {
+    return chara>=0 && chara<250 && costume>=0 && costume<Bt4_Costumes(chara) &&
+           !(chara>=161 && chara<=164);
+}
 s32 Bt4_ModelFile(s32 chara, s32 costume, s32 damaged) {
     s32 i, file = 0x1612;
 #ifdef BT4_TAG_TEAM_EXPANDED
@@ -434,6 +438,10 @@ s32 ChrView_IsVisible(void) {
 void ChrView_Init(void) {
     s32 i;
     ChrViewJob *job;
+    s32 modelCapacity = CHRVIEW_MODEL_SIZE;
+#ifdef BT4_TAG_TEAM_EXPANDED
+    if (gPortVariant != 0) modelCapacity = BT4_WARDROBE_MODEL_CAPACITY;
+#endif
 
     Battle_GetWork()->flags &= ~0x100;
     gChrView = Heap_Alloc(sizeof(ChrView), 0x20, 0, HEAP_ANY);
@@ -443,7 +451,7 @@ void ChrView_Init(void) {
 #endif
     gChrView->anim = 7;
     for (i = 0; i < CHRVIEW_SLOT_COUNT; i++) {
-        gChrView->slot[i].file[0].buf = Heap_Alloc(CHRVIEW_MODEL_SIZE, 0x40, 0, HEAP_ANY);
+        gChrView->slot[i].file[0].buf = Heap_Alloc(modelCapacity, 0x40, 0, HEAP_ANY);
         gChrView->slot[i].file[0].size = 0;
         gChrView->slot[i].file[0].id = -1;
         *(s32 *)gChrView->slot[i].file[0].buf = 0;

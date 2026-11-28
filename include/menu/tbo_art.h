@@ -49,18 +49,26 @@
     X(TBO_BTN_XBOX_LS, "btn_xbox_ls") \
     X(TBO_BTN_XBOX_RB, "btn_xbox_rb") \
     X(TBO_BTN_XBOX_RT, "btn_xbox_rt") \
-    X(TBO_BTN_XBOX_RS, "btn_xbox_rs")
+    X(TBO_BTN_XBOX_RS, "btn_xbox_rs") \
+    X(TBO_DIOS_CLIPS, "dios_tube_clips") \
+    X(TBO_DIOS_CRT, "dios_tube_crt") \
+    X(TBO_DIOS_STUDIO, "dios_tube_studio") \
+    X(TBO_DIOS_BADGES, "dios_tube_badges")
 
-#define TBO_MAIN_TAG_OFF (TBO_ART_COUNT + 18)
-#define TBO_MAIN_TAG_ON (TBO_ART_COUNT + 19)
-#define TBO_MAIN_ONLINE_OFF (TBO_ART_COUNT + 16)
-#define TBO_MAIN_ONLINE_ON (TBO_ART_COUNT + 17)
-#define TBO_TAG_MOVIE (TBO_ART_COUNT + 20)
-#define TBO_MAIN_TAG_EMBLEM (TBO_ART_COUNT + 21)
+/* The game and renderer exchange these IDs in GS packets. Appending PNGs
+   must not renumber the IDs used by existing menu objects. */
+#define TBO_MAIN_ONLINE_OFF 60
+#define TBO_MAIN_ONLINE_ON 61
+#define TBO_MAIN_TAG_OFF 62
+#define TBO_MAIN_TAG_ON 63
+#define TBO_TAG_MOVIE 64
+#define TBO_MAIN_TAG_EMBLEM 65
+#define TBO_DIOS_GIF 66
 
 #define TBO_ART_ENUM(id, name) id,
 enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };
 #undef TBO_ART_ENUM
+typedef char TboArtIdsMustNotOverlapMainMenu[(TBO_ART_COUNT <= TBO_MAIN_ONLINE_OFF) ? 1 : -1];
 
 /* The texture format that marks a draw as one of these pictures (a reserved PSM value the GS has no format for and
    the game never uses); the picture's number is in the palette address (CBP), the size given is 1024 x 1024 so

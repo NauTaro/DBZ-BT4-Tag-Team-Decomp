@@ -57,6 +57,10 @@ void BtlReplay_Play(BtlReplayChr *chr, u32 *buttons, u8 *stick) {
     BtlReplayTrack *trk = &data->track[chr->player];
 
     if (trk->pos >= trk->count) {
+#ifdef PORT
+        extern int Port_DiosViewerActive(void);
+        if (!Port_DiosViewerActive() || data->track[1 - chr->player].pos >= data->track[1 - chr->player].count)
+#endif
         data->flags |= BTL_REPLAY_END;
         *buttons = 0;
         stick[1] = stick[0] = 0x7F;

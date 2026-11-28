@@ -11,7 +11,15 @@ extern int gPortOverlayOpen,gPortResim;
 static SpecCamera sCamera;
 static int sReset,sSeenReset,sCount=2,sInputActive,sLastZoom=100,sZoomHeld;
 static Uint64 sLastTick;
-int PortSpectator_Mode(void) { return (int)spec_clamp(Port_Setting("spectator_mode",Port_Setting("spectator_camera",0)?1:0),0,3); }
+static int sDiosViewer, sDiosFreeCamera, sDiosZoom;
+void Port_DiosViewerBegin(void) { sDiosViewer=1;sDiosFreeCamera=0;sDiosZoom=100; }
+int Port_DiosViewerActive(void) { return sDiosViewer; }
+void Port_DiosViewerEnd(void) { sDiosViewer=sDiosFreeCamera=0;PortSpectator_EndBattle(); }
+void Port_DiosViewerToggleCamera(void) { sDiosFreeCamera=!sDiosFreeCamera;__atomic_add_fetch(&sReset,1,__ATOMIC_RELAXED); }
+int PortSpectator_Mode(void) {
+    if(sDiosViewer)return sDiosFreeCamera;
+    return (int)spec_clamp(Port_Setting("spectator_mode",Port_Setting("spectator_camera",0)?1:0),0,3);
+}
 void PortSpectator_SetMode(int mode) {
     mode=(int)spec_clamp(mode,0,3);Port_SettingSave("spectator_mode",mode);
     Port_SettingSave("spectator_camera",mode!=0);Port_SettingsWrite();
@@ -28,7 +36,9 @@ void PortSpectator_ResetCamera(void) { PortSpectator_SetZoom(100);__atomic_add_f
 void PortSpectator_EndBattle(void) { sCamera.live=0;sLastTick=0;__atomic_store_n(&sInputActive,0,__ATOMIC_RELAXED); }
 void PortSpectator_SetInputActive(int active) { __atomic_store_n(&sInputActive,active!=0,__ATOMIC_RELAXED); }
 int PortSpectator_ConsumesInput(void) { return __atomic_load_n(&sInputActive,__ATOMIC_RELAXED) && PortSpectator_Mode()!=0; }
-unsigned PortSpectator_FilterButtons(unsigned buttons) { return PortSpectator_ConsumesInput()?buttons&0x0009u:buttons; }
+unsigned PortSpectator_FilterButtons(unsigned buttons) {
+    return PortSpectator_ConsumesInput()?buttons&(sDiosViewer?0x1009u:0x0009u):buttons;
+}
 void PortSpectator_ResolveEye(const float *eye) { memcpy(sCamera.eye,eye,16); }
 int PortSpectator_Camera(const float *native_eye,const float *native_rot,const float *targets,int count,
                          float tan_y,float aspect,float *eye,float *rotation,float *zoom) {
@@ -41,13 +51,14 @@ int PortSpectator_Camera(const float *native_eye,const float *native_rot,const f
     if(generation!=sSeenReset){sSeenReset=generation;sCamera.live=0;}
     if(!gPortOverlayOpen && __atomic_load_n(&sInputActive,__ATOMIC_RELAXED))PortInput_Spectator((float *)&input);
     if(getenv("BT4_RENDER_TEST") && getenv("BT4_FREE_CAMERA_AUDIT")){input.yaw=.5f;dt=1.f/60;}
-    config_zoom=(float)PortSpectator_Zoom();
+    config_zoom=(float)(sDiosViewer?sDiosZoom:PortSpectator_Zoom());
     if(!sCamera.live || (int)config_zoom!=sLastZoom)sCamera.zoom=config_zoom;
     result=spec_step(&sCamera,mode,PortSpectator_Target(),PortSpectator_Speed(),sCamera.zoom,dt,native_eye,native_rot,targets,count,input,tan_y,aspect);
     if(!result)return 0;
     sLastZoom=(int)(sCamera.zoom+.5f);
-    if(sLastZoom!=(int)config_zoom)Port_SettingSave("spectator_zoom",sLastZoom);
-    if(sZoomHeld && input.zoom==0)Port_SettingsWrite();
+    if(sDiosViewer)sDiosZoom=sLastZoom;
+    else if(sLastZoom!=(int)config_zoom)Port_SettingSave("spectator_zoom",sLastZoom);
+    if(!sDiosViewer&&sZoomHeld&&input.zoom==0)Port_SettingsWrite();
     sZoomHeld=input.zoom!=0;
     memcpy(eye,sCamera.eye,16);memcpy(rotation,sCamera.rotation,16);*zoom=sCamera.zoom/100;
     return 1;

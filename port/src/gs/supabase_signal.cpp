@@ -3,6 +3,7 @@
  */
 #include <SDL3/SDL.h>
 #include "profile_cards.h"
+#include "../../include/bt4_dios_tube.h"
 #include "../../include/online_room_policy.h"
 #include <stdio.h>
 #include <string.h>
@@ -50,7 +51,7 @@ struct Identity {
     int lock=-1;
 #endif
 };
-std::array<Identity,3> identities;
+std::array<Identity,4> identities;
 int activeProject=0;long lastHttpStatus=0;
 const bt4route::Endpoint &endpoint(){return bt4route::endpoints[activeProject];}
 Identity &currentIdentity(){return identities[activeProject];}
@@ -113,8 +114,9 @@ struct State {
 static void wake(void*){if(state.wake)SDL_SignalSemaphore(state.wake);}
 static bool emit(int consumer,const Sj &j){
     if(consumer<0||consumer>5)return false;
-    const bool animation=consumer==4&&j.value("event","")=="reply"&&j.contains("body")&&j["body"].contains("animation");
-    const size_t limit=animation?BT4_PROFILE_MEDIA_EVENT_CAP-1:24576;
+    const bool largeReply=consumer==4&&j.value("event","")=="reply"&&j.contains("body")&&
+        (j["body"].contains("animation")||j["body"].contains("detail")||j["body"].contains("inputs")||j["body"].contains("gif"));
+    const size_t limit=largeReply?BT4_DIOS_GIF_WIRE+512:24576;
     std::string body=j.dump();if(body.size()>limit)return false;
     std::lock_guard<std::mutex> g(state.lock);
     if(!(state.consumers&(1u<<consumer)))return true;
@@ -124,9 +126,12 @@ static bool emit(int consumer,const Sj &j){
 static bool http(const std::string &path,const Sj &body,bool authenticated,Sj &answer,bool optional=false,const char *hostOverride=nullptr,const std::string *accessOverride=nullptr){
     auto &identity=currentIdentity();lastHttpStatus=0;
     const std::string data=body.dump();std::string result;long code=0;
-    const size_t sendLimit=hostOverride&&path=="/v5/profile/media"?BT4_PROFILE_MEDIA_WIRE_CAP+128:20000;
+    const bool replayTransfer=hostOverride&&path=="/v5/dios-tube/replay";
+    const bool previewTransfer=hostOverride&&path=="/v5/dios-tube/preview";
+    const size_t sendLimit=hostOverride&&path=="/v5/profile/media"?BT4_PROFILE_MEDIA_WIRE_CAP+128:
+        previewTransfer?BT4_DIOS_GIF_WIRE+256:replayTransfer?152128:20000;
     const size_t receiveLimit=hostOverride&&path=="/v5/api"&&body.value("op",std::string())=="profile_media_get"
-        ? BT4_PROFILE_MEDIA_WIRE_CAP : 65536;
+        ? BT4_PROFILE_MEDIA_WIRE_CAP : previewTransfer?BT4_DIOS_GIF_WIRE+256:replayTransfer?152128:65536;
     if(data.size()>sendLimit)return false;
 #ifdef _WIN32
     HINTERNET session=WinHttpOpen(L"BT4decomp signaling",WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,WINHTTP_NO_PROXY_NAME,WINHTTP_NO_PROXY_BYPASS,0);
@@ -399,14 +404,17 @@ extern "C" void Bt4Signal_Listen(int consumer,int enabled){if(consumer<0||consum
         state.jobs.erase(std::remove_if(state.jobs.begin(),state.jobs.end(),[&](const Job &j){return j.consumer==consumer&&j.op!="leave"&&j.op!="cancel"&&j.op!="ranked_report"&&j.op!="match_report";}),state.jobs.end());}}
 extern "C" int Bt4Signal_Command(int consumer,unsigned serial,const char *op,const char *args){
     if(consumer<0||consumer>5||!op||!args)return 0;
-    const size_t limit=consumer==4&&!strcmp(op,"profile_media_save")?BT4_PROFILE_MEDIA_WIRE_CAP:18000;
+    const bool replaySubmit=(consumer==0||consumer==5)&&!strcmp(op,"dios_tube_submit");
+    const bool previewSubmit=(consumer==0||consumer==5)&&!strcmp(op,"dios_tube_preview_save");
+    const size_t limit=consumer==4&&!strcmp(op,"profile_media_save")?BT4_PROFILE_MEDIA_WIRE_CAP:previewSubmit?BT4_DIOS_GIF_WIRE+128:replaySubmit?152000:18000;
     if(strlen(args)>limit)return 0;
     if((consumer==3)!=(!strcmp(op,"presence")))return 0;
-    bool lifecycle=!strcmp(op,"ranked_heartbeat")||!strcmp(op,"ranked_forfeit")||!strcmp(op,"ranked_rock")||!strcmp(op,"quick_rock")||!strcmp(op,"match_report");if((consumer==5)!=lifecycle)return 0;
-    bool profile=!strcmp(op,"public_rooms")||!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top")||!strcmp(op,"nickname_get")||!strcmp(op,"nickname_set");profile=profile||!strncmp(op,"profile_card_",13)||!strncmp(op,"profile_media_",14)||!strcmp(op,"profile_checkout");if((consumer==4)!=profile)return 0;
+    bool lifecycle=!strcmp(op,"ranked_heartbeat")||!strcmp(op,"ranked_forfeit")||!strcmp(op,"ranked_rock")||!strcmp(op,"quick_rock")||!strcmp(op,"match_report")||(consumer==5&&(replaySubmit||previewSubmit));if((consumer==5)!=lifecycle)return 0;
+    bool profile=!strcmp(op,"public_rooms")||!strcmp(op,"ranked_status")||!strcmp(op,"ranked_top")||!strcmp(op,"nickname_get")||!strcmp(op,"nickname_set");profile=profile||!strncmp(op,"profile_card_",13)||!strncmp(op,"profile_media_",14)||!strcmp(op,"profile_checkout")||!strcmp(op,"dios_tube_list")||!strcmp(op,"dios_tube_fetch")||!strcmp(op,"dios_tube_like")||!strcmp(op,"dios_tube_view")||!strcmp(op,"dios_tube_preview_get");if((consumer==4)!=profile)return 0;
+    if((!strcmp(op,"dios_tube_submit")&&!replaySubmit)||(!strcmp(op,"dios_tube_preview_save")&&!previewSubmit))return 0;
     if((!strcmp(op,"ranked_queue")||!strcmp(op,"ranked_report"))&&consumer!=0)return 0;
     if(!strcmp(op,"turn_credentials")&&consumer!=0&&consumer!=1)return 0;
-    static const char *allowed[]={"create","join","get","get_signals","turn_credentials","lease","leave","list","public_rooms","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","ranked_rock","quick_rock","match_report","nickname_get","nickname_set","profile_card_get","profile_card_save","profile_media_get","profile_media_save","profile_checkout"};bool found=false;
+    static const char *allowed[]={"create","join","get","get_signals","turn_credentials","lease","leave","list","public_rooms","queue","cancel","signal","counts","voice","presence","ranked_status","ranked_top","ranked_queue","ranked_report","ranked_heartbeat","ranked_forfeit","ranked_rock","quick_rock","match_report","nickname_get","nickname_set","profile_card_get","profile_card_save","profile_media_get","profile_media_save","profile_checkout","dios_tube_list","dios_tube_fetch","dios_tube_like","dios_tube_view","dios_tube_submit","dios_tube_preview_get","dios_tube_preview_save"};bool found=false;
     for(auto kind:allowed)if(!strcmp(op,kind)){found=true;break;}if(!found)return 0;
     Sj body=Sj::parse(args,nullptr,false);if(!body.is_object())return 0;
     if(!Bt4Signal_Open())return 0;std::lock_guard<std::mutex> g(state.lock);if(state.jobs.size()>=64)return 0;state.consumers|=1u<<consumer;

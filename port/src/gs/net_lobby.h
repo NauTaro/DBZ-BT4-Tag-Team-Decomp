@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-enum { T_LOBBY_FIRST = 30, T_LOBBY_LAST = 42 }; /* the lobby's packet types (net_lobby.c); a release without lobbies ignores them */
+enum { T_LOBBY_FIRST = 30, T_L_ROUTE = 42, T_L_BRACKET = 43, T_LOBBY_LAST = T_L_BRACKET };
 enum { T_PUNCH = 9 }; /* An empty UDP probe that opens the sender's NAT mapping. */
 
 #ifndef __cplusplus

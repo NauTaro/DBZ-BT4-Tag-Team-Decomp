@@ -6,6 +6,9 @@
 #include "battle/battle_setup.h"
 #include "battle/tag_team_native.h"
 #include "battle/btl_seq.h"
+#ifdef PORT
+static int sDiosTubeHits, sDiosTubeCounters, sDiosTubeLongest;
+#endif
 #include "sys/common.h"
 #include "sys/file.h"
 #include "sys/heap.h"
@@ -1806,6 +1809,9 @@ void BattleSetup_FinishEx(s32 wide) {
     SETUP()->unk5A0 = 1;
     memset(&gBattleReplay, 0, sizeof(BtlReplay));
     gBattleReplay.setup = *SETUP();
+#ifdef PORT
+    sDiosTubeHits = sDiosTubeCounters = sDiosTubeLongest = 0;
+#endif
 }
 
 /* Returns the replay block (and its size) for saving; clears its two trailing words. */
@@ -1820,6 +1826,113 @@ BtlReplay *BattleReplay_GetBuffer(s32 *size) {
     rep->unk1ABA4 = 0;
     return rep;
 }
+
+#ifdef PORT
+/* Rebuild the setup from validated selections. Only the portable controller
+   tracks cross the network, never the native memory-card block or its pointers. */
+#include "bt4_dios_tube.h"
+#include "battle/btl_replay.h"
+extern s32 Bt4_DiosTubeValidOutfit(s32 chara,s32 costume);
+
+extern int Port_RankedActive(void);
+
+void BattleReplay_RankedHit(int combo) {
+    if(!Port_RankedActive() || BtlSeq_GetState()!=3)return;
+    if(sDiosTubeHits<1000)++sDiosTubeHits;
+    if(combo>sDiosTubeLongest)sDiosTubeLongest=combo>100?100:combo;
+}
+
+void BattleReplay_RankedCounter(void) {
+    if(Port_RankedActive() && BtlSeq_GetState()==3 && sDiosTubeCounters<128)++sDiosTubeCounters;
+}
+
+void BattleReplay_RankedStats(int stats[3]) {
+    stats[0]=sDiosTubeHits;
+    stats[1]=sDiosTubeCounters;
+    stats[2]=sDiosTubeLongest;
+}
+
+#include "sys/rand.h"
+extern u32 gRandState[RAND_N];
+extern s32 gRandIndex;
+extern unsigned long long gPortRandNext;
+static unsigned sDiosRandom[BT4_DIOS_RANDOM_WORDS];
+static int sDiosRestoreRandom;
+
+void BattleReplay_DiosRandomAtLoad(void) {
+    if (sDiosRestoreRandom) {
+        memcpy(gRandState, sDiosRandom, sizeof(gRandState));
+        gRandIndex = sDiosRandom[RAND_N];
+        gPortRandNext = ((unsigned long long)sDiosRandom[RAND_N + 2] << 32) | sDiosRandom[RAND_N + 1];
+        sDiosRestoreRandom = 0;
+    } else if (Port_RankedActive()) {
+        memcpy(sDiosRandom, gRandState, sizeof(gRandState));
+        sDiosRandom[RAND_N] = gRandIndex;
+        sDiosRandom[RAND_N + 1] = (unsigned)gPortRandNext;
+        sDiosRandom[RAND_N + 2] = (unsigned)(gPortRandNext >> 32);
+    }
+}
+
+const unsigned *BattleReplay_DiosRandom(void) {
+    return sDiosRandom;
+}
+
+s32 Bt4_DiosTubePrepareReplay(const Bt4DiosReplay *source) {
+    BtlReplay *replay;
+    BtlReplayTracks *tracks;
+    s32 side, frames=source->frames;
+    if(source->stage<0||source->stage>34||source->time<0||source->time>7||frames<30||frames>BTL_REPLAY_FRAMES)return 0;
+    for(side=0;side<2;++side){
+        if(!Bt4_DiosTubeValidOutfit(source->fighters[side][0],source->fighters[side][1]) ||
+           source->trackFrames[side]<30 || source->trackFrames[side]>frames)return 0;
+    }
+    replay=Heap_Alloc(sizeof(*replay),0x40,0,HEAP_ANY);
+    if(!replay)return 0;
+    Battle_ClearWork();
+    BattleSetup_SetRule(0,0,8,source->time,1,source->stage,0);
+    for(side=0;side<2;++side){
+        BattleSetup_SetSide(side,0,side,1,1,1,0,NULL);
+        BattleSetup_SetMember(side,0,source->fighters[side][0],source->fighters[side][1],0,0,100.0f,NULL);
+    }
+    BattleSetup_Finish();
+    *replay=gBattleReplay;
+    tracks=(BtlReplayTracks *)&replay->data;
+    for(side=0;side<2;++side){
+        const u8 *input=source->inputs+side*frames*6;
+        const s32 count=source->trackFrames[side];
+        memcpy(tracks->track[side].stick,input,count*2);
+        memcpy(tracks->track[side].buttons,input+frames*2,count*4);
+        tracks->track[side].count=count;
+    }
+    side=BattleReplay_Load(replay,sizeof(*replay));
+    if (side && source->hasRandom) {
+        memcpy(sDiosRandom, source->random, sizeof(sDiosRandom));
+        sDiosRestoreRandom = 1;
+    }
+    Heap_Free(replay);
+    return side;
+}
+
+const void *BattleReplay_RankedInputs(void) {
+    const BattleSetup *setup=&gBattleReplay.setup;
+    if(gBattleReplay.active || setup->rule.mode!=0 || setup->script ||
+       setup->sides[0].memberCount!=1 || setup->sides[1].memberCount!=1) return NULL;
+    return &gBattleReplay.data;
+}
+
+s32 BattleReplay_RankedField(s32 field) {
+    const BattleSetup *setup=&gBattleReplay.setup;
+    switch(field){
+    case 0:return setup->rule.stage;
+    case 1:return setup->sides[0].members[0].chara;
+    case 2:return setup->sides[0].members[0].costume;
+    case 3:return setup->sides[1].members[0].chara;
+    case 4:return setup->sides[1].members[0].costume;
+    case 5:return setup->rule.timeLimit;
+    default:return -1;
+    }
+}
+#endif
 
 /* Installs a loaded replay block: its setup becomes the battle setup. Returns 1 when the block is valid. */
 s32 BattleReplay_Load(BtlReplay *buf, s32 size) {

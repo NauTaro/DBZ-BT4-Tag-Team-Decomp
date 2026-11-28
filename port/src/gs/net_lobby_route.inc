@@ -2,7 +2,7 @@
  * The lobby owner already has a connection to each. Only the two assigned
  * players may exchange wrapped match packets, for this match's generation.
  * The 1v1 input, rollback and spectator protocols inside are unchanged. */
-enum { T_L_ROUTE=42, ROUTE_HEADER=20, ROUTE_MAX=2048 };
+enum { ROUTE_HEADER=20, ROUTE_MAX=2048 };
 int Lobby_RouteSend(const void *data,int n,const struct sockaddr_in *to) {
     const uint8_t *body=data;uint8_t packet[ROUTE_HEADER+ROUTE_MAX];
     if(n<8||get(body,0)!=MAGIC||get(body,1)==T_L_ROUTE)return 0;

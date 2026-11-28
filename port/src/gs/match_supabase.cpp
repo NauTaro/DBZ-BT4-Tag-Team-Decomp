@@ -27,6 +27,9 @@ extern "C" void Port_RankedShutdown(void);
 #include "../../third_party/voice/json.hpp"
 using Dj=nlohmann::json;
 #include "profile_image_codec.inc"
+#include "../../include/bt4_version.h"
+#include "../../include/bt4_dios_tube.h"
+#include "dios_preview.inc"
 namespace {
 std::mutex lock;unsigned serial=20000;
 std::string text(const Dj &j,const char *key){auto p=j.find(key);return p!=j.end()&&p->is_string()?p->get<std::string>():std::string();}
@@ -103,6 +106,13 @@ struct RankedRockProof {
     Uint64 next=0,until=0;
 };
 std::deque<RankedRockProof> rankedRockProofs;
+struct DiosUpload {
+    std::string project;
+    Dj replay, clip;
+    unsigned request=0;
+    Uint64 next=0, until=0;
+};
+std::deque<DiosUpload> diosUploads;
 struct RankedSettlement {int rating,delta;bool review;};
 std::deque<RankedSettlement> rankedSettlements;
 std::atomic<bool> settlementReady{false};
@@ -133,6 +143,23 @@ void watchStep(Uint64 now){
         Dj e=Dj::parse(raw,nullptr,false);if(!e.is_object())continue;
         if(characterReply(e,now))continue;
         const unsigned reply = number(e,"serial");
+        auto upload=std::find_if(diosUploads.begin(),diosUploads.end(),
+                                 [reply](const DiosUpload &item){return reply&&item.request==reply;});
+        if(upload!=diosUploads.end()){
+            upload->request=0;
+            const auto body=e.find("body");
+            if(body==e.end()||!body->is_object())continue;
+            const auto status=text(*body,"state"), error=text(*body,"error");
+            if(getenv("BT4_SIGNAL_DIAGNOSTICS"))
+                fprintf(stderr,"bt4: Dios Tube %s result=%s %s\n",upload->replay.is_null()?"clip":"replay",status.c_str(),error.c_str());
+            if(status=="mismatch"||error=="BAD_REPLAY_RECORD")upload->until=0;
+            if(status=="waiting"||status=="ready"){
+                if(upload->replay.is_null())upload->until=0;
+                else upload->replay=Dj();
+                upload->next=now;
+            }
+            continue;
+        }
         auto proof = std::find_if(rankedRockProofs.begin(),rankedRockProofs.end(),
                                   [reply](const RankedRockProof &p){return reply && p.request==reply;});
         if(proof!=rankedRockProofs.end()){
@@ -203,6 +230,18 @@ void watchStep(Uint64 now){
     }
     rankedRockProofs.erase(std::remove_if(rankedRockProofs.begin(),rankedRockProofs.end(),
         [now](const RankedRockProof &p){return now>=p.until;}),rankedRockProofs.end());
+    for(auto &item:diosUploads){
+        if(now>=item.until||now<item.next||item.project!=Bt4Signal_Project())continue;
+        const bool sendingReplay=!item.replay.is_null();
+        if(!sendingReplay&&item.clip.is_null()){item.until=0;continue;}
+        const auto payload=(sendingReplay?item.replay:item.clip).dump();
+        const unsigned request=++watchSerial;
+        if(Bt4Signal_Command(5,request,sendingReplay?"dios_tube_submit":"dios_tube_preview_save",payload.c_str())){
+            item.request=request;item.next=now+45000;
+        }else item.next=now+3000;
+    }
+    diosUploads.erase(std::remove_if(diosUploads.begin(),diosUploads.end(),
+        [now](const DiosUpload &item){return now>=item.until;}),diosUploads.end());
     characterStep(now);
     rankedWatches.erase(std::remove_if(rankedWatches.begin(),rankedWatches.end(),[&](const RankedWatch &w){return w.until&&now>=w.until;}),rankedWatches.end());
 }
@@ -466,7 +505,7 @@ extern "C" int Bt4Discovery_Begin(unsigned generation,int role,int protocol,uint
     rankedActive=d.ranked;
     rankedRockSeed=0;d.rockCandidate=d.rockCandidateTick=0;d.rockSubmitted=d.rockRoundEnded=false;
     d.quick=role==3&&!d.ranked;
-    d.outcomeTick=d.reportSerial=0;d.outcomeBits=d.reportState=0;d.reportAt=0;d.report=Dj();d.characters=Dj();
+    d.outcomeTick=d.reportSerial=0;d.outcomeBits=d.reportState=0;d.reportAt=0;d.report=Dj();d.characters=Dj();clipEpoch=0;
     d.resultRating=d.resultDelta=0;
     char hash[17];snprintf(hash,sizeof(hash),"%016llx",(unsigned long long)content);d.content=hash;d.wire="bt4-duel-"+std::to_string(protocol);
     if(d.ranked){
@@ -542,7 +581,7 @@ extern "C" void Bt4Discovery_End(unsigned generation){std::lock_guard<std::mutex
     if(d.waiting)rpc("cancel",Dj::object());
     if(d.ranked&&d.sawFight){auto m=text(d.descriptor,"generation");for(auto &w:rankedWatches)if(w.match==m&&!w.until){w.until=SDL_GetTicks()+120000;w.next=0;}}
     Dj leave=Dj::object();auto generationId=text(d.descriptor,"generation");if(!generationId.empty())leave["generation"]=generationId;
-    rpc("leave",leave);d.earlySignals.clear();d.on=false;d.turn={};d.turnRequest=0;rankedActive=false;rankedRockSeed=0;}
+    rpc("leave",leave);d.earlySignals.clear();d.on=false;d.turn={};d.turnRequest=0;rankedActive=false;rankedRockSeed=0;clipEpoch=0;}
 extern "C" void Port_ProfileCardForPlayer(const char *name,Bt4ProfileCard *out){
     *out={};
     std::lock_guard<std::mutex> guard(lock);
@@ -554,9 +593,9 @@ extern "C" void Port_ProfileCardForPlayer(const char *name,Bt4ProfileCard *out){
         const auto card=member.find("card");
         if(card!=member.end()&&card->is_object())*out=profileCard(*card);
         const auto wins=member.find("wins"), losses=member.find("losses");
-        if(d.ranked&&wins!=member.end()&&losses!=member.end()&&wins->is_number_unsigned()&&losses->is_number_unsigned()){
-            out->rankedWins=int(std::min(1000000u,wins->get<unsigned>()));
-            out->rankedLosses=int(std::min(1000000u,losses->get<unsigned>()));
+        if(d.ranked&&wins!=member.end()&&losses!=member.end()&&wins->is_number_integer()&&losses->is_number_integer()){
+            out->rankedWins=int(std::clamp(wins->get<double>(),0.0,1000000.0));
+            out->rankedLosses=int(std::clamp(losses->get<double>(),0.0,1000000.0));
             out->hasRankedRecord=1;
         }
         break;
@@ -668,6 +707,45 @@ extern "C" int Port_RankedResult(int *rating,int *delta){
     std::lock_guard<std::mutex> g(lock);
     if(rating)*rating=d.resultRating;if(delta)*delta=d.resultDelta;return d.reportState;
 }
+extern "C" const void *BattleReplay_RankedInputs(void);
+extern "C" int BattleReplay_RankedField(int);
+
+static Dj rankedReplayRecord(const std::string &id){
+    const auto *data=static_cast<const unsigned char *>(BattleReplay_RankedInputs());
+    if(!data)return Dj();
+    constexpr unsigned trackSize=0xD2F8,countOffset=0xD2F0,buttonsOffset=0x4650;
+    uint32_t counts[2];
+    for(unsigned side=0;side<2;++side)std::memcpy(&counts[side],data+side*trackSize+countOffset,4);
+    const unsigned frames=std::max(counts[0],counts[1]);
+    if(std::min(counts[0],counts[1])<30||frames>BT4_DIOS_MAX_FRAMES)return Dj();
+    std::vector<unsigned char> bytes(frames*12);
+    for(unsigned side=0;side<2;++side){
+        const auto *track=data+side*trackSize;
+        auto *out=bytes.data()+side*frames*6;
+        std::memset(out,0x7f,frames*2);
+        std::memcpy(out,track,counts[side]*2);
+        std::memcpy(out+frames*2,track+buttonsOffset,counts[side]*4);
+    }
+    int stats[3]={};
+    BattleReplay_RankedStats(stats);
+    const auto *random = BattleReplay_DiosRandom();
+    unsigned char snapshot[BT4_DIOS_RANDOM_WORDS * 4];
+    for (unsigned i = 0; i < BT4_DIOS_RANDOM_WORDS; ++i)
+        for (unsigned byte = 0; byte < 4; ++byte) snapshot[i * 4 + byte] = random[i] >> (8 * byte);
+    return {{"id",id},{"build",BT4_CANONICAL_VERSION},{"stage",BattleReplay_RankedField(0)},
+            {"fighters",Dj::array({Dj::array({BattleReplay_RankedField(1),BattleReplay_RankedField(2)}),
+                                  Dj::array({BattleReplay_RankedField(3),BattleReplay_RankedField(4)})})},
+            {"frames",frames},{"tracks",Dj::array({counts[0],counts[1]})},{"inputs",profileBase64(bytes.data(),bytes.size())},
+            {"time",BattleReplay_RankedField(5)},{"random",profileBase64(snapshot,sizeof(snapshot))},
+            {"stats",{{"hits",stats[0]},{"zCounters",stats[1]},{"longestCombo",stats[2]}}}};
+}
+
+static bool diosTubeRecording() {
+    const std::string project = Bt4Signal_Project();
+    return project.rfind("https://bt4-online-v5.", 0) == 0 ||
+           project.rfind("https://bt4-online-diostube-preview.", 0) == 0;
+}
+
 extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsigned confirmed,int resimulating,int localConcession){
     std::lock_guard<std::mutex> g(lock);
     if(!d.on||!d.ranked||resimulating||!d.descriptor.is_object())return;
@@ -682,11 +760,18 @@ extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsign
         }
         return;
     }
-    if(battleState==3){if(!d.sawFight)watchFight();d.sawFight=true;d.outcomeBits=0;return;}
+    if(battleState==3){
+        if(!d.sawFight){
+            watchFight();
+            if(diosTubeRecording())beginClip();
+        }
+        d.sawFight=true;d.outcomeBits=0;return;
+    }
     if(!d.sawFight||battleState<4||battleState>6||!(bits&15)){d.outcomeBits=0;return;}
     bits=bits&8?8:bits&7;
     if(d.outcomeBits!=bits){d.outcomeBits=bits;d.outcomeTick=tick;return;}
     if(bits==8){
+        clipEpoch=0;
         if(localConcession>=0&&confirmed>=d.outcomeTick+2)watchFinish(localConcession!=0,true,localConcession==0);
         return;
     }
@@ -698,6 +783,17 @@ extern "C" void Port_RankedObserve(int battleState,int bits,unsigned tick,unsign
              d.content.c_str(),text(d.profile,"ruleset").c_str(),winner);
     UpdSha256_Hex(canonical,strlen(canonical),digest);
     d.report={{"match",text(d.descriptor,"generation")},{"outcome",winner},{"digest",digest}};
+    if(winner<2 && diosTubeRecording() && diosUploads.size()<4){
+        auto replay=rankedReplayRecord(text(d.descriptor,"generation"));
+        if(!replay.is_null()){
+            auto gif=finishClip();
+            Dj clip;
+            if(!gif.empty())clip={{"id",text(d.descriptor,"generation")},{"gif",profileBase64(gif.data(),gif.size())}};
+            diosUploads.push_back({Bt4Signal_Project(),std::move(replay),std::move(clip),0,now+2000,now+120000});
+            ensureMatchWatcher();
+        }
+    }
+    clipEpoch=0;
     if(d.characters.is_object())d.report.update(d.characters);
     d.reportState=1;d.reportSerial=++serial;d.reportAt=now+3000;
     watchFinish(false);
@@ -735,6 +831,145 @@ extern "C" int Port_OnlinePresence(int active){
 
 namespace {
 std::mutex rankedLock;
+Bt4DiosCatalog diosCatalog={};
+unsigned diosRequest=0,diosLikeRequest=0;
+Uint64 diosDeadline=0,diosNext=0,diosLikeDeadline=0;
+unsigned diosFetchRequest=0;
+Uint64 diosFetchDeadline=0;
+int diosFetchState=0;
+std::string diosFetchId;
+std::mutex diosPreviewLock;
+struct DiosPreview {
+    std::vector<uint16_t> frames;
+    std::vector<unsigned> ends;
+    std::string id;
+    unsigned request=0,version=0;
+    Uint64 retry=0,deadline=0,start=0;
+    bool failed=false;
+};
+std::array<DiosPreview,BT4_DIOS_LIMIT> diosPreviews;
+unsigned diosPreviewVersion=0;
+
+void decodeDiosClip(DiosPreview &preview,const Dj &body,Uint64 now){
+    if(text(body,"id")!=preview.id)return;
+    const auto base64=text(body,"gif");
+    if(base64.empty()||base64.size()>BT4_DIOS_GIF_WIRE||base64.size()%4)return;
+    std::vector<unsigned char> gif;
+    gif.reserve(base64.size()/4*3);
+    unsigned bits=0,used=0;
+    for(unsigned char c:base64){
+        if(c=='=')break;
+        int value=c>='A'&&c<='Z'?c-'A':c>='a'&&c<='z'?c-'a'+26:c>='0'&&c<='9'?c-'0'+52:c=='+'?62:c=='/'?63:-1;
+        if(value<0)return;
+        bits=(bits<<6)|(unsigned)value;used+=6;
+        if(used>=8){used-=8;gif.push_back((unsigned char)(bits>>used));}
+    }
+    if(!validClip(gif))return;
+    int w,h,count,channels,*delays=nullptr;
+    unsigned char *rgba=stbi_load_gif_from_memory(gif.data(),(int)gif.size(),&delays,&w,&h,&count,&channels,4);
+    if(rgba&&delays&&count>0&&count<=BT4_DIOS_GIF_FRAMES){
+        // Early staging GIFs sampled the entire padded render target.
+        // Recognize that fixed black border across multiple real frames.
+        unsigned cropped=0,samples=0;
+        for(int frame=3;w==128&&frame<count;frame+=8){
+            unsigned content=0,padding=0;
+            const auto *image=rgba+(size_t)frame*w*h*4;
+            for(int y=0;y<h;y+=3)for(int x=0;x<w;x+=3){
+                const auto *p=image+(y*w+x)*4;
+                if(!(p[0]|p[1]|p[2]))continue;
+                if(x<60&&y<28)++content;
+                if(x>=68||y>=36)++padding;
+            }
+            if(content>30){++samples;if(padding==0)++cropped;}
+        }
+        const bool padded=samples>=3&&cropped*4>=samples*3;
+        const int sourceW=padded?64:w,sourceH=padded?32:h;
+        std::vector<uint16_t> frames((size_t)count*clipPixels);
+        std::vector<unsigned> ends;
+        unsigned elapsed=0;
+        for(size_t i=0;i<frames.size();++i){
+            const unsigned row=(i/BT4_DIOS_GIF_W)%BT4_DIOS_GIF_H,col=i%BT4_DIOS_GIF_W;
+            const unsigned x=col*(sourceW-1)*256/(BT4_DIOS_GIF_W-1),y=row*(sourceH-1)*256/(BT4_DIOS_GIF_H-1);
+            const auto *top=rgba+4*(i/clipPixels*(size_t)w*h+(y>>8)*w);
+            const auto *bottom=top+4*((y>>8)+1<(unsigned)sourceH?w:0);
+            const unsigned left=(x>>8)*4,right=left+((x>>8)+1<(unsigned)sourceW?4:0),dx=x&255,dy=y&255;
+            const unsigned scan=row%2?242:255;
+            unsigned pixel=0x80000000u;
+            for(unsigned c=0;c<3;++c){
+                const unsigned a=top[left+c]*(256-dx)+top[right+c]*dx;
+                const unsigned b=bottom[left+c]*(256-dx)+bottom[right+c]*dx;
+                pixel|=(((a*(256-dy)+b*dy)>>16)*scan/255)<<(c*8);
+            }
+            frames[i]=(uint16_t)(((pixel&0xf8u)<<8)|((pixel&0xfc00u)>>5)|((pixel&0xf80000u)>>19));
+        }
+        for(int i=0;i<count;++i){elapsed+=(unsigned)std::clamp(delays[i],30,200);ends.push_back(elapsed);}
+        std::lock_guard<std::mutex> guard(diosPreviewLock);
+        preview.frames.swap(frames);preview.ends.swap(ends);preview.start=now;preview.version=++diosPreviewVersion;
+        if(getenv("BT4_RENDER_TEST"))fprintf(stderr,"Dios Tube GIF: %d frames, %u ms\n",count,elapsed);
+        if(padded&&getenv("BT4_RENDER_TEST"))fprintf(stderr,"Dios Tube GIF: padded capture corrected\n");
+    }
+    stbi_image_free(rgba);stbi_image_free(delays);
+}
+Bt4DiosReplay diosReplay={};
+
+bool decodeDiosInput(const std::string &input, unsigned char *out, size_t size) {
+    if (size % 3 || input.size() != size / 3 * 4) return false;
+    for(size_t at=0;at<input.size();at+=4){
+        unsigned bits=0;
+        for(unsigned k=0;k<4;++k){
+            const char c=input[at+k];
+            const int value=c>='A'&&c<='Z'?c-'A':c>='a'&&c<='z'?c-'a'+26:
+                c>='0'&&c<='9'?c-'0'+52:c=='+'?62:c=='/'?63:-1;
+            if(value<0)return false;
+            bits=(bits<<6)|unsigned(value);
+        }
+        *out++=(unsigned char)(bits>>16);
+        *out++=(unsigned char)(bits>>8);
+        *out++=(unsigned char)bits;
+    }
+    return true;
+}
+
+bool decodeDiosReplay(const Dj &body) {
+    if(text(body,"build")!=BT4_CANONICAL_VERSION||text(body,"id")!=diosFetchId)return false;
+    auto stage=body.find("stage"),fighters=body.find("fighters"),frames=body.find("frames");
+    if(stage==body.end()||!stage->is_number_unsigned()||stage->get<double>()>34||
+       frames==body.end()||!frames->is_number_unsigned()||frames->get<double>()<30||
+       frames->get<double>()>BT4_DIOS_MAX_FRAMES||fighters==body.end()||
+       !fighters->is_array()||fighters->size()!=2)return false;
+    for(unsigned side=0;side<2;++side){
+        const auto &pair=(*fighters)[side];
+        if(!pair.is_array()||pair.size()!=2||!pair[0].is_number_unsigned()||
+           !pair[1].is_number_unsigned()||pair[0].get<double>()>=250||pair[1].get<double>()>31)return false;
+        for(unsigned item=0;item<2;++item)diosReplay.fighters[side][item]=pair[item].get<int>();
+    }
+    diosReplay.stage=stage->get<int>();diosReplay.frames=frames->get<int>();
+    const auto tracks=body.find("tracks");
+    for (unsigned side=0;side<2;++side) {
+        diosReplay.trackFrames[side]=diosReplay.frames;
+        if(tracks==body.end())continue;
+        if(!tracks->is_array()||tracks->size()!=2||!(*tracks)[side].is_number_unsigned()||
+           (*tracks)[side].get<double>()<30||(*tracks)[side].get<double>()>diosReplay.frames)return false;
+        diosReplay.trackFrames[side]=(*tracks)[side].get<int>();
+    }
+    diosReplay.time=4;
+    diosReplay.hasRandom=0;
+    if(body.contains("random")) {
+        const auto time=body.find("time");
+        const auto random=text(body,"random");
+        unsigned char snapshot[BT4_DIOS_RANDOM_WORDS * 4];
+        if(time==body.end() || !time->is_number_unsigned() || time->get<double>()>7 ||
+           !decodeDiosInput(random,snapshot,sizeof(snapshot)))return false;
+        for (unsigned i=0;i<BT4_DIOS_RANDOM_WORDS;++i) {
+            diosReplay.random[i]=0;
+            for (unsigned byte=0;byte<4;++byte)diosReplay.random[i]|=(unsigned)snapshot[i*4+byte]<<(8*byte);
+        }
+        if(diosReplay.random[BT4_DIOS_RANDOM_WORDS-3]>625)return false;
+        diosReplay.time=time->get<int>();
+        diosReplay.hasRandom=1;
+    }
+    return decodeDiosInput(text(body,"inputs"),diosReplay.inputs,size_t(diosReplay.frames)*12);
+}
 Bt4RankedView rankedView={};
 std::array<Bt4RankedEntry,100> rankedEntries={};int rankedTotal=0;
 unsigned rankedStatusRequest=0,rankedTopRequest=0,nicknameRequest=0,rankedSerial=800000;
@@ -771,6 +1006,9 @@ void profileRoute(){
     const char *project=Bt4Signal_Project();
     if(profileProject==project)return;
     profileProject=project;
+    diosRequest=diosLikeRequest=0;
+    diosCatalog={};diosNext=0;
+    diosFetchRequest=0;diosFetchState=0;diosFetchId.clear();
     rankedStatusRequest=rankedTopRequest=nicknameRequest=directoryRequest=0;
     directory={};nextDirectory=0;
     cardRequest=0;cardState=0;cardAvailable=false;cardError.clear();ownCard={};profileMedia.clear();
@@ -791,13 +1029,53 @@ unsigned profileRequest(const char *op,const char *args){
     return Bt4Signal_Command(4,id,op,args)?id:0;
 }
 void profilePump(Uint64 now){
-    static std::vector<char> buffer(BT4_PROFILE_MEDIA_EVENT_CAP);
+    static std::vector<char> buffer(BT4_DIOS_GIF_WIRE+513);
     while(int read=Bt4Signal_Read(4,buffer.data(),buffer.size())){
         if(read<0)continue;
         Dj event=Dj::parse(buffer.data(),nullptr,false);unsigned id=number(event,"serial");
         auto project=text(event,"project");
         if(!id||(!project.empty()&&project!=profileProject))continue;
         auto body=event.find("body");if(body==event.end()||!body->is_object())continue;
+        if(id==diosFetchRequest){
+            diosFetchRequest=0;
+            diosFetchState=decodeDiosReplay(*body)?2:-1;
+            continue;
+        }
+        auto preview=std::find_if(diosPreviews.begin(),diosPreviews.end(),[&](const DiosPreview &item){return item.request==id;});
+        if(preview!=diosPreviews.end()){
+            preview->request=0;
+            preview->retry=now+15000;
+            decodeDiosClip(*preview,*body,now);
+            preview->failed=preview->ends.empty();
+            continue;
+        }
+        if(id==diosLikeRequest){
+            diosLikeRequest=0;
+            diosNext=0;
+            continue;
+        }
+        if(id==diosRequest){
+            diosRequest=0;
+            diosCatalog={};
+            const auto rows=body->find("replays");
+            diosCatalog.state=rows!=body->end()&&rows->is_array()?1:-1;
+            if(diosCatalog.state==1)for(const auto &row:*rows){
+                if(!row.is_object()||diosCatalog.count>=BT4_DIOS_LIMIT)continue;
+                const std::string key=text(row,"id");
+                if(key.empty()||key.size()>=sizeof(Bt4DiosEntry::id))continue;
+                auto &entry=diosCatalog.entries[diosCatalog.count++];
+                snprintf(entry.id,sizeof(entry.id),"%s",key.c_str());
+                const std::string players[]={text(row,"player_a"),text(row,"player_b")};
+                for(unsigned side=0;side<2;++side)
+                    if(players[side].size()<sizeof(entry.players[side]))
+                        snprintf(entry.players[side],sizeof(entry.players[side]),"%s",players[side].c_str());
+                entry.likes=int(std::min(number(row,"likes"),1000000u));
+                entry.views=int(std::min(number(row,"views"),1000000u));
+                entry.liked=number(row,"liked")==1;
+                entry.hasPreview=number(row,"has_preview")==1;
+            }
+            continue;
+        }
         if(id==directoryRequest){
             directoryRequest=0;
             directory={};
@@ -905,6 +1183,9 @@ void profilePump(Uint64 now){
             rankedPage();
         }
     }
+    if(diosRequest&&now>=diosDeadline){diosRequest=0;diosCatalog.state=-1;}
+    if(diosLikeRequest&&now>=diosLikeDeadline){diosLikeRequest=0;diosNext=0;}
+    if(diosFetchRequest&&now>=diosFetchDeadline){diosFetchRequest=0;diosFetchState=-1;}
     if(directoryRequest&&now>=directoryDeadline){directoryRequest=0;directory={};directory.state=-1;}
     if(rankedStatusRequest&&now>=rankedStatusDeadline){rankedStatusRequest=0;rankedView.state=-1;}
     if(rankedTopRequest&&now>=rankedTopDeadline){
@@ -916,6 +1197,87 @@ void profilePump(Uint64 now){
         cardRequest=0;cardError="TIMEOUT";cardState=cardAvailable?BT4_CARD_SAVE_FAILED:BT4_CARD_FAILED;
     }
     if(checkoutRequest&&now>=checkoutDeadline){checkoutRequest=0;checkoutState=-1;}
+}
+extern "C" void Port_DiosTubeCatalog(Bt4DiosCatalog *result,int refresh){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    const Uint64 now=SDL_GetTicks();
+    profileRoute();profilePump(now);
+    if(!diosRequest&&(refresh||now>=diosNext)){
+        diosRequest=profileRequest("dios_tube_list",Dj{{"build",BT4_CANONICAL_VERSION}}.dump().c_str());
+        diosDeadline=now+12000;diosNext=now+15000;
+        if(!diosRequest)diosCatalog.state=-1;
+    }
+    *result=diosCatalog;
+}
+extern "C" int Port_DiosPreviewSlot(unsigned slot,const char *id){
+    if(slot>=diosPreviews.size())return 0;
+    std::lock_guard<std::mutex> rankedGuard(rankedLock);
+    std::lock_guard<std::mutex> guard(diosPreviewLock);
+    const Uint64 now=SDL_GetTicks();
+    auto &preview=diosPreviews[slot];
+    if(preview.id!=(id?id:"")){
+        preview=DiosPreview{};
+        if(id)preview.id=id;
+    }
+    if(preview.request&&now>=preview.deadline){preview.request=0;preview.retry=now+5000;preview.failed=true;}
+    if(!preview.id.empty()&&preview.ends.empty()&&now>=preview.retry&&
+       std::none_of(diosPreviews.begin(),diosPreviews.end(),[](const DiosPreview &item){return item.request!=0;})){
+        preview.request=profileRequest("dios_tube_preview_get",Dj{{"id",preview.id},{"build",BT4_CANONICAL_VERSION}}.dump().c_str());
+        preview.deadline=now+20000;preview.retry=now+5000;
+    }
+    return !preview.ends.empty()?1:preview.failed?-1:0;
+}
+extern "C" int Port_DiosPreviewPixels(unsigned slot,unsigned *generation,unsigned *frame,unsigned *pixels){
+    if(slot>=diosPreviews.size())return 0;
+    std::lock_guard<std::mutex> guard(diosPreviewLock);
+    const auto &preview=diosPreviews[slot];
+    if(preview.ends.empty())return 0;
+    const unsigned elapsed=(unsigned)((SDL_GetTicks()-preview.start)%preview.ends.back());
+    const unsigned index=(unsigned)(std::upper_bound(preview.ends.begin(),preview.ends.end(),elapsed)-preview.ends.begin());
+    if(*generation==preview.version&&*frame==index)return 0;
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_DIOS_ALL_GIFS")&&*generation==preview.version&&index<*frame)
+        fprintf(stderr,"Dios Tube GIF: TV %u looped\n",slot);
+    *generation=preview.version;*frame=index;
+    const auto *source=preview.frames.data()+index*clipPixels;
+    for(unsigned i=0;i<clipPixels;++i){
+        const unsigned packed=source[i],r=packed>>11,g=(packed>>5)&63,b=packed&31;
+        const unsigned red=(r<<3)|(r>>2),green=(g<<2)|(g>>4),blue=(b<<3)|(b>>2);
+        pixels[i]=0x80000000u|red|(green<<8)|(blue<<16);
+    }
+    return 1;
+}
+extern "C" void Port_DiosTubeLike(const char *id,int liked){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profileRoute();profilePump(SDL_GetTicks());
+    if(diosLikeRequest||!*id)return;
+    diosLikeRequest=profileRequest("dios_tube_like",Dj{{"id",id},{"liked",liked!=0},{"build",BT4_CANONICAL_VERSION}}.dump().c_str());
+    diosLikeDeadline=SDL_GetTicks()+12000;
+}
+extern "C" void Port_DiosTubeFetch(const char *id){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profileRoute();profilePump(SDL_GetTicks());
+    if(diosFetchRequest||!*id)return;
+    diosFetchId=id;
+    diosFetchRequest=profileRequest("dios_tube_fetch",Dj{{"id",id},{"build",BT4_CANONICAL_VERSION}}.dump().c_str());
+    diosFetchDeadline=SDL_GetTicks()+12000;
+    diosFetchState=diosFetchRequest?1:-1;
+}
+extern "C" int Port_DiosTubeTake(Bt4DiosReplay *result){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    profileRoute();profilePump(SDL_GetTicks());
+    const int state=diosFetchState;
+    if(state==2&&result)*result=diosReplay;
+    if(state<0||(state==2&&result))diosFetchState=0;
+    return state;
+}
+extern "C" void Port_DiosTubeCancel(void){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    diosFetchRequest=0;diosFetchState=0;diosFetchId.clear();
+}
+extern "C" void Port_DiosTubeViewed(void){
+    std::lock_guard<std::mutex> guard(rankedLock);
+    if(!diosFetchId.empty())profileRequest("dios_tube_view",Dj{{"id",diosFetchId},{"build",BT4_CANONICAL_VERSION}}.dump().c_str());
+    diosFetchId.clear();diosNext=0;
 }
 }
 extern "C" int Port_ProfileCheckout(int action,char *url,unsigned capacity){
@@ -1046,7 +1408,7 @@ extern "C" int Port_ProfileMediaRead(const char *id,unsigned char **output,int *
         entry=std::prev(profileMedia.end());
     }
     if(now>=entry->until&&entry->body.is_null()){
-        entry->request=profileRequest("profile_media_get",Dj{{"id",id},{"hd",true},{"detail",true},{"animation",2}}.dump().c_str());
+        entry->request=profileRequest("profile_media_get",Dj{{"id",id},{"hd",true},{"detail",2},{"animation",2}}.dump().c_str());
         entry->until=now+15000;
     }
     if(entry->body.is_null())return 0;

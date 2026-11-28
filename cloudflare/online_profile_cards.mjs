@@ -53,12 +53,12 @@ export function ownProfileCard(core, user, changes) {
     return {...profileCard(row, core.now()), media:profileMedia(core,user,premium),premium_until: row?.premium_until ?? 0};
 }
 
-function validAvatarDetail(encoded) {
-    if(typeof encoded!=='string'||!encoded.length||encoded.length>14936||encoded.length%4||
+function validAvatarDetail(encoded,maxSide=768,maxBytes=96000) {
+    if(typeof encoded!=='string'||!encoded.length||encoded.length>4*Math.ceil(maxBytes/3)||encoded.length%4||
        !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))return false;
     const bytes=atob(encoded);
-    if(bytes.length>11200)return false;
-    const square=(w,h)=>w===h&&w>=1&&w<=320;
+    if(bytes.length>maxBytes)return false;
+    const square=(w,h)=>w===h&&w>=1&&w<=maxSide;
     const byte=i=>bytes.charCodeAt(i);
     if(bytes.length>=33&&bytes.startsWith('\x89PNG\r\n\x1a\n')&&bytes.slice(12,16)==='IHDR')
         return square(byte(16)*16777216+byte(17)*65536+byte(18)*256+byte(19),byte(20)*16777216+byte(21)*65536+byte(22)*256+byte(23));
@@ -150,7 +150,7 @@ export function getProfileMedia(core,user,{id,hd,detail,animation}) {
         ))`,id,id,user,user,core.now());
     if (!row || (row.kind!=='avatar' && !(row.premium_until>core.now()))) throw new Error('PROFILE_MEDIA_UNAVAILABLE');
     const media=JSON.parse(row.body);
-    if(detail!==true)delete media.detail;
+    if(detail!==2&&(detail!==true||!validAvatarDetail(media.detail,320,11200)))delete media.detail;
     if(animation!==2&&(animation!==true||media.animation?.atlas.length>1160000||
        media.animation?.width>(row.kind==='motion'?192:384)))delete media.animation;
     if(row.kind==='avatar'&&hd!==true&&media.frames[0].length===17068){

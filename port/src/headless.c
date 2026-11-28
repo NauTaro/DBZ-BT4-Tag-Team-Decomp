@@ -16,6 +16,7 @@
 #include "plat_songs.h"
 #include "port_addr.h"
 #include "../../include/battle/emotes.h"
+#include "../include/bt4_dios_tube.h"
 
 extern void Battle_ClearWork(void);
 extern int BattleReplay_Load(void *buf, int size);
@@ -227,7 +228,19 @@ int __wrap_Progress_Main(int arg) {
         printf("bt3: battle finished\n");
         exit(0);
     }
-    if (path != NULL) {
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_DIOS_TUBE_VIEWER_TEST")) {
+        static Bt4DiosReplay replay;
+        extern int Bt4_DiosTubePrepareReplay(const Bt4DiosReplay *);
+        replay.stage=4;replay.fighters[0][0]=3;replay.fighters[1][0]=31;
+        replay.frames=240;replay.trackFrames[0]=240;replay.trackFrames[1]=240;replay.time=4;
+        for(int side=0;side<2;++side)
+            memset(replay.inputs+side*replay.frames*6,0x7f,replay.frames*2);
+        if(!Bt4_DiosTubePrepareReplay(&replay)){
+            fprintf(stderr,"Dios Tube test: replay rejected\n");
+            exit(2);
+        }
+        fprintf(stderr,"Dios Tube test: replay prepared (stage 4, fighters 3/31)\n");
+    } else if (path != NULL) {
         static uint8_t buf[REPLAY_FILE_SIZE] __attribute__((aligned(16)));
         FILE *fp = fopen(path, "rb");
 
@@ -579,7 +592,9 @@ void Port_Trace(unsigned vblanks) {
     int *clock;
     int i;
 
-    if (getenv("BT4_TEST_TRANSFORM") != NULL && !Port_NetSession() && gBtlSeq != NULL && gBtlSeq->state == 3) {
+    if (getenv("BT4_TEST_TRANSFORM") != NULL &&
+        (!Port_NetSession() || (getenv("BT4_RENDER_TEST") && getenv("BT4_NET_TEST_LOOPBACK"))) &&
+        gBtlSeq != NULL && gBtlSeq->state == 3) {
         extern unsigned char GAME_PTR BtlChar_Get(int side);
         extern int GAME_PTR BtlMember_GetActive(void *chr);
         extern int GAME_PTR BtlMember_GetActiveGauge(void *chr);
@@ -588,8 +603,13 @@ void Port_Trace(unsigned vblanks) {
         extern int BtlAct_QueueTransform(void *chr, int slot);
         extern int BtlAct_GetQueued(void *chr);
         extern void BtlAct_Request(void *chr, int action);
-        static int started, target, origin, completed;
-        static unsigned began;
+        extern int Bt4_HasRecoveryVariant(void *chr);
+        static int started, target, origin, completed, damaged;
+        static unsigned began, captureDone;
+        if (captureDone != 0) {
+            if (vblanks >= captureDone) exit(0);
+            return;
+        }
         int actor=getenv("BT4_TEST_TECH_ACTOR")?atoi(getenv("BT4_TEST_TECH_ACTOR")):0;
         unsigned char GAME_PTR chr = BtlChar_Get(actor);
         int GAME_PTR member = BtlMember_GetActive(chr);
@@ -606,9 +626,20 @@ void Port_Trace(unsigned vblanks) {
             gauge[3]=100000;gauge[5]=0;*(int GAME_PTR)(chr+0x1300)=1;
             const char *scenario = getenv("BT4_RENDER_TEST") ? getenv("BT4_TEST_TRANSFORM_SEQUENCE") : NULL;
             if (scenario != NULL) {
-                /* A sequence such as 203 tests Sign, Mastered, and return in one fight. */
+                /* A sequence can trigger the clothing-damage action with 'd'. */
                 size_t count = strlen(scenario);
-                if ((size_t)completed >= count || scenario[completed] < '0' || scenario[completed] > '3') exit(4);
+                if ((size_t)completed >= count) exit(4);
+                if (scenario[completed] == 'd') {
+                    if (Bt4_HasRecoveryVariant(chr)) exit(4);
+                    target = member[0];
+                    damaged = 1;
+                    began = vblanks;
+                    started = 1;
+                    BtlAct_Request(chr, 0x104);
+                    fprintf(stderr, "bt4-transform: damage source=%d\n", target);
+                    return;
+                }
+                if (scenario[completed] < '0' || scenario[completed] > '3') exit(4);
                 gauge[0] = gauge[1] * 3 / 10;
                 slot = scenario[completed] - '0';
             } else if(completed&&getenv("BT4_TEST_TRANSFORM_STEPS")){
@@ -623,10 +654,17 @@ void Port_Trace(unsigned vblanks) {
             began=vblanks;started=1;
             fprintf(stderr,"bt4-transform: begin source=%d slot=%d target=%d\n",origin,slot,target);
         }
-        if(started && vblanks-began>180 && member[0]==target && model==target && (action<0xEC || action>0xF0)) {
+        if(started && vblanks-began>180 && member[0]==target && model==target && (action<0xEC || action>0xF0) &&
+           (!damaged || (action != 0x104 && Bt4_HasRecoveryVariant(chr)))) {
             fprintf(stderr,"bt4-transform: PASS target=%d model=%d action=%x elapsed=%u\n",member[0],model,action,vblanks-began);
             ++completed;
             if(getenv("BT4_TEST_TRANSFORM_STEPS")&&completed<atoi(getenv("BT4_TEST_TRANSFORM_STEPS"))){started=0;return;}
+            if (getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_ONLINE_CAPTURE")) {
+                extern void Port_TagCapture(void);
+                Port_TagCapture();
+                captureDone = vblanks + 15;
+                return;
+            }
             exit(0);
         }
         if(started && vblanks-began>1500) {

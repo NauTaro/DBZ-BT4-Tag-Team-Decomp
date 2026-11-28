@@ -12,7 +12,7 @@ typedef struct {
     unsigned bannerRgb;
     int hasBannerRgb;
 } Bt4ProfileCard;
-#define BT4_PROFILE_AVATAR_MAX 320
+#define BT4_PROFILE_AVATAR_MAX 768
 #define BT4_PROFILE_ANIMATION_FRAMES 120
 #define BT4_PROFILE_ANIMATION_COLUMNS 8
 #define BT4_PROFILE_ANIMATION_SIDE 256

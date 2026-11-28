@@ -284,6 +284,7 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
     s32 action;
 #ifdef BT4_TAG_TEAM_EXPANDED
     s32 customOutfit = 0;
+    s32 preserveDamage = 0;
 #endif
 
     chr->form.index = index;
@@ -310,6 +311,7 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
             chr->form.unk28 = chr->form.costume;
             if (unk24 >= 0x100) chr->form.unk24 = unk24 + chr->form.costume;
             customOutfit = 1;
+            preserveDamage = 1;
         } else if (extra == BT4_GOKU_END) {
             chr->form.costume = chr->form.costume == 2 ? 3 : 0;
         } else if (extra == BT4_GOKU_MASTERED_INSTINCT || extra == BT4_GOKU_INSTINCT_SIGN) {
@@ -341,7 +343,11 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
         chr->form.unk28 = targetCostume;
         if (unk24 >= 0x100) chr->form.unk24 = unk24 + targetCostume;
     }
-    if (BtlParam_TestUnkADBit(chr, index)) {
+    if (BtlParam_TestUnkADBit(chr, index)
+#ifdef BT4_TAG_TEAM_EXPANDED
+        && !preserveDamage
+#endif
+    ) {
         chr->form.variant = 0;
     }
     switch (seq) {
