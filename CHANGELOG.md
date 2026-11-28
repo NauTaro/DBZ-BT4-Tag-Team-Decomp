@@ -1,4 +1,4 @@
-# BT4decomp 0.1.39.6 R3 1.6
+# BT4decomp 0.1.39.6 R3 1.7
 
 - Save Dios Tube replays as MP4 on Windows. Press R2 or RT from the catalogue to start recording at the beginning of a fight.
 - Dios Tube replays show both players’ names and their recorded ping when available.
